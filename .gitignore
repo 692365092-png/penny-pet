@@ -1,0 +1,38 @@
+# Compiled releases and local build output
+*.exe
+*.rar
+*.zip
+desktop-pet/dist/
+desktop-pet/bin/
+desktop-pet/obj/
+
+# Local distribution copies, manuals, and archived artwork
+PENNY PET/
+说明书/
+art-backup/
+
+# User data and diagnostics
+settings.ini
+settings.ini.*
+sticky-notes.dat
+sticky-notes.dat.*
+diagnostics.log
+
+# Secrets and signing material must never be committed
+.env
+.env.*
+*.pfx
+*.p12
+*.pem
+*.key
+*.snk
+secrets.json
+
+# IDE and operating-system files
+.vs/
+.idea/
+*.user
+*.suo
+.DS_Store
+Thumbs.db
+

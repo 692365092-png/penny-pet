@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "displayName": "Penny pet",
+  "fallbackState": "idle",
+  "render": {
+    "fit": "contain",
+    "anchorX": 0.5,
+    "anchorY": 1.0,
+    "scale": 1.0,
+    "offsetX": 0,
+    "offsetY": 0,
+    "minimumFrameMs": 20,
+    "maximumFrameMs": 1000,
+    "innerOutline": false
+  },
+  "states": {
+    "idle": {
+      "file": "普通待机.gif",
+      "speed": 1.0
+    },
+    "running-right": {
+      "alias": "hover"
+    },
+    "running-left": {
+      "alias": "hover"
+    },
+    "waving": {
+      "file": "退出动作.gif",
+      "speed": 1.0,
+      "renderScale": 1.050926,
+      "renderScaleY": 1.002390,
+      "renderOffsetX": 10.0,
+      "renderOffsetY": 5.476132
+    },
+    "hover": {
+      "file": "鼠标悬停和拖拽 .gif",
+      "speed": 1.0,
+      "renderOffsetX": 1.5
+    },
+    "failed": {
+      "file": "普通待机之二.gif",
+      "speed": 1.0,
+      "renderScale": 1.005520,
+      "renderScaleY": 0.992207,
+      "renderOffsetX": 3.5,
+      "renderOffsetY": -0.097919
+    },
+    "waiting": {
+      "file": "键盘活动动作之一.gif",
+      "speed": 1.0,
+      "renderScale": 0.979467,
+      "renderScaleY": 0.999713,
+      "renderOffsetX": 10.5,
+      "renderOffsetY": -2.036720
+    },
+    "thinking": {
+      "file": "键盘活动动作之二.gif",
+      "speed": 1.0,
+      "renderScale": 1.022051,
+      "renderScaleY": 0.996569,
+      "renderOffsetX": 6.014586,
+      "renderOffsetY": 0.130003
+    },
+    "review": {
+      "file": "普通待机之三.gif",
+      "speed": 1.0,
+      "renderScale": 1.005520,
+      "renderScaleY": 0.992207,
+      "renderOffsetX": 3.5,
+      "renderOffsetY": -0.097919
+    },
+    "notification": {
+      "file": "提醒通知.gif",
+      "speed": 1.0,
+      "renderScale": 1.050926,
+      "renderScaleY": 1.002390,
+      "renderOffsetX": 10.0,
+      "renderOffsetY": 5.476132
+    }
+  }
+}
