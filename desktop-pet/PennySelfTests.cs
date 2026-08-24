@@ -2404,6 +2404,26 @@ namespace PennyPet
                 if (File.Exists(dockPath + ".bak")) File.Delete(dockPath + ".bak");
                 bool reminderDefaultCurrentTimeOk = Math.Abs(
                     (ReminderDialog.DefaultSuggestedLocal() - DateTime.Now).TotalSeconds) < 3;
+                IList<StickyLinkMatch> detectedLinks =
+                    StickyNoteLinkDetector.Find(
+                        "C:\\Users\\Penny pet\\进度表.xlsx\r\n" +
+                        "https://www.baidu.com/\r\n普通文字");
+                bool ordinaryStickyLinkDetectionOk = detectedLinks.Count == 2 &&
+                    detectedLinks[0].IsLocalPath &&
+                    detectedLinks[0].Text ==
+                        "C:\\Users\\Penny pet\\进度表.xlsx" &&
+                    !detectedLinks[1].IsLocalPath &&
+                    detectedLinks[1].Target.StartsWith(
+                        "https://www.baidu.com/", StringComparison.Ordinal);
+                StickyNoteData linkNoteData = new StickyNoteData();
+                linkNoteData.Text =
+                    "C:\\Users\\Penny pet\\进度表.xlsx\r\n" +
+                    "https://www.baidu.com/";
+                using (StickyNoteForm linkNote = new StickyNoteForm(
+                    linkNoteData, true))
+                    ordinaryStickyLinkDetectionOk =
+                        ordinaryStickyLinkDetectionOk &&
+                        linkNote.ExerciseOrdinaryLinkRefreshForTest();
                 bool ok = atlasOk && animationTimingFromArtPackageOk &&
                     applicationIconEmbeddedOk &&
                     startupLoadingFrameEmbeddedOk &&
@@ -2453,6 +2473,7 @@ namespace PennyPet
                     reminderSizePreviewOk && reminderLiveSizePreviewOk &&
                     highDpiStickyLayoutOk &&
                     reminderDefaultCurrentTimeOk &&
+                    ordinaryStickyLinkDetectionOk &&
                     softPaletteOk && automaticNoteBackupOk &&
                     fullWidthLatinNormalizationOk && renameInitialFocusOk &&
                     sideTabOverflowOk && sideTabDeleteCommandOk &&
@@ -2658,6 +2679,8 @@ namespace PennyPet
                     "  \"sticky_high_dpi_layout_ok\": " + Bool(
                         highDpiStickyLayoutOk) + ",\n" +
                     "  \"reminder_default_current_time_ok\": " + Bool(reminderDefaultCurrentTimeOk) + ",\n" +
+                    "  \"ordinary_sticky_web_and_local_links_ok\": " + Bool(
+                        ordinaryStickyLinkDetectionOk) + ",\n" +
                     "  \"soft_sticky_palette_ok\": " + Bool(softPaletteOk) + ",\n" +
                     "  \"full_width_latin_normalization_ok\": " + Bool(fullWidthLatinNormalizationOk) + ",\n" +
                     "  \"rename_initial_focus_ok\": " + Bool(renameInitialFocusOk) + ",\n" +
