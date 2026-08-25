@@ -160,6 +160,8 @@ namespace PennyPet
         private DateTime _lastInputUtc = DateTime.MinValue;
         // Preserve the RichTextBox selection while a toolbar selector owns
         // focus.  Formatting itself stays in WPF's native TextSelection/
+        // HIGH RISK: IME compatibility code. Do not simplify or move this
+        // focus/composition path without real Chinese IME regression testing.
         // FlowDocument pipeline; inserting or rewriting composition text here
         // duplicates third-party IME commits and breaks Enter inheritance.
         private TextPointer _savedSelectionStart;
