@@ -1132,10 +1132,13 @@ namespace PennyPet
                 bool goodbyeAnimationOk = goodbyeCycleMilliseconds >= 1200;
                 bool notificationAnimationOk =
                     notificationCycleMilliseconds >= 1200;
-                bool dueReminderBubbleTenSecondsOk =
-                    PetForm.DueReminderBubbleDurationMilliseconds == 10000;
-                bool dueReminderBubbleProtectionOk =
-                    !PetForm.ShouldReplaceBubble(true, false, false) &&
+                bool dueReminderBubblePersistentOk =
+                    PetForm.DueReminderBubbleDurationMilliseconds == 0;
+                bool dueReminderBubbleUsesOwnSizeOk = Math.Abs(
+                    PetForm.DueReminderBubbleFontSizePoints(100) -
+                    KeyboardOverlayForm.TextFontSizePoints(100)) < 0.2F;
+                bool dueReminderBubbleReplacementOk =
+                    PetForm.ShouldReplaceBubble(true, false, false) &&
                     PetForm.ShouldReplaceBubble(true, true, false) &&
                     PetForm.ShouldReplaceBubble(true, false, true) &&
                     PetForm.ShouldReplaceBubble(false, false, false);
@@ -1531,10 +1534,12 @@ namespace PennyPet
                     StickyNoteForm.FormatScheduleCountdown(
                         DateTime.Today.AddDays(-2), DateTime.Today) == "已过2天";
                 bool scheduleFontChoicesOk =
+                    StickyNoteForm.ScheduleFontSizeLabel(9F) == "特小 9" &&
                     StickyNoteForm.ScheduleFontSizeLabel(10.5F) == "小 10.5" &&
                     StickyNoteForm.ScheduleFontSizeLabel(12F) == "小 10.5" &&
                     StickyNoteForm.ScheduleFontSizeLabel(16F) == "中 16" &&
-                    StickyNoteForm.ScheduleFontSizeLabel(22F) == "大 22";
+                    StickyNoteForm.ScheduleFontSizeLabel(22F) == "大 22" &&
+                    StickyNoteForm.ScheduleFontSizeLabel(48F) == "特大 48";
                 bool scheduleDateMouseWheelOk =
                     ScheduleItemDialog.StepDateWithMouseWheel(
                         DateTime.Today, 120) == DateTime.Today.AddDays(-1) &&
@@ -1562,6 +1567,13 @@ namespace PennyPet
                 bool stickyResizePaintingOk;
                 bool richTextToolbarOk;
                 bool smoothFormatInteractionOk;
+                bool deferredInitialFocusSafeOk =
+                    StickyNoteForm.ShouldApplyDeferredInitialFocus(0, 0,
+                        false) &&
+                    !StickyNoteForm.ShouldApplyDeferredInitialFocus(0, 1,
+                        false) &&
+                    !StickyNoteForm.ShouldApplyDeferredInitialFocus(0, 0,
+                        true);
                 bool stableFormatSelectorModelOk;
                 bool firstFormatCommitOk;
                 bool fixedNoteTypeActionsOk;
@@ -2388,6 +2400,21 @@ namespace PennyPet
                     new Rectangle(100, -200, 400, 32),
                     new Rectangle(0, 0, 1200, 900));
                 bool detachedDockReturnsOnScreenOk = reachable.Y == 200;
+                Point recoveredPrimary = PetForm.CalculateStickyRecoveryAnchor(
+                    new Rectangle(0, 0, 1920, 1040),
+                    new Rectangle(20, 700, 192, 208),
+                    new Size(320, 300), 0);
+                Point recoveredSecondary = PetForm.CalculateStickyRecoveryAnchor(
+                    new Rectangle(-1920, 0, 1920, 1040),
+                    new Rectangle(-300, 700, 192, 208),
+                    new Size(320, 300), 1);
+                bool stickyScreenRecoveryAnchorOk =
+                    recoveredPrimary.X >= 0 && recoveredPrimary.Y >= 0 &&
+                    recoveredPrimary.Y <= 1008 &&
+                    recoveredSecondary.X >= -1920 &&
+                    recoveredSecondary.X <= -320 &&
+                    recoveredSecondary.Y >= 0 &&
+                    recoveredSecondary.Y <= 1008;
                 bool deliberateSplitGestureOk =
                     PetForm.CancelsDockSplitHold(120, 20, 0) &&
                     !PetForm.CancelsDockSplitHold(600, 20, 0) &&
@@ -2458,7 +2485,8 @@ namespace PennyPet
                     tabSwitchContentPreservedOk &&
                     stickyResourceLimitsOk &&
                     stickyResizePaintingOk && richTextToolbarOk &&
-                    smoothFormatInteractionOk && formatToolbarFocusOk &&
+                    smoothFormatInteractionOk && deferredInitialFocusSafeOk &&
+                    formatToolbarFocusOk &&
                     formatSelectorsAlwaysBlackOk && bodyTextColorSwitchOk &&
                     dockResizeRoleOk && groupTopMostSyncOk &&
                     nativeWindowStyleAppliedOk &&
@@ -2514,8 +2542,9 @@ namespace PennyPet
                     startupLoadingReadinessGateOk &&
                     goodbyeAnimationOk &&
                     notificationAnimationOk && notificationTriggerPlaybackOk &&
-                    dueReminderBubbleTenSecondsOk &&
-                    dueReminderBubbleProtectionOk &&
+                    dueReminderBubblePersistentOk &&
+                    dueReminderBubbleUsesOwnSizeOk &&
+                    dueReminderBubbleReplacementOk &&
                     preAlertBubbleProtectionOk &&
                     notificationAnimationSingleCycleOk &&
                     dragUsesSecondIdleRowOk && idleRandomRowsOk &&
@@ -2588,7 +2617,7 @@ namespace PennyPet
                         schedulePersistenceOk) + ",\n" +
                     "  \"schedule_countdown_ok\": " + Bool(
                         scheduleCountdownOk) + ",\n" +
-                    "  \"schedule_small_medium_large_font_ok\": " + Bool(
+                    "  \"schedule_five_tier_font_ok\": " + Bool(
                         scheduleFontChoicesOk) + ",\n" +
                     "  \"schedule_date_mouse_wheel_ok\": " + Bool(
                         scheduleDateMouseWheelOk) + ",\n" +
@@ -2640,6 +2669,8 @@ namespace PennyPet
                         richTextToolbarOk) + ",\n" +
                     "  \"sticky_format_interaction_smooth_ok\": " + Bool(
                         smoothFormatInteractionOk) + ",\n" +
+                    "  \"sticky_first_dropdown_focus_not_stolen_ok\": " + Bool(
+                        deferredInitialFocusSafeOk) + ",\n" +
                     "  \"sticky_format_toolbar_preserves_selection_focus_ok\": " + Bool(
                         formatToolbarFocusOk) + ",\n" +
                     "  \"sticky_format_selectors_always_black_ok\": " + Bool(
@@ -2745,6 +2776,8 @@ namespace PennyPet
                         firstDragGeometryRecoveryOk) + ",\n" +
                     "  \"detached_group_returns_on_screen_ok\": " + Bool(
                         detachedDockReturnsOnScreenOk) + ",\n" +
+                    "  \"sticky_screen_recovery_anchor_ok\": " + Bool(
+                        stickyScreenRecoveryAnchorOk) + ",\n" +
                     "  \"ordinary_drag_cannot_accidentally_split_ok\": " + Bool(
                         deliberateSplitGestureOk) + ",\n" +
                     "  \"root_drag_always_moves_whole_group_ok\": " + Bool(
@@ -2781,10 +2814,12 @@ namespace PennyPet
                         notificationAnimationOk) + ",\n" +
                     "  \"notification_trigger_playback_route_ok\": " + Bool(
                         notificationTriggerPlaybackOk) + ",\n" +
-                    "  \"due_reminder_content_bubble_ten_seconds_ok\": " + Bool(
-                        dueReminderBubbleTenSecondsOk) + ",\n" +
-                    "  \"due_reminder_bubble_not_replaced_by_note_feedback_ok\": " +
-                        Bool(dueReminderBubbleProtectionOk) + ",\n" +
+                    "  \"due_reminder_bubble_persists_until_clicked_ok\": " + Bool(
+                        dueReminderBubblePersistentOk) + ",\n" +
+                    "  \"due_reminder_bubble_uses_own_size_ok\": " + Bool(
+                        dueReminderBubbleUsesOwnSizeOk) + ",\n" +
+                    "  \"due_reminder_bubble_replaced_by_later_feedback_ok\": " +
+                        Bool(dueReminderBubbleReplacementOk) + ",\n" +
                     "  \"prealert_countdown_bubble_not_replaced_by_note_feedback_ok\": " +
                         Bool(preAlertBubbleProtectionOk) + ",\n" +
                     "  \"notification_animation_single_cycle_ok\": " + Bool(

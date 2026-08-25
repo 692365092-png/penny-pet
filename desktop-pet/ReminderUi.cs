@@ -175,20 +175,20 @@ namespace PennyPet
             _text.Size = new Size(386, 92);
 
             Label formatLabel = new Label();
-            formatLabel.Text = "提醒字号（便利贴倒计时与到点气泡）：";
+            formatLabel.Text = "便利贴内倒计时字号：";
             formatLabel.AutoSize = true;
             formatLabel.Location = new Point(24, 254);
 
             _fontSize = new ComboBox();
             _fontSize.DropDownStyle = ComboBoxStyle.DropDownList;
             _fontSize.Items.AddRange(new object[] {
-                "小 10.5", "中 16", "大 22" });
+                "特小 9", "小 10.5", "中 16", "大 22", "特大 48" });
             _fontSize.Location = new Point(24, 278);
             _fontSize.Size = new Size(150, 28);
             SelectClosestFontSize(initialFontSize);
 
             Label previewLabel = new Label();
-            previewLabel.Text = "预览：";
+            previewLabel.Text = "便利贴内显示预览：";
             previewLabel.AutoSize = true;
             previewLabel.Location = new Point(24, 320);
             _preview = new Label();
@@ -288,7 +288,7 @@ namespace PennyPet
                 float points;
                 if (!StickyNoteForm.TryParseFontSize(
                     Convert.ToString(_fontSize.Items[index]), out points) ||
-                    Math.Abs(points - 22F) >= 0.1F) continue;
+                    Math.Abs(points - 48F) >= 0.1F) continue;
                 _fontSize.SelectedIndex = index;
                 break;
             }
@@ -297,9 +297,15 @@ namespace PennyPet
             return ReminderText == "字号切换后内容保留测试" &&
                 _preview.Text == "字号切换后内容保留测试" &&
                 _preview.Font != null &&
-                Math.Abs(_preview.Font.SizeInPoints - 22F) < 0.2F &&
+                Math.Abs(_preview.Font.SizeInPoints - 48F) < 0.2F &&
                 String.Equals(_preview.Font.Name, "Microsoft YaHei UI",
                     StringComparison.CurrentCultureIgnoreCase) &&
+                _fontSize.Items.Count == 5 &&
+                Convert.ToString(_fontSize.Items[0]) == "特小 9" &&
+                Convert.ToString(_fontSize.Items[1]) == "小 10.5" &&
+                Convert.ToString(_fontSize.Items[2]) == "中 16" &&
+                Convert.ToString(_fontSize.Items[3]) == "大 22" &&
+                Convert.ToString(_fontSize.Items[4]) == "特大 48" &&
                 PreAlertEnabled;
         }
 

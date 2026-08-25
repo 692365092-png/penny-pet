@@ -243,8 +243,18 @@ namespace PennyPet
             int destination = _globalStartIndex +
                 Math.Max(0, _dropIndex < 0 ? Controls.Count : _dropIndex);
             ResetDropPreview(false);
-            if (moved != null && _reorderNote != null)
-                _reorderNote(moved, destination);
+            if (moved == null || _reorderNote == null) return;
+
+            // DoDragDrop owns a nested message loop.  Rebuilding both side
+            // strips inside DragDrop disposes the source control before that
+            // loop has unwound, which can deadlock when a tab crosses sides.
+            // Defer the repository reorder until the drag operation returns.
+            Action<StickyNoteData, int> reorder = _reorderNote;
+            BeginInvoke((MethodInvoker)delegate
+            {
+                if (IsDisposed) return;
+                reorder(moved, destination);
+            });
         }
 
         private static StickyNoteData TryGetDraggedNote(IDataObject data)

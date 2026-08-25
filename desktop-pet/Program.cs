@@ -28,6 +28,11 @@ namespace PennyPet
         [STAThread]
         private static void Main(string[] args)
         {
+            // Compatibility-test build: keep WPF sticky-note rendering away
+            // from GPU/driver-specific layered-window paths.  The animated pet
+            // itself remains on the existing WinForms renderer.
+            System.Windows.Media.RenderOptions.ProcessRenderMode =
+                System.Windows.Interop.RenderMode.SoftwareOnly;
             bool stickyKeyboardDemo = HasArgument(args, "--sticky-keyboard-demo");
             bool stickyKeyboardHostDemo = HasArgument(args,
                 "--sticky-keyboard-host-demo");
@@ -423,7 +428,9 @@ namespace PennyPet
         private const int GuitarFailureProbabilityDenominator = 6;
         private const int ManualAnimationCooldownMilliseconds = 600;
         private const int DragClickThresholdPixels = 6;
-        private const int ReminderBubbleDurationMilliseconds = 10000;
+        // Zero means an at-time reminder stays until the bubble itself is
+        // clicked or another application message replaces it.
+        private const int ReminderBubbleDurationMilliseconds = 0;
         private static readonly int[] ManualAnimationRows =
             { IdleRow, HoverRow, FailedRow, WaitingRow, ThinkingRow, ReviewRow,
                 NotificationRow };
@@ -462,6 +469,7 @@ namespace PennyPet
         private readonly ToolStripMenuItem _manageNotesItem;
         private readonly ToolStripMenuItem _collapseNotesItem;
         private readonly ToolStripMenuItem _expandTabsItem;
+        private readonly ToolStripMenuItem _recoverWindowsItem;
         private readonly ToolStripMenuItem _scaleItem;
         private readonly ToolStripMenuItem _startupItem;
         private readonly ToolStripMenuItem _keyboardItem;
@@ -659,6 +667,13 @@ namespace PennyPet
             _collapseNotesItem.Click += delegate { CollapseAllStickyNotes(); };
             _expandTabsItem = new ToolStripMenuItem("展开全部侧边页签");
             _expandTabsItem.Click += delegate { ExpandAllStickyNoteTabs(); };
+            _recoverWindowsItem = new ToolStripMenuItem(
+                "将已展开的便利贴集中到此屏幕");
+            _recoverWindowsItem.Click += delegate
+            {
+                QueueStickyWindowAction(MoveVisibleStickyNotesToPetScreen,
+                    "sticky-window-screen-recovery");
+            };
             _scaleItem = new ToolStripMenuItem("调整桌宠大小…");
             _scaleItem.Click += delegate { ShowScaleDialog(); };
             _startupItem = new ToolStripMenuItem("开机自动启动");
@@ -687,6 +702,7 @@ namespace PennyPet
             _menu.Items.Add(_manageNotesItem);
             _menu.Items.Add(_collapseNotesItem);
             _menu.Items.Add(_expandTabsItem);
+            _menu.Items.Add(_recoverWindowsItem);
             _menu.Items.Add(new ToolStripSeparator());
             _menu.Items.Add(_setReminderItem);
             _menu.Items.Add(_cancelItem);
@@ -1098,6 +1114,7 @@ namespace PennyPet
                 note = CreateStickyNoteData(text);
                 if (note == null) return;
                 ShowStickyNote(note, true);
+                PlaceNewStickyWindowOnPetScreen(note);
                 EnsureCreatedStickyWindowVisible(note);
                 RefreshMenuText();
             }
@@ -1119,6 +1136,7 @@ namespace PennyPet
                 note.Title = "待办清单";
                 _notes.Save();
                 ShowStickyNote(note, true);
+                PlaceNewStickyWindowOnPetScreen(note);
                 EnsureCreatedStickyWindowVisible(note);
                 RefreshMenuText();
             }
@@ -1143,6 +1161,7 @@ namespace PennyPet
                 note.Height = 360;
                 _notes.Save();
                 ShowStickyNote(note, true);
+                PlaceNewStickyWindowOnPetScreen(note);
                 EnsureCreatedStickyWindowVisible(note);
                 RefreshMenuText();
             }
@@ -1178,6 +1197,294 @@ namespace PennyPet
             }
             if (!form.Visible)
                 throw new InvalidOperationException("便利贴窗口创建后仍不可见。");
+        }
+
+        private float PetScreenScale()
+        {
+            try
+            {
+                using (Graphics graphics = CreateGraphics())
+                {
+                    float scale = graphics.DpiX / 96F;
+                    if (scale >= 0.75F && scale <= 4F) return scale;
+                }
+            }
+            catch { }
+            return 1F;
+        }
+
+        private static Size StickyPhysicalSize(StickyNoteForm form,
+            float scale)
+        {
+            return new Size(Math.Max(1, (int)Math.Round(form.Width * scale)),
+                Math.Max(1, (int)Math.Round(form.Height * scale)));
+        }
+
+        private void PlaceNewStickyWindowOnPetScreen(StickyNoteData note)
+        {
+            StickyNoteForm form;
+            if (note == null || !_noteWindows.TryGetValue(note.Id, out form) ||
+                form == null || form.IsDisposed) return;
+            Rectangle work = Screen.FromRectangle(Bounds).WorkingArea;
+            float scale = PetScreenScale();
+            Size size = StickyPhysicalSize(form, scale);
+            int offset = (_notes.GetAll().Count % 7) * 18;
+            int x = Left - size.Width - 12 - offset;
+            if (x < work.Left)
+                x = Math.Min(work.Right - size.Width, Right + 12 + offset);
+            int y = Top + offset;
+            x = Math.Max(work.Left, Math.Min(x, work.Right - size.Width));
+            y = Math.Max(work.Top, Math.Min(y, work.Bottom - size.Height));
+            form.ShowRestoredAtPhysicalBounds(new Rectangle(x, y,
+                size.Width, size.Height));
+            form.EnableWinFormsKeyboardInterop();
+            form.BringToFront();
+            form.FocusPrimaryInputForTest();
+            note.X = form.Left;
+            note.Y = form.Top;
+            note.Width = form.Width;
+            note.Height = form.Height;
+            _notes.Save();
+        }
+
+        private void MoveVisibleStickyNotesToPetScreen()
+        {
+            Rectangle work = Screen.FromRectangle(Bounds).WorkingArea;
+            float targetScale = PetScreenScale();
+            HashSet<string> visited = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+            List<List<StickyNoteData>> components =
+                new List<List<StickyNoteData>>();
+            List<List<StickyNoteForm>> componentForms =
+                new List<List<StickyNoteForm>>();
+            List<Size> componentSizes = new List<Size>();
+            int attemptedWindows = 0;
+            int verifiedWindows = 0;
+            _movingDockGroup = true;
+            try
+            {
+                foreach (StickyNoteData seed in _notes.GetAll())
+                {
+                    if (seed == null || !seed.Visible || visited.Contains(seed.Id))
+                        continue;
+                    List<StickyNoteData> component = BuildDockChainOrder(seed);
+                    if (component.Count == 0) component.Add(seed);
+                    foreach (StickyNoteData note in component)
+                        if (note != null) visited.Add(note.Id);
+
+                    List<StickyNoteData> activeNotes =
+                        new List<StickyNoteData>();
+                    List<StickyNoteForm> activeForms =
+                        new List<StickyNoteForm>();
+                    int componentWidth = 280;
+                    int componentHeight = 0;
+                    foreach (StickyNoteData note in component)
+                    {
+                        if (note == null || !note.Visible) continue;
+                        StickyNoteForm form;
+                        try
+                        {
+                            form = GetOrCreateStickyNoteWindow(note);
+                            if (!form.Visible) form.ShowRestored();
+                            form.EnableWinFormsKeyboardInterop();
+                        }
+                        catch (Exception error)
+                        {
+                            ApplicationDiagnostics.ReportNonFatal(
+                                "compat-sticky-recover-create", error);
+                            continue;
+                        }
+                        if (form == null || form.IsDisposed) continue;
+                        activeNotes.Add(note);
+                        activeForms.Add(form);
+                        Size physical = StickyPhysicalSize(form, targetScale);
+                        componentWidth = Math.Max(componentWidth,
+                            physical.Width);
+                        componentHeight += Math.Max(
+                            (int)Math.Round(220 * targetScale),
+                            physical.Height);
+                    }
+                    if (activeForms.Count == 0) continue;
+                    components.Add(activeNotes);
+                    componentForms.Add(activeForms);
+                    componentSizes.Add(new Size(componentWidth,
+                        Math.Max(220, componentHeight)));
+                }
+
+                List<Rectangle> roots = CalculateStickyRecoveryLayout(work,
+                    componentSizes, targetScale);
+                for (int componentIndex = 0;
+                    componentIndex < componentForms.Count; componentIndex++)
+                {
+                    List<StickyNoteForm> forms = componentForms[componentIndex];
+                    List<StickyNoteData> notes = components[componentIndex];
+                    Rectangle root = roots[componentIndex];
+                    List<Size> memberSizes = new List<Size>();
+                    foreach (StickyNoteForm form in forms)
+                        memberSizes.Add(StickyPhysicalSize(form, targetScale));
+                    List<Rectangle> layout = CalculateUnifiedDockLayout(
+                        memberSizes, root.Left, root.Top, root.Width,
+                        targetScale);
+                    for (int memberIndex = 0;
+                        memberIndex < forms.Count; memberIndex++)
+                    {
+                        StickyNoteForm form = forms[memberIndex];
+                        StickyNoteData note = notes[memberIndex];
+                        attemptedWindows++;
+                        try
+                        {
+                            form.ShowRestoredAtPhysicalBounds(
+                                layout[memberIndex]);
+                            form.EnableWinFormsKeyboardInterop();
+                            form.BringToFront();
+                            Rectangle visiblePart = Rectangle.Intersect(
+                                form.PhysicalBounds, work);
+                            if (form.Visible &&
+                                form.WindowState == FormWindowState.Normal &&
+                                visiblePart.Width > 0 && visiblePart.Height > 0)
+                                verifiedWindows++;
+                            note.X = form.Left;
+                            note.Y = form.Top;
+                        }
+                        catch (Exception error)
+                        {
+                            ApplicationDiagnostics.ReportNonFatal(
+                                "compat-sticky-recover-show", error);
+                        }
+                    }
+                }
+            }
+            finally { _movingDockGroup = false; }
+            if (attemptedWindows > 0)
+            {
+                _notes.Save();
+                ShowBriefBubble("已尝试将 " + attemptedWindows +
+                    " 张已展开的便利贴集中到此屏幕；系统确认 " +
+                    verifiedWindows + " 张处于可见范围。");
+            }
+            else ShowBriefBubble("当前没有已展开的便利贴。");
+        }
+
+        internal static List<Rectangle> CalculateStickyRecoveryLayout(
+            Rectangle work, IList<Size> componentSizes)
+        {
+            return CalculateStickyRecoveryLayout(work, componentSizes, 1F);
+        }
+
+        private static List<Rectangle> CalculateStickyRecoveryLayout(
+            Rectangle work, IList<Size> componentSizes, float scale)
+        {
+            List<Rectangle> result = new List<Rectangle>();
+            int count = componentSizes == null ? 0 : componentSizes.Count;
+            for (int index = 0; index < count; index++)
+                result.Add(Rectangle.Empty);
+            if (count == 0) return result;
+
+            const int margin = 24;
+            const int gap = 18;
+            int scaledMargin = Math.Max(1, (int)Math.Round(margin * scale));
+            int scaledGap = Math.Max(1, (int)Math.Round(gap * scale));
+            int minimumWidth = Math.Max(1, (int)Math.Round(280 * scale));
+            int maximumWidth = Math.Max(minimumWidth,
+                (int)Math.Round(900 * scale));
+            int minimumHeight = Math.Max(1, (int)Math.Round(220 * scale));
+            int rowWidthLimit = Math.Max(minimumWidth,
+                work.Width - scaledMargin * 2);
+            List<List<int>> rows = new List<List<int>>();
+            List<int> normal = new List<int>();
+            List<int> oversized = new List<int>();
+            for (int index = 0; index < count; index++)
+            {
+                Size size = componentSizes[index];
+                // The height is the sum of every member in a docked group, so
+                // a four-note stack is treated as one long component.
+                bool isOversized = size.Width >= Math.Max(
+                    (int)Math.Round(520 * scale),
+                    work.Width * 45 / 100) || size.Height >= Math.Max(
+                    (int)Math.Round(520 * scale),
+                    work.Height * 50 / 100);
+                if (isOversized) oversized.Add(index);
+                else normal.Add(index);
+            }
+
+            List<int> row = new List<int>();
+            int rowWidth = 0;
+            foreach (int index in normal)
+            {
+                int width = Math.Max(minimumWidth, Math.Min(maximumWidth,
+                    componentSizes[index].Width));
+                int nextWidth = row.Count == 0 ? width :
+                    rowWidth + scaledGap + width;
+                if (row.Count > 0 && nextWidth > rowWidthLimit)
+                {
+                    rows.Add(row);
+                    row = new List<int>();
+                    rowWidth = 0;
+                }
+                row.Add(index);
+                rowWidth = rowWidth == 0 ? width :
+                    rowWidth + scaledGap + width;
+            }
+            if (row.Count > 0) rows.Add(row);
+            // Wide/long single notes and whole docked stacks get their own
+            // lower rows, horizontally centered below the ordinary notes.
+            foreach (int index in oversized)
+                rows.Add(new List<int>(new int[] { index }));
+
+            List<int> rowHeights = new List<int>();
+            int totalHeight = 0;
+            foreach (List<int> recoveryRow in rows)
+            {
+                int height = minimumHeight;
+                foreach (int index in recoveryRow)
+                    height = Math.Max(height, Math.Min(componentSizes[index].Height,
+                        Math.Max(minimumHeight, work.Height * 58 / 100)));
+                rowHeights.Add(height);
+                totalHeight += height;
+            }
+            totalHeight += Math.Max(0, rows.Count - 1) * scaledGap;
+            int y = work.Top + Math.Max(scaledMargin,
+                (work.Height - totalHeight) / 2);
+            for (int rowIndex = 0; rowIndex < rows.Count; rowIndex++)
+            {
+                List<int> recoveryRow = rows[rowIndex];
+                int width = 0;
+                foreach (int index in recoveryRow)
+                {
+                    if (width > 0) width += scaledGap;
+                    width += Math.Max(minimumWidth, Math.Min(maximumWidth,
+                        componentSizes[index].Width));
+                }
+                int x = work.Left + (work.Width - width) / 2;
+                foreach (int index in recoveryRow)
+                {
+                    int itemWidth = Math.Max(minimumWidth,
+                        Math.Min(maximumWidth,
+                        componentSizes[index].Width));
+                    result[index] = new Rectangle(x, y, itemWidth,
+                        componentSizes[index].Height);
+                    x += itemWidth + scaledGap;
+                }
+                y += rowHeights[rowIndex] + scaledGap;
+            }
+            return result;
+        }
+
+        internal static Point CalculateStickyRecoveryAnchor(Rectangle work,
+            Rectangle pet, Size window, int componentIndex)
+        {
+            int preferredLeft = pet.Left - window.Width - 12;
+            if (preferredLeft < work.Left) preferredLeft = pet.Right + 12;
+            int targetLeft = Math.Max(work.Left,
+                Math.Min(preferredLeft, work.Right - window.Width));
+            int availableTop = Math.Max(1, work.Height - 36);
+            int relativeTop = pet.Top - work.Top +
+                Math.Max(0, componentIndex) * 34;
+            relativeTop %= availableTop;
+            if (relativeTop < 0) relativeTop += availableTop;
+            int targetTop = Math.Max(work.Top,
+                Math.Min(work.Top + relativeTop, work.Bottom - 32));
+            return new Point(targetLeft, targetTop);
         }
 
         private void RollBackFailedStickyCreation(StickyNoteData note)
@@ -1904,13 +2211,27 @@ namespace PennyPet
         internal static List<Rectangle> CalculateUnifiedDockLayout(
             IList<Size> sizes, int left, int top, int width)
         {
+            return CalculateUnifiedDockLayout(sizes, left, top, width, 1F);
+        }
+
+        private static List<Rectangle> CalculateUnifiedDockLayout(
+            IList<Size> sizes, int left, int top, int width, float scale)
+        {
             List<Rectangle> result = new List<Rectangle>();
-            int normalizedWidth = Math.Max(280, Math.Min(900, width));
+            int minimumWidth = Math.Max(1, (int)Math.Round(280 * scale));
+            int maximumWidth = Math.Max(minimumWidth,
+                (int)Math.Round(900 * scale));
+            int minimumHeight = Math.Max(1, (int)Math.Round(220 * scale));
+            int maximumHeight = Math.Max(minimumHeight,
+                (int)Math.Round(700 * scale));
+            int normalizedWidth = Math.Max(minimumWidth,
+                Math.Min(maximumWidth, width));
             int y = top;
             if (sizes == null) return result;
             foreach (Size size in sizes)
             {
-                int height = Math.Max(220, Math.Min(700, size.Height));
+                int height = Math.Max(minimumHeight,
+                    Math.Min(maximumHeight, size.Height));
                 result.Add(new Rectangle(left, y, normalizedWidth, height));
                 y += height;
             }
@@ -3062,6 +3383,13 @@ namespace PennyPet
             get { return ReminderBubbleDurationMilliseconds; }
         }
 
+        internal static float DueReminderBubbleFontSizePoints(
+            int bubbleScalePercent)
+        {
+            return KeyboardOverlayForm.TextFontSizePoints(
+                bubbleScalePercent);
+        }
+
         internal static bool ShouldReplaceBubble(bool currentIsDueReminder,
             bool incomingIsDueReminder, bool exiting)
         {
@@ -3072,8 +3400,11 @@ namespace PennyPet
         internal static bool ShouldReplaceBubble(bool currentIsDueReminder,
             bool currentIsPreAlert, bool incomingIsDueReminder, bool exiting)
         {
-            return (!currentIsDueReminder && !currentIsPreAlert) ||
-                incomingIsDueReminder || exiting;
+            // An at-time reminder is persistent against pet clicks, but it is
+            // not allowed to block later feedback. Any later application
+            // bubble replaces it. Pre-alert countdowns keep their older rule.
+            if (currentIsDueReminder) return true;
+            return !currentIsPreAlert || incomingIsDueReminder || exiting;
         }
 
         private void PetMouseDown(object sender, MouseEventArgs e)
@@ -3630,6 +3961,7 @@ namespace PennyPet
                     note.ReminderUtcTicks = item.DeadlineUtc.Ticks;
                     _notes.Save();
                     ShowStickyNote(note, true);
+                    PlaceNewStickyWindowOnPetScreen(note);
                 }
                 SaveReminders();
                 RefreshMenuText();
@@ -3672,8 +4004,9 @@ namespace PennyPet
             RefreshMenuText();
             RequestReminderAttentionAnimation();
             string reminderText = String.IsNullOrWhiteSpace(text) ? "到时间啦。" : text;
-            ShowBubble(reminderText, "Microsoft YaHei UI",
-                item == null ? 10.5F : item.FontSizeTwips / 20F,
+            ShowBubble(reminderText, KeyboardOverlayForm.TextFontFamilyName,
+                DueReminderBubbleFontSizePoints(
+                    _settings.KeyOverlayScalePercent),
                 ReminderBubbleDurationMilliseconds, false, true);
             System.Media.SystemSounds.Asterisk.Play();
             if (linkedNote != null)
@@ -3799,7 +4132,10 @@ namespace PennyPet
                     fontFamilyName, fontSizePoints));
                 return;
             }
-            CloseCurrentBubbleWithoutRestoringHover(isDueReminder);
+            // ShouldReplaceBubble has already protected pre-alerts where
+            // appropriate. Force-close here so a later ordinary message can
+            // replace a persistent due reminder.
+            CloseCurrentBubbleWithoutRestoringHover(true);
             SpeechBubbleForm bubble = new SpeechBubbleForm(text,
                 Math.Max(0, autoCloseMilliseconds),
                 fontFamilyName, fontSizePoints);

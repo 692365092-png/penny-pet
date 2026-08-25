@@ -76,6 +76,8 @@ namespace PennyPet
         private const uint SwpNoZOrder = 0x0004;
         private const uint SwpNoActivate = 0x0010;
         private const uint SwpFrameChanged = 0x0020;
+        private const uint SwpShowWindow = 0x0040;
+        private const int SwRestore = 9;
         private const int HtLeft = 10;
         private const int HtRight = 11;
         private const int HtTop = 12;
@@ -168,6 +170,7 @@ namespace PennyPet
         private bool _applyingTypingFormat;
         private bool _editorTextCompositionActive;
         private bool _applyingAutoLinkFormat;
+        private int _userInteractionGeneration;
         private readonly List<OrdinaryLinkRange> _ordinaryLinkRanges =
             new List<OrdinaryLinkRange>();
         private int _reminderBannerRebuildCount;
@@ -756,14 +759,27 @@ namespace PennyPet
             base.WindowState = W.WindowState.Normal;
             Topmost = Data.AlwaysOnTop;
             Activate();
+            int requestedBeforeInteraction = _userInteractionGeneration;
             Dispatcher.BeginInvoke(DispatcherPriority.Input,
                 new Action(delegate
                 {
+                    if (_disposed || !ShouldApplyDeferredInitialFocus(
+                        requestedBeforeInteraction,
+                        _userInteractionGeneration,
+                        IsKeyboardFocusWithin)) return;
                     if (Data.IsTodoList) _todoAddButton.Focus();
                     else if (Data.IsSchedule) _scheduleAddButton.Focus();
                     else _editor.Focus();
                 }));
             PersistNow();
+        }
+
+        internal static bool ShouldApplyDeferredInitialFocus(
+            int requestedGeneration, int currentGeneration,
+            bool keyboardFocusAlreadyWithin)
+        {
+            return requestedGeneration == currentGeneration &&
+                !keyboardFocusAlreadyWithin;
         }
 
         internal void FocusPrimaryInputForTest()
@@ -805,6 +821,45 @@ namespace PennyPet
             if (!IsVisible) Show();
             base.WindowState = W.WindowState.Normal;
             Topmost = Data.AlwaysOnTop;
+        }
+
+        // Screen.WorkingArea and the WinForms pet use physical pixels, while
+        // WPF Window.Left/Top/Width/Height use 1/96-inch device-independent
+        // units.  On a 150%-200% laptop display, feeding WinForms coordinates
+        // into the WPF properties can put the right-hand notes beyond the real
+        // desktop.  Move the HWND in physical pixels so Windows performs the
+        // correct per-monitor DPI conversion for us.
+        internal void ShowRestoredAtPhysicalBounds(Rectangle bounds)
+        {
+            Data.Visible = true;
+            if (!IsVisible) Show();
+            base.WindowState = W.WindowState.Normal;
+            Topmost = Data.AlwaysOnTop;
+            IntPtr hwnd = Handle;
+            if (hwnd != IntPtr.Zero)
+            {
+                ShowWindow(hwnd, SwRestore);
+                SetWindowPos(hwnd, IntPtr.Zero, bounds.Left, bounds.Top,
+                    Math.Max(1, bounds.Width), Math.Max(1, bounds.Height),
+                    SwpNoZOrder | SwpNoActivate | SwpShowWindow);
+                UpdateLayout();
+            }
+            Data.X = Left;
+            Data.Y = Top;
+            Data.Width = Width;
+            Data.Height = Height;
+        }
+
+        internal Rectangle PhysicalBounds
+        {
+            get
+            {
+                NativeRect bounds;
+                if (Handle != IntPtr.Zero && GetWindowRect(Handle, out bounds))
+                    return Rectangle.FromLTRB(bounds.Left, bounds.Top,
+                        bounds.Right, bounds.Bottom);
+                return Rectangle.Empty;
+            }
         }
 
         // Penny's desktop host owns a WinForms message loop while this note is
@@ -1150,7 +1205,8 @@ namespace PennyPet
         {
             sizeBox.Items.Clear();
             string[] values = compactListOnly
-                ? new string[] { "小 10.5", "中 16", "大 22" }
+                ? new string[] { "特小 9", "小 10.5", "中 16", "大 22",
+                    "特大 48" }
                 : new string[] { "小五 9", "五号 10.5", "小四 12", "四号 14",
                     "小三 15", "三号 16", "小二 18", "二号 22", "小一 24",
                     "一号 26", "小初 36", "初号 42", "48", "56", "72" };
@@ -1366,6 +1422,9 @@ namespace PennyPet
         private void NoteSurfacePreviewMouseLeftButtonDown(object sender,
             MouseButtonEventArgs e)
         {
+            // Cancel a still-pending first-show focus request before it can
+            // steal focus from a ComboBox and immediately close its popup.
+            _userInteractionGeneration++;
             if (!Data.IsTodoList && !Data.IsSchedule) return;
             W.DependencyObject source = e.OriginalSource as W.DependencyObject;
             if (HasListItemAncestor(source)) return;
@@ -1601,6 +1660,13 @@ namespace PennyPet
         private static extern bool SetWindowPos(IntPtr hwnd,
             IntPtr insertAfter, int x, int y, int width, int height,
             uint flags);
+
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr hwnd, int command);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool GetWindowRect(IntPtr hwnd,
+            out NativeRect bounds);
 
         [DllImport("user32.dll")]
         private static extern bool GetCursorPos(out System.Drawing.Point point);
@@ -3123,17 +3189,21 @@ namespace PennyPet
 
         internal static float NormalizeScheduleFontSize(float points)
         {
+            if (points <= 9.75F) return 9F;
             if (points <= 13.25F) return 10.5F;
             if (points <= 19F) return 16F;
-            return 22F;
+            if (points <= 35F) return 22F;
+            return 48F;
         }
 
         internal static string ScheduleFontSizeLabel(float points)
         {
             float normalized = NormalizeScheduleFontSize(points);
+            if (normalized <= 9F) return "特小 9";
             if (normalized <= 10.5F) return "小 10.5";
             if (normalized <= 16F) return "中 16";
-            return "大 22";
+            if (normalized <= 22F) return "大 22";
+            return "特大 48";
         }
 
         internal static string BuildPlainTextFromSchedules(
@@ -4089,7 +4159,7 @@ namespace PennyPet
             Data.TodoItems.Clear();
             Data.TodoItems.Add(new StickyTodoItem("整体字号测试", false));
             RefreshMode();
-            ApplyTodoFontSize(22F);
+            ApplyTodoFontSize(48F);
             WC.Border firstRow = null;
             foreach (W.UIElement element in _todoRows.Children)
             {
@@ -4098,17 +4168,19 @@ namespace PennyPet
             }
             WC.Grid grid = firstRow == null ? null : firstRow.Child as WC.Grid;
             WC.TextBox editor = grid == null ? null : grid.Children[1] as WC.TextBox;
-            double expected = PointSizeToDip(22F);
-            return Data.FontSizeTwips == 440 && editor != null &&
+            double expected = PointSizeToDip(48F);
+            return Data.FontSizeTwips == 960 && editor != null &&
                 Math.Abs(editor.FontSize - expected) < 0.1 &&
                 Math.Abs(_todoInput.FontSize - expected) < 0.1 &&
                 _formatToolbar.Visibility == W.Visibility.Visible &&
                 _fontFamilyBox.Visibility == W.Visibility.Collapsed &&
                 _fontSizeBox.Visibility == W.Visibility.Visible &&
-                _fontSizeBox.Items.Count == 3 &&
-                Convert.ToString(_fontSizeBox.Items[0]) == "小 10.5" &&
-                Convert.ToString(_fontSizeBox.Items[1]) == "中 16" &&
-                Convert.ToString(_fontSizeBox.Items[2]) == "大 22" &&
+                _fontSizeBox.Items.Count == 5 &&
+                Convert.ToString(_fontSizeBox.Items[0]) == "特小 9" &&
+                Convert.ToString(_fontSizeBox.Items[1]) == "小 10.5" &&
+                Convert.ToString(_fontSizeBox.Items[2]) == "中 16" &&
+                Convert.ToString(_fontSizeBox.Items[3]) == "大 22" &&
+                Convert.ToString(_fontSizeBox.Items[4]) == "特大 48" &&
                 _boldButton.Visibility == W.Visibility.Collapsed;
         }
 
