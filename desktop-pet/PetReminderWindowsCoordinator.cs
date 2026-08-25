@@ -17,7 +17,8 @@ namespace PennyPet
                 System.Collections.Generic.List<ReminderItem> future =
                     new System.Collections.Generic.List<ReminderItem>();
                 foreach (ReminderItem item in _settings.Reminders)
-                    if (ShouldRestoreReminderAfterLaunch(item, launchedUtc))
+                    if (PetReminderCoordinator.ShouldRestoreReminderAfterLaunch(
+                        item, launchedUtc))
                         future.Add(item);
                 _reminders.Restore(future);
                 if (future.Count != _settings.Reminders.Count)
@@ -152,7 +153,8 @@ namespace PennyPet
 
         private void ReminderTick(object sender, EventArgs e)
         {
-            if (!ShouldRunReminderClock(_exiting)) return;
+            if (!PetReminderCoordinator.ShouldRunReminderClock(_exiting))
+                return;
             DateTime now = DateTime.UtcNow;
             ReminderItem due = _reminders.FirstDue(now);
             if (due != null)
@@ -165,7 +167,8 @@ namespace PennyPet
             // seconds, so update their existing rows once per second without
             // rebuilding controls or touching the editor/IME focus.
             long currentSecond = now.Ticks / TimeSpan.TicksPerSecond;
-            if (ShouldRefreshReminderBanner(_lastReminderBannerSecond,
+            if (PetReminderCoordinator.ShouldRefreshReminderBanner(
+                _lastReminderBannerSecond,
                 currentSecond))
             {
                 _lastReminderBannerSecond = currentSecond;
@@ -173,7 +176,7 @@ namespace PennyPet
             }
 
             ReminderItem next = _reminders.NextPreAlert;
-            if (ShouldShowPreAlert(next, next == null
+            if (PetReminderCoordinator.ShouldShowPreAlert(next, next == null
                 ? TimeSpan.Zero : next.DeadlineUtc - now))
                 ShowOrUpdatePreAlert(next);
             else if (_bubbleIsPreAlert)
@@ -181,13 +184,6 @@ namespace PennyPet
 
             if (_bubbleIsHover)
                 ShowOrUpdateHoverBubble();
-        }
-
-        internal static bool ShouldRefreshReminderBanner(long previousSecond,
-            long currentSecond)
-        {
-            return PetReminderCoordinator.ShouldRefreshReminderBanner(
-                previousSecond, currentSecond);
         }
 
         private void ShowReminderDialog()

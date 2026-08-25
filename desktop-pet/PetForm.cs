@@ -1368,7 +1368,8 @@ namespace PennyPet
         {
             DateTime now = DateTime.UtcNow;
             if (!_exiting && (HasFocusedOwnNoteTextInput() ||
-                ShouldPauseOwnNoteAnimation(_ownNoteImeComposing,
+                PetAnimationController.ShouldPauseOwnNoteAnimation(
+                    _ownNoteImeComposing,
                     _ownNoteInputQuietUntilUtc, now))) return;
             if (_exiting)
             {
@@ -1438,7 +1439,8 @@ namespace PennyPet
                 return;
             }
             if (now < _nextFrameUtc) return;
-            if (ReminderAnimationCycleComplete(_reminderAttentionActive,
+            if (PetAnimationController.ReminderAnimationCycleComplete(
+                _reminderAttentionActive,
                 _row, _frame, RuntimeFrameCount(_row)))
             {
                 _reminderAttentionActive = false;
@@ -1450,10 +1452,11 @@ namespace PennyPet
                 RenderCurrentFrame();
                 return;
             }
-            if (IsIdleAnimationRow(_row) &&
+            if (PetAnimationController.IsIdleAnimationRow(_row) &&
                 _frame >= RuntimeFrameCount(_row) - 1)
             {
-                _idleRow = PickRandomIdleAnimationRow(_random, _row);
+                _idleRow = PetAnimationController.PickRandomIdleAnimationRow(
+                    _random, _row);
                 QueueArtPreload(_idleRow);
                 _row = _art.IsRowLoaded(_idleRow) ? _idleRow : IdleRow;
                 _frame = 0;
@@ -1488,42 +1491,11 @@ namespace PennyPet
                 _mouseInside, _menu.Visible, _art.IsRowLoaded);
         }
 
-        internal static bool ReminderAnimationCycleComplete(bool active,
-            int row, int frame, int frameCount)
-        {
-            return PetAnimationController.ReminderAnimationCycleComplete(
-                active, row, frame, frameCount);
-        }
-
-        internal static int DueReminderBubbleDurationMilliseconds
-        {
-            get
-            {
-                return PetReminderCoordinator.
-                    DueReminderBubbleDurationMilliseconds;
-            }
-        }
-
         internal static float DueReminderBubbleFontSizePoints(
             int bubbleScalePercent)
         {
             return KeyboardOverlayForm.TextFontSizePoints(
                 bubbleScalePercent);
-        }
-
-        internal static bool ShouldReplaceBubble(bool currentIsDueReminder,
-            bool incomingIsDueReminder, bool exiting)
-        {
-            return ShouldReplaceBubble(currentIsDueReminder, false,
-                incomingIsDueReminder, exiting);
-        }
-
-        internal static bool ShouldReplaceBubble(bool currentIsDueReminder,
-            bool currentIsPreAlert, bool incomingIsDueReminder, bool exiting)
-        {
-            return PetReminderCoordinator.ShouldReplaceBubble(
-                currentIsDueReminder, currentIsPreAlert,
-                incomingIsDueReminder, exiting);
         }
 
         private void PetMouseDown(object sender, MouseEventArgs e)
@@ -1546,7 +1518,8 @@ namespace PennyPet
             Point now = Cursor.Position;
             int dx = now.X - _dragMouseOrigin.X;
             int dy = now.Y - _dragMouseOrigin.Y;
-            if (!_dragMoved && !MovementStartsDrag(dx, dy)) return;
+            if (!_dragMoved &&
+                !PetAnimationController.MovementStartsDrag(dx, dy)) return;
             if (!_dragMoved)
             {
                 _dragMoved = true;
@@ -1576,12 +1549,14 @@ namespace PennyPet
         private void AdvanceManualAnimation()
         {
             DateTime now = DateTime.UtcNow;
-            if (!ManualAnimationClickReady(now,
+            if (!PetAnimationController.ManualAnimationClickReady(now,
                 _manualAnimationCooldownUntilUtc)) return;
             _manualAnimationCooldownUntilUtc = now.AddMilliseconds(
                 PetAnimationController.ManualAnimationCooldownMilliseconds);
             int current = _manualAnimationActive ? _manualAnimationRow : _row;
-            _manualAnimationRow = PickRandomManualAnimationRow(_random, current);
+            _manualAnimationRow =
+                PetAnimationController.PickRandomManualAnimationRow(
+                    _random, current);
             _manualAnimationActive = true;
             _typingSession = false;
             QueueArtPreload(_manualAnimationRow);
@@ -1651,7 +1626,9 @@ namespace PennyPet
             DateTime now = DateTime.UtcNow;
             if (!_typingSession)
             {
-                _typingRow = PickRandomTypingAnimationRow(_random);
+                _typingRow =
+                    PetAnimationController.PickRandomTypingAnimationRow(
+                        _random);
                 _typingSession = true;
                 QueueArtPreload(_typingRow);
                 int duration = _art.IsRowLoaded(_typingRow)
@@ -1865,55 +1842,6 @@ namespace PennyPet
             return capturedGeneration == currentGeneration;
         }
 
-        internal static int AttentionAnimationRow(bool notificationLoaded)
-        {
-            return PetAnimationController.AttentionAnimationRow(
-                notificationLoaded);
-        }
-
-        internal static int PickRandomTypingAnimationRow(Random random)
-        {
-            return PetAnimationController.PickRandomTypingAnimationRow(random);
-        }
-
-        internal static int PickRandomIdleAnimationRow(Random random,
-            int currentRow)
-        {
-            return PetAnimationController.PickRandomIdleAnimationRow(random,
-                currentRow);
-        }
-
-        internal static int IdleThoughtProbabilityBase
-        {
-            get
-            {
-                return PetAnimationController.IdleThoughtProbabilityDenominator;
-            }
-        }
-
-        internal static int GuitarFailureProbabilityBase
-        {
-            get
-            {
-                return PetAnimationController.GuitarFailureProbabilityDenominator;
-            }
-        }
-
-        internal static bool IsIdleAnimationRow(int row)
-        {
-            return PetAnimationController.IsIdleAnimationRow(row);
-        }
-
-        internal static bool IsTypingAnimationRow(int row)
-        {
-            return PetAnimationController.IsTypingAnimationRow(row);
-        }
-
-        internal static int DragAnimationRow
-        {
-            get { return FailedRow; }
-        }
-
         internal static int NormalizeScalePercent(int value)
         {
             int clamped = Math.Max(50, Math.Min(200, value));
@@ -2051,7 +1979,8 @@ namespace PennyPet
             bool deferWhileDragging, bool isDueReminder)
         {
             if (_bubble != null && !_bubble.IsDisposed &&
-                !ShouldReplaceBubble(_bubbleIsDueReminder,
+                !PetReminderCoordinator.ShouldReplaceBubble(
+                    _bubbleIsDueReminder,
                     _bubbleIsPreAlert, isDueReminder, _exiting))
                 return;
             if (_dragging && deferWhileDragging)
@@ -2211,7 +2140,7 @@ namespace PennyPet
                     return;
                 }
                 ReminderItem next = _reminders.NextPreAlert;
-                if (ShouldShowPreAlert(next, next == null
+                if (PetReminderCoordinator.ShouldShowPreAlert(next, next == null
                     ? TimeSpan.Zero : next.Remaining))
                     ShowOrUpdatePreAlert(next);
                 else if (_mouseInside && !_menu.Visible)
@@ -2417,68 +2346,6 @@ namespace PennyPet
             RenderCurrentFrame();
             if (!ShouldSuppressDailyBubble(_settings.SilentMode, false))
                 ShowBubble("再见啦，照顾好自己！");
-        }
-
-        internal static bool IsPreAlertWindow(TimeSpan remaining)
-        {
-            return PetReminderCoordinator.IsPreAlertWindow(remaining);
-        }
-
-        internal static bool ShouldShowPreAlert(ReminderItem item,
-            TimeSpan remaining)
-        {
-            return PetReminderCoordinator.ShouldShowPreAlert(item, remaining);
-        }
-
-        internal static bool ShouldPauseOwnNoteAnimation(bool composing,
-            DateTime quietUntilUtc, DateTime nowUtc)
-        {
-            return PetAnimationController.ShouldPauseOwnNoteAnimation(
-                composing, quietUntilUtc, nowUtc);
-        }
-
-        internal static bool ShouldRunReminderClock(bool exiting)
-        {
-            return PetReminderCoordinator.ShouldRunReminderClock(exiting);
-        }
-
-        internal static bool ShouldRestoreReminderAfterLaunch(ReminderItem item,
-            DateTime launchedUtc)
-        {
-            return PetReminderCoordinator.ShouldRestoreReminderAfterLaunch(
-                item, launchedUtc);
-        }
-
-        internal static bool IsManualAnimationRow(int row)
-        {
-            return PetAnimationController.IsManualAnimationRow(row);
-        }
-
-        internal static int PickRandomManualAnimationRow(Random random,
-            int currentRow)
-        {
-            return PetAnimationController.PickRandomManualAnimationRow(random,
-                currentRow);
-        }
-
-        internal static bool ManualAnimationClickReady(DateTime nowUtc,
-            DateTime cooldownUntilUtc)
-        {
-            return PetAnimationController.ManualAnimationClickReady(nowUtc,
-                cooldownUntilUtc);
-        }
-
-        internal static bool MovementStartsDrag(int dx, int dy)
-        {
-            return PetAnimationController.MovementStartsDrag(dx, dy);
-        }
-
-        internal static int ManualAnimationCooldown
-        {
-            get
-            {
-                return PetAnimationController.ManualAnimationCooldownMilliseconds;
-            }
         }
 
         private bool HasFocusedOwnNoteTextInput()

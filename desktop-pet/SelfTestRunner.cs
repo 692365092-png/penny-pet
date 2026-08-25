@@ -43,8 +43,8 @@ namespace PennyPet
                     art.PreloadRow(9);
                     notificationTriggerPlaybackOk = art.IsRowLoaded(9) &&
                         art.GetFrame(9, 0) != null &&
-                        PetForm.AttentionAnimationRow(true) == 9 &&
-                        PetForm.AttentionAnimationRow(false) == 0;
+                        PetAnimationController.AttentionAnimationRow(true) == 9 &&
+                        PetAnimationController.AttentionAnimationRow(false) == 0;
                     width = rendered.Width;
                     height = rendered.Height;
                     atlasOk = width == 192 && height == 208;
@@ -236,27 +236,33 @@ namespace PennyPet
                 preAlertGateSchedule.Add(DateTime.UtcNow.AddMinutes(2),
                     "later-enabled", null, 10.5F, true);
                 bool preAlertWindowOk =
-                    PetForm.IsPreAlertWindow(TimeSpan.FromSeconds(20)) &&
-                    PetForm.IsPreAlertWindow(TimeSpan.FromSeconds(1)) &&
-                    !PetForm.IsPreAlertWindow(TimeSpan.FromSeconds(21)) &&
-                    !PetForm.IsPreAlertWindow(TimeSpan.Zero) &&
-                    PetForm.ShouldShowPreAlert(enabledPreAlert,
+                    PetReminderCoordinator.IsPreAlertWindow(
                         TimeSpan.FromSeconds(20)) &&
-                    !PetForm.ShouldShowPreAlert(disabledPreAlert,
+                    PetReminderCoordinator.IsPreAlertWindow(
+                        TimeSpan.FromSeconds(1)) &&
+                    !PetReminderCoordinator.IsPreAlertWindow(
+                        TimeSpan.FromSeconds(21)) &&
+                    !PetReminderCoordinator.IsPreAlertWindow(TimeSpan.Zero) &&
+                    PetReminderCoordinator.ShouldShowPreAlert(enabledPreAlert,
+                        TimeSpan.FromSeconds(20)) &&
+                    !PetReminderCoordinator.ShouldShowPreAlert(disabledPreAlert,
                         TimeSpan.FromSeconds(20)) &&
                     preAlertGateSchedule.NextPreAlert != null &&
                     preAlertGateSchedule.NextPreAlert.Text == "later-enabled";
                 bool reminderClockWhileEditingOk =
-                    PetForm.ShouldRunReminderClock(false) &&
-                    !PetForm.ShouldRunReminderClock(true);
+                    PetReminderCoordinator.ShouldRunReminderClock(false) &&
+                    !PetReminderCoordinator.ShouldRunReminderClock(true);
                 long reminderSecond = DateTime.UtcNow.Ticks /
                     TimeSpan.TicksPerSecond;
                 bool reminderBannerTickThrottleOk =
-                    PetForm.ShouldRefreshReminderBanner(Int64.MinValue,
+                    PetReminderCoordinator.ShouldRefreshReminderBanner(
+                        Int64.MinValue,
                         reminderSecond) &&
-                    !PetForm.ShouldRefreshReminderBanner(reminderSecond,
+                    !PetReminderCoordinator.ShouldRefreshReminderBanner(
+                        reminderSecond,
                         reminderSecond) &&
-                    PetForm.ShouldRefreshReminderBanner(reminderSecond,
+                    PetReminderCoordinator.ShouldRefreshReminderBanner(
+                        reminderSecond,
                         reminderSecond + 1);
                 bool startupDefaultOk = new PetSettings().StartWithWindows &&
                     StartupRegistration.BuildCommand("C:\\Program Files\\Penny pet.exe") ==
@@ -287,25 +293,37 @@ namespace PennyPet
                 bool notificationAnimationOk =
                     notificationCycleMilliseconds >= 1200;
                 bool dueReminderBubblePersistentOk =
-                    PetForm.DueReminderBubbleDurationMilliseconds == 0;
+                    PetReminderCoordinator.DueReminderBubbleDurationMilliseconds == 0;
                 bool dueReminderBubbleUsesOwnSizeOk = Math.Abs(
                     PetForm.DueReminderBubbleFontSizePoints(100) -
                     KeyboardOverlayForm.TextFontSizePoints(100)) < 0.2F;
                 bool dueReminderBubbleReplacementOk =
-                    PetForm.ShouldReplaceBubble(true, false, false) &&
-                    PetForm.ShouldReplaceBubble(true, true, false) &&
-                    PetForm.ShouldReplaceBubble(true, false, true) &&
-                    PetForm.ShouldReplaceBubble(false, false, false);
+                    PetReminderCoordinator.ShouldReplaceBubble(
+                        true, false, false, false) &&
+                    PetReminderCoordinator.ShouldReplaceBubble(
+                        true, false, true, false) &&
+                    PetReminderCoordinator.ShouldReplaceBubble(
+                        true, false, false, true) &&
+                    PetReminderCoordinator.ShouldReplaceBubble(
+                        false, false, false, false);
                 bool preAlertBubbleProtectionOk =
-                    !PetForm.ShouldReplaceBubble(false, true, false, false) &&
-                    PetForm.ShouldReplaceBubble(false, true, true, false) &&
-                    PetForm.ShouldReplaceBubble(false, true, false, true);
+                    !PetReminderCoordinator.ShouldReplaceBubble(
+                        false, true, false, false) &&
+                    PetReminderCoordinator.ShouldReplaceBubble(
+                        false, true, true, false) &&
+                    PetReminderCoordinator.ShouldReplaceBubble(
+                        false, true, false, true);
                 bool notificationAnimationSingleCycleOk =
-                    !PetForm.ReminderAnimationCycleComplete(true, 9, 1, 4) &&
-                    PetForm.ReminderAnimationCycleComplete(true, 9, 3, 4) &&
-                    !PetForm.ReminderAnimationCycleComplete(false, 9, 3, 4) &&
-                    !PetForm.ReminderAnimationCycleComplete(true, 0, 3, 4);
-                bool dragUsesSecondIdleRowOk = PetForm.DragAnimationRow == 5;
+                    !PetAnimationController.ReminderAnimationCycleComplete(
+                        true, 9, 1, 4) &&
+                    PetAnimationController.ReminderAnimationCycleComplete(
+                        true, 9, 3, 4) &&
+                    !PetAnimationController.ReminderAnimationCycleComplete(
+                        false, 9, 3, 4) &&
+                    !PetAnimationController.ReminderAnimationCycleComplete(
+                        true, 0, 3, 4);
+                bool dragUsesSecondIdleRowOk =
+                    PetAnimationController.FailedRow == 5;
                 Random fixedRandom = new Random(20260810);
                 HashSet<int> idleChoices = new HashSet<int>();
                 HashSet<int> typingChoices = new HashSet<int>();
@@ -313,7 +331,8 @@ namespace PennyPet
                 bool idleThoughtNoImmediateRepeat = true;
                 for (int i = 0; i < 256; i++)
                 {
-                    int nextIdleRow = PetForm.PickRandomIdleAnimationRow(
+                    int nextIdleRow =
+                        PetAnimationController.PickRandomIdleAnimationRow(
                         fixedRandom, idleAnimationRow);
                     idleThoughtNoImmediateRepeat =
                         idleThoughtNoImmediateRepeat &&
@@ -321,39 +340,42 @@ namespace PennyPet
                     idleChoices.Add(nextIdleRow);
                     idleAnimationRow = nextIdleRow;
                     typingChoices.Add(
-                        PetForm.PickRandomTypingAnimationRow(fixedRandom));
+                        PetAnimationController.PickRandomTypingAnimationRow(
+                            fixedRandom));
                 }
                 bool idleRandomRowsOk = idleThoughtNoImmediateRepeat &&
                     idleChoices.Count == 3 &&
-                    PetForm.IsIdleAnimationRow(0) &&
-                    PetForm.IsIdleAnimationRow(5) &&
-                    PetForm.IsIdleAnimationRow(8) &&
-                    !PetForm.IsIdleAnimationRow(7);
+                    PetAnimationController.IsIdleAnimationRow(0) &&
+                    PetAnimationController.IsIdleAnimationRow(5) &&
+                    PetAnimationController.IsIdleAnimationRow(8) &&
+                    !PetAnimationController.IsIdleAnimationRow(7);
                 bool typingRandomRowsOk = typingChoices.Count == 2 &&
-                    PetForm.IsTypingAnimationRow(6) && PetForm.IsTypingAnimationRow(7) &&
-                    !PetForm.IsTypingAnimationRow(8);
+                    PetAnimationController.IsTypingAnimationRow(6) &&
+                    PetAnimationController.IsTypingAnimationRow(7) &&
+                    !PetAnimationController.IsTypingAnimationRow(8);
                 Random probabilityRandom = new Random(20260820);
                 int firstThoughtSelections = 0;
                 int secondThoughtSelections = 0;
                 for (int i = 0; i < 100000; i++)
                 {
-                    int selected = PetForm.PickRandomIdleAnimationRow(
+                    int selected =
+                        PetAnimationController.PickRandomIdleAnimationRow(
                         probabilityRandom, -1);
                     if (selected == 5) firstThoughtSelections++;
                     if (selected == 8) secondThoughtSelections++;
                 }
                 bool idleThoughtProbabilityReducedOk =
-                    PetForm.IdleThoughtProbabilityBase == 20 &&
+                    PetAnimationController.IdleThoughtProbabilityDenominator == 20 &&
                     firstThoughtSelections >= 4300 &&
                     firstThoughtSelections <= 5700 &&
                     secondThoughtSelections >= 4300 &&
                     secondThoughtSelections <= 5700;
                 int failedGuitarSelections = 0;
                 for (int i = 0; i < 60000; i++)
-                    if (PetForm.PickRandomTypingAnimationRow(
+                    if (PetAnimationController.PickRandomTypingAnimationRow(
                         probabilityRandom) == 7) failedGuitarSelections++;
                 bool guitarFailureProbabilityReducedOk =
-                    PetForm.GuitarFailureProbabilityBase == 6 &&
+                    PetAnimationController.GuitarFailureProbabilityDenominator == 6 &&
                     failedGuitarSelections >= 9500 &&
                     failedGuitarSelections <= 10500;
                 bool hoverBubbleCopyOk;
@@ -399,7 +421,8 @@ namespace PennyPet
                 bool manualAnimationNoImmediateRepeat = true;
                 for (int i = 0; i < 256; i++)
                 {
-                    int nextManualRow = PetForm.PickRandomManualAnimationRow(
+                    int nextManualRow =
+                        PetAnimationController.PickRandomManualAnimationRow(
                         manualRandom, manualAnimationRow);
                     manualAnimationNoImmediateRepeat =
                         manualAnimationNoImmediateRepeat &&
@@ -410,23 +433,24 @@ namespace PennyPet
                 bool manualAnimationRandomPoolOk =
                     manualAnimationNoImmediateRepeat &&
                     manualAnimationRows.Count == 7 &&
-                    PetForm.IsManualAnimationRow(0) &&
-                    PetForm.IsManualAnimationRow(4) &&
-                    PetForm.IsManualAnimationRow(5) &&
-                    PetForm.IsManualAnimationRow(6) &&
-                    PetForm.IsManualAnimationRow(7) &&
-                    PetForm.IsManualAnimationRow(8) &&
-                    PetForm.IsManualAnimationRow(9) &&
-                    !PetForm.IsManualAnimationRow(1) &&
-                    !PetForm.IsManualAnimationRow(2) &&
-                    !PetForm.IsManualAnimationRow(3);
+                    PetAnimationController.IsManualAnimationRow(0) &&
+                    PetAnimationController.IsManualAnimationRow(4) &&
+                    PetAnimationController.IsManualAnimationRow(5) &&
+                    PetAnimationController.IsManualAnimationRow(6) &&
+                    PetAnimationController.IsManualAnimationRow(7) &&
+                    PetAnimationController.IsManualAnimationRow(8) &&
+                    PetAnimationController.IsManualAnimationRow(9) &&
+                    !PetAnimationController.IsManualAnimationRow(1) &&
+                    !PetAnimationController.IsManualAnimationRow(2) &&
+                    !PetAnimationController.IsManualAnimationRow(3);
                 Random manualProbabilityRandom = new Random(20260821);
                 int manualFirstThought = 0;
                 int manualFailedGuitar = 0;
                 int manualSecondThought = 0;
                 for (int i = 0; i < 42000; i++)
                 {
-                    int selected = PetForm.PickRandomManualAnimationRow(
+                    int selected =
+                        PetAnimationController.PickRandomManualAnimationRow(
                         manualProbabilityRandom, -1);
                     if (selected == 5) manualFirstThought++;
                     if (selected == 7) manualFailedGuitar++;
@@ -438,19 +462,19 @@ namespace PennyPet
                     manualSecondThought >= 1700 && manualSecondThought <= 2300;
                 DateTime manualClickNow = DateTime.UtcNow;
                 bool manualAnimationCooldownOk =
-                    PetForm.ManualAnimationCooldown == 600 &&
-                    PetForm.ManualAnimationClickReady(manualClickNow,
+                    PetAnimationController.ManualAnimationCooldownMilliseconds == 600 &&
+                    PetAnimationController.ManualAnimationClickReady(manualClickNow,
                         DateTime.MinValue) &&
-                    !PetForm.ManualAnimationClickReady(manualClickNow,
+                    !PetAnimationController.ManualAnimationClickReady(manualClickNow,
                         manualClickNow.AddMilliseconds(600)) &&
-                    PetForm.ManualAnimationClickReady(
+                    PetAnimationController.ManualAnimationClickReady(
                         manualClickNow.AddMilliseconds(600),
                         manualClickNow.AddMilliseconds(600));
                 bool clickDragThresholdOk =
-                    !PetForm.MovementStartsDrag(5, 0) &&
-                    !PetForm.MovementStartsDrag(4, 4) &&
-                    PetForm.MovementStartsDrag(6, 0) &&
-                    PetForm.MovementStartsDrag(5, 4);
+                    !PetAnimationController.MovementStartsDrag(5, 0) &&
+                    !PetAnimationController.MovementStartsDrag(4, 4) &&
+                    PetAnimationController.MovementStartsDrag(6, 0) &&
+                    PetAnimationController.MovementStartsDrag(5, 4);
                 Point bubblePosition = SpeechBubbleForm.CalculateNearLocation(
                     new Rectangle(1400, 800, 192, 208), new Size(330, 138),
                     new Rectangle(0, 0, 1920, 1080));
@@ -519,11 +543,12 @@ namespace PennyPet
                     ImeFriendlyRichTextBox.StartsOrUpdatesComposition(0x010D) &&
                     ImeFriendlyRichTextBox.StartsOrUpdatesComposition(0x010F) &&
                     !ImeFriendlyRichTextBox.StartsOrUpdatesComposition(0x010E) &&
-                    PetForm.ShouldPauseOwnNoteAnimation(true, DateTime.MinValue,
+                    PetAnimationController.ShouldPauseOwnNoteAnimation(
+                        true, DateTime.MinValue,
                         imeGuardNow) &&
-                    PetForm.ShouldPauseOwnNoteAnimation(false,
+                    PetAnimationController.ShouldPauseOwnNoteAnimation(false,
                         imeGuardNow.AddMilliseconds(1), imeGuardNow) &&
-                    !PetForm.ShouldPauseOwnNoteAnimation(false,
+                    !PetAnimationController.ShouldPauseOwnNoteAnimation(false,
                         imeGuardNow.AddMilliseconds(-1), imeGuardNow);
                 bool imeAutoSaveGuardOk =
                     StickyNoteForm.ShouldDeferAutoSave(true,
@@ -705,9 +730,11 @@ namespace PennyPet
                     DateTime.UtcNow.AddMinutes(1), "仍有效");
                 DateTime launchGate = DateTime.UtcNow;
                 bool expiredReminderDiscardedOnLaunchOk =
-                    !PetForm.ShouldRestoreReminderAfterLaunch(expiredAtLaunch,
+                    !PetReminderCoordinator.ShouldRestoreReminderAfterLaunch(
+                        expiredAtLaunch,
                         launchGate) &&
-                    PetForm.ShouldRestoreReminderAfterLaunch(futureAtLaunch,
+                    PetReminderCoordinator.ShouldRestoreReminderAfterLaunch(
+                        futureAtLaunch,
                         launchGate);
                 if (File.Exists(scheduleTestPath)) File.Delete(scheduleTestPath);
                 if (File.Exists(scheduleTestPath + ".bak"))
