@@ -413,28 +413,19 @@ namespace PennyPet
     {
         private const int CellWidth = 192;
         private const int CellHeight = 208;
-        private const int IdleRow = 0;
-        private const int RightRow = 1;
-        private const int LeftRow = 2;
-        private const int WavingRow = 3;
-        private const int HoverRow = 4;
-        private const int FailedRow = 5;
-        private const int WaitingRow = 6;
-        private const int ThinkingRow = 7;
-        private const int ReviewRow = 8;
-        private const int NotificationRow = 9;
-        // Two long thought clips share a combined 10% idle probability.
-        private const int IdleThoughtProbabilityDenominator = 20;
-        private const int GuitarFailureProbabilityDenominator = 6;
-        private const int ManualAnimationCooldownMilliseconds = 600;
-        private const int DragClickThresholdPixels = 6;
+        private const int IdleRow = PetAnimationController.IdleRow;
+        private const int RightRow = PetAnimationController.RightRow;
+        private const int LeftRow = PetAnimationController.LeftRow;
+        private const int WavingRow = PetAnimationController.WavingRow;
+        private const int HoverRow = PetAnimationController.HoverRow;
+        private const int FailedRow = PetAnimationController.FailedRow;
+        private const int WaitingRow = PetAnimationController.WaitingRow;
+        private const int ThinkingRow = PetAnimationController.ThinkingRow;
+        private const int ReviewRow = PetAnimationController.ReviewRow;
+        private const int NotificationRow = PetAnimationController.NotificationRow;
         // Zero means an at-time reminder stays until the bubble itself is
         // clicked or another application message replaces it.
         private const int ReminderBubbleDurationMilliseconds = 0;
-        private static readonly int[] ManualAnimationRows =
-            { IdleRow, HoverRow, FailedRow, WaitingRow, ThinkingRow, ReviewRow,
-                NotificationRow };
-
         private sealed class BubbleMessage
         {
             public BubbleMessage(string text, string fontFamilyName,
@@ -498,6 +489,8 @@ namespace PennyPet
         private readonly object _keyboardQueueGate = new object();
         private readonly ArtPreloadReservations _artPreloads =
             new ArtPreloadReservations();
+        private readonly PetAnimationController _animation =
+            new PetAnimationController();
 
         private PetArtPackage _art;
         private Bitmap[][] _renderedFrames;
@@ -509,23 +502,38 @@ namespace PennyPet
         private bool _bubbleIsDueReminder;
         private ReminderItem _preAlertItem;
         private bool _suppressHoverRestore;
-        private int _row;
-        private int _frame;
+        private int _row
+            { get { return _animation.Row; } set { _animation.Row = value; } }
+        private int _frame
+            { get { return _animation.Frame; } set { _animation.Frame = value; } }
         private bool _dragging;
         private bool _dragMoved;
         private bool _mouseInside;
         private Point _dragMouseOrigin;
         private Point _dragWindowOrigin;
-        private bool _typingSession;
-        private int _typingRow = ThinkingRow;
-        private int _idleRow = IdleRow;
-        private DateTime _typingUntilUtc;
-        private bool _reminderAttentionActive;
+        private bool _typingSession { get { return _animation.TypingSession; }
+            set { _animation.TypingSession = value; } }
+        private int _typingRow { get { return _animation.TypingRow; }
+            set { _animation.TypingRow = value; } }
+        private int _idleRow { get { return _animation.IdleRowState; }
+            set { _animation.IdleRowState = value; } }
+        private DateTime _typingUntilUtc { get { return _animation.TypingUntilUtc; }
+            set { _animation.TypingUntilUtc = value; } }
+        private bool _reminderAttentionActive
+            { get { return _animation.ReminderAttentionActive; }
+                set { _animation.ReminderAttentionActive = value; } }
         private int _reminderAnimationGeneration;
-        private DateTime _nextFrameUtc;
-        private DateTime _manualAnimationCooldownUntilUtc;
-        private bool _manualAnimationActive;
-        private int _manualAnimationRow = -1;
+        private DateTime _nextFrameUtc { get { return _animation.NextFrameUtc; }
+            set { _animation.NextFrameUtc = value; } }
+        private DateTime _manualAnimationCooldownUntilUtc
+            { get { return _animation.ManualAnimationCooldownUntilUtc; }
+                set { _animation.ManualAnimationCooldownUntilUtc = value; } }
+        private bool _manualAnimationActive
+            { get { return _animation.ManualAnimationActive; }
+                set { _animation.ManualAnimationActive = value; } }
+        private int _manualAnimationRow
+            { get { return _animation.ManualAnimationRow; }
+                set { _animation.ManualAnimationRow = value; } }
         private bool _exiting;
         private int _scalePercent = 100;
         private KeyboardInputEventArgs _latestKeyboardEvent;
@@ -3314,26 +3322,15 @@ namespace PennyPet
 
         private int ChooseRow()
         {
-            if (_exiting) return _art.IsRowLoaded(WavingRow)
-                ? WavingRow : IdleRow;
-            if (_dragging && _dragMoved) return _art.IsRowLoaded(FailedRow)
-                ? FailedRow : IdleRow;
-            if (_manualAnimationActive) return _art.IsRowLoaded(
-                _manualAnimationRow) ? _manualAnimationRow : IdleRow;
-            if (_typingSession) return _art.IsRowLoaded(_typingRow)
-                ? _typingRow : IdleRow;
-            if (_reminderAttentionActive)
-                return AttentionAnimationRow(_art.IsRowLoaded(NotificationRow));
-            if (_mouseInside && !_menu.Visible)
-                return _art.IsRowLoaded(HoverRow) ? HoverRow : IdleRow;
-            return _art.IsRowLoaded(_idleRow) ? _idleRow : IdleRow;
+            return _animation.ChooseRow(_exiting, _dragging && _dragMoved,
+                _mouseInside, _menu.Visible, _art.IsRowLoaded);
         }
 
         internal static bool ReminderAnimationCycleComplete(bool active,
             int row, int frame, int frameCount)
         {
-            return active && row == NotificationRow && frameCount > 0 &&
-                frame >= frameCount - 1;
+            return PetAnimationController.ReminderAnimationCycleComplete(
+                active, row, frame, frameCount);
         }
 
         internal static int DueReminderBubbleDurationMilliseconds
@@ -3418,7 +3415,7 @@ namespace PennyPet
             if (!ManualAnimationClickReady(now,
                 _manualAnimationCooldownUntilUtc)) return;
             _manualAnimationCooldownUntilUtc = now.AddMilliseconds(
-                ManualAnimationCooldownMilliseconds);
+                PetAnimationController.ManualAnimationCooldownMilliseconds);
             int current = _manualAnimationActive ? _manualAnimationRow : _row;
             _manualAnimationRow = PickRandomManualAnimationRow(_random, current);
             _manualAnimationActive = true;
@@ -3706,48 +3703,46 @@ namespace PennyPet
 
         internal static int AttentionAnimationRow(bool notificationLoaded)
         {
-            return notificationLoaded ? NotificationRow : IdleRow;
+            return PetAnimationController.AttentionAnimationRow(
+                notificationLoaded);
         }
 
         internal static int PickRandomTypingAnimationRow(Random random)
         {
-            if (random == null) throw new ArgumentNullException("random");
-            return random.Next(GuitarFailureProbabilityDenominator) == 0
-                ? ThinkingRow : WaitingRow;
+            return PetAnimationController.PickRandomTypingAnimationRow(random);
         }
 
         internal static int PickRandomIdleAnimationRow(Random random,
             int currentRow)
         {
-            if (random == null) throw new ArgumentNullException("random");
-            int selected = random.Next(IdleThoughtProbabilityDenominator);
-            int candidate = selected < IdleThoughtProbabilityDenominator - 2
-                ? IdleRow : (selected == IdleThoughtProbabilityDenominator - 2
-                    ? FailedRow : ReviewRow);
-            // Ordinary idle may repeat; the two thought clips do not repeat
-            // immediately. Together they occupy 2/20 = 10% of idle cycles.
-            if (candidate == currentRow && candidate != IdleRow) return IdleRow;
-            return candidate;
+            return PetAnimationController.PickRandomIdleAnimationRow(random,
+                currentRow);
         }
 
         internal static int IdleThoughtProbabilityBase
         {
-            get { return IdleThoughtProbabilityDenominator; }
+            get
+            {
+                return PetAnimationController.IdleThoughtProbabilityDenominator;
+            }
         }
 
         internal static int GuitarFailureProbabilityBase
         {
-            get { return GuitarFailureProbabilityDenominator; }
+            get
+            {
+                return PetAnimationController.GuitarFailureProbabilityDenominator;
+            }
         }
 
         internal static bool IsIdleAnimationRow(int row)
         {
-            return row == IdleRow || row == FailedRow || row == ReviewRow;
+            return PetAnimationController.IsIdleAnimationRow(row);
         }
 
         internal static bool IsTypingAnimationRow(int row)
         {
-            return row == WaitingRow || row == ThinkingRow;
+            return PetAnimationController.IsTypingAnimationRow(row);
         }
 
         internal static int DragAnimationRow
@@ -4464,7 +4459,8 @@ namespace PennyPet
         internal static bool ShouldPauseOwnNoteAnimation(bool composing,
             DateTime quietUntilUtc, DateTime nowUtc)
         {
-            return composing || nowUtc < quietUntilUtc;
+            return PetAnimationController.ShouldPauseOwnNoteAnimation(
+                composing, quietUntilUtc, nowUtc);
         }
 
         internal static bool ShouldRunReminderClock(bool exiting)
@@ -4480,56 +4476,34 @@ namespace PennyPet
 
         internal static bool IsManualAnimationRow(int row)
         {
-            foreach (int candidate in ManualAnimationRows)
-                if (candidate == row) return true;
-            return false;
+            return PetAnimationController.IsManualAnimationRow(row);
         }
 
         internal static int PickRandomManualAnimationRow(Random random,
             int currentRow)
         {
-            if (random == null) throw new ArgumentNullException("random");
-            int availableWeight = 0;
-            foreach (int candidate in ManualAnimationRows)
-            {
-                if (candidate == currentRow) continue;
-                availableWeight += ManualAnimationWeight(candidate);
-            }
-            if (availableWeight <= 0) return IdleRow;
-            int selected = random.Next(availableWeight);
-            foreach (int candidate in ManualAnimationRows)
-            {
-                if (candidate == currentRow) continue;
-                int weight = ManualAnimationWeight(candidate);
-                if (selected < weight) return candidate;
-                selected -= weight;
-            }
-            return ManualAnimationRows[0];
-        }
-
-        private static int ManualAnimationWeight(int row)
-        {
-            // Keep both thought clips and the failed-guitar clip rare when the
-            // user clicks the pet for a random animation as well.
-            return row == FailedRow || row == ReviewRow || row == ThinkingRow
-                ? 2 : 9;
+            return PetAnimationController.PickRandomManualAnimationRow(random,
+                currentRow);
         }
 
         internal static bool ManualAnimationClickReady(DateTime nowUtc,
             DateTime cooldownUntilUtc)
         {
-            return nowUtc >= cooldownUntilUtc;
+            return PetAnimationController.ManualAnimationClickReady(nowUtc,
+                cooldownUntilUtc);
         }
 
         internal static bool MovementStartsDrag(int dx, int dy)
         {
-            return dx * dx + dy * dy >=
-                DragClickThresholdPixels * DragClickThresholdPixels;
+            return PetAnimationController.MovementStartsDrag(dx, dy);
         }
 
         internal static int ManualAnimationCooldown
         {
-            get { return ManualAnimationCooldownMilliseconds; }
+            get
+            {
+                return PetAnimationController.ManualAnimationCooldownMilliseconds;
+            }
         }
 
         private bool HasFocusedOwnNoteTextInput()
