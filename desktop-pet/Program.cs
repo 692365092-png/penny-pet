@@ -409,7 +409,7 @@ namespace PennyPet
         }
     }
 
-    internal sealed class PetForm : Form
+    internal sealed partial class PetForm : Form
     {
         private const int CellWidth = 192;
         private const int CellHeight = 208;
@@ -459,22 +459,28 @@ namespace PennyPet
         private readonly System.Windows.Forms.Timer _animationTimer;
         private readonly System.Windows.Forms.Timer _reminderTimer;
         private long _lastReminderBannerSecond = Int64.MinValue;
-        private readonly ContextMenuStrip _menu;
-        private readonly ToolStripMenuItem _statusItem;
-        private readonly ToolStripMenuItem _setReminderItem;
-        private readonly ToolStripMenuItem _cancelItem;
-        private readonly ToolStripMenuItem _newNoteItem;
-        private readonly ToolStripMenuItem _newTodoItem;
-        private readonly ToolStripMenuItem _newScheduleItem;
-        private readonly ToolStripMenuItem _manageNotesItem;
-        private readonly ToolStripMenuItem _collapseNotesItem;
-        private readonly ToolStripMenuItem _expandTabsItem;
-        private readonly ToolStripMenuItem _recoverWindowsItem;
-        private readonly ToolStripMenuItem _scaleItem;
-        private readonly ToolStripMenuItem _startupItem;
-        private readonly ToolStripMenuItem _keyboardItem;
-        private readonly ToolStripMenuItem _silentItem;
-        private readonly ToolStripMenuItem _contactAuthorItem;
+        private readonly PetContextMenu _petContextMenu;
+        private ContextMenuStrip _menu { get { return _petContextMenu.Menu; } }
+        private ToolStripMenuItem _statusItem
+            { get { return _petContextMenu.StatusItem; } }
+        private ToolStripMenuItem _setReminderItem
+            { get { return _petContextMenu.SetReminderItem; } }
+        private ToolStripMenuItem _cancelItem
+            { get { return _petContextMenu.CancelItem; } }
+        private ToolStripMenuItem _manageNotesItem
+            { get { return _petContextMenu.ManageNotesItem; } }
+        private ToolStripMenuItem _collapseNotesItem
+            { get { return _petContextMenu.CollapseNotesItem; } }
+        private ToolStripMenuItem _expandTabsItem
+            { get { return _petContextMenu.ExpandTabsItem; } }
+        private ToolStripMenuItem _scaleItem
+            { get { return _petContextMenu.ScaleItem; } }
+        private ToolStripMenuItem _startupItem
+            { get { return _petContextMenu.StartupItem; } }
+        private ToolStripMenuItem _keyboardItem
+            { get { return _petContextMenu.KeyboardItem; } }
+        private ToolStripMenuItem _silentItem
+            { get { return _petContextMenu.SilentItem; } }
         private readonly NotifyIcon _trayIcon;
         private readonly Icon _appIcon;
         private readonly ReminderSchedule _reminders;
@@ -628,104 +634,56 @@ namespace PennyPet
                     _settings.KeyOverlayScalePercent);
             Location = RestoreLocation();
 
-            _statusItem = new ToolStripMenuItem("当前没有提醒");
-            _statusItem.Enabled = false;
-            _setReminderItem = new ToolStripMenuItem("添加提醒…");
-            _setReminderItem.Click += delegate { ShowReminderDialog(); };
-            _cancelItem = new ToolStripMenuItem("取消提醒");
-            _newNoteItem = new ToolStripMenuItem("新建便利贴");
-            _newNoteItem.Click += delegate
+            PetContextMenuCommands menuCommands = new PetContextMenuCommands();
+            menuCommands.Opening = delegate
+            {
+                HideHoverBubble();
+                RefreshMenuText();
+            };
+            menuCommands.Closed = delegate
+            {
+                if (_mouseInside && !_exiting) ShowOrUpdateHoverBubble();
+            };
+            menuCommands.ShowReminder = ShowReminderDialog;
+            menuCommands.CreateNote = delegate
             {
                 QueueStickyWindowAction(delegate
                 {
                     CreateStickyNote(String.Empty);
                 }, "sticky-note-menu-create");
             };
-            _newTodoItem = new ToolStripMenuItem("新建待办清单");
-            _newTodoItem.Click += delegate
+            menuCommands.CreateTodo = delegate
             {
                 QueueStickyWindowAction(delegate
                 {
                     CreateTodoStickyNote();
                 }, "sticky-todo-menu-create");
             };
-            _newScheduleItem = new ToolStripMenuItem("新建日程");
-            // The collapsed tab carries the type icon. Keep the pet menu
-            // command itself text-only.
-            _newScheduleItem.Image = null;
-            _newScheduleItem.DisplayStyle = ToolStripItemDisplayStyle.Text;
-            _newScheduleItem.Click += delegate
+            menuCommands.CreateSchedule = delegate
             {
                 QueueStickyWindowAction(delegate
                 {
                     CreateScheduleStickyNote();
                 }, "sticky-schedule-menu-create");
             };
-            _manageNotesItem = new ToolStripMenuItem("便利贴管理…");
-            _manageNotesItem.Click += delegate { ShowStickyNotesManager(); };
-            _collapseNotesItem = new ToolStripMenuItem("收起全部便利贴到页签");
-            _collapseNotesItem.Click += delegate { CollapseAllStickyNotes(); };
-            _expandTabsItem = new ToolStripMenuItem("展开全部侧边页签");
-            _expandTabsItem.Click += delegate { ExpandAllStickyNoteTabs(); };
-            _recoverWindowsItem = new ToolStripMenuItem(
-                "将已展开的便利贴集中到此屏幕");
-            _recoverWindowsItem.Click += delegate
+            menuCommands.ManageNotes = ShowStickyNotesManager;
+            menuCommands.CollapseNotes = CollapseAllStickyNotes;
+            menuCommands.ExpandTabs = ExpandAllStickyNoteTabs;
+            menuCommands.RecoverWindows = delegate
             {
                 QueueStickyWindowAction(MoveVisibleStickyNotesToPetScreen,
                     "sticky-window-screen-recovery");
             };
-            _scaleItem = new ToolStripMenuItem("调整桌宠大小…");
-            _scaleItem.Click += delegate { ShowScaleDialog(); };
-            _startupItem = new ToolStripMenuItem("开机自动启动");
-            _startupItem.CheckOnClick = true;
-            _startupItem.Checked = _settings.StartWithWindows;
-            _startupItem.Click += StartupItemClick;
-            _keyboardItem = new ToolStripMenuItem("按键显示：正在检查");
-            _keyboardItem.CheckOnClick = true;
-            _keyboardItem.Checked = _settings.ShowKeyOverlay;
-            _keyboardItem.Click += KeyboardItemClick;
-            _silentItem = new ToolStripMenuItem("静默模式（隐藏日常气泡）");
-            _silentItem.CheckOnClick = true;
-            _silentItem.Checked = _settings.SilentMode;
-            _silentItem.Click += SilentItemClick;
-            ToolStripMenuItem exitItem = new ToolStripMenuItem("退出" + _art.DisplayName);
-            exitItem.Click += delegate { BeginExitSequence(); };
-            _contactAuthorItem = new ToolStripMenuItem("联系作者");
-            _contactAuthorItem.Click += delegate { ShowContactAuthor(); };
-
-            _menu = new ContextMenuStrip();
-            _menu.Items.Add(_statusItem);
-            _menu.Items.Add(new ToolStripSeparator());
-            _menu.Items.Add(_newNoteItem);
-            _menu.Items.Add(_newTodoItem);
-            _menu.Items.Add(_newScheduleItem);
-            _menu.Items.Add(_manageNotesItem);
-            _menu.Items.Add(_collapseNotesItem);
-            _menu.Items.Add(_expandTabsItem);
-            _menu.Items.Add(_recoverWindowsItem);
-            _menu.Items.Add(new ToolStripSeparator());
-            _menu.Items.Add(_setReminderItem);
-            _menu.Items.Add(_cancelItem);
-            _menu.Items.Add(new ToolStripSeparator());
-            _menu.Items.Add(_scaleItem);
-            _menu.Items.Add(_keyboardItem);
-            _menu.Items.Add(_silentItem);
-            _menu.Items.Add(new ToolStripSeparator());
-            _menu.Items.Add(_startupItem);
-            _menu.Items.Add(new ToolStripSeparator());
-            _menu.Items.Add(_contactAuthorItem);
-            _menu.Items.Add(new ToolStripSeparator());
-            _menu.Items.Add(exitItem);
-            _menu.Opening += delegate
-            {
-                HideHoverBubble();
-                RefreshMenuText();
-            };
-            _menu.Closed += delegate
-            {
-                if (_mouseInside && !_exiting) ShowOrUpdateHoverBubble();
-            };
-            ContextMenuStrip = _menu;
+            menuCommands.ShowScale = ShowScaleDialog;
+            menuCommands.StartupClick = StartupItemClick;
+            menuCommands.KeyboardClick = KeyboardItemClick;
+            menuCommands.SilentClick = SilentItemClick;
+            menuCommands.ContactAuthor = ShowContactAuthor;
+            menuCommands.Exit = BeginExitSequence;
+            _petContextMenu = new PetContextMenu(_art.DisplayName,
+                _settings.StartWithWindows, _settings.ShowKeyOverlay,
+                _settings.SilentMode, menuCommands);
+            ContextMenuStrip = _petContextMenu.Menu;
 
             _trayIcon = new NotifyIcon();
             _appIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
@@ -733,7 +691,7 @@ namespace PennyPet
             _trayIcon.Text = _art.DisplayName.Length > 63
                 ? _art.DisplayName.Substring(0, 63) : _art.DisplayName;
             _trayIcon.Visible = true;
-            _trayIcon.ContextMenuStrip = _menu;
+            _trayIcon.ContextMenuStrip = _petContextMenu.Menu;
             _trayIcon.DoubleClick += delegate
             {
                 EnsureVisible();
