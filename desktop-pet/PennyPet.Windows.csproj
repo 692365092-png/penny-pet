@@ -1,0 +1,96 @@
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>PennyPet</RootNamespace>
+    <AssemblyName>Penny pet</AssemblyName>
+    <StartupObject>PennyPet.Program</StartupObject>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>assets\app.ico</ApplicationIcon>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <LangVersion>latest</LangVersion>
+    <Platforms>AnyCPU;x86;x64</Platforms>
+    <PlatformTarget Condition="'$(PlatformTarget)' == ''">AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <Deterministic>true</Deterministic>
+    <DebugType>portable</DebugType>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+  </PropertyGroup>
+
+  <!--
+    Keep this list explicit. build.ps1 still owns the official two-pass,
+    resource-embedded release, while this project gives Visual Studio and
+    dotnet tooling a stable source graph for compilation and analysis.
+  -->
+  <ItemGroup>
+    <Compile Include="ApplicationDiagnostics.cs" />
+    <Compile Include="ContactAuthorForm.cs" />
+    <Compile Include="DockPulseIndicator.cs" />
+    <Compile Include="GlobalKeyboardActivity.cs" />
+    <Compile Include="KeyboardOverlay.cs" />
+    <Compile Include="LayeredSpriteRenderer.cs" />
+    <Compile Include="PennySelfTests.cs" />
+    <Compile Include="PetAnimationController.cs" />
+    <Compile Include="PetArt.cs" />
+    <Compile Include="PetContextMenu.cs" />
+    <Compile Include="PetForm.cs" />
+    <Compile Include="PetReminderCoordinator.cs" />
+    <Compile Include="PetReminderWindowsCoordinator.cs" />
+    <Compile Include="PetSettings.cs" />
+    <Compile Include="Program.cs" />
+    <Compile Include="ReminderModels.cs" />
+    <Compile Include="ReminderUi.cs" />
+    <Compile Include="ReverseEngineeringEasterEgg.cs" />
+    <Compile Include="ScaleDialog.cs" />
+    <Compile Include="ScheduleItemDialog.cs" />
+    <Compile Include="SelfTestRunner.cs" />
+    <Compile Include="SpeechBubbleForm.cs" />
+    <Compile Include="StartupLoadingForm.cs" />
+    <Compile Include="StartupRegistration.cs" />
+    <Compile Include="StickyAppearanceController.cs" />
+    <Compile Include="StickyAppearanceDialog.cs" />
+    <Compile Include="StickyDockController.cs" />
+    <Compile Include="StickyNoteLinks.cs" />
+    <Compile Include="StickyNoteModels.cs" />
+    <Compile Include="StickyNoteRepository.cs" />
+    <Compile Include="StickyNotes.cs" />
+    <Compile Include="StickyNoteTabs.cs" />
+    <Compile Include="StickyNoteWpf.cs" />
+    <Compile Include="StickyReminderController.cs" />
+    <Compile Include="StickyScheduleController.cs" />
+    <Compile Include="StickyTodoController.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Xaml" />
+    <Reference Include="UIAutomationClient" />
+    <Reference Include="UIAutomationTypes" />
+    <Reference Include="WindowsFormsIntegration" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <PennyReleasePlatform>anycpu</PennyReleasePlatform>
+    <PennyReleasePlatform Condition="'$(PlatformTarget)' == 'x86'">x86</PennyReleasePlatform>
+    <PennyReleasePlatform Condition="'$(PlatformTarget)' == 'x64'">x64</PennyReleasePlatform>
+    <OfficialOutputFile Condition="'$(OfficialOutputFile)' == ''">$(MSBuildProjectDirectory)\dist\Penny pet.exe</OfficialOutputFile>
+  </PropertyGroup>
+
+  <!--
+    This target intentionally delegates to the proven release pipeline. A
+    normal project Build is an IDE/compiler build and is not the distributable
+    single-file artifact.
+  -->
+  <Target Name="BuildOfficialRelease">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\build.ps1&quot; -TargetPlatform $(PennyReleasePlatform) -OutputFile &quot;$(OfficialOutputFile)&quot;" />
+  </Target>
+
+  <Target Name="ExplainDeveloperBuild" AfterTargets="Build">
+    <Message Importance="high"
+      Text="PennyPet.Windows.csproj build completed for IDE/compiler validation. Use BuildOfficialRelease or build.ps1 for the resource-embedded single-file EXE." />
+  </Target>
+</Project>

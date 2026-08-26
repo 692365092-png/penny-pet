@@ -8,17 +8,35 @@ Penny pet 是一个 Windows 桌面宠物。桌宠主体使用 WinForms 透明分
 
 当前产品版本固定为 `1.0`。程序集版本在 `desktop-pet/Program.cs` 顶部声明为 `1.0.0.0`。
 
-项目没有 `.csproj`。`desktop-pet/build.ps1` 会收集 `desktop-pet` 根目录中的全部 `*.cs`，调用系统自带的 .NET Framework C# 编译器，并把美术发布包、首屏缓存、图标和联系作者图片嵌入单个 EXE。
+仓库提供 `PennyPet.sln` 和 `desktop-pet/PennyPet.Windows.csproj`，供 Visual Studio、`dotnet build`、代码导航和静态分析使用；项目文件显式列出当前源码，目标为 .NET Framework 4.8。普通项目构建只负责开发期编译验证，不是可分发版本。
+
+正式单文件发布仍由 `desktop-pet/build.ps1` 负责。它会执行两次编译，在中间阶段生成美术发布包和首屏缓存，最后把美术、图标和联系作者图片嵌入 EXE。`.csproj` 的 `BuildOfficialRelease` target 只是进入这条既有脚本的标准工具入口，不复制或替代发布算法。
 
 ## 2. 如何构建测试版
 
 在项目根目录打开 PowerShell：
 
+仅验证标准项目能够被 IDE / 编译器理解：
+
+```powershell
+dotnet build '.\PennyPet.sln' --configuration Release
+```
+
+生成真正可运行、资源完整的单文件测试版：
+
 ```powershell
 & '.\desktop-pet\build.ps1' -OutputFile '.\Penny pet-1.0-test.exe'
 ```
 
-美术源位于 `art`，入口是 `art/pet-art.json`。构建时会校验清单引用的文件，生成无损发布资源包和启动缓存。不要为了加快编译而跳过这两个步骤，否则测试版与实际发布版的动画加载路径会不同。
+也可以从标准项目调用同一发布脚本：
+
+```powershell
+dotnet msbuild '.\desktop-pet\PennyPet.Windows.csproj' `
+  -target:BuildOfficialRelease `
+  '-property:OfficialOutputFile=G:\输出目录\Penny pet-1.0.exe'
+```
+
+美术源位于 `art`，入口是 `art/pet-art.json`。正式构建时会校验清单引用的文件，生成无损发布资源包和启动缓存。不要把普通 `.csproj` 编译目录中的小型 EXE 当作测试版分发，也不要为了加快编译而跳过这两个步骤，否则动画加载路径和资源完整性会不同。
 
 ## 3. 程序入口与运行主线
 
@@ -190,7 +208,79 @@ Get-Content -LiteralPath $report -Raw
 - 不全面重写 `Program.cs`、Dock、IME 或富文本编辑器。
 - 不为缩短代码而合并不同职责。
 - 原 `ReminderUi.cs` 已只保留提醒对话框及其日期控件；设置、模型、气泡与开机启动均已按职责纯搬家拆出。
-- `StickyNoteWpf.cs` 仍然较大。它可以在未来按富文本、Todo、Schedule、Dock 窗口协调逐步拆分，但不能一次性重构。
+- `StickyNoteWpf.cs` 仍然较大，但 Todo、Schedule、提醒横幅、外观和 Dock 已有独立 partial 文件；剩余主体主要是 WPF Window、RichText、IME、焦点和原生消息。没有真实回归需求时不要再按行数强拆。
 - 建议先用本文件的“模块地图”定位，再沿事件订阅和调用者完整阅读调用链。
 
 最重要的判断标准不是“代码是否更短”，而是：用户功能和旧数据保持不变，同时下一位开发者能明确知道该去哪里修改、哪里不能冒进。
+
+## 11. Adding a New Feature / 新增在线功能
+
+当前版本没有远程内容请求。下面是以后增加真实 API Feature 时的开发顺序，不要为还不存在的功能提前创建空类、空目录或假 endpoint。
+
+### 先判断代码应该放在哪里
+
+- 只改变按钮、气泡或窗口外观：修改对应 Windows UI 文件。
+- 增加“什么时候展示、每天是否只展示一次、如何处理空结果”等规则：新增 Feature。
+- 调用一个具体远程 endpoint 并把 JSON 转成模型：新增该功能的 Service 和 model。
+- 多个在线功能都需要 HTTP、超时、取消和错误分类：由第一个真实功能建立一个共享的小型 `ApiClient`。
+- 需要离线副本和过期判断：通过独立 online cache/repository，不要写进设置或便利贴仓库。
+- 只有需要把最终结果接到现有桌宠窗口时才修改 `PetForm`；修改应当是很薄的事件/调用接线，不能把 HTTP、JSON、缓存和每日规则搬进去。
+
+### 虚构 Daily Content 示例
+
+1. 后端先确定 `/v1/daily-content` 的请求、成功/失败响应和缓存 TTL。
+2. 新建 Feature model，只包含业务需要的数据；不要引用 `Form`、WPF、Win32 或 Registry。
+3. 新建 `DailyContentService`，只通过共享 `ApiClient` 请求并验证响应。
+4. 新建 `DailyContentFeature`，决定今天是否应该获取/展示，并把结果转换为简单 Presentation result。
+5. 如需缓存，通过共享 Online Cache 保存抓取时间、过期时间和 payload；缓存与用户核心数据分开。
+6. Windows UI 接收 Presentation result 后决定显示气泡或窗口，并在正确 UI 线程更新。
+7. 使用 fake/stub 测试成功、网络失败、坏 JSON、空内容、有效缓存和过期缓存，不访问真实公网。
+8. 验证断网时 Penny 主体、提醒、便利贴和启动仍然正常。
+
+推荐依赖方向：
+
+```text
+Pet UI <- Feature result <- Feature -> Remote Service -> ApiClient
+                              |              |
+                              +-> Cache      +-> API model
+```
+
+Feature 不知道 `SpeechBubbleForm` 的控件结构；Remote Service 不操作桌宠动画；ApiClient 不判断“今天是否已经推送”。参见 `ARCHITECTURE.md` 的在线功能、缓存、API 契约和安全章节。
+
+### 网络与线程最低要求
+
+- 使用长生命周期 `HttpClient`、HTTPS、明确超时和 `CancellationToken`。
+- 网络请求异步执行；WinForms/WPF UI 线程不得同步 `.Result` / `.Wait()`。
+- 只有 Presentation 边界使用 `BeginInvoke`、WPF `Dispatcher` 或 UI `SynchronizationContext`。
+- 最多只对幂等 GET 的瞬时失败做一次有限重试；不要引入 Polly 或大型网络框架。
+- 失败应返回可判断的结果，不应让异常穿透到桌宠主循环，也不要向用户弹技术错误堆栈。
+
+### Secret 与日志
+
+第三方 secret 不进入客户端。需要保密 key 时使用：Penny 客户端 -> Penny 自有后端 -> 第三方 API。secret 只放后端的安全配置/secret store，不放 EXE、GitHub、`settings.ini` 或日志。
+
+网络日志只能记录功能类别、净化后的 endpoint 标识、HTTP status、错误类型、时间和版本。不得记录 Authorization、cookie、token、请求/响应正文、便利贴、Todo、Schedule、Reminder 或键盘内容。
+
+## 12. 交给 API 开发者前的检查清单
+
+- 后端契约已定义，且允许增加未知字段而不破坏旧客户端。
+- 已明确该功能是否真的需要用户数据；默认不上传任何本地私人内容。
+- 已定义网络失败、无缓存、旧缓存和空内容时的产品行为。
+- Feature/Service/model 不引用 WinForms、WPF、Win32、Dock 或 IME。
+- `PetForm` 只增加最终展示接线，没有直接 HTTP/JSON/缓存代码。
+- 测试使用 fake/stub，不依赖公网和真实 secret。
+- 完整 build、SelfTest 以及该功能对应的 Windows 人工展示验证均通过。
+
+## 13. 已知安全边界与独立加固任务
+
+### 按键显示不是绝对的密码检测器
+
+`SensitiveInputDetector` 会检查 UI Automation 的 password 属性、标准 Win32 密码样式、控件名称和已知系统凭据进程；这些保护有价值，但第三方自绘控件、浏览器内部实现、跨权限窗口、远程桌面和拒绝 UI Automation 的窗口不能保证全部识别。当前实现检查失败后仍保留正常按键显示，因此产品文案只能说“尽力隐藏”，不能承诺 100%。
+
+如果单独开展安全加固，应一起设计和验证：首次启用的明确说明、无法检查前台输入时是否 fail closed、跨浏览器/自绘/管理员窗口测试，以及关闭功能后 Hook 是否立即卸载。不要只改一个 `catch` 就宣称问题解决。
+
+### 本地路径打开需要风险分级
+
+`StickyNoteLinks.cs` 已把 URL 限制为 HTTP/HTTPS，并独立于 WPF 编辑器负责识别；`StickyNoteWpf.cs` 仍负责点击位置、文件存在检查和 Shell 打开。普通文档和文件夹直接打开是现有体验，但 `.exe`、`.bat`、`.cmd`、`.ps1`、`.lnk` 等可执行/脚本/快捷方式以及 UNC 网络路径应在后续安全任务中二次确认。
+
+该任务应先建立纯路径分类规则与测试，再接确认 UI；同时回归普通 URL、文件夹、常用文档、中文路径、长路径、无效路径和 IME/链接格式。它是产品行为变更，不应夹在无行为变化的架构移动中。

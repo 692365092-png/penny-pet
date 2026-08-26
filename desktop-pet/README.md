@@ -10,9 +10,10 @@
 
 ## 构建和运行
 
-1. 把美术放在仓库的 `art` 目录，并填写其中的 `pet-art.json`。
-2. 在 PowerShell 中运行 `./build.ps1 -OutputFile <输出路径>`。
-3. 构建完成后会得到一个内嵌全部运行资源的单文件 EXE。
+1. 使用根目录 `PennyPet.sln` 或本目录 `PennyPet.Windows.csproj` 进行 Visual Studio / `dotnet build` 编译检查。
+2. 把美术放在仓库的 `art` 目录，并填写其中的 `pet-art.json`。
+3. 在 PowerShell 中运行 `./build.ps1 -OutputFile <输出路径>`，或调用项目的 `BuildOfficialRelease` target。
+4. 正式构建完成后会得到一个内嵌全部运行资源的单文件 EXE；普通项目 Build 的小型输出只用于编译验证，不可代替发布版。
 
 GitHub 开源发布版使用 `build.ps1` 生成可复现的未混淆二进制，以便审查、自动测试和代码签名。`build-protected.ps1` 仅保留给本地研究用途，不是 GitHub 签名发布流程的一部分。
 
@@ -98,7 +99,7 @@ GitHub 开源发布版使用 `build.ps1` 生成可复现的未混淆二进制，
 - `GlobalKeyboardActivity.cs` / `KeyboardOverlay.cs`：全局键盘活动与按键显示。
 - `SelfTestRunner.cs` / `PennySelfTests.cs`：完整 SelfTest、专项探针和测试预览。
 
-更完整的开发入口、数据恢复说明和高风险兼容逻辑见项目根目录的 `DEVELOPER_GUIDE.md`。
+更完整的开发入口、数据恢复说明、高风险兼容逻辑和新增在线 Feature 指南见项目根目录的 `DEVELOPER_GUIDE.md`；API、缓存、secret 和平台边界见 `ARCHITECTURE.md`。
 
 用户数据保存在 `%LocalAppData%\PennyPet`。
 
