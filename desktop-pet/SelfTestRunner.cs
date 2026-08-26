@@ -1022,6 +1022,8 @@ namespace PennyPet
                     StickyNoteTabsForm.ScreenCapacity(tabWorkArea) >= 9 - leftTabCount;
                 bool sideTabDragPreviewOk =
                     StickyNoteTabsForm.PreviewInsertionGap >= 12 &&
+                    StickyNoteTabsForm.DragSourceVisualOffset >= 4 &&
+                    StickyNoteTabsForm.DragSourceVisualOffset <= 8 &&
                     StickyNoteTabsForm.PetGap == -20 &&
                     !String.IsNullOrEmpty(StickyNoteTabsForm.DragDataFormat) &&
                     StickyNoteTabsForm.CalculateDropIndex(0, 4) == 0 &&
@@ -1030,6 +1032,25 @@ namespace PennyPet
                         StickyNoteTabsForm.PreviewInsertionGap;
                 bool sideTabDeferredDropCommitOk =
                     StickyTabDropSession.DefersCommitUntilCompletionForTest();
+                bool sideTabPreviewClearsBothSidesOk;
+                StickyNoteData previewClearNote = new StickyNoteData();
+                using (StickyNoteTabsForm previewClearLeft =
+                    new StickyNoteTabsForm(StickyTabSide.Left,
+                        delegate(StickyNoteData note) { }))
+                using (StickyNoteTabsForm previewClearRight =
+                    new StickyNoteTabsForm(StickyTabSide.Right,
+                        delegate(StickyNoteData note) { }))
+                {
+                    StickyNoteTabsForm.BeginDragSession(previewClearNote);
+                    previewClearLeft.ShowDropPreviewForTest(previewClearNote, 0);
+                    previewClearRight.ShowDropPreviewForTest(previewClearNote, 0);
+                    bool bothVisible = previewClearLeft.HasDropPreviewForTest &&
+                        previewClearRight.HasDropPreviewForTest;
+                    StickyNoteTabsForm.EndDragSession(previewClearNote);
+                    sideTabPreviewClearsBothSidesOk = bothVisible &&
+                        !previewClearLeft.HasDropPreviewForTest &&
+                        !previewClearRight.HasDropPreviewForTest;
+                }
                 int fullOverlap = StickyNoteTabsForm.PetOverlapForWidth(192);
                 int doubleOverlap = StickyNoteTabsForm.PetOverlapForWidth(384);
                 bool sideTabScaledGapOk =
@@ -1737,6 +1758,7 @@ namespace PennyPet
                     fullWidthLatinNormalizationOk && renameInitialFocusOk &&
                     sideTabOverflowOk && sideTabDeleteCommandOk &&
                     sideTabDragPreviewOk && sideTabDeferredDropCommitOk &&
+                    sideTabPreviewClearsBothSidesOk &&
                     sideTabScaledGapOk &&
                     sideTabVectorIconColorOk && imeAnimationGuardOk &&
                     imeAutoSaveGuardOk &&
@@ -1957,6 +1979,8 @@ namespace PennyPet
                     "  \"side_tab_drag_preview_ok\": " + Bool(sideTabDragPreviewOk) + ",\n" +
                     "  \"side_tab_drop_commit_after_drag_loop_ok\": " + Bool(
                         sideTabDeferredDropCommitOk) + ",\n" +
+                    "  \"side_tab_preview_clears_both_sides_ok\": " + Bool(
+                        sideTabPreviewClearsBothSidesOk) + ",\n" +
                     "  \"side_tab_scaled_visual_gap_halved_ok\": " + Bool(
                         sideTabScaledGapOk) + ",\n" +
                     "  \"side_tab_vector_icon_uses_darker_tab_color_ok\": " + Bool(

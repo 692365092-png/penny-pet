@@ -38,6 +38,11 @@ namespace PennyPet
             return _activeNote;
         }
 
+        internal StickyNoteData CurrentNote
+        {
+            get { return _activeNote; }
+        }
+
         internal bool QueueCommit(StickyNoteData note, Action commit)
         {
             if (!ReferenceEquals(_activeNote, note) || commit == null)
@@ -82,10 +87,13 @@ namespace PennyPet
         // canvas and halves the visible distance to the character silhouette.
         internal const int PetGap = -20;
         internal const int PreviewInsertionGap = 14;
+        internal const int DragSourceVisualOffset = 5;
         internal const string DragDataFormat = "PennyPet.StickyNoteTabId";
 
         private static readonly StickyTabDropSession DragSession =
             new StickyTabDropSession();
+        private static readonly List<StickyNoteTabsForm> LiveForms =
+            new List<StickyNoteTabsForm>();
 
         private readonly StickyTabSide _side;
         private readonly Action<StickyNoteData> _openNote;
@@ -134,6 +142,7 @@ namespace PennyPet
             _layoutAnimationTimer = new System.Windows.Forms.Timer();
             _layoutAnimationTimer.Interval = 16;
             _layoutAnimationTimer.Tick += LayoutAnimationTick;
+            LiveForms.Add(this);
         }
 
         protected override bool ShowWithoutActivation
@@ -277,14 +286,7 @@ namespace PennyPet
             _dragPointerY = point.Y;
             int next = CalculateDropIndex(point.Y, Controls.Count);
             if (next == _dropIndex && ReferenceEquals(moved,
-                _previewDraggedNote))
-            {
-                // The pointer can move a long way without crossing the next
-                // insertion midpoint. Keep the timer alive so a same-side
-                // source follows every DragOver instead of jumping by rows.
-                if (!_restoringLayout) _layoutAnimationTimer.Start();
-                return;
-            }
+                _previewDraggedNote)) return;
             _dropIndex = next;
             _previewDraggedNote = moved;
             _restoringLayout = false;
@@ -337,6 +339,15 @@ namespace PennyPet
 
         internal static void EndDragSession(StickyNoteData note)
         {
+            // Clear both strips before a successful reorder rebuilds them.
+            // This also covers cancelled drops and prevents a stale insertion
+            // line from surviving on the strip that did not own the source.
+            foreach (StickyNoteTabsForm form in
+                new List<StickyNoteTabsForm>(LiveForms))
+            {
+                if (form != null && !form.IsDisposed)
+                    form.ResetDropPreview(false);
+            }
             DragSession.Complete(note);
         }
 
@@ -364,11 +375,13 @@ namespace PennyPet
         private void LayoutAnimationTick(object sender, EventArgs e)
         {
             int sourceIndex = -1;
+            StickyNoteData sourceNote = DragSession.CurrentNote ??
+                _previewDraggedNote;
             foreach (Control control in Controls)
             {
                 StickyNoteTabControl tab = control as StickyNoteTabControl;
-                if (tab != null && ReferenceEquals(tab.Note,
-                    _previewDraggedNote)) sourceIndex = tab.ListIndex;
+                if (tab != null && ReferenceEquals(tab.Note, sourceNote))
+                    sourceIndex = tab.ListIndex;
             }
             bool settled = true;
             foreach (Control control in Controls)
@@ -376,38 +389,45 @@ namespace PennyPet
                 StickyNoteTabControl tab = control as StickyNoteTabControl;
                 if (tab == null) continue;
                 int target;
-                bool movingSource = false;
+                bool isSource = sourceIndex >= 0 &&
+                    tab.ListIndex == sourceIndex;
                 if (_restoringLayout || _dropIndex < 0)
-                    target = tab.ListIndex * (TabHeight + TabGap);
-                else if (sourceIndex >= 0 && tab.ListIndex == sourceIndex)
+                    target = tab.ListIndex * (TabHeight + TabGap) +
+                        (isSource ? DragSourceVisualOffset : 0);
+                else if (isSource)
                 {
-                    movingSource = true;
-                    target = Math.Max(0, Math.Min(ClientSize.Height - TabHeight,
-                        _dragPointerY - TabHeight / 2));
+                    // Keep the source visible in its original strip. A small
+                    // vertical offset marks it as the item being dragged;
+                    // moving it with the pointer can push it outside the thin
+                    // side window when crossing to the opposite strip.
+                    target = tab.ListIndex * (TabHeight + TabGap) +
+                        DragSourceVisualOffset;
                     if (Controls.GetChildIndex(tab) != 0) tab.BringToFront();
                 }
                 else
                     target = PreviewTargetTop(tab.ListIndex, sourceIndex,
                         _dropIndex);
-                // The dragged tab must track the pointer without easing.
-                // Sibling tabs still animate into their preview positions.
-                int next = movingSource ? target :
-                    AnimateCoordinate(tab.Top, target);
+                int next = AnimateCoordinate(tab.Top, target);
                 if (next != target) settled = false;
                 if (tab.Top != next) tab.Top = next;
-                tab.IsDragSource = !_restoringLayout && sourceIndex >= 0 &&
-                    tab.ListIndex == sourceIndex;
+                tab.IsDragSource = isSource;
             }
             if (!settled) return;
             if (_restoringLayout)
             {
                 _restoringLayout = false;
-                _previewDraggedNote = null;
-                ClientSize = new Size(TabWidth, _normalHeight);
+                bool keepSourceOffset = DragSession.CurrentNote != null &&
+                    sourceIndex >= 0;
+                _previewDraggedNote = keepSourceOffset
+                    ? DragSession.CurrentNote : null;
+                ClientSize = new Size(TabWidth, _normalHeight +
+                    (keepSourceOffset ? DragSourceVisualOffset : 0));
                 foreach (Control control in Controls)
                 {
                     StickyNoteTabControl tab = control as StickyNoteTabControl;
-                    if (tab != null) tab.IsDragSource = false;
+                    if (tab != null)
+                        tab.IsDragSource = keepSourceOffset &&
+                            tab.ListIndex == sourceIndex;
                 }
             }
             _layoutAnimationTimer.Stop();
@@ -426,6 +446,7 @@ namespace PennyPet
         {
             _dropIndex = -1;
             Invalidate();
+            if (IsHandleCreated) Update();
             if (!animateBack)
             {
                 _previewDraggedNote = null;
@@ -470,11 +491,16 @@ namespace PennyPet
                 if (tab == null) continue;
                 tab.IsDragSource = tab.ListIndex == sourceIndex;
                 tab.Top = tab.ListIndex == sourceIndex
-                    ? Math.Max(0, Math.Min(ClientSize.Height - TabHeight,
-                        _dragPointerY - TabHeight / 2))
+                    ? tab.ListIndex * (TabHeight + TabGap) +
+                        DragSourceVisualOffset
                     : PreviewTargetTop(tab.ListIndex, sourceIndex, _dropIndex);
             }
             Invalidate();
+        }
+
+        internal bool HasDropPreviewForTest
+        {
+            get { return _dropIndex >= 0 || _previewDraggedNote != null; }
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -509,6 +535,7 @@ namespace PennyPet
             if (disposing && !_ownedResourcesDisposed)
             {
                 _ownedResourcesDisposed = true;
+                LiveForms.Remove(this);
                 _layoutAnimationTimer.Dispose();
                 _toolTip.Dispose();
             }

@@ -171,7 +171,7 @@ namespace PennyPet
             if (!_settings.ShowKeyOverlay)
                 _keyboardItem.Text = "按键显示：已关闭";
             else if (_keyboard.IsRunning)
-                _keyboardItem.Text = "按键显示：已开启（敏感输入尽力隐藏）";
+                _keyboardItem.Text = "按键显示：已开启（密码框自动隐藏）";
             else
                 _keyboardItem.Text = "按键显示：当前不可用";
         }
