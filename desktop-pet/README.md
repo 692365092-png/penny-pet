@@ -80,14 +80,23 @@ GitHub 开源发布版使用 `build.ps1` 生成可复现的未混淆二进制，
 
 ## 代码结构
 
-- `Program.cs`：桌宠状态机、交互和动画调度。
+- `Program.cs`：程序入口、命令行测试入口、单实例和启动准备。
+- `PetForm.cs`：桌宠 Windows 主窗口及各功能模块协调。
+- `PetContextMenu.cs`：桌宠右键菜单。
+- `PetAnimationController.cs`：动画状态、优先级、随机选择与恢复规则。
+- `PetReminderCoordinator.cs` / `PetReminderWindowsCoordinator.cs`：纯提醒规则与 Windows UI 协调。
 - `PetArt.cs`：外置美术包读取、GIF 时长解析、完整分辨率发布资源包、状态别名与画布适配。
 - `LayeredSpriteRenderer.cs`：Windows 透明分层窗口渲染。
-- `StickyNotes.cs` / `StickyNoteTabs.cs`：便利贴、清单和侧边页签。
+- `StickyNoteModels.cs` / `StickyNoteRepository.cs`：便利贴数据模型、关系、持久化与恢复。
+- `StickyNoteWpf.cs`：WPF 便利贴窗口本体、RichText、IME 和焦点兼容。
+- `StickyTodoController.cs` / `StickyScheduleController.cs`：待办和日程 UI 逻辑。
+- `StickyReminderController.cs` / `StickyAppearanceController.cs`：提醒条和外观 UI 逻辑。
+- `StickyDockController.cs`：Windows 便利贴吸附、拖拽、拆分与隐藏恢复协调。
+- `StickyNotes.cs` / `StickyNoteTabs.cs`：管理界面、IME 辅助控件和侧边页签。
 - `ReminderUi.cs` / `ReminderModels.cs` / `PetSettings.cs`：提醒界面、数据模型与设置持久化。
 - `SpeechBubbleForm.cs` / `StartupRegistration.cs`：桌宠气泡与开机启动。
 - `GlobalKeyboardActivity.cs` / `KeyboardOverlay.cs`：全局键盘活动与按键显示。
-- `PennySelfTests.cs`：自动测试、专项探针和测试预览。
+- `SelfTestRunner.cs` / `PennySelfTests.cs`：完整 SelfTest、专项探针和测试预览。
 
 更完整的开发入口、数据恢复说明和高风险兼容逻辑见项目根目录的 `DEVELOPER_GUIDE.md`。
 
