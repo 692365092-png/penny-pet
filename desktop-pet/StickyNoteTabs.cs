@@ -22,11 +22,13 @@ namespace PennyPet
     internal sealed class StickyTabDropSession
     {
         private StickyNoteData _activeNote;
+        private StickyNoteTabsForm _sourceForm;
         private Action _pendingCommit;
 
-        internal void Begin(StickyNoteData note)
+        internal void Begin(StickyNoteData note, StickyNoteTabsForm sourceForm)
         {
             _activeNote = note;
+            _sourceForm = sourceForm;
             _pendingCommit = null;
         }
 
@@ -43,6 +45,11 @@ namespace PennyPet
             get { return _activeNote; }
         }
 
+        internal bool IsSourceForm(StickyNoteTabsForm form)
+        {
+            return form != null && Object.ReferenceEquals(_sourceForm, form);
+        }
+
         internal bool QueueCommit(StickyNoteData note, Action commit)
         {
             if (!ReferenceEquals(_activeNote, note) || commit == null)
@@ -57,6 +64,7 @@ namespace PennyPet
             Action commit = _pendingCommit;
             _pendingCommit = null;
             _activeNote = null;
+            _sourceForm = null;
             if (commit != null) commit();
             return true;
         }
@@ -66,7 +74,7 @@ namespace PennyPet
             StickyTabDropSession session = new StickyTabDropSession();
             StickyNoteData note = new StickyNoteData();
             int commits = 0;
-            session.Begin(note);
+            session.Begin(note, null);
             bool queued = session.QueueCommit(note,
                 delegate { commits++; });
             bool deferred = commits == 0;
@@ -313,7 +321,8 @@ namespace PennyPet
             // A cross-side target must show its existing tabs continuously.
             // Snapping that short preview avoids the WinForms transparent-
             // child repaint hole that made the first target tab disappear.
-            if (ContainsNote(moved)) _layoutAnimationTimer.Start();
+            if (DragSession.IsSourceForm(this))
+                _layoutAnimationTimer.Start();
             else ApplyCrossSidePreviewImmediately();
             Invalidate();
             if (IsHandleCreated) Update();
@@ -380,7 +389,24 @@ namespace PennyPet
 
         internal static void BeginDragSession(StickyNoteData note)
         {
-            DragSession.Begin(note);
+            StickyNoteTabsForm source = null;
+            foreach (StickyNoteTabsForm form in
+                new List<StickyNoteTabsForm>(LiveForms))
+            {
+                if (form != null && !form.IsDisposed &&
+                    form.ContainsNote(note))
+                {
+                    source = form;
+                    break;
+                }
+            }
+            BeginDragSession(note, source);
+        }
+
+        internal static void BeginDragSession(StickyNoteData note,
+            StickyNoteTabsForm source)
+        {
+            DragSession.Begin(note, source);
             ShowSourceOnly(note);
         }
 
@@ -432,7 +458,10 @@ namespace PennyPet
         {
             if (listIndex == sourceIndex)
                 return listIndex * (TabHeight + TabGap);
-            int compactIndex = listIndex > sourceIndex ? listIndex - 1 : listIndex;
+            // sourceIndex == -1 means the source belongs to the opposite
+            // strip. Nothing in this target strip may be compacted away.
+            int compactIndex = sourceIndex >= 0 && listIndex > sourceIndex
+                ? listIndex - 1 : listIndex;
             int insertion = dropIndex;
             if (sourceIndex >= 0 && sourceIndex < insertion) insertion--;
             insertion = Math.Max(0, insertion);
@@ -447,10 +476,13 @@ namespace PennyPet
             StickyNoteTabControl sourceTab = null;
             StickyNoteData sourceNote = DragSession.CurrentNote ??
                 _previewDraggedNote;
+            bool canOwnSource = DragSession.CurrentNote == null ||
+                DragSession.IsSourceForm(this);
             foreach (Control control in Controls)
             {
                 StickyNoteTabControl tab = control as StickyNoteTabControl;
-                if (tab != null && ReferenceEquals(tab.Note, sourceNote))
+                if (canOwnSource && tab != null &&
+                    ReferenceEquals(tab.Note, sourceNote))
                 {
                     sourceIndex = tab.ListIndex;
                     sourceTab = tab;
@@ -551,11 +583,14 @@ namespace PennyPet
             _restoringLayout = false;
             _layoutAnimationTimer.Stop();
             StickyNoteTabControl source = null;
-            foreach (Control control in Controls)
+            if (DragSession.IsSourceForm(this))
             {
-                StickyNoteTabControl tab = control as StickyNoteTabControl;
-                if (tab != null && ReferenceEquals(tab.Note, note))
-                    source = tab;
+                foreach (Control control in Controls)
+                {
+                    StickyNoteTabControl tab = control as StickyNoteTabControl;
+                    if (tab != null && ReferenceEquals(tab.Note, note))
+                        source = tab;
+                }
             }
             _previewDraggedNote = source == null ? null : note;
             if (source != null) ApplySourceHorizontalOffset(source);
@@ -637,10 +672,13 @@ namespace PennyPet
             ClientSize = new Size(CurrentCanvasWidth,
                 _normalHeight + PreviewInsertionGap);
             int sourceIndex = -1;
+            bool canOwnSource = DragSession.CurrentNote == null ||
+                DragSession.IsSourceForm(this);
             foreach (Control control in Controls)
             {
                 StickyNoteTabControl tab = control as StickyNoteTabControl;
-                if (tab != null && ReferenceEquals(tab.Note, note))
+                if (canOwnSource && tab != null &&
+                    ReferenceEquals(tab.Note, note))
                     sourceIndex = tab.ListIndex;
             }
             foreach (Control control in Controls)
@@ -677,6 +715,17 @@ namespace PennyPet
             return false;
         }
 
+        internal int TabTopForTest(StickyNoteData note)
+        {
+            foreach (Control control in Controls)
+            {
+                StickyNoteTabControl tab = control as StickyNoteTabControl;
+                if (tab != null && ReferenceEquals(tab.Note, note))
+                    return tab.Top;
+            }
+            return Int32.MinValue;
+        }
+
         internal bool HasStableDragCanvasForTest
         {
             get
@@ -695,10 +744,12 @@ namespace PennyPet
             base.OnPaint(e);
             if (_dropIndex < 0) return;
             int sourceIndex = -1;
+            bool canOwnSource = DragSession.CurrentNote == null ||
+                DragSession.IsSourceForm(this);
             foreach (Control control in Controls)
             {
                 StickyNoteTabControl tab = control as StickyNoteTabControl;
-                if (tab != null && ReferenceEquals(tab.Note,
+                if (canOwnSource && tab != null && ReferenceEquals(tab.Note,
                     _previewDraggedNote)) sourceIndex = tab.ListIndex;
             }
             int insertion = _dropIndex;
@@ -840,13 +891,13 @@ namespace PennyPet
             _dragStarted = true;
             Capture = false;
             Cursor = Cursors.SizeAll;
-            StickyNoteTabsForm.BeginDragSession(_note);
+            StickyNoteTabsForm owner = Parent as StickyNoteTabsForm;
+            StickyNoteTabsForm.BeginDragSession(_note, owner);
             DataObject payload = new DataObject();
             payload.SetData(StickyNoteTabsForm.DragDataFormat, false, _note.Id);
             try { DoDragDrop(payload, DragDropEffects.Move); }
             finally
             {
-                StickyNoteTabsForm owner = Parent as StickyNoteTabsForm;
                 if (owner != null) owner.CancelDragPreview();
                 IsDragSource = false;
                 Cursor = Cursors.Hand;

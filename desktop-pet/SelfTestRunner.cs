@@ -1028,11 +1028,19 @@ namespace PennyPet
                     !String.IsNullOrEmpty(StickyNoteTabsForm.DragDataFormat) &&
                     StickyNoteTabsForm.CalculateDropIndex(0, 4) == 0 &&
                     StickyNoteTabsForm.CalculateDropIndex(95, 4) == 3 &&
+                    StickyNoteTabsForm.PreviewTargetTop(0, -1, 1) == 0 &&
+                    StickyNoteTabsForm.PreviewTargetTop(1, -1, 1) ==
+                        StickyNoteTabsForm.TabHeight +
+                        StickyNoteTabsForm.TabGap +
+                        StickyNoteTabsForm.PreviewInsertionGap &&
                     StickyNoteTabsForm.PreviewTargetTop(0, 2, 0) ==
                         StickyNoteTabsForm.PreviewInsertionGap;
                 bool sideTabDeferredDropCommitOk =
                     StickyTabDropSession.DefersCommitUntilCompletionForTest();
                 bool sideTabPreviewClearsBothSidesOk;
+                bool sideTabExplicitSourceKeepsTargetFirstOk = false;
+                bool sideTabTargetNeverMarkedAsSourceOk = false;
+                bool sideTabExclusiveCanvasStateOk = false;
                 StickyNoteData previewClearNote = new StickyNoteData();
                 StickyNoteData previewTargetNote = new StickyNoteData();
                 using (StickyNoteTabsForm previewClearLeft =
@@ -1045,18 +1053,28 @@ namespace PennyPet
                     previewClearLeft.SetNotes(new List<StickyNoteData>
                         { previewClearNote }, 0);
                     previewClearRight.SetNotes(new List<StickyNoteData>
-                        { previewTargetNote }, 1);
+                        { previewClearNote, previewTargetNote }, 1);
                     previewClearLeft.Hide();
                     previewClearRight.Hide();
-                    StickyNoteTabsForm.BeginDragSession(previewClearNote);
+                    StickyNoteTabsForm.BeginDragSession(previewClearNote,
+                        previewClearLeft);
                     previewClearLeft.ShowDropPreviewForTest(previewClearNote, 0);
                     bool leftWasTarget = previewClearLeft.HasDropPreviewForTest;
-                    previewClearRight.ShowDropPreviewForTest(previewClearNote, 0);
+                    previewClearRight.ShowDropPreviewForTest(previewClearNote, 1);
+                    sideTabExplicitSourceKeepsTargetFirstOk =
+                        previewClearRight.TabTopForTest(previewClearNote) == 0;
+                    sideTabTargetNeverMarkedAsSourceOk =
+                        !previewClearRight.HasDragSourceVisualForTest(
+                            previewClearNote);
+                    sideTabExclusiveCanvasStateOk =
+                        previewClearLeft.HasStableDragCanvasForTest &&
+                        previewClearRight.HasStableDragCanvasForTest;
                     bool targetIsExclusive = leftWasTarget &&
                         !previewClearLeft.HasDropPreviewForTest &&
                         previewClearRight.HasDropPreviewForTest &&
-                        previewClearLeft.HasStableDragCanvasForTest &&
-                        previewClearRight.HasStableDragCanvasForTest &&
+                        sideTabExplicitSourceKeepsTargetFirstOk &&
+                        sideTabTargetNeverMarkedAsSourceOk &&
+                        sideTabExclusiveCanvasStateOk &&
                         previewClearLeft.HasDragSourceVisualForTest(
                             previewClearNote);
                     StickyNoteTabsForm.EndDragSession(previewClearNote);
@@ -1998,6 +2016,12 @@ namespace PennyPet
                         sideTabDeferredDropCommitOk) + ",\n" +
                     "  \"side_tab_preview_clears_both_sides_ok\": " + Bool(
                         sideTabPreviewClearsBothSidesOk) + ",\n" +
+                    "  \"side_tab_explicit_source_keeps_target_first_ok\": " + Bool(
+                        sideTabExplicitSourceKeepsTargetFirstOk) + ",\n" +
+                    "  \"side_tab_target_never_marked_as_source_ok\": " + Bool(
+                        sideTabTargetNeverMarkedAsSourceOk) + ",\n" +
+                    "  \"side_tab_exclusive_canvas_state_ok\": " + Bool(
+                        sideTabExclusiveCanvasStateOk) + ",\n" +
                     "  \"side_tab_scaled_visual_gap_halved_ok\": " + Bool(
                         sideTabScaledGapOk) + ",\n" +
                     "  \"side_tab_vector_icon_uses_darker_tab_color_ok\": " + Bool(
