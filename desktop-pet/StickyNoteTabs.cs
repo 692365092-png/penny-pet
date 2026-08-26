@@ -15,6 +15,63 @@ namespace PennyPet
         Right
     }
 
+    // OLE DoDragDrop runs a nested Windows message loop. Posting BeginInvoke
+    // from DragDrop can therefore execute before DoDragDrop has actually
+    // returned and dispose the source tab while OLE still owns it. Keep the
+    // accepted drop here and commit only after the source leaves DoDragDrop.
+    internal sealed class StickyTabDropSession
+    {
+        private StickyNoteData _activeNote;
+        private Action _pendingCommit;
+
+        internal void Begin(StickyNoteData note)
+        {
+            _activeNote = note;
+            _pendingCommit = null;
+        }
+
+        internal StickyNoteData ActiveNote(string id)
+        {
+            if (_activeNote == null || String.IsNullOrEmpty(id) ||
+                !String.Equals(_activeNote.Id, id,
+                    StringComparison.OrdinalIgnoreCase)) return null;
+            return _activeNote;
+        }
+
+        internal bool QueueCommit(StickyNoteData note, Action commit)
+        {
+            if (!ReferenceEquals(_activeNote, note) || commit == null)
+                return false;
+            _pendingCommit = commit;
+            return true;
+        }
+
+        internal bool Complete(StickyNoteData note)
+        {
+            if (!ReferenceEquals(_activeNote, note)) return false;
+            Action commit = _pendingCommit;
+            _pendingCommit = null;
+            _activeNote = null;
+            if (commit != null) commit();
+            return true;
+        }
+
+        internal static bool DefersCommitUntilCompletionForTest()
+        {
+            StickyTabDropSession session = new StickyTabDropSession();
+            StickyNoteData note = new StickyNoteData();
+            int commits = 0;
+            session.Begin(note);
+            bool queued = session.QueueCommit(note,
+                delegate { commits++; });
+            bool deferred = commits == 0;
+            bool completed = session.Complete(note);
+            return queued && deferred && completed && commits == 1 &&
+                session.ActiveNote(note.Id) == null &&
+                !session.Complete(note);
+        }
+    }
+
     internal sealed class StickyNoteTabsForm : Form
     {
         internal const int TabWidth = 146;
@@ -27,7 +84,8 @@ namespace PennyPet
         internal const int PreviewInsertionGap = 14;
         internal const string DragDataFormat = "PennyPet.StickyNoteTabId";
 
-        private static StickyNoteData _activeDraggedNote;
+        private static readonly StickyTabDropSession DragSession =
+            new StickyTabDropSession();
 
         private readonly StickyTabSide _side;
         private readonly Action<StickyNoteData> _openNote;
@@ -219,7 +277,14 @@ namespace PennyPet
             _dragPointerY = point.Y;
             int next = CalculateDropIndex(point.Y, Controls.Count);
             if (next == _dropIndex && ReferenceEquals(moved,
-                _previewDraggedNote)) return;
+                _previewDraggedNote))
+            {
+                // The pointer can move a long way without crossing the next
+                // insertion midpoint. Keep the timer alive so a same-side
+                // source follows every DragOver instead of jumping by rows.
+                if (!_restoringLayout) _layoutAnimationTimer.Start();
+                return;
+            }
             _dropIndex = next;
             _previewDraggedNote = moved;
             _restoringLayout = false;
@@ -245,14 +310,14 @@ namespace PennyPet
             ResetDropPreview(false);
             if (moved == null || _reorderNote == null) return;
 
-            // DoDragDrop owns a nested message loop.  Rebuilding both side
-            // strips inside DragDrop disposes the source control before that
-            // loop has unwound, which can deadlock when a tab crosses sides.
-            // Defer the repository reorder until the drag operation returns.
+            // Do not post this with BeginInvoke: the OLE nested message loop
+            // may dispatch it before DoDragDrop returns. The source control
+            // completes the session after OLE has fully unwound.
             Action<StickyNoteData, int> reorder = _reorderNote;
-            BeginInvoke((MethodInvoker)delegate
+            StickyNoteTabsForm target = this;
+            DragSession.QueueCommit(moved, delegate
             {
-                if (IsDisposed) return;
+                if (target.IsDisposed) return;
                 reorder(moved, destination);
             });
         }
@@ -262,21 +327,17 @@ namespace PennyPet
             if (data == null || !data.GetDataPresent(DragDataFormat, false))
                 return null;
             string id = data.GetData(DragDataFormat, false) as string;
-            if (_activeDraggedNote == null || String.IsNullOrEmpty(id) ||
-                !String.Equals(_activeDraggedNote.Id, id,
-                    StringComparison.OrdinalIgnoreCase)) return null;
-            return _activeDraggedNote;
+            return DragSession.ActiveNote(id);
         }
 
         internal static void BeginDragSession(StickyNoteData note)
         {
-            _activeDraggedNote = note;
+            DragSession.Begin(note);
         }
 
         internal static void EndDragSession(StickyNoteData note)
         {
-            if (ReferenceEquals(_activeDraggedNote, note))
-                _activeDraggedNote = null;
+            DragSession.Complete(note);
         }
 
         internal static int CalculateDropIndex(int pointerY, int count)
@@ -315,18 +376,23 @@ namespace PennyPet
                 StickyNoteTabControl tab = control as StickyNoteTabControl;
                 if (tab == null) continue;
                 int target;
+                bool movingSource = false;
                 if (_restoringLayout || _dropIndex < 0)
                     target = tab.ListIndex * (TabHeight + TabGap);
                 else if (sourceIndex >= 0 && tab.ListIndex == sourceIndex)
                 {
+                    movingSource = true;
                     target = Math.Max(0, Math.Min(ClientSize.Height - TabHeight,
                         _dragPointerY - TabHeight / 2));
-                    tab.BringToFront();
+                    if (Controls.GetChildIndex(tab) != 0) tab.BringToFront();
                 }
                 else
                     target = PreviewTargetTop(tab.ListIndex, sourceIndex,
                         _dropIndex);
-                int next = AnimateCoordinate(tab.Top, target);
+                // The dragged tab must track the pointer without easing.
+                // Sibling tabs still animate into their preview positions.
+                int next = movingSource ? target :
+                    AnimateCoordinate(tab.Top, target);
                 if (next != target) settled = false;
                 if (tab.Top != next) tab.Top = next;
                 tab.IsDragSource = !_restoringLayout && sourceIndex >= 0 &&
@@ -566,11 +632,13 @@ namespace PennyPet
             try { DoDragDrop(payload, DragDropEffects.Move); }
             finally
             {
-                StickyNoteTabsForm.EndDragSession(_note);
                 StickyNoteTabsForm owner = Parent as StickyNoteTabsForm;
                 if (owner != null) owner.CancelDragPreview();
                 IsDragSource = false;
                 Cursor = Cursors.Hand;
+                // This is intentionally last: the commit rebuilds both tab
+                // strips and can dispose this source control.
+                StickyNoteTabsForm.EndDragSession(_note);
             }
         }
 

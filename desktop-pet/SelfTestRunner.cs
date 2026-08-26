@@ -282,7 +282,11 @@ namespace PennyPet
                     PetKeyboardPrivacyPolicy.RequiresFirstUseNotice(true, false) &&
                     !PetKeyboardPrivacyPolicy.RequiresFirstUseNotice(true, true) &&
                     PetKeyboardPrivacyPolicy.ShouldDisableUnacknowledgedLegacyOptIn(
-                        true, false);
+                        true, false) &&
+                    PetKeyboardPrivacyPolicy.FirstUseNotice.IndexOf("杀毒软件",
+                        StringComparison.Ordinal) >= 0 &&
+                    PetKeyboardPrivacyPolicy.FirstUseNotice.IndexOf("误报",
+                        StringComparison.Ordinal) >= 0;
                 bool startupLoadingReadinessGateOk =
                     !PetForm.CanReleaseStartupLoading(false, false) &&
                     !PetForm.CanReleaseStartupLoading(true, false) &&
@@ -1024,6 +1028,8 @@ namespace PennyPet
                     StickyNoteTabsForm.CalculateDropIndex(95, 4) == 3 &&
                     StickyNoteTabsForm.PreviewTargetTop(0, 2, 0) ==
                         StickyNoteTabsForm.PreviewInsertionGap;
+                bool sideTabDeferredDropCommitOk =
+                    StickyTabDropSession.DefersCommitUntilCompletionForTest();
                 int fullOverlap = StickyNoteTabsForm.PetOverlapForWidth(192);
                 int doubleOverlap = StickyNoteTabsForm.PetOverlapForWidth(384);
                 bool sideTabScaledGapOk =
@@ -1730,7 +1736,8 @@ namespace PennyPet
                     softPaletteOk && automaticNoteBackupOk &&
                     fullWidthLatinNormalizationOk && renameInitialFocusOk &&
                     sideTabOverflowOk && sideTabDeleteCommandOk &&
-                    sideTabDragPreviewOk && sideTabScaledGapOk &&
+                    sideTabDragPreviewOk && sideTabDeferredDropCommitOk &&
+                    sideTabScaledGapOk &&
                     sideTabVectorIconColorOk && imeAnimationGuardOk &&
                     imeAutoSaveGuardOk &&
                     sideTabOrderPersistenceOk && dockPersistenceAndGeometryOk &&
@@ -1948,6 +1955,8 @@ namespace PennyPet
                     "  \"side_tab_left_then_right_overflow_ok\": " + Bool(sideTabOverflowOk) + ",\n" +
                     "  \"side_tab_delete_command_ok\": " + Bool(sideTabDeleteCommandOk) + ",\n" +
                     "  \"side_tab_drag_preview_ok\": " + Bool(sideTabDragPreviewOk) + ",\n" +
+                    "  \"side_tab_drop_commit_after_drag_loop_ok\": " + Bool(
+                        sideTabDeferredDropCommitOk) + ",\n" +
                     "  \"side_tab_scaled_visual_gap_halved_ok\": " + Bool(
                         sideTabScaledGapOk) + ",\n" +
                     "  \"side_tab_vector_icon_uses_darker_tab_color_ok\": " + Bool(
