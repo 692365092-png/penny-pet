@@ -1041,7 +1041,10 @@ namespace PennyPet
                 bool sideTabExplicitSourceKeepsTargetFirstOk = false;
                 bool sideTabTargetNeverMarkedAsSourceOk = false;
                 bool sideTabExclusiveCanvasStateOk = false;
+                bool sideTabReverseBoundaryRolloverOk = false;
+                bool sideTabBoundaryEdgeDropOk = false;
                 StickyNoteData previewClearNote = new StickyNoteData();
+                StickyNoteData previewBoundaryNote = new StickyNoteData();
                 StickyNoteData previewTargetNote = new StickyNoteData();
                 using (StickyNoteTabsForm previewClearLeft =
                     new StickyNoteTabsForm(StickyTabSide.Left,
@@ -1053,16 +1056,20 @@ namespace PennyPet
                     previewClearLeft.SetNotes(new List<StickyNoteData>
                         { previewClearNote }, 0);
                     previewClearRight.SetNotes(new List<StickyNoteData>
-                        { previewClearNote, previewTargetNote }, 1);
+                        { previewBoundaryNote, previewTargetNote }, 1);
                     previewClearLeft.Hide();
                     previewClearRight.Hide();
                     StickyNoteTabsForm.BeginDragSession(previewClearNote,
                         previewClearLeft);
                     previewClearLeft.ShowDropPreviewForTest(previewClearNote, 0);
                     bool leftWasTarget = previewClearLeft.HasDropPreviewForTest;
-                    previewClearRight.ShowDropPreviewForTest(previewClearNote, 1);
+                    previewClearRight.ShowDropPreviewForTest(previewClearNote, 2);
                     sideTabExplicitSourceKeepsTargetFirstOk =
-                        previewClearRight.TabTopForTest(previewClearNote) == 0;
+                        previewClearRight.TabTopForTest(previewTargetNote) == 0 &&
+                        !previewClearRight.TabVisibleForTest(
+                            previewBoundaryNote) &&
+                        previewClearLeft.HasBoundaryRolloverForTest(
+                            previewBoundaryNote, false);
                     sideTabTargetNeverMarkedAsSourceOk =
                         !previewClearRight.HasDragSourceVisualForTest(
                             previewClearNote);
@@ -1083,8 +1090,66 @@ namespace PennyPet
                         !previewClearRight.HasDropPreviewForTest &&
                         previewClearLeft.HasStableDragCanvasForTest &&
                         previewClearRight.HasStableDragCanvasForTest &&
+                        previewClearRight.TabVisibleForTest(
+                            previewBoundaryNote) &&
+                        !previewClearLeft.HasBoundaryRolloverForTest(
+                            previewBoundaryNote, false) &&
                         !previewClearLeft.HasDragSourceVisualForTest(
                             previewClearNote);
+                    StickyNoteTabsForm.BeginDragSession(previewClearNote,
+                        previewClearLeft);
+                    previewClearRight.ShowDropPreviewForTest(
+                        previewClearNote, 0);
+                    sideTabBoundaryEdgeDropOk =
+                        previewClearRight.TabVisibleForTest(
+                            previewBoundaryNote) &&
+                        !previewClearLeft.HasBoundaryRolloverForTest(
+                            previewBoundaryNote, false) &&
+                        previewClearLeft.HasDragSourceVisualForTest(
+                            previewClearNote);
+                    StickyNoteTabsForm.EndDragSession(previewClearNote);
+                }
+                StickyNoteData reverseTop = new StickyNoteData();
+                StickyNoteData reverseBoundary = new StickyNoteData();
+                StickyNoteData reverseSource = new StickyNoteData();
+                StickyNoteData reverseTail = new StickyNoteData();
+                using (StickyNoteTabsForm reverseLeft =
+                    new StickyNoteTabsForm(StickyTabSide.Left,
+                        delegate(StickyNoteData note) { }))
+                using (StickyNoteTabsForm reverseRight =
+                    new StickyNoteTabsForm(StickyTabSide.Right,
+                        delegate(StickyNoteData note) { }))
+                {
+                    reverseLeft.SetNotes(new List<StickyNoteData>
+                        { reverseTop, reverseBoundary }, 0);
+                    reverseRight.SetNotes(new List<StickyNoteData>
+                        { reverseSource, reverseTail }, 2);
+                    reverseLeft.Hide();
+                    reverseRight.Hide();
+                    StickyNoteTabsForm.BeginDragSession(reverseSource,
+                        reverseRight);
+                    reverseLeft.ShowDropPreviewForTest(reverseSource, 1);
+                    sideTabReverseBoundaryRolloverOk =
+                        reverseLeft.TabTopForTest(reverseTop) == 0 &&
+                        !reverseLeft.TabVisibleForTest(reverseBoundary) &&
+                        reverseRight.HasBoundaryRolloverForTest(
+                            reverseBoundary, true) &&
+                        reverseRight.HasStableDragCanvasForTest;
+                    StickyNoteTabsForm.EndDragSession(reverseSource);
+                    sideTabReverseBoundaryRolloverOk =
+                        sideTabReverseBoundaryRolloverOk &&
+                        reverseLeft.TabVisibleForTest(reverseBoundary) &&
+                        !reverseRight.HasBoundaryRolloverForTest(
+                            reverseBoundary, true);
+                    StickyNoteTabsForm.BeginDragSession(reverseSource,
+                        reverseRight);
+                    reverseLeft.ShowDropPreviewForTest(reverseSource, 2);
+                    sideTabBoundaryEdgeDropOk = sideTabBoundaryEdgeDropOk &&
+                        reverseLeft.TabVisibleForTest(reverseBoundary) &&
+                        !reverseRight.HasBoundaryRolloverForTest(
+                            reverseBoundary, true) &&
+                        reverseRight.HasDragSourceVisualForTest(reverseSource);
+                    StickyNoteTabsForm.EndDragSession(reverseSource);
                 }
                 int fullOverlap = StickyNoteTabsForm.PetOverlapForWidth(192);
                 int doubleOverlap = StickyNoteTabsForm.PetOverlapForWidth(384);
@@ -1794,6 +1859,8 @@ namespace PennyPet
                     sideTabOverflowOk && sideTabDeleteCommandOk &&
                     sideTabDragPreviewOk && sideTabDeferredDropCommitOk &&
                     sideTabPreviewClearsBothSidesOk &&
+                    sideTabReverseBoundaryRolloverOk &&
+                    sideTabBoundaryEdgeDropOk &&
                     sideTabScaledGapOk &&
                     sideTabVectorIconColorOk && imeAnimationGuardOk &&
                     imeAutoSaveGuardOk &&
@@ -2022,6 +2089,10 @@ namespace PennyPet
                         sideTabTargetNeverMarkedAsSourceOk) + ",\n" +
                     "  \"side_tab_exclusive_canvas_state_ok\": " + Bool(
                         sideTabExclusiveCanvasStateOk) + ",\n" +
+                    "  \"side_tab_reverse_boundary_rollover_ok\": " + Bool(
+                        sideTabReverseBoundaryRolloverOk) + ",\n" +
+                    "  \"side_tab_boundary_edge_drop_ok\": " + Bool(
+                        sideTabBoundaryEdgeDropOk) + ",\n" +
                     "  \"side_tab_scaled_visual_gap_halved_ok\": " + Bool(
                         sideTabScaledGapOk) + ",\n" +
                     "  \"side_tab_vector_icon_uses_darker_tab_color_ok\": " + Bool(

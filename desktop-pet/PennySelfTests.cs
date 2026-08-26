@@ -823,7 +823,7 @@ namespace PennyPet
                     if (crossSideSource != null)
                     {
                         StickyNoteTabsForm.BeginDragSession(crossSideSource);
-                        rightTabs.ShowDropPreviewForTest(crossSideSource, 1);
+                        rightTabs.ShowDropPreviewForTest(crossSideSource, 2);
                     }
                     Application.DoEvents();
                     using (Bitmap leftTabsBitmap = new Bitmap(leftTabs.Width,
