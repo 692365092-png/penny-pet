@@ -55,13 +55,16 @@
     <Compile Include="StickyAppearanceController.cs" />
     <Compile Include="StickyAppearanceDialog.cs" />
     <Compile Include="StickyDockController.cs" />
+    <Compile Include="StickyEditorController.cs" />
     <Compile Include="StickyNoteLinks.cs" />
     <Compile Include="StickyNoteModels.cs" />
     <Compile Include="StickyNoteRepository.cs" />
+    <Compile Include="StickyLinkController.cs" />
     <Compile Include="StickyLinkService.cs" />
     <Compile Include="StickyNotes.cs" />
     <Compile Include="StickyNoteTabs.cs" />
     <Compile Include="StickyNoteWpf.cs" />
+    <Compile Include="StickyNativeWindowBehavior.cs" />
     <Compile Include="StickyReminderController.cs" />
     <Compile Include="StickyScheduleController.cs" />
     <Compile Include="StickyTodoController.cs" />
