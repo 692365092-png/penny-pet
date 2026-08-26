@@ -457,8 +457,12 @@ namespace PennyPet
                     sourceIndex >= 0;
                 _previewDraggedNote = keepSourceOffset
                     ? DragSession.CurrentNote : null;
+                // Keep a stable transparent canvas for the whole OLE drag.
+                // Resizing a TransparencyKey form while child tabs animate
+                // can make Windows temporarily omit a moving child window.
+                bool dragStillActive = DragSession.CurrentNote != null;
                 ClientSize = new Size(TabWidth, _normalHeight +
-                    (keepSourceOffset ? DragSourceVisualOffset : 0));
+                    (dragStillActive ? PreviewInsertionGap : 0));
                 foreach (Control control in Controls)
                 {
                     StickyNoteTabControl tab = control as StickyNoteTabControl;
@@ -526,8 +530,12 @@ namespace PennyPet
                 tab.IsDragSource = isSource;
             }
             if (source != null) source.BringToFront();
+            // Both strips reserve the same transparent insertion area until
+            // DoDragDrop ends. Switching target sides therefore never shrinks
+            // a top-level transparent form in the middle of the animation.
+            bool dragActive = DragSession.CurrentNote != null;
             ClientSize = new Size(TabWidth, _normalHeight +
-                (source != null ? DragSourceVisualOffset : 0));
+                (dragActive ? PreviewInsertionGap : 0));
             Invalidate();
             if (IsHandleCreated) Update();
         }
@@ -582,6 +590,17 @@ namespace PennyPet
                     Controls.GetChildIndex(tab) == 0;
             }
             return false;
+        }
+
+        internal bool HasStableDragCanvasForTest
+        {
+            get
+            {
+                return DragSession.CurrentNote == null
+                    ? ClientSize.Height == _normalHeight
+                    : ClientSize.Height == _normalHeight +
+                        PreviewInsertionGap;
+            }
         }
 
         protected override void OnPaint(PaintEventArgs e)

@@ -1055,12 +1055,16 @@ namespace PennyPet
                     bool targetIsExclusive = leftWasTarget &&
                         !previewClearLeft.HasDropPreviewForTest &&
                         previewClearRight.HasDropPreviewForTest &&
+                        previewClearLeft.HasStableDragCanvasForTest &&
+                        previewClearRight.HasStableDragCanvasForTest &&
                         previewClearLeft.HasDragSourceVisualForTest(
                             previewClearNote);
                     StickyNoteTabsForm.EndDragSession(previewClearNote);
                     sideTabPreviewClearsBothSidesOk = targetIsExclusive &&
                         !previewClearLeft.HasDropPreviewForTest &&
                         !previewClearRight.HasDropPreviewForTest &&
+                        previewClearLeft.HasStableDragCanvasForTest &&
+                        previewClearRight.HasStableDragCanvasForTest &&
                         !previewClearLeft.HasDragSourceVisualForTest(
                             previewClearNote);
                 }
