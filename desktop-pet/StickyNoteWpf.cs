@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -1946,28 +1945,29 @@ namespace PennyPet
             OpenOrdinaryLink(link);
         }
 
-        private static void OpenOrdinaryLink(OrdinaryLinkRange link)
+        private void OpenOrdinaryLink(OrdinaryLinkRange link)
         {
             if (link == null || String.IsNullOrWhiteSpace(link.Target)) return;
-            if (link.IsLocalPath && !File.Exists(link.Target) &&
-                !Directory.Exists(link.Target))
+            Exception error;
+            StickyLinkOpenResult result = StickyLinkService.Open(link.Target,
+                link.IsLocalPath,
+                delegate(StickyLinkOpenRisk risk, string target)
+                {
+                    return W.MessageBox.Show(this,
+                        StickyLinkService.ConfirmationMessage(risk, target),
+                        "确认打开可能有风险的路径",
+                        W.MessageBoxButton.YesNo,
+                        W.MessageBoxImage.Warning,
+                        W.MessageBoxResult.No) == W.MessageBoxResult.Yes;
+                }, out error);
+            if (result == StickyLinkOpenResult.Missing)
             {
                 System.Media.SystemSounds.Beep.Play();
                 return;
             }
-            try
-            {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = link.Target,
-                    UseShellExecute = true
-                });
-            }
-            catch (Exception error)
-            {
+            if (result == StickyLinkOpenResult.Failed)
                 ApplicationDiagnostics.ReportNonFatal(
                     "sticky-link-open", error);
-            }
         }
 
         private sealed class OrdinaryLinkRange

@@ -168,6 +168,7 @@ namespace PennyPet
                 memorySettings.StartWithWindows = false;
                 memorySettings.ScalePercent = 170;
                 memorySettings.ShowKeyOverlay = false;
+                memorySettings.KeyboardPrivacyNoticeAccepted = true;
                 memorySettings.KeyOverlayScalePercent = 150;
                 memorySettings.SilentMode = true;
                 memorySettings.SaveToFile(persistenceTestPath);
@@ -181,7 +182,10 @@ namespace PennyPet
                     !diskSettings.StartWithWindows &&
                     diskSettings.ScalePercent == 170 &&
                     !diskSettings.ShowKeyOverlay &&
+                    diskSettings.KeyboardPrivacyNoticeAccepted &&
                     diskSettings.KeyOverlayScalePercent == 150;
+                bool keyboardPrivacyNoticePersistenceOk =
+                    diskSettings.KeyboardPrivacyNoticeAccepted;
                 bool silentModePersistenceOk = diskSettings.SilentMode;
                 File.Copy(persistenceTestPath, persistenceTestPath + ".bak", true);
                 const string corruptSettingsPayload = "not-a-penny-setting";
@@ -197,7 +201,9 @@ namespace PennyPet
                     settingsName + ".corrupt-*");
                 bool settingsBackupRecoveryOk =
                     recoveredSettings.ScalePercent == 170 &&
-                    recoveredSettings.SilentMode && preservedSettings.Length > 0 &&
+                    recoveredSettings.SilentMode &&
+                    recoveredSettings.KeyboardPrivacyNoticeAccepted &&
+                    preservedSettings.Length > 0 &&
                     File.ReadAllText(preservedSettings[0], Encoding.UTF8) ==
                         corruptSettingsPayload;
                 if (File.Exists(persistenceTestPath)) File.Delete(persistenceTestPath);
@@ -269,8 +275,14 @@ namespace PennyPet
                     "\"C:\\Program Files\\Penny pet.exe\"";
                 bool keyboardHookOptInDefaultOk =
                     !new PetSettings().ShowKeyOverlay &&
-                    !PetForm.ShouldStartKeyboardHook(false) &&
-                    PetForm.ShouldStartKeyboardHook(true);
+                    !new PetSettings().KeyboardPrivacyNoticeAccepted &&
+                    !PetKeyboardPrivacyPolicy.ShouldStartHook(false, false) &&
+                    !PetKeyboardPrivacyPolicy.ShouldStartHook(true, false) &&
+                    PetKeyboardPrivacyPolicy.ShouldStartHook(true, true) &&
+                    PetKeyboardPrivacyPolicy.RequiresFirstUseNotice(true, false) &&
+                    !PetKeyboardPrivacyPolicy.RequiresFirstUseNotice(true, true) &&
+                    PetKeyboardPrivacyPolicy.ShouldDisableUnacknowledgedLegacyOptIn(
+                        true, false);
                 bool startupLoadingReadinessGateOk =
                     !PetForm.CanReleaseStartupLoading(false, false) &&
                     !PetForm.CanReleaseStartupLoading(true, false) &&
@@ -561,7 +573,11 @@ namespace PennyPet
                     SensitiveInputDetector.ShouldSuppress(true, false, false) &&
                     SensitiveInputDetector.ShouldSuppress(false, true, false) &&
                     SensitiveInputDetector.ShouldSuppress(false, false, true) &&
-                    !SensitiveInputDetector.ShouldSuppress(false, false, false);
+                    !SensitiveInputDetector.ShouldSuppress(false, false, false) &&
+                    SensitiveInputDetector.ShouldSuppress(false, false, false,
+                        false) &&
+                    !SensitiveInputDetector.ShouldSuppress(false, false, false,
+                        true);
                 bool keyboardPrivacyGenerationOk =
                     PetForm.IsCurrentPrivacyScan(12, 12) &&
                     !PetForm.IsCurrentPrivacyScan(12, 13);
@@ -1634,6 +1650,22 @@ namespace PennyPet
                     !detectedLinks[1].IsLocalPath &&
                     detectedLinks[1].Target.StartsWith(
                         "https://www.baidu.com/", StringComparison.Ordinal);
+                bool dangerousLocalLinkPolicyOk =
+                    StickyLinkService.Classify("C:\\Tools\\setup.EXE", true) ==
+                        StickyLinkOpenRisk.ExecutableOrScript &&
+                    StickyLinkService.Classify("C:\\Tools\\run.ps1", true) ==
+                        StickyLinkOpenRisk.ExecutableOrScript &&
+                    StickyLinkService.Classify("C:\\Docs\\target.lnk", true) ==
+                        StickyLinkOpenRisk.Shortcut &&
+                    StickyLinkService.Classify("\\\\server\\share\\report.pdf",
+                        true) == StickyLinkOpenRisk.NetworkShare &&
+                    StickyLinkService.Classify("C:\\Docs\\report.xlsx", true) ==
+                        StickyLinkOpenRisk.None &&
+                    StickyLinkService.Classify("https://www.baidu.com/", false) ==
+                        StickyLinkOpenRisk.None &&
+                    StickyLinkService.ConfirmationMessage(
+                        StickyLinkOpenRisk.ExecutableOrScript,
+                        "C:\\Tools\\setup.exe").Contains("确定继续");
                 StickyNoteData linkNoteData = new StickyNoteData();
                 linkNoteData.Text =
                     "C:\\Users\\Penny pet\\进度表.xlsx\r\n" +
@@ -1694,6 +1726,7 @@ namespace PennyPet
                     highDpiStickyLayoutOk &&
                     reminderDefaultCurrentTimeOk &&
                     ordinaryStickyLinkDetectionOk &&
+                    dangerousLocalLinkPolicyOk &&
                     softPaletteOk && automaticNoteBackupOk &&
                     fullWidthLatinNormalizationOk && renameInitialFocusOk &&
                     sideTabOverflowOk && sideTabDeleteCommandOk &&
@@ -1731,6 +1764,7 @@ namespace PennyPet
                     preAlertWindowOk && reminderClockWhileEditingOk &&
                     reminderBannerTickThrottleOk &&
                     startupDefaultOk && keyboardHookOptInDefaultOk &&
+                    keyboardPrivacyNoticePersistenceOk &&
                     startupLoadingReadinessGateOk &&
                     goodbyeAnimationOk &&
                     notificationAnimationOk && notificationTriggerPlaybackOk &&
@@ -1906,6 +1940,8 @@ namespace PennyPet
                     "  \"reminder_default_current_time_ok\": " + Bool(reminderDefaultCurrentTimeOk) + ",\n" +
                     "  \"ordinary_sticky_web_and_local_links_ok\": " + Bool(
                         ordinaryStickyLinkDetectionOk) + ",\n" +
+                    "  \"dangerous_local_link_confirmation_policy_ok\": " + Bool(
+                        dangerousLocalLinkPolicyOk) + ",\n" +
                     "  \"soft_sticky_palette_ok\": " + Bool(softPaletteOk) + ",\n" +
                     "  \"full_width_latin_normalization_ok\": " + Bool(fullWidthLatinNormalizationOk) + ",\n" +
                     "  \"rename_initial_focus_ok\": " + Bool(renameInitialFocusOk) + ",\n" +
@@ -2001,6 +2037,8 @@ namespace PennyPet
                     "  \"startup_default_ok\": " + Bool(startupDefaultOk) + ",\n" +
                     "  \"keyboard_hook_opt_in_and_default_off_ok\": " + Bool(
                         keyboardHookOptInDefaultOk) + ",\n" +
+                    "  \"keyboard_privacy_notice_persistence_ok\": " + Bool(
+                        keyboardPrivacyNoticePersistenceOk) + ",\n" +
                     "  \"startup_loading_waits_for_ui_and_art_ok\": " + Bool(
                         startupLoadingReadinessGateOk) + ",\n" +
                     "  \"goodbye_animation_ok\": " + Bool(goodbyeAnimationOk) + ",\n" +

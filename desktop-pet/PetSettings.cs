@@ -15,6 +15,7 @@ namespace PennyPet
         public bool StartWithWindows = true;
         public int ScalePercent = 100;
         public bool ShowKeyOverlay;
+        public bool KeyboardPrivacyNoticeAccepted;
         public int KeyOverlayScalePercent = 100;
         public bool SilentMode;
         public readonly List<ReminderItem> Reminders = new List<ReminderItem>();
@@ -146,6 +147,11 @@ namespace PennyPet
                         settings.ShowKeyOverlay = value != "0";
                         recognized = true;
                     }
+                    else if (key == "KeyboardPrivacyNoticeAccepted")
+                    {
+                        settings.KeyboardPrivacyNoticeAccepted = value == "1";
+                        recognized = true;
+                    }
                     else if (key == "SilentMode")
                     {
                         settings.SilentMode = value == "1";
@@ -245,6 +251,8 @@ namespace PennyPet
                 lines.Add("StartWithWindows=" + (StartWithWindows ? "1" : "0"));
                 lines.Add("ScalePercent=" + PetForm.NormalizeScalePercent(ScalePercent));
                 lines.Add("ShowKeyOverlay=" + (ShowKeyOverlay ? "1" : "0"));
+                lines.Add("KeyboardPrivacyNoticeAccepted=" +
+                    (KeyboardPrivacyNoticeAccepted ? "1" : "0"));
                 lines.Add("SilentMode=" + (SilentMode ? "1" : "0"));
                 lines.Add("KeyOverlayScalePercent=" +
                     KeyboardOverlayForm.NormalizeTextScalePercent(KeyOverlayScalePercent));

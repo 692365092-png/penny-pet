@@ -210,6 +210,15 @@ namespace PennyPet
             AutoScaleMode = AutoScaleMode.None;
 
             _settings = preloadedSettings ?? PetSettings.Load();
+            if (PetKeyboardPrivacyPolicy.ShouldDisableUnacknowledgedLegacyOptIn(
+                _settings.ShowKeyOverlay,
+                _settings.KeyboardPrivacyNoticeAccepted))
+            {
+                // Older versions could enable the hook without the explicit
+                // first-use notice. Require a fresh opt-in after this upgrade.
+                _settings.ShowKeyOverlay = false;
+                _settings.Save();
+            }
             _art = PetArtPackage.Load(CellWidth, CellHeight);
             Text = _art.DisplayName;
             _scalePercent = NormalizeScalePercent(_settings.ScalePercent);
@@ -381,7 +390,9 @@ namespace PennyPet
             }
             if (_startupWorkPhase == 0)
             {
-                if (ShouldStartKeyboardHook(_settings.ShowKeyOverlay))
+                if (PetKeyboardPrivacyPolicy.ShouldStartHook(
+                    _settings.ShowKeyOverlay,
+                    _settings.KeyboardPrivacyNoticeAccepted))
                 {
                     try
                     {
@@ -2257,6 +2268,24 @@ namespace PennyPet
         private void KeyboardItemClick(object sender, EventArgs e)
         {
             bool desired = _keyboardItem.Checked;
+            if (PetKeyboardPrivacyPolicy.RequiresFirstUseNotice(desired,
+                _settings.KeyboardPrivacyNoticeAccepted))
+            {
+                DialogResult notice = MessageBox.Show(this,
+                    PetKeyboardPrivacyPolicy.FirstUseNotice,
+                    "开启按键显示前请确认",
+                    MessageBoxButtons.OKCancel, MessageBoxIcon.Warning,
+                    MessageBoxDefaultButton.Button2);
+                if (notice != DialogResult.OK)
+                {
+                    _keyboardItem.Checked = false;
+                    _settings.ShowKeyOverlay = false;
+                    _settings.Save();
+                    RefreshKeyboardMenuText();
+                    return;
+                }
+                _settings.KeyboardPrivacyNoticeAccepted = true;
+            }
             if (desired && !_keyboard.IsRunning)
             {
                 try
@@ -2279,11 +2308,6 @@ namespace PennyPet
             RefreshKeyboardMenuText();
         }
 
-        internal static bool ShouldStartKeyboardHook(bool showKeyOverlay)
-        {
-            return showKeyOverlay;
-        }
-
         private void SilentItemClick(object sender, EventArgs e)
         {
             _settings.SilentMode = _silentItem.Checked;
@@ -2304,7 +2328,7 @@ namespace PennyPet
             if (!_settings.ShowKeyOverlay)
                 _keyboardItem.Text = "按键显示：已关闭";
             else if (_keyboard.IsRunning)
-                _keyboardItem.Text = "按键显示：已开启（密码框自动隐藏）";
+                _keyboardItem.Text = "按键显示：已开启（敏感输入尽力隐藏）";
             else
                 _keyboardItem.Text = "按键显示：当前不可用";
         }

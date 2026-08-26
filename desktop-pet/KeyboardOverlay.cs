@@ -226,6 +226,7 @@ namespace PennyPet
         public static bool IsSensitiveFocus()
         {
             bool automationPassword = false;
+            bool automationInspected = false;
             try
             {
                 AutomationElement focused = AutomationElement.FocusedElement;
@@ -241,6 +242,7 @@ namespace PennyPet
                         if (type == ControlType.Edit && ContainsSensitiveWord(name))
                             automationPassword = true;
                     }
+                    automationInspected = true;
                 }
             }
             catch
@@ -250,6 +252,7 @@ namespace PennyPet
 
             bool standardPassword = false;
             bool knownCredentialWindow = false;
+            bool nativeInspected = false;
             try
             {
                 IntPtr foreground = GetForegroundWindow();
@@ -266,6 +269,7 @@ namespace PennyPet
                     GetClassName(info.hwndFocus, className, className.Capacity);
                     if (ContainsSensitiveWord(className.ToString()))
                         standardPassword = true;
+                    nativeInspected = true;
                 }
                 if (processId != 0)
                 {
@@ -284,13 +288,25 @@ namespace PennyPet
                 // Failure to inspect one fallback must not break normal input.
             }
             return ShouldSuppress(automationPassword, standardPassword,
-                knownCredentialWindow);
+                knownCredentialWindow,
+                automationInspected || nativeInspected);
         }
 
         internal static bool ShouldSuppress(bool automationPassword,
             bool standardPassword, bool knownCredentialWindow)
         {
-            return automationPassword || standardPassword || knownCredentialWindow;
+            return ShouldSuppress(automationPassword, standardPassword,
+                knownCredentialWindow, true);
+        }
+
+        internal static bool ShouldSuppress(bool automationPassword,
+            bool standardPassword, bool knownCredentialWindow,
+            bool inspectionAvailable)
+        {
+            // Fail closed: if neither UI Automation nor Win32 can inspect the
+            // foreground input, do not publish an overlay for that key event.
+            return !inspectionAvailable || automationPassword ||
+                standardPassword || knownCredentialWindow;
         }
 
         private static string SafeAutomationName(AutomationElement element)

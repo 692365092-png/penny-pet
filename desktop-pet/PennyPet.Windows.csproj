@@ -38,6 +38,7 @@
     <Compile Include="PetArt.cs" />
     <Compile Include="PetContextMenu.cs" />
     <Compile Include="PetForm.cs" />
+    <Compile Include="PetKeyboardPrivacyPolicy.cs" />
     <Compile Include="PetReminderCoordinator.cs" />
     <Compile Include="PetReminderWindowsCoordinator.cs" />
     <Compile Include="PetSettings.cs" />
@@ -57,6 +58,7 @@
     <Compile Include="StickyNoteLinks.cs" />
     <Compile Include="StickyNoteModels.cs" />
     <Compile Include="StickyNoteRepository.cs" />
+    <Compile Include="StickyLinkService.cs" />
     <Compile Include="StickyNotes.cs" />
     <Compile Include="StickyNoteTabs.cs" />
     <Compile Include="StickyNoteWpf.cs" />
