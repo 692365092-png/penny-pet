@@ -269,8 +269,10 @@ namespace PennyPet
 
         private void TabsDragEnter(object sender, DragEventArgs e)
         {
-            e.Effect = TryGetDraggedNote(e.Data) != null
+            StickyNoteData moved = TryGetDraggedNote(e.Data);
+            e.Effect = moved != null
                 ? DragDropEffects.Move : DragDropEffects.None;
+            if (moved != null) ActivateExclusiveDropTarget(this, moved);
         }
 
         private void TabsDragOver(object sender, DragEventArgs e)
@@ -282,6 +284,11 @@ namespace PennyPet
                 return;
             }
             e.Effect = DragDropEffects.Move;
+            // OLE does not reliably deliver DragLeave to the old child/form
+            // when the pointer crosses the transparent pet window. Clear the
+            // other strip proactively so its source never overlaps an old
+            // insertion animation or leaves a second purple guide behind.
+            ActivateExclusiveDropTarget(this, moved);
             Point point = PointToClient(new Point(e.X, e.Y));
             _dragPointerY = point.Y;
             int next = CalculateDropIndex(point.Y, Controls.Count);
@@ -301,7 +308,7 @@ namespace PennyPet
             // Moving between child tab controls also raises DragLeave.  Keep
             // the preview until the pointer really leaves the complete strip.
             if (ClientRectangle.Contains(PointToClient(Cursor.Position))) return;
-            ResetDropPreview(true);
+            ShowSourceOnly(DragSession.CurrentNote);
         }
 
         private void TabsDragDrop(object sender, DragEventArgs e)
@@ -335,6 +342,29 @@ namespace PennyPet
         internal static void BeginDragSession(StickyNoteData note)
         {
             DragSession.Begin(note);
+            ShowSourceOnly(note);
+        }
+
+        private static void ActivateExclusiveDropTarget(
+            StickyNoteTabsForm target, StickyNoteData note)
+        {
+            foreach (StickyNoteTabsForm form in
+                new List<StickyNoteTabsForm>(LiveForms))
+            {
+                if (form == null || form.IsDisposed ||
+                    Object.ReferenceEquals(form, target)) continue;
+                form.HoldSourceVisual(note);
+            }
+        }
+
+        private static void ShowSourceOnly(StickyNoteData note)
+        {
+            foreach (StickyNoteTabsForm form in
+                new List<StickyNoteTabsForm>(LiveForms))
+            {
+                if (form != null && !form.IsDisposed)
+                    form.HoldSourceVisual(note);
+            }
         }
 
         internal static void EndDragSession(StickyNoteData note)
@@ -375,14 +405,22 @@ namespace PennyPet
         private void LayoutAnimationTick(object sender, EventArgs e)
         {
             int sourceIndex = -1;
+            StickyNoteTabControl sourceTab = null;
             StickyNoteData sourceNote = DragSession.CurrentNote ??
                 _previewDraggedNote;
             foreach (Control control in Controls)
             {
                 StickyNoteTabControl tab = control as StickyNoteTabControl;
                 if (tab != null && ReferenceEquals(tab.Note, sourceNote))
+                {
                     sourceIndex = tab.ListIndex;
+                    sourceTab = tab;
+                }
             }
+            // Keep the source above every sibling even if Windows misses a
+            // DragLeave and the old strip is still finishing its animation.
+            if (sourceTab != null && Controls.GetChildIndex(sourceTab) != 0)
+                sourceTab.BringToFront();
             bool settled = true;
             foreach (Control control in Controls)
             {
@@ -402,7 +440,6 @@ namespace PennyPet
                     // side window when crossing to the opposite strip.
                     target = tab.ListIndex * (TabHeight + TabGap) +
                         DragSourceVisualOffset;
-                    if (Controls.GetChildIndex(tab) != 0) tab.BringToFront();
                 }
                 else
                     target = PreviewTargetTop(tab.ListIndex, sourceIndex,
@@ -466,6 +503,35 @@ namespace PennyPet
             _layoutAnimationTimer.Start();
         }
 
+        private void HoldSourceVisual(StickyNoteData note)
+        {
+            _dropIndex = -1;
+            _restoringLayout = false;
+            _layoutAnimationTimer.Stop();
+            StickyNoteTabControl source = null;
+            foreach (Control control in Controls)
+            {
+                StickyNoteTabControl tab = control as StickyNoteTabControl;
+                if (tab != null && ReferenceEquals(tab.Note, note))
+                    source = tab;
+            }
+            _previewDraggedNote = source == null ? null : note;
+            foreach (Control control in Controls)
+            {
+                StickyNoteTabControl tab = control as StickyNoteTabControl;
+                if (tab == null) continue;
+                bool isSource = Object.ReferenceEquals(tab, source);
+                tab.Top = tab.ListIndex * (TabHeight + TabGap) +
+                    (isSource ? DragSourceVisualOffset : 0);
+                tab.IsDragSource = isSource;
+            }
+            if (source != null) source.BringToFront();
+            ClientSize = new Size(TabWidth, _normalHeight +
+                (source != null ? DragSourceVisualOffset : 0));
+            Invalidate();
+            if (IsHandleCreated) Update();
+        }
+
         internal void CancelDragPreview()
         {
             if (_dropIndex >= 0 || _previewDraggedNote != null)
@@ -474,6 +540,7 @@ namespace PennyPet
 
         internal void ShowDropPreviewForTest(StickyNoteData note, int dropIndex)
         {
+            ActivateExclusiveDropTarget(this, note);
             _previewDraggedNote = note;
             _dropIndex = Math.Max(0, Math.Min(Controls.Count, dropIndex));
             _dragPointerY = _dropIndex * (TabHeight + TabGap);
@@ -500,7 +567,21 @@ namespace PennyPet
 
         internal bool HasDropPreviewForTest
         {
-            get { return _dropIndex >= 0 || _previewDraggedNote != null; }
+            get { return _dropIndex >= 0; }
+        }
+
+        internal bool HasDragSourceVisualForTest(StickyNoteData note)
+        {
+            foreach (Control control in Controls)
+            {
+                StickyNoteTabControl tab = control as StickyNoteTabControl;
+                if (tab == null || !ReferenceEquals(tab.Note, note)) continue;
+                return tab.IsDragSource &&
+                    tab.Top == tab.ListIndex * (TabHeight + TabGap) +
+                        DragSourceVisualOffset &&
+                    Controls.GetChildIndex(tab) == 0;
+            }
+            return false;
         }
 
         protected override void OnPaint(PaintEventArgs e)

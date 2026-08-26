@@ -1034,6 +1034,7 @@ namespace PennyPet
                     StickyTabDropSession.DefersCommitUntilCompletionForTest();
                 bool sideTabPreviewClearsBothSidesOk;
                 StickyNoteData previewClearNote = new StickyNoteData();
+                StickyNoteData previewTargetNote = new StickyNoteData();
                 using (StickyNoteTabsForm previewClearLeft =
                     new StickyNoteTabsForm(StickyTabSide.Left,
                         delegate(StickyNoteData note) { }))
@@ -1041,15 +1042,27 @@ namespace PennyPet
                     new StickyNoteTabsForm(StickyTabSide.Right,
                         delegate(StickyNoteData note) { }))
                 {
+                    previewClearLeft.SetNotes(new List<StickyNoteData>
+                        { previewClearNote }, 0);
+                    previewClearRight.SetNotes(new List<StickyNoteData>
+                        { previewTargetNote }, 1);
+                    previewClearLeft.Hide();
+                    previewClearRight.Hide();
                     StickyNoteTabsForm.BeginDragSession(previewClearNote);
                     previewClearLeft.ShowDropPreviewForTest(previewClearNote, 0);
+                    bool leftWasTarget = previewClearLeft.HasDropPreviewForTest;
                     previewClearRight.ShowDropPreviewForTest(previewClearNote, 0);
-                    bool bothVisible = previewClearLeft.HasDropPreviewForTest &&
-                        previewClearRight.HasDropPreviewForTest;
-                    StickyNoteTabsForm.EndDragSession(previewClearNote);
-                    sideTabPreviewClearsBothSidesOk = bothVisible &&
+                    bool targetIsExclusive = leftWasTarget &&
                         !previewClearLeft.HasDropPreviewForTest &&
-                        !previewClearRight.HasDropPreviewForTest;
+                        previewClearRight.HasDropPreviewForTest &&
+                        previewClearLeft.HasDragSourceVisualForTest(
+                            previewClearNote);
+                    StickyNoteTabsForm.EndDragSession(previewClearNote);
+                    sideTabPreviewClearsBothSidesOk = targetIsExclusive &&
+                        !previewClearLeft.HasDropPreviewForTest &&
+                        !previewClearRight.HasDropPreviewForTest &&
+                        !previewClearLeft.HasDragSourceVisualForTest(
+                            previewClearNote);
                 }
                 int fullOverlap = StickyNoteTabsForm.PetOverlapForWidth(192);
                 int doubleOverlap = StickyNoteTabsForm.PetOverlapForWidth(384);
