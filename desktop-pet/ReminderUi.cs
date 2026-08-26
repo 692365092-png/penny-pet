@@ -81,29 +81,21 @@ namespace PennyPet
         private readonly ComboBox _fontSize;
         private readonly Label _preview;
         private readonly CheckBox _preAlert;
-        private readonly CheckBox _createStickyNote;
         private readonly ToolTip _stepHint;
         private bool _ownedResourcesDisposed;
 
-        public ReminderDialog() : this(null, true, 10.5F, false, null)
+        public ReminderDialog() : this(null, 10.5F, false, null)
         {
         }
 
-        public ReminderDialog(string initialText, bool showCreateStickyOption)
-            : this(initialText, showCreateStickyOption, 10.5F, false, null)
+        public ReminderDialog(string initialText, float initialFontSize,
+            bool initialPreAlert)
+            : this(initialText, initialFontSize, initialPreAlert, null)
         {
         }
 
-        public ReminderDialog(string initialText, bool showCreateStickyOption,
-            float initialFontSize, bool initialPreAlert)
-            : this(initialText, showCreateStickyOption, initialFontSize,
-                initialPreAlert, null)
-        {
-        }
-
-        public ReminderDialog(string initialText, bool showCreateStickyOption,
-            float initialFontSize, bool initialPreAlert,
-            DateTime? initialDeadlineLocal)
+        public ReminderDialog(string initialText, float initialFontSize,
+            bool initialPreAlert, DateTime? initialDeadlineLocal)
         {
             DateTime suggested = initialDeadlineLocal.HasValue
                 ? initialDeadlineLocal.Value : DefaultSuggestedLocal();
@@ -117,7 +109,7 @@ namespace PennyPet
             MinimizeBox = false;
             ShowInTaskbar = false;
             TopMost = true;
-            ClientSize = new Size(440, 535);
+            ClientSize = new Size(440, 487);
             Font = StickyNoteForm.CreateSafeFont("Microsoft YaHei UI", 9F,
                 FontStyle.Regular);
             ImeMode = ImeMode.NoControl;
@@ -198,22 +190,15 @@ namespace PennyPet
             _preview.Location = new Point(24, 344);
             _preview.Size = new Size(386, 78);
 
-            _createStickyNote = new CheckBox();
-            _createStickyNote.Text = "同时创建桌面便利贴（推荐）";
-            _createStickyNote.AutoSize = true;
-            _createStickyNote.Checked = showCreateStickyOption;
-            _createStickyNote.Visible = showCreateStickyOption;
-            _createStickyNote.Location = new Point(24, 436);
-
             Button ok = new Button();
             ok.Text = "添加";
             ok.DialogResult = DialogResult.OK;
-            ok.Location = new Point(240, 484);
+            ok.Location = new Point(240, 436);
             ok.Size = new Size(80, 34);
             Button cancel = new Button();
             cancel.Text = "取消";
             cancel.DialogResult = DialogResult.Cancel;
-            cancel.Location = new Point(330, 484);
+            cancel.Location = new Point(330, 436);
             cancel.Size = new Size(80, 34);
 
             Controls.Add(timeLabel);
@@ -226,7 +211,6 @@ namespace PennyPet
             Controls.Add(_fontSize);
             Controls.Add(previewLabel);
             Controls.Add(_preview);
-            Controls.Add(_createStickyNote);
             Controls.Add(ok);
             Controls.Add(cancel);
             AcceptButton = ok;
@@ -312,11 +296,6 @@ namespace PennyPet
         internal static DateTime DefaultSuggestedLocal()
         {
             return DateTime.Now;
-        }
-
-        public bool CreateStickyNote
-        {
-            get { return _createStickyNote.Visible && _createStickyNote.Checked; }
         }
 
         private void SelectClosestFontSize(float initialPoints)

@@ -611,7 +611,7 @@ namespace PennyPet
         public static void RenderReminderPreview(string outputPath)
         {
             using (ReminderDialog dialog = new ReminderDialog(
-                "下午三点提交修改后的方案", true, 18F, true))
+                "下午三点提交修改后的方案", 18F, true))
             using (Bitmap bitmap = new Bitmap(dialog.Width, dialog.Height,
                 PixelFormat.Format32bppArgb))
             {

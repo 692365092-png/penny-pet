@@ -82,7 +82,7 @@ namespace PennyPet
         private void EditReminder(ReminderItem existing)
         {
             if (existing == null || !_reminders.GetItems().Contains(existing)) return;
-            using (ReminderDialog dialog = new ReminderDialog(existing.Text, false,
+            using (ReminderDialog dialog = new ReminderDialog(existing.Text,
                 existing.FontSizeTwips / 20F, existing.PreAlertEnabled,
                 existing.DeadlineUtc.ToLocalTime()))
             {
@@ -196,26 +196,14 @@ namespace PennyPet
             using (ReminderDialog dialog = new ReminderDialog())
             {
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
-                StickyNoteData note = dialog.CreateStickyNote
-                    ? CreateStickyNoteData(dialog.ReminderText) : null;
-                if (dialog.CreateStickyNote && note == null) return;
-                if (note != null)
-                {
-                    note.FontSizeTwips = (int)Math.Round(
-                        dialog.ReminderFontSizePoints * 20F);
-                }
+                // Pet-menu reminders stay standalone. Every ordinary sticky
+                // window already renders the current reminder list, including
+                // notes the user creates after this reminder is saved.
                 ReminderItem item = _reminders.Add(
                     dialog.DeadlineLocal.ToUniversalTime(), dialog.ReminderText,
-                    note == null ? null : note.Id,
+                    null,
                     dialog.ReminderFontSizePoints, dialog.PreAlertEnabled);
                 QueueArtPreload(NotificationRow);
-                if (note != null)
-                {
-                    note.ReminderUtcTicks = item.DeadlineUtc.Ticks;
-                    _notes.Save();
-                    ShowStickyNote(note, true);
-                    PlaceNewStickyWindowOnPetScreen(note);
-                }
                 SaveReminders();
                 RefreshMenuText();
                 ShowBriefBubble("提醒已添加：" +

@@ -937,13 +937,24 @@ namespace PennyPet
                 bool reminderSizePreviewOk;
                 bool reminderLiveSizePreviewOk;
                 bool unforcedMultilingualImeOk;
+                bool standaloneReminderNoAutoStickyOptionOk = true;
                 using (ReminderDialog previewDialog = new ReminderDialog(
-                    "预览", false, 10.5F, false))
+                    "预览", 10.5F, false))
                 {
                     reminderSizePreviewOk =
                         previewDialog.ExerciseSizePreviewForTest();
                     unforcedMultilingualImeOk =
                         previewDialog.UsesUnforcedMultilingualIme;
+                    foreach (Control control in previewDialog.Controls)
+                    {
+                        if (control is CheckBox && control.Text.IndexOf(
+                            "创建桌面便利贴",
+                            StringComparison.Ordinal) >= 0)
+                            standaloneReminderNoAutoStickyOptionOk = false;
+                    }
+                    standaloneReminderNoAutoStickyOptionOk =
+                        standaloneReminderNoAutoStickyOptionOk &&
+                        previewDialog.ClientSize.Height == 487;
                 }
                 using (StickyNoteForm reminderPreviewNote =
                     new StickyNoteForm(new StickyNoteData()))
@@ -1886,6 +1897,8 @@ namespace PennyPet
                         sharedFontLifetimeOk) + ",\n" +
                     "  \"reminder_size_preview_ok\": " + Bool(
                         reminderSizePreviewOk) + ",\n" +
+                    "  \"standalone_reminder_no_auto_sticky_option_ok\": " +
+                        Bool(standaloneReminderNoAutoStickyOptionOk) + ",\n" +
                     "  \"reminder_live_note_size_preview_ok\": " + Bool(
                         reminderLiveSizePreviewOk) + ",\n" +
                     "  \"sticky_high_dpi_layout_ok\": " + Bool(
