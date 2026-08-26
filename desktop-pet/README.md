@@ -10,7 +10,7 @@
 
 ## 构建和运行
 
-1. 使用根目录 `PennyPet.sln` 或本目录 `PennyPet.Windows.csproj` 进行 Visual Studio / `dotnet build` 编译检查。
+1. 使用根目录 `PennyPet.sln` 构建 Windows Core、App、Tools、SelfTests 与兼容项目。
 2. 把美术放在仓库的 `art` 目录，并填写其中的 `pet-art.json`。
 3. 在 PowerShell 中运行 `./build.ps1 -OutputFile <输出路径>`，或调用项目的 `BuildOfficialRelease` target。
 4. 正式构建完成后会得到一个内嵌全部运行资源的单文件 EXE；普通项目 Build 的小型输出只用于编译验证，不可代替发布版。
@@ -81,15 +81,16 @@ GitHub 开源发布版使用 `build.ps1` 生成可复现的未混淆二进制，
 
 ## 代码结构
 
-- `Program.cs`：程序入口、命令行测试入口、单实例和启动准备。
-- `PetForm.cs`：桌宠 Windows 主窗口及各功能模块协调。
+- `Program.cs`：兼容单 EXE 的命令路由；正常模块化入口是 `PennyPet.AppProgram.cs`。
+- `PennyApplicationHost.cs`：单实例、loading 与正常应用运行。
+- `PetForm.cs`：桌宠 Windows 窗口壳；启动、动画运行时、键盘、气泡、菜单和便利贴窗口协调分别位于对应 `Pet*.cs` partial 文件。
 - `PetContextMenu.cs`：桌宠右键菜单。
 - `PetAnimationController.cs`：动画状态、优先级、随机选择与恢复规则。
 - `PetReminderCoordinator.cs` / `PetReminderWindowsCoordinator.cs`：纯提醒规则与 Windows UI 协调。
 - `PetArt.cs`：外置美术包读取、GIF 时长解析、完整分辨率发布资源包、状态别名与画布适配。
 - `LayeredSpriteRenderer.cs`：Windows 透明分层窗口渲染。
 - `StickyNoteModels.cs` / `StickyNoteRepository.cs`：便利贴数据模型、关系、持久化与恢复。
-- `StickyNoteWpf.cs`：WPF 便利贴窗口本体、RichText、IME 和焦点兼容。
+- `StickyNoteWpf.cs`：WPF 便利贴窗口本体；RichText/IME、链接和原生窗口行为分别位于 `StickyEditorController.cs`、`StickyLinkController.cs` 和 `StickyNativeWindowBehavior.cs`。
 - `StickyTodoController.cs` / `StickyScheduleController.cs`：待办和日程 UI 逻辑。
 - `StickyReminderController.cs` / `StickyAppearanceController.cs`：提醒条和外观 UI 逻辑。
 - `StickyDockController.cs`：Windows 便利贴吸附、拖拽、拆分与隐藏恢复协调。
@@ -97,7 +98,7 @@ GitHub 开源发布版使用 `build.ps1` 生成可复现的未混淆二进制，
 - `ReminderUi.cs` / `ReminderModels.cs` / `PetSettings.cs`：提醒界面、数据模型与设置持久化。
 - `SpeechBubbleForm.cs` / `StartupRegistration.cs`：桌宠气泡与开机启动。
 - `GlobalKeyboardActivity.cs` / `KeyboardOverlay.cs`：全局键盘活动与按键显示。
-- `SelfTestRunner.cs` / `PennySelfTests.cs`：完整 SelfTest、专项探针和测试预览。
+- `PennyPet.SelfTests.csproj` + `SelfTestRunner.cs` / `PennySelfTests.cs`：独立 SelfTest、专项探针和测试预览。
 
 更完整的开发入口、数据恢复说明、高风险兼容逻辑和新增在线 Feature 指南见项目根目录的 `DEVELOPER_GUIDE.md`；API、缓存、secret 和平台边界见 `ARCHITECTURE.md`。
 

@@ -172,6 +172,7 @@ $CompilerArgs = @(
     "/codepage:65001",
     "/win32manifest:$ManifestPath",
     "/win32icon:$IconPath",
+    "/main:PennyPet.Program",
     "/reference:System.dll",
     "/reference:System.Drawing.dll",
     "/reference:System.Windows.Forms.dll",

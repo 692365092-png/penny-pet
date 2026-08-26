@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>PennyPet</RootNamespace>
+    <AssemblyName>PennyPet.Tools</AssemblyName>
+    <StartupObject>PennyPet.PennyToolsProgram</StartupObject>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <Platforms>AnyCPU;x86;x64</Platforms>
+    <PlatformTarget Condition="'$(PlatformTarget)' == ''">AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="LayeredSpriteRenderer.cs" />
+    <Compile Include="PetArt.cs" />
+    <Compile Include="PennyPet.ToolsProgram.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="System.Web.Extensions" />
+  </ItemGroup>
+</Project>

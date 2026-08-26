@@ -5,26 +5,15 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.IO;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 
-[assembly: AssemblyTitle("Penny pet")]
-[assembly: AssemblyDescription("支持动画、便利贴、待办、日程、提醒与按键显示的桌面宠物")]
-[assembly: AssemblyProduct("Penny pet")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
-[assembly: System.Runtime.CompilerServices.SuppressIldasm]
-
 namespace PennyPet
 {
     internal static class Program
     {
-        private static Mutex _singleInstance;
-        private static System.Windows.Application _wpfApplication;
-
         [STAThread]
         private static void Main(string[] args)
         {
@@ -70,7 +59,7 @@ namespace PennyPet
                     {
                         // Exercise the same WinForms-owned message pump and
                         // modeless WPF keyboard bridge used by the real pet.
-                        EnsureWpfApplicationForStickyNotes();
+                        WpfApplicationHost.Ensure();
                         note.EnableWinFormsKeyboardInterop();
                         note.Closed += delegate { Application.ExitThread(); };
                         note.Show();
@@ -285,67 +274,7 @@ namespace PennyPet
                 return;
             }
 
-            bool createdNew;
-            _singleInstance = new Mutex(true, "Local\\PennyPet.SingleInstance", out createdNew);
-            if (!createdNew)
-            {
-                MessageBox.Show("Penny pet 已经在桌面上啦。", "Penny pet");
-                return;
-            }
-
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            ApplicationDiagnostics.Initialize();
-            try
-            {
-                PetSettings preloadedSettings = PetSettings.Load();
-                using (StartupLoadingForm loading = new StartupLoadingForm(
-                    preloadedSettings))
-                {
-                    loading.Show();
-                    Application.DoEvents();
-                    PetForm pet = new PetForm(preloadedSettings);
-                    pet.StartupReady += delegate
-                    {
-                        if (!loading.IsDisposed) loading.Close();
-                    };
-                    pet.FormClosed += delegate
-                    {
-                        if (!loading.IsDisposed) loading.Close();
-                    };
-                    pet.Show();
-                    Application.DoEvents();
-                    loading.BringToFront();
-                    Application.Run(pet);
-                }
-            }
-            catch (Exception error)
-            {
-                ApplicationDiagnostics.ReportFatal("application-run", error);
-                MessageBox.Show(
-                    "Penny pet 启动失败。诊断记录已保存到：\n" +
-                    ApplicationDiagnostics.LogFilePath,
-                    "Penny pet", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-            try
-            {
-                if (_wpfApplication != null) _wpfApplication.Shutdown();
-            }
-            catch { }
-            GC.KeepAlive(_singleInstance);
-        }
-
-        internal static void EnsureWpfApplicationForStickyNotes()
-        {
-            if (System.Windows.Application.Current != null) return;
-            _wpfApplication = new System.Windows.Application();
-            _wpfApplication.ShutdownMode =
-                System.Windows.ShutdownMode.OnExplicitShutdown;
-            _wpfApplication.DispatcherUnhandledException += delegate(object sender,
-                System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
-            {
-                ApplicationDiagnostics.ReportFatal("wpf-dispatcher", e.Exception);
-            };
+            PennyApplicationHost.Run();
         }
 
         private static bool HasArgument(string[] args, string expected)
@@ -370,43 +299,6 @@ namespace PennyPet
             return null;
         }
 
-    }
-
-    internal sealed class ArtPreloadReservations
-    {
-        private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(1);
-        private readonly HashSet<int> _active = new HashSet<int>();
-        private readonly Dictionary<int, DateTime> _retryAfterUtc =
-            new Dictionary<int, DateTime>();
-
-        internal bool TryReserve(int row, bool alreadyLoaded, DateTime nowUtc)
-        {
-            lock (_active)
-            {
-                if (alreadyLoaded)
-                {
-                    _active.Remove(row);
-                    _retryAfterUtc.Remove(row);
-                    return false;
-                }
-                DateTime retryAfter;
-                if (_active.Contains(row) ||
-                    (_retryAfterUtc.TryGetValue(row, out retryAfter) &&
-                    nowUtc < retryAfter)) return false;
-                _active.Add(row);
-                return true;
-            }
-        }
-
-        internal void Complete(int row, bool loaded, DateTime nowUtc)
-        {
-            lock (_active)
-            {
-                _active.Remove(row);
-                if (loaded) _retryAfterUtc.Remove(row);
-                else _retryAfterUtc[row] = nowUtc.Add(RetryDelay);
-            }
-        }
     }
 
 }

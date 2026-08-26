@@ -6,9 +6,9 @@
 
 Penny pet 是一个 Windows 桌面宠物。桌宠主体使用 WinForms 透明分层窗口；便利贴、待办和日程使用 WPF 顶层窗口；提醒、键盘显示、侧边页签和设置保存与两套 UI 共存。
 
-当前产品版本固定为 `1.0`。程序集版本在 `desktop-pet/Program.cs` 顶部声明为 `1.0.0.0`。
+当前产品版本固定为 `1.0`。程序集版本在 `desktop-pet/AssemblyInfo.cs` 中声明为 `1.0.0.0`。
 
-仓库提供 `PennyPet.sln` 和 `desktop-pet/PennyPet.Windows.csproj`，供 Visual Studio、`dotnet build`、代码导航和静态分析使用；项目文件显式列出当前源码，目标为 .NET Framework 4.8。普通项目构建只负责开发期编译验证，不是可分发版本。
+仓库提供 `PennyPet.sln`。解决方案包含 Windows Core、App、Tools、SelfTests 四个职责项目，以及保留的兼容单 EXE 项目，目标均为 .NET Framework 4.8。`PennyPet.Windows.Core` 是 Windows 产品程序集，不是跨平台核心。
 
 正式单文件发布仍由 `desktop-pet/build.ps1` 负责。它会执行两次编译，在中间阶段生成美术发布包和首屏缓存，最后把美术、图标和联系作者图片嵌入 EXE。`.csproj` 的 `BuildOfficialRelease` target 只是进入这条既有脚本的标准工具入口，不复制或替代发布算法。
 
@@ -41,9 +41,11 @@ dotnet msbuild '.\desktop-pet\PennyPet.Windows.csproj' `
 ## 3. 程序入口与运行主线
 
 - `desktop-pet/Program.cs`
-  - `Program.Main`：命令行测试入口、单实例、启动 loading、异常兜底。
-  - `ArtPreloadReservations`：动画懒加载请求和失败后的有限重试。
-- `desktop-pet/PetForm.cs`：桌宠 Windows 主窗口，负责渲染时钟、键盘活动和各职责模块的协调。
+  - `Program.Main`：兼容单 EXE 的命令路由，保留旧 CI/发布入口。
+- `desktop-pet/PennyApplicationHost.cs`：正常应用的单实例、loading 和异常兜底。
+- `desktop-pet/ArtPreloadReservations.cs`：动画懒加载请求和失败后的有限重试。
+- `desktop-pet/PetForm.cs`：桌宠 Windows 窗口构造、关闭和位置生命周期。
+- `PetStartupController.cs` / `PetAnimationRuntime.cs` / `PetKeyboardOverlayController.cs` / `PetBubbleController.cs` / `PetStickyWindowCoordinator.cs` / `PetMenuActions.cs`：PetForm 的职责 partial 文件。
 - `desktop-pet/PetContextMenu.cs`：桌宠右键菜单构造与命令绑定。
 - `desktop-pet/PetAnimationController.cs`：不依赖 WinForms 的动画状态、优先级、随机选择和冷却规则。
 - `desktop-pet/PetReminderCoordinator.cs`：不依赖 Windows UI 的提醒刷新和气泡替换规则。
@@ -51,7 +53,7 @@ dotnet msbuild '.\desktop-pet\PennyPet.Windows.csproj' `
 - `desktop-pet/StartupLoadingForm.cs`：启动 loading 窗口；收到 `PetForm.StartupReady` 后关闭。
 - `desktop-pet/LayeredSpriteRenderer.cs`：Windows 分层透明窗口绘制。
 
-`Program.cs` 已不再包含 `PetForm` 的具体实现。`PetForm` 仍是高风险的 Windows 协调中心，不要为了继续减少行数而整体重写；以后若移动职责，仍应一次只搬一个边界，每次都编译并跑完整 SelfTest。
+这些 partial 文件是代码定位边界，仍共享同一个 `PetForm` 状态。不要把它们包装成大量 callback/interface，也不要继续为了行数切碎。
 
 ## 4. 代码模块地图
 
@@ -71,9 +73,10 @@ dotnet msbuild '.\desktop-pet\PennyPet.Windows.csproj' `
   - `StickyDockGroups`：组顺序、父子关系、规范化与快照恢复规则。
 - `StickyNoteRepository.cs`：读取、旧版迁移、备份、原子保存和损坏恢复。
 - `StickyNotes.cs`：WinForms 管理器、标题输入框及 IME 友好输入辅助控件。
-- `StickyNoteWpf.cs`
-  - `StickyNoteForm` 的 WPF 窗口本体、富文本编辑、字体、焦点、IME 和窗口消息。
-  - 这是最高风险文件；不要把看似奇怪的输入法与焦点兼容代码擅自简化。
+- `StickyNoteWpf.cs`：WPF 窗口构造、总体生命周期、持久化和外观接线。
+- `StickyEditorController.cs`：RichText、字体、焦点和 IME；这是最高风险文件，不得擅自简化事件顺序。
+- `StickyNativeWindowBehavior.cs`：Win32 消息、拖拽、resize 和最大化拦截。
+- `StickyLinkController.cs` / `StickyLinkService.cs`：普通便利贴链接格式、点击和风险确认。
 - `StickyTodoController.cs`：待办列表 UI、自身增删改和字号逻辑。
 - `StickyScheduleController.cs`：日程 UI、自身增删改和刷新逻辑。
 - `StickyReminderController.cs`：便利贴内提醒列表、倒计时和提醒操作。
@@ -112,6 +115,7 @@ Dock 的关键不变量：
 
 - `GlobalKeyboardActivity.cs`：全局低级键盘钩子，只发布非本进程的按键活动。
 - `KeyboardOverlay.cs`：按键文字格式化、连按常显、敏感输入检测、屏幕覆盖层。
+- `PennyPet.SelfTests.csproj`：独立 SelfTest / 探针 / 预览宿主。
 - `SelfTestRunner.cs`：完整 SelfTest 编排和 JSON 报告。
 - `PennySelfTests.cs`：Windows 探针和测试用预览渲染。
 
@@ -189,7 +193,7 @@ Get-Content -LiteralPath $report -Raw
 - `--sticky-pump-probe=<json>`：WinForms 主循环下的 WPF 键盘桥探针。
 - `--sticky-transparency-probe=<json>`：半透明窗口叠加与交互探针。
 - `--startup-probe=<json>`：首屏缓存和启动准备探针。
-- `--render-*-preview=<png>`：各 UI 视觉预览入口，具体名称见 `Program.Main`。
+- `--render-*-preview=<png>`：各 UI 视觉预览入口；模块化工程由 `PennyPet.SelfTests` 承载，兼容单 EXE 仍接受旧参数。
 
 自动测试不能替代真实输入法、拖拽和多窗口操作。涉及 IME、Dock、半透明窗口或系统边缘行为时，构建后仍要人工测试。
 
@@ -205,10 +209,10 @@ Get-Content -LiteralPath $report -Raw
 ## 10. 当前维护原则与暂缓事项
 
 - 保持 WinForms + WPF 技术栈。
-- 不全面重写 `Program.cs`、Dock、IME 或富文本编辑器。
+- 不全面重写 Dock、IME 或富文本编辑器。
 - 不为缩短代码而合并不同职责。
 - 原 `ReminderUi.cs` 已只保留提醒对话框及其日期控件；设置、模型、气泡与开机启动均已按职责纯搬家拆出。
-- `StickyNoteWpf.cs` 仍然较大，但 Todo、Schedule、提醒横幅、外观和 Dock 已有独立 partial 文件；剩余主体主要是 WPF Window、RichText、IME、焦点和原生消息。没有真实回归需求时不要再按行数强拆。
+- `StickyNoteWpf.cs`、编辑器、链接和原生窗口行为已按职责原样迁移；它们仍共享窗口状态。没有真实回归需求时不要继续按行数强拆。
 - 建议先用本文件的“模块地图”定位，再沿事件订阅和调用者完整阅读调用链。
 
 最重要的判断标准不是“代码是否更短”，而是：用户功能和旧数据保持不变，同时下一位开发者能明确知道该去哪里修改、哪里不能冒进。
@@ -275,12 +279,12 @@ Feature 不知道 `SpeechBubbleForm` 的控件结构；Remote Service 不操作�
 
 ### 按键显示不是绝对的密码检测器
 
-`SensitiveInputDetector` 会检查 UI Automation 的 password 属性、标准 Win32 密码样式、控件名称和已知系统凭据进程；这些保护有价值，但第三方自绘控件、浏览器内部实现、跨权限窗口、远程桌面和拒绝 UI Automation 的窗口不能保证全部识别。当前实现检查失败后仍保留正常按键显示，因此产品文案只能说“尽力隐藏”，不能承诺 100%。
+`SensitiveInputDetector` 会检查 UI Automation 的 password 属性、标准 Win32 密码样式、控件名称和已知系统凭据进程；这些保护有价值，但第三方自绘控件、浏览器内部实现、跨权限窗口、远程桌面和拒绝 UI Automation 的窗口不能保证全部识别。当前实现无法完成 UIA/原生检查时默认隐藏，并在首次开启全局按键显示前要求用户确认隐私说明；产品文案仍只能说“尽力隐藏”，不能承诺 100%。
 
-如果单独开展安全加固，应一起设计和验证：首次启用的明确说明、无法检查前台输入时是否 fail closed、跨浏览器/自绘/管理员窗口测试，以及关闭功能后 Hook 是否立即卸载。不要只改一个 `catch` 就宣称问题解决。
+相关策略集中在 `PetKeyboardPrivacyPolicy.cs`，并有首次确认持久化、fail-closed 和 Hook opt-in 自测。跨浏览器、自绘控件、管理员窗口与真实密码输入仍必须人工验证；不要只依赖自动检测。
 
 ### 本地路径打开需要风险分级
 
-`StickyNoteLinks.cs` 已把 URL 限制为 HTTP/HTTPS，并独立于 WPF 编辑器负责识别；`StickyNoteWpf.cs` 仍负责点击位置、文件存在检查和 Shell 打开。普通文档和文件夹直接打开是现有体验，但 `.exe`、`.bat`、`.cmd`、`.ps1`、`.lnk` 等可执行/脚本/快捷方式以及 UNC 网络路径应在后续安全任务中二次确认。
+`StickyNoteLinks.cs` 把 URL 限制为 HTTP/HTTPS；`StickyLinkService.cs` 负责文件存在检查和打开风险分类。普通文档和文件夹直接打开；可执行文件、脚本、快捷方式以及 UNC 网络路径必须二次确认，默认按钮为“不打开”。WPF 点击和小手光标仍在 `StickyLinkController.cs`。
 
-该任务应先建立纯路径分类规则与测试，再接确认 UI；同时回归普通 URL、文件夹、常用文档、中文路径、长路径、无效路径和 IME/链接格式。它是产品行为变更，不应夹在无行为变化的架构移动中。
+风险分类与确认文案已有纯逻辑测试。继续修改时仍要回归普通 URL、文件夹、常用文档、中文路径、长路径、无效路径和 IME/链接格式。

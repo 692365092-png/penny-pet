@@ -452,7 +452,7 @@ namespace PennyPet
             StickyNoteForm existing;
             if (_noteWindows.TryGetValue(note.Id, out existing) && !existing.IsDisposed)
                 return existing;
-            Program.EnsureWpfApplicationForStickyNotes();
+            WpfApplicationHost.Ensure();
             StickyNoteRepository.RepairForDisplay(note, false);
             StickyNoteForm form;
             try { form = new StickyNoteForm(note); }

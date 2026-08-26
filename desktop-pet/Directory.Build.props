@@ -1,0 +1,8 @@
+<Project>
+  <!-- Multiple SDK projects live beside the legacy sources. Keep NuGet and
+       compiler intermediates isolated so one restore cannot overwrite
+       another project's assets file. -->
+  <PropertyGroup>
+    <BaseIntermediateOutputPath>obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+  </PropertyGroup>
+</Project>

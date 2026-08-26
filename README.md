@@ -24,7 +24,7 @@ GitHub Actions 会从公开源码自动生成一个完整的单文件 EXE。运�
 dotnet build ".\PennyPet.sln" --configuration Release
 ```
 
-这个普通项目构建用于 IDE、代码导航和编译验证，不包含正式发布版的完整内嵌美术。生成可分发的单文件 EXE 仍使用：
+解决方案会构建独立的 Windows Core、App、Tools 和 SelfTests；模块化 App 会通过 Tools 生成并嵌入美术资源。生成用于公开分发的兼容单文件 EXE 仍使用：
 
 ```powershell
 .\desktop-pet\build.ps1 -TargetPlatform anycpu -OutputFile ".\release\Penny pet-1.0.exe"
@@ -41,7 +41,7 @@ dotnet build ".\PennyPet.sln" --configuration Release
 ## 源码结构
 
 - `desktop-pet/`：Windows 桌宠、便利贴、待办、日程、提醒和自动测试。
-- `PennyPet.sln` / `desktop-pet/PennyPet.Windows.csproj`：Visual Studio、`dotnet build` 和静态分析入口；正式发布仍委托 `build.ps1`。
+- `PennyPet.sln`：Windows Core、App、Tools、SelfTests 和兼容单 EXE 项目；正式单文件发布仍由 `build.ps1` 兜底。
 - `art/`：构建单文件 EXE 所需的角色动画与界面美术。
 - `ARCHITECTURE.md`：拆分后的模块职责、Windows/通用边界，以及未来在线功能的 API、缓存和安全约束。
 - `DEVELOPER_GUIDE.md`：维护说明、数据位置、高风险兼容逻辑和新增 Feature 指南。
