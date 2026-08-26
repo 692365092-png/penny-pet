@@ -818,8 +818,13 @@ namespace PennyPet
                     rightTabs.Location = new Point(-2600, -2600);
                     leftTabs.SetNotes(previewLeft);
                     rightTabs.SetNotes(previewRight);
-                    if (previewLeft.Count >= 3)
-                        leftTabs.ShowDropPreviewForTest(previewLeft[1], 3);
+                    StickyNoteData crossSideSource = previewLeft.Count >= 3 &&
+                        previewRight.Count >= 2 ? previewLeft[1] : null;
+                    if (crossSideSource != null)
+                    {
+                        StickyNoteTabsForm.BeginDragSession(crossSideSource);
+                        rightTabs.ShowDropPreviewForTest(crossSideSource, 1);
+                    }
                     Application.DoEvents();
                     using (Bitmap leftTabsBitmap = new Bitmap(leftTabs.Width,
                         leftTabs.Height, PixelFormat.Format32bppArgb))
@@ -838,10 +843,12 @@ namespace PennyPet
                             petX - leftTabsBitmap.Width - StickyNoteTabsForm.PetGap,
                             petY + (petFrame.Height - leftTabsBitmap.Height) / 2);
                         graphics.DrawImageUnscaled(petFrame, petX, petY);
-                    graphics.DrawImageUnscaled(rightTabsBitmap,
+                        graphics.DrawImageUnscaled(rightTabsBitmap,
                             petX + petFrame.Width + StickyNoteTabsForm.PetGap,
                             petY + (petFrame.Height - rightTabsBitmap.Height) / 2);
                     }
+                    if (crossSideSource != null)
+                        StickyNoteTabsForm.EndDragSession(crossSideSource);
                     leftTabs.Hide();
                     rightTabs.Hide();
                 }

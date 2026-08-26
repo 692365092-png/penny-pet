@@ -87,7 +87,9 @@ namespace PennyPet
         // canvas and halves the visible distance to the character silhouette.
         internal const int PetGap = -20;
         internal const int PreviewInsertionGap = 14;
-        internal const int DragSourceVisualOffset = 5;
+        // Pull the source tab toward the pet/target strip while retaining its
+        // original row. This is a horizontal cue, not a vertical list move.
+        internal const int DragSourceVisualOffset = 10;
         internal const string DragDataFormat = "PennyPet.StickyNoteTabId";
 
         private static readonly StickyTabDropSession DragSession =
@@ -107,6 +109,8 @@ namespace PennyPet
         private int _dragPointerY;
         private StickyNoteData _previewDraggedNote;
         private bool _restoringLayout;
+        private bool _sourceHorizontallyOffset;
+        private int _sourceNormalLeft;
         private bool _ownedResourcesDisposed;
 
         public StickyNoteTabsForm(StickyTabSide side,
@@ -168,6 +172,7 @@ namespace PennyPet
 
         public void SetNotes(IList<StickyNoteData> notes, int globalStartIndex)
         {
+            RestoreSourceHorizontalOffset();
             _globalStartIndex = Math.Max(0, globalStartIndex);
             _dropIndex = -1;
             _previewDraggedNote = null;
@@ -214,14 +219,19 @@ namespace PennyPet
             if (Controls.Count == 0) return;
             int visualOverlap = PetOverlapForWidth(petBounds.Width);
             int x = _side == StickyTabSide.Left
-                ? petBounds.Left - Width + visualOverlap
+                ? petBounds.Left - TabWidth + visualOverlap
                 : petBounds.Right - visualOverlap;
+            if (_sourceHorizontallyOffset &&
+                _side == StickyTabSide.Right) x -= DragSourceVisualOffset;
             x = Math.Max(workArea.Left + 2,
                 Math.Min(x, workArea.Right - Width - 2));
             int y = petBounds.Top + (petBounds.Height - Height) / 2;
             y = Math.Max(workArea.Top + 4,
                 Math.Min(y, workArea.Bottom - Height - 4));
             Location = new Point(x, y);
+            if (_sourceHorizontallyOffset)
+                _sourceNormalLeft = _side == StickyTabSide.Right
+                    ? x + DragSourceVisualOffset : x;
             if (!Visible) Show();
             BringToFront();
         }
@@ -298,9 +308,38 @@ namespace PennyPet
             _previewDraggedNote = moved;
             _restoringLayout = false;
             if (ClientSize.Height != _normalHeight + PreviewInsertionGap)
-                ClientSize = new Size(TabWidth, _normalHeight + PreviewInsertionGap);
-            _layoutAnimationTimer.Start();
+                ClientSize = new Size(CurrentCanvasWidth,
+                    _normalHeight + PreviewInsertionGap);
+            // A cross-side target must show its existing tabs continuously.
+            // Snapping that short preview avoids the WinForms transparent-
+            // child repaint hole that made the first target tab disappear.
+            if (ContainsNote(moved)) _layoutAnimationTimer.Start();
+            else ApplyCrossSidePreviewImmediately();
             Invalidate();
+            if (IsHandleCreated) Update();
+        }
+
+        private bool ContainsNote(StickyNoteData note)
+        {
+            foreach (Control control in Controls)
+            {
+                StickyNoteTabControl tab = control as StickyNoteTabControl;
+                if (tab != null && ReferenceEquals(tab.Note, note)) return true;
+            }
+            return false;
+        }
+
+        private void ApplyCrossSidePreviewImmediately()
+        {
+            _layoutAnimationTimer.Stop();
+            foreach (Control control in Controls)
+            {
+                StickyNoteTabControl tab = control as StickyNoteTabControl;
+                if (tab == null) continue;
+                tab.Top = PreviewTargetTop(tab.ListIndex, -1, _dropIndex);
+                tab.IsDragSource = false;
+                tab.Invalidate();
+            }
         }
 
         private void TabsDragLeave(object sender, EventArgs e)
@@ -430,16 +469,13 @@ namespace PennyPet
                 bool isSource = sourceIndex >= 0 &&
                     tab.ListIndex == sourceIndex;
                 if (_restoringLayout || _dropIndex < 0)
-                    target = tab.ListIndex * (TabHeight + TabGap) +
-                        (isSource ? DragSourceVisualOffset : 0);
+                    target = tab.ListIndex * (TabHeight + TabGap);
                 else if (isSource)
                 {
                     // Keep the source visible in its original strip. A small
-                    // vertical offset marks it as the item being dragged;
-                    // moving it with the pointer can push it outside the thin
-                    // side window when crossing to the opposite strip.
-                    target = tab.ListIndex * (TabHeight + TabGap) +
-                        DragSourceVisualOffset;
+                    // horizontal pull marks it as the item being dragged;
+                    // its row never collapses into a neighbouring tab.
+                    target = tab.ListIndex * (TabHeight + TabGap);
                 }
                 else
                     target = PreviewTargetTop(tab.ListIndex, sourceIndex,
@@ -461,7 +497,7 @@ namespace PennyPet
                 // Resizing a TransparencyKey form while child tabs animate
                 // can make Windows temporarily omit a moving child window.
                 bool dragStillActive = DragSession.CurrentNote != null;
-                ClientSize = new Size(TabWidth, _normalHeight +
+                ClientSize = new Size(CurrentCanvasWidth, _normalHeight +
                     (dragStillActive ? PreviewInsertionGap : 0));
                 foreach (Control control in Controls)
                 {
@@ -493,11 +529,13 @@ namespace PennyPet
                 _previewDraggedNote = null;
                 _restoringLayout = false;
                 _layoutAnimationTimer.Stop();
+                RestoreSourceHorizontalOffset();
                 foreach (Control control in Controls)
                 {
                     StickyNoteTabControl tab = control as StickyNoteTabControl;
                     if (tab == null) continue;
                     tab.Top = tab.ListIndex * (TabHeight + TabGap);
+                    tab.Left = 0;
                     tab.IsDragSource = false;
                 }
                 ClientSize = new Size(TabWidth, _normalHeight);
@@ -520,13 +558,14 @@ namespace PennyPet
                     source = tab;
             }
             _previewDraggedNote = source == null ? null : note;
+            if (source != null) ApplySourceHorizontalOffset(source);
+            else RestoreSourceHorizontalOffset();
             foreach (Control control in Controls)
             {
                 StickyNoteTabControl tab = control as StickyNoteTabControl;
                 if (tab == null) continue;
                 bool isSource = Object.ReferenceEquals(tab, source);
-                tab.Top = tab.ListIndex * (TabHeight + TabGap) +
-                    (isSource ? DragSourceVisualOffset : 0);
+                tab.Top = tab.ListIndex * (TabHeight + TabGap);
                 tab.IsDragSource = isSource;
             }
             if (source != null) source.BringToFront();
@@ -534,10 +573,53 @@ namespace PennyPet
             // DoDragDrop ends. Switching target sides therefore never shrinks
             // a top-level transparent form in the middle of the animation.
             bool dragActive = DragSession.CurrentNote != null;
-            ClientSize = new Size(TabWidth, _normalHeight +
+            ClientSize = new Size(CurrentCanvasWidth, _normalHeight +
                 (dragActive ? PreviewInsertionGap : 0));
             Invalidate();
             if (IsHandleCreated) Update();
+        }
+
+        private int CurrentCanvasWidth
+        {
+            get
+            {
+                return TabWidth + (_sourceHorizontallyOffset
+                    ? DragSourceVisualOffset : 0);
+            }
+        }
+
+        private void ApplySourceHorizontalOffset(StickyNoteTabControl source)
+        {
+            if (!_sourceHorizontallyOffset)
+            {
+                _sourceNormalLeft = Left;
+                _sourceHorizontallyOffset = true;
+                if (_side == StickyTabSide.Right)
+                    Left -= DragSourceVisualOffset;
+            }
+            foreach (Control control in Controls)
+            {
+                StickyNoteTabControl tab = control as StickyNoteTabControl;
+                if (tab == null) continue;
+                bool isSource = Object.ReferenceEquals(tab, source);
+                tab.Left = _side == StickyTabSide.Left
+                    ? (isSource ? DragSourceVisualOffset : 0)
+                    : (isSource ? 0 : DragSourceVisualOffset);
+            }
+        }
+
+        private void RestoreSourceHorizontalOffset()
+        {
+            if (_sourceHorizontallyOffset)
+            {
+                Left = _sourceNormalLeft;
+                _sourceHorizontallyOffset = false;
+            }
+            foreach (Control control in Controls)
+            {
+                StickyNoteTabControl tab = control as StickyNoteTabControl;
+                if (tab != null) tab.Left = 0;
+            }
         }
 
         internal void CancelDragPreview()
@@ -552,7 +634,8 @@ namespace PennyPet
             _previewDraggedNote = note;
             _dropIndex = Math.Max(0, Math.Min(Controls.Count, dropIndex));
             _dragPointerY = _dropIndex * (TabHeight + TabGap);
-            ClientSize = new Size(TabWidth, _normalHeight + PreviewInsertionGap);
+            ClientSize = new Size(CurrentCanvasWidth,
+                _normalHeight + PreviewInsertionGap);
             int sourceIndex = -1;
             foreach (Control control in Controls)
             {
@@ -566,8 +649,7 @@ namespace PennyPet
                 if (tab == null) continue;
                 tab.IsDragSource = tab.ListIndex == sourceIndex;
                 tab.Top = tab.ListIndex == sourceIndex
-                    ? tab.ListIndex * (TabHeight + TabGap) +
-                        DragSourceVisualOffset
+                    ? tab.ListIndex * (TabHeight + TabGap)
                     : PreviewTargetTop(tab.ListIndex, sourceIndex, _dropIndex);
             }
             Invalidate();
@@ -584,9 +666,12 @@ namespace PennyPet
             {
                 StickyNoteTabControl tab = control as StickyNoteTabControl;
                 if (tab == null || !ReferenceEquals(tab.Note, note)) continue;
+                int expectedLeft = _side == StickyTabSide.Left
+                    ? DragSourceVisualOffset : 0;
                 return tab.IsDragSource &&
-                    tab.Top == tab.ListIndex * (TabHeight + TabGap) +
-                        DragSourceVisualOffset &&
+                    _sourceHorizontallyOffset &&
+                    tab.Left == expectedLeft &&
+                    tab.Top == tab.ListIndex * (TabHeight + TabGap) &&
                     Controls.GetChildIndex(tab) == 0;
             }
             return false;
@@ -597,9 +682,11 @@ namespace PennyPet
             get
             {
                 return DragSession.CurrentNote == null
-                    ? ClientSize.Height == _normalHeight
+                    ? ClientSize.Height == _normalHeight &&
+                        ClientSize.Width == TabWidth
                     : ClientSize.Height == _normalHeight +
-                        PreviewInsertionGap;
+                        PreviewInsertionGap &&
+                        ClientSize.Width == CurrentCanvasWidth;
             }
         }
 
