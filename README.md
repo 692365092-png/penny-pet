@@ -34,6 +34,7 @@ GitHub Actions 会从公开源码自动生成一个完整的单文件 EXE。运�
 
 - `desktop-pet/`：Windows 桌宠、便利贴、待办、日程、提醒和自动测试。
 - `art/`：构建单文件 EXE 所需的角色动画与界面美术。
+- `ARCHITECTURE.md`：拆分后的模块职责、依赖方向和 macOS 迁移地图。
 - `DEVELOPER_GUIDE.md`：维护说明、数据位置和高风险兼容逻辑。
 - `.github/workflows/build.yml`：GitHub 自动构建与测试。
 

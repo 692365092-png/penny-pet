@@ -24,12 +24,16 @@ Penny pet 是一个 Windows 桌面宠物。桌宠主体使用 WinForms 透明分
 
 - `desktop-pet/Program.cs`
   - `Program.Main`：命令行测试入口、单实例、启动 loading、异常兜底。
-  - `PetForm`：桌宠主窗口、动画状态机、菜单、提醒触发、便利贴窗口协调、键盘活动响应。
   - `ArtPreloadReservations`：动画懒加载请求和失败后的有限重试。
+- `desktop-pet/PetForm.cs`：桌宠 Windows 主窗口，负责渲染时钟、键盘活动和各职责模块的协调。
+- `desktop-pet/PetContextMenu.cs`：桌宠右键菜单构造与命令绑定。
+- `desktop-pet/PetAnimationController.cs`：不依赖 WinForms 的动画状态、优先级、随机选择和冷却规则。
+- `desktop-pet/PetReminderCoordinator.cs`：不依赖 Windows UI 的提醒刷新和气泡替换规则。
+- `desktop-pet/PetReminderWindowsCoordinator.cs`：提醒对话框、桌宠动画、气泡和便利贴提醒条的 Windows 协调。
 - `desktop-pet/StartupLoadingForm.cs`：启动 loading 窗口；收到 `PetForm.StartupReady` 后关闭。
 - `desktop-pet/LayeredSpriteRenderer.cs`：Windows 分层透明窗口绘制。
 
-`Program.cs` 很大，但它连接了多个模块。不要一次性重写。以后若拆分，应一次只搬一个职责，每搬一次就编译并跑完整 SelfTest。
+`Program.cs` 已不再包含 `PetForm` 的具体实现。`PetForm` 仍是高风险的 Windows 协调中心，不要为了继续减少行数而整体重写；以后若移动职责，仍应一次只搬一个边界，每次都编译并跑完整 SelfTest。
 
 ## 4. 代码模块地图
 
@@ -44,14 +48,19 @@ Penny pet 是一个 Windows 桌面宠物。桌宠主体使用 WinForms 透明分
 
 ### 便利贴、待办、日程与吸附
 
-- `StickyNotes.cs`
+- `StickyNoteModels.cs`
   - `StickyNoteData`、待办和日程数据模型。
-  - `StickyDockGroups`：组顺序、父子关系、规范化。
-  - `StickyNoteRepository`：读取、旧版迁移、备份、原子保存。
-  - 少量仍被测试/管理界面使用的 WinForms 辅助控件。
+  - `StickyDockGroups`：组顺序、父子关系、规范化与快照恢复规则。
+- `StickyNoteRepository.cs`：读取、旧版迁移、备份、原子保存和损坏恢复。
+- `StickyNotes.cs`：WinForms 管理器、标题输入框及 IME 友好输入辅助控件。
 - `StickyNoteWpf.cs`
-  - `StickyNoteForm`：便利贴、富文本编辑、待办、日程、提醒条和组合拖拽的主要 WPF 窗口。
-  - 这是高风险文件；字体、焦点、IME、窗口消息和 Dock 几条调用链在这里交汇。
+  - `StickyNoteForm` 的 WPF 窗口本体、富文本编辑、字体、焦点、IME 和窗口消息。
+  - 这是最高风险文件；不要把看似奇怪的输入法与焦点兼容代码擅自简化。
+- `StickyTodoController.cs`：待办列表 UI、自身增删改和字号逻辑。
+- `StickyScheduleController.cs`：日程 UI、自身增删改和刷新逻辑。
+- `StickyReminderController.cs`：便利贴内提醒列表、倒计时和提醒操作。
+- `StickyAppearanceController.cs`：便利贴外观对话框协调。
+- `StickyDockController.cs`：吸附、插入、拆分、整组拖动、隐藏/恢复和屏幕安全边界；它是 `PetForm` 的 Windows-only partial 模块。
 - `StickyNoteTabs.cs`：侧边页签、隐藏/恢复、类型图标。
 - `StickyAppearanceDialog.cs`：颜色、透明度和文字颜色设置。
 - `ScheduleItemDialog.cs`：日程新增/编辑弹窗。
@@ -70,6 +79,8 @@ Dock 的关键不变量：
 
 - `ReminderUi.cs`
   - `ReminderDialog`：提醒编辑界面。
+- `PetReminderCoordinator.cs`：提醒时间刷新、到点状态和气泡替换的纯规则。
+- `PetReminderWindowsCoordinator.cs`：创建/编辑/触发提醒及 Windows UI 协调。桌宠菜单添加的提醒不会自动创建便利贴；用户后来打开或新建的便利贴会显示当前提醒列表。
 - `PetSettings.cs`：位置、缩放、键盘显示和提醒设置持久化，包括损坏文件保留与 `.bak` 恢复。
 - `ReminderModels.cs`
   - `ReminderSchedule` / `ReminderItem`：提醒列表和到点判断。
@@ -83,7 +94,8 @@ Dock 的关键不变量：
 
 - `GlobalKeyboardActivity.cs`：全局低级键盘钩子，只发布非本进程的按键活动。
 - `KeyboardOverlay.cs`：按键文字格式化、连按常显、敏感输入检测、屏幕覆盖层。
-- `PennySelfTests.cs`：自动测试和测试用渲染/探针；不再与正式键盘钩子放在同一文件。
+- `SelfTestRunner.cs`：完整 SelfTest 编排和 JSON 报告。
+- `PennySelfTests.cs`：Windows 探针和测试用预览渲染。
 
 按键显示对新用户默认关闭。关闭时不能安装全局键盘钩子；只有用户从菜单主动开启后才启动，重新关闭时立即卸载。不要把“关闭”简化成只隐藏文字覆盖层。
 
