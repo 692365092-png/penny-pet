@@ -35,6 +35,20 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyDockOperations_CoordinateGuardUsesClampedHeights()
+        {
+            Assert.IsTrue(
+                StickyDockOperations.IsDockCoordinateRangeSafe(100,
+                    new[] { 700, 700, 700 }));
+            Assert.IsFalse(
+                StickyDockOperations.IsDockCoordinateRangeSafe(29000,
+                    new[] { 700, 700 }));
+            Assert.IsFalse(
+                StickyDockOperations.IsDockCoordinateRangeSafe(-31000,
+                    null));
+        }
+
+        [TestMethod]
         public void ShortItemText_UsesOneSharedDisplayBudget()
         {
             Assert.IsTrue(ShortItemText.Fits(new string('中', 50)));

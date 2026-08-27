@@ -163,10 +163,6 @@ namespace PennyPet
             new List<StickyNoteData>();
         private readonly Dictionary<string, Point> _activeDockOriginalLocations =
             new Dictionary<string, Point>(StringComparer.OrdinalIgnoreCase);
-        // Keep every member inside a coordinate range that Win32 mouse
-        // messages can address reliably.  A too-long chain is rejected at the
-        // seam instead of relocating its root to make the tail fit.
-        private const int DockCoordinateSafetyLimit = 30000;
         private Point _activeNoteDragStartLocation;
         private Point _activeNoteDragLastLocation;
         private DateTime _activeNoteDragStartedUtc;

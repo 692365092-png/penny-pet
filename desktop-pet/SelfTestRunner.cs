@@ -1034,9 +1034,9 @@ namespace PennyPet
                 PetForm.CanDockBelow(new Rectangle(400, 400, 280, 300),
                     new Rectangle(80, 100, 900, 300), 20);
             result.LongCoordinateGuardOk =
-                PetForm.IsDockCoordinateRangeSafe(100,
+                StickyDockOperations.IsDockCoordinateRangeSafe(100,
                     new int[] { 700, 700, 700 }) &&
-                !PetForm.IsDockCoordinateRangeSafe(29000,
+                !StickyDockOperations.IsDockCoordinateRangeSafe(29000,
                     new int[] { 700, 700 });
             Rectangle recoveredDrag = StickyNoteWindow
                 .CalculateRecoveredHeaderDragBounds(

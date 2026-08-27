@@ -10,6 +10,7 @@ namespace PennyPet
     {
         internal const int SplitHoldMilliseconds = 520;
         internal const int SplitPreHoldMovement = 7;
+        internal const int DockCoordinateSafetyLimit = 30000;
 
         internal static List<StickyNoteData> SelectMoreCompleteDockOrder(
             IList<StickyNoteData> live, IList<StickyNoteData> stored)
@@ -180,6 +181,23 @@ namespace PennyPet
             int componentCount)
         {
             return componentCount > 1 && !String.IsNullOrEmpty(parentId);
+        }
+
+        internal static bool IsDockCoordinateRangeSafe(int top,
+            IList<int> heights)
+        {
+            long y = top;
+            if (y < -DockCoordinateSafetyLimit ||
+                y > DockCoordinateSafetyLimit) return false;
+            if (heights == null) return true;
+            foreach (int value in heights)
+            {
+                int height = Math.Max(220, Math.Min(700, value));
+                y += height;
+                if (y < -DockCoordinateSafetyLimit ||
+                    y > DockCoordinateSafetyLimit) return false;
+            }
+            return true;
         }
     }
 }

@@ -499,23 +499,6 @@ namespace PennyPet
             return result;
         }
 
-        internal static bool IsDockCoordinateRangeSafe(int top,
-            IList<int> heights)
-        {
-            long y = top;
-            if (y < -DockCoordinateSafetyLimit ||
-                y > DockCoordinateSafetyLimit) return false;
-            if (heights == null) return true;
-            foreach (int value in heights)
-            {
-                int height = Math.Max(220, Math.Min(700, value));
-                y += height;
-                if (y < -DockCoordinateSafetyLimit ||
-                    y > DockCoordinateSafetyLimit) return false;
-            }
-            return true;
-        }
-
         private bool CanSafelyCombineDockComponents(DockTarget target,
             StickyNoteWindow source)
         {
@@ -544,7 +527,8 @@ namespace PennyPet
                     out form) && form != null && !form.IsDisposed &&
                     form.Visible) heights.Add(form.Height);
             }
-            return IsDockCoordinateRangeSafe(root.Top, heights);
+            return StickyDockOperations.IsDockCoordinateRangeSafe(root.Top,
+                heights);
         }
 
         private void NormalizeDockComponent(StickyNoteData seed)
