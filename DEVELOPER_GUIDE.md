@@ -148,7 +148,7 @@ Dock 的关键不变量：
 
 桌宠依赖 WinForms/Win32 分层窗口来稳定显示逐帧透明美术。便利贴需要“背景半透明但文字和控件不透明”，WPF 可以在单个顶层窗口的一棵视觉树里完成，避免 TransparencyKey 空洞和跨窗口转发鼠标消息。
 
-主消息循环由 WinForms 持有，所以 WPF 便利贴必须启用受支持的 modeless keyboard interop。`WpfApplicationHost.Ensure` 与 `StickyNoteForm.EnableWinFormsKeyboardInterop` 一带看似绕，但负责让 WPF 收到正常的键盘、字符和输入法消息。
+主消息循环由 WinForms 持有，所以 WPF 便利贴必须启用受支持的 modeless keyboard interop。`WpfApplicationHost.Ensure` 与 `StickyNoteWindow.EnableWinFormsKeyboardInterop` 一带看似绕，但负责让 WPF 收到正常的键盘、字符和输入法消息。
 
 ## 6. IME 与富文本：修改前必读
 

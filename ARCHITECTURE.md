@@ -8,15 +8,15 @@
 
 - `Program` 只处理演示入口和正常启动；测试/预览与美术命令分别委托 `Infrastructure/SelfTestCommandRouter` 和 `Infrastructure/ArtCommandRouter`，独立 App、Tools、SelfTests 与兼容单 EXE 共用同一套路由语义。
 - `PetForm.cs` 只保留桌宠窗口构造、关闭和位置生命周期。启动、动画运行时、键盘隐私、气泡、菜单动作和便利贴窗口协调位于职责明确的 partial 文件；它们仍共享同一个窗口状态，不是假装独立的服务层。
-- `StickyNoteForm` 仍是 WPF 便利贴窗口本体；编辑器/IME、链接、原生窗口行为、Todo、Schedule、提醒横幅、外观和 Dock 已按职责定位到独立 partial 文件。
+- `StickyNoteWindow` 仍是 WPF 便利贴窗口本体；编辑器/IME、链接、原生窗口行为、Todo、Schedule、提醒横幅、外观和 Dock 已按职责定位到独立 partial 文件。
 - 未发现平台无关核心中的循环依赖；未引入 DI container，也没有 interface / wrapper / service 数量膨胀。
-- Windows 窗口协调层仍存在 `PetForm` 与 `StickyNoteForm` 的双向协作。这是 Dock、隐藏/恢复和窗口生命周期造成的 Windows-only 耦合，不能在没有完整窗口回归测试时强拆。
+- Windows 窗口协调层仍存在 `PetForm` 与 `StickyNoteWindow` 的双向协作。这是 Dock、隐藏/恢复和窗口生命周期造成的 Windows-only 耦合，不能在没有完整窗口回归测试时强拆。
 - `PetStickyDockCoordinator` 仍负责高风险窗口坐标和拖拽副作用；组插入、抽离、隐藏槽位和拆分判定已迁入 `StickyDockOperations`，不再由 `PetForm` 定义领域规则。
 - 高风险修复阶段已通过完整 SelfTest、输入/消息循环/透明窗口/启动探针和兼容单 EXE 构建。后续行为不变的边界拆分采用一次最小构建验证，完整门禁留给 CI/发布阶段，IME 事件顺序仍未重写。
 
 当前仍值得关注的五个架构问题：
 
-1. `StickyNoteForm` 的 partial 文件仍共享大量窗口控件和状态；这是 WPF/IME 行为保持的取舍，不能误认为已经业务解耦。
+1. `StickyNoteWindow` 的 partial 文件仍共享大量窗口控件和状态；这是 WPF/IME 行为保持的取舍，不能误认为已经业务解耦。
 2. `PetForm` 的 partial 文件也共享主窗口状态；边界已可查找，但未来新增功能仍不能直接把网络/缓存塞进这些文件。
 3. `SelfTestRunner.Run` 仍是一个很长的 Windows 集成测试编排方法；纯 Core 重复项已删除，美术/启动资源、设置持久化、便利贴格式/恢复、Dock、富文本/IME、提醒横幅、Todo、日程、字体、独立对话框、侧边页签、通用窗口策略、提醒协调、键盘覆盖、动画、气泡及启动/缩放/桌宠壳层已分别收口到检查方法，备份清理和三组 Dock 检查也已有统一入口；持久化/历史兼容、便利贴交互及 Dock/窗口几何报告字段由独立 builder 组装。剩余对话框、侧边页签和运行时报告段应继续小步拆分。
 4. `PetArt.cs` 仍同时承担发布包生成、位图解码和运行时缓存；清单模型、别名/时长/渲染参数规则已移入 `Core/Art`，画布适配和描边则隔离在 Windows-only 的 `Features/Art/PetArtFrameRenderer.cs`。后续若引入第二个位图后端，再继续拆包 codec 与运行时加载器。
@@ -42,7 +42,7 @@ PennyPet.App -> PennyApplicationHost
             -> PetArtRules (Core)
             -> PetArtFrameRenderer -> LayeredSpriteRenderer
 
-StickyNoteForm (WPF 窗口)
+StickyNoteWindow (WPF 窗口)
   -> Sticky Todo / Schedule / Reminder / Appearance partial 模块
   -> StickyNoteModels
   -> StickyNoteRepository -> AtomicTextFile / ApplicationDiagnostics
