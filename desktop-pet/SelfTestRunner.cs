@@ -1414,6 +1414,7 @@ namespace PennyPet
             internal bool ScaledGapOk;
             internal bool VectorIconColorOk;
             internal bool DeleteCommandOk;
+            internal bool ZOrderPolicyOk;
         }
 
         private static StickySideTabCheckResult RunStickySideTabChecks(
@@ -1553,6 +1554,9 @@ namespace PennyPet
                 delegate(StickyNoteData note) { },
                 delegate(StickyNoteData note) { }))
                 result.DeleteCommandOk = tab.HasDeleteCommand;
+            result.ZOrderPolicyOk =
+                StickyNoteWindowRules.ShouldKeepSideTabsTopMost(false) &&
+                !StickyNoteWindowRules.ShouldKeepSideTabsTopMost(true);
             return result;
         }
 
@@ -2386,7 +2390,9 @@ namespace PennyPet
                 "  \"side_tab_scaled_visual_gap_halved_ok\": " + Bool(
                     sideTabChecks.ScaledGapOk) + ",\n" +
                 "  \"side_tab_vector_icon_uses_darker_tab_color_ok\": " + Bool(
-                    sideTabChecks.VectorIconColorOk) + ",\n";
+                    sideTabChecks.VectorIconColorOk) + ",\n" +
+                "  \"side_tab_z_order_policy_ok\": " + Bool(
+                    sideTabChecks.ZOrderPolicyOk) + ",\n";
         }
 
         private static string BuildPolicyKeyboardReminderReportFields(

@@ -120,9 +120,9 @@ namespace PennyPet
         internal static void WriteAllLines(string filePath,
             IEnumerable<string> lines, bool keepBackup)
         {
+            // ponytail: global lock, per-path locks if save throughput matters.
             // One process-wide gate keeps temporary-file replacement safe even
-            // if two repositories ever save from different threads.  The per-
-            // path cost is negligible for settings and note files.
+            // if two repositories ever save from different threads.
             lock (WriteGate)
             {
                 string fullPath = Path.GetFullPath(filePath);

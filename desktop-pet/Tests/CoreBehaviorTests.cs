@@ -26,6 +26,15 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyNoteWindowRules_KeepTabsTopMostOnlyWithoutVisibleNotes()
+        {
+            Assert.IsTrue(
+                StickyNoteWindowRules.ShouldKeepSideTabsTopMost(false));
+            Assert.IsFalse(
+                StickyNoteWindowRules.ShouldKeepSideTabsTopMost(true));
+        }
+
+        [TestMethod]
         public void ShortItemText_UsesOneSharedDisplayBudget()
         {
             Assert.IsTrue(ShortItemText.Fits(new string('中', 50)));
