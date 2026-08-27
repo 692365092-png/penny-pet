@@ -202,6 +202,56 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        [DataRow(1)]
+        [DataRow(2)]
+        [DataRow(3)]
+        [DataRow(4)]
+        [DataRow(5)]
+        [DataRow(6)]
+        [DataRow(7)]
+        [DataRow(8)]
+        [DataRow(9)]
+        public void StickyNoteCodec_LoadsEveryHistoricalGoldenFixture(
+            int version)
+        {
+            string fixture = Path.Combine(AppContext.BaseDirectory,
+                "Tests", "Fixtures", "sticky-v" + version + ".txt");
+            StickyNoteData restored = StickyNoteCodec.ParseLine(
+                File.ReadAllText(fixture, Encoding.UTF8).Trim());
+
+            Assert.IsNotNull(restored, "Fixture v" + version +
+                " must remain readable.");
+            Assert.AreEqual("legacy-v" + version, restored.Id);
+            Assert.AreEqual("Legacy body", restored.Text);
+            if (version >= 2)
+            {
+                Assert.AreEqual("Legacy title", restored.Title);
+                Assert.AreEqual(1, restored.TodoItems.Count);
+                Assert.AreEqual("done", restored.TodoItems[0].Text);
+            }
+            if (version >= 4)
+                Assert.AreEqual("{\\rtf1\\ansi legacy}",
+                    restored.RichTextRtf);
+            if (version >= 5)
+                Assert.AreEqual("Arial", restored.FontFamilyName);
+            if (version >= 7)
+                Assert.AreEqual("group-root", restored.DockParentId);
+            if (version >= 8)
+            {
+                Assert.AreEqual("group-root", restored.DockGroupId);
+                Assert.AreEqual(3, restored.DockGroupOrder);
+            }
+            if (version == 9)
+            {
+                Assert.IsTrue(restored.IsSchedule);
+                Assert.IsFalse(restored.IsTodoList);
+                Assert.AreEqual(1, restored.ScheduleItems.Count);
+                Assert.AreEqual("2030 schedule",
+                    restored.ScheduleItems[0].Text);
+            }
+        }
+
+        [TestMethod]
         public void StickyLinkDetector_RecognizesWindowsPathsAndWebAddresses()
         {
             IList<StickyLinkMatch> links = StickyNoteLinkDetector.Find(

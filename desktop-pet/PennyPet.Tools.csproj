@@ -26,4 +26,22 @@
     <Reference Include="System.Web.Extensions" />
     <ProjectReference Include="PennyPet.Core.csproj" />
   </ItemGroup>
+  <PropertyGroup>
+    <PennyGeneratedResourceDir>$(MSBuildProjectDirectory)\obj\PennyPet.ArtResources\$(Configuration)\$(TargetFramework)</PennyGeneratedResourceDir>
+    <PennyReleasePack>$(PennyGeneratedResourceDir)\release-art.ppap</PennyReleasePack>
+    <PennyStartupCache>$(PennyGeneratedResourceDir)\startup-art.cache</PennyStartupCache>
+  </PropertyGroup>
+  <ItemGroup>
+    <PennyArtInputs Include="..\art\pet-art.json" />
+    <PennyArtInputs Include="..\art\*.gif" />
+  </ItemGroup>
+  <Target Name="GeneratePennyArtResources" AfterTargets="Build"
+    Inputs="@(PennyArtInputs);$(TargetPath)"
+    Outputs="$(PennyReleasePack);$(PennyStartupCache)">
+    <MakeDir Directories="$(PennyGeneratedResourceDir)" />
+    <Exec WorkingDirectory="$(MSBuildProjectDirectory)\.."
+      Command="&quot;$(TargetPath)&quot; --write-release-pack=&quot;$(PennyReleasePack)&quot;" />
+    <Exec WorkingDirectory="$(MSBuildProjectDirectory)\.."
+      Command="&quot;$(TargetPath)&quot; --write-startup-cache=&quot;$(PennyStartupCache)&quot;" />
+  </Target>
 </Project>

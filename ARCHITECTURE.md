@@ -1,6 +1,6 @@
 # Penny 架构与平台迁移地图
 
-本文记录当前实验分支的 Windows 架构、依赖边界和测试范围。它是一份维护地图，不是要求立即跨平台重写的设计稿。正式发布仍以兼容单 EXE 构建通过为前提。
+本文记录当前仓库的 Windows 架构、依赖边界和测试范围。它是一份维护地图，不是要求立即跨平台重写的设计稿。正式发布仍以兼容单 EXE 构建通过为前提。
 
 当前原则：保持 Windows 版行为、数据格式和构建结果不变；优先识别边界，不为“架构漂亮”引入接口、依赖注入或新的大型框架。
 
@@ -18,7 +18,7 @@
 
 1. `StickyNoteWindow` 的 partial 文件仍共享大量窗口控件和状态；这是 WPF/IME 行为保持的取舍，不能误认为已经业务解耦。
 2. `PetForm` 的 partial 文件也共享主窗口状态；边界已可查找，但未来新增功能仍不能直接把网络/缓存塞进这些文件。
-3. `SelfTestRunner.Run` 仍是一个很长的 Windows 集成测试编排方法；纯 Core 重复项已删除，美术/启动资源、设置持久化、便利贴格式/恢复、Dock、富文本/IME、提醒横幅、Todo、日程、字体、独立对话框、侧边页签、通用窗口策略、提醒协调、键盘覆盖、动画、气泡及启动/缩放/桌宠壳层已分别收口到检查方法，备份清理和三组 Dock 检查也已有统一入口；持久化/历史兼容、便利贴交互及 Dock/窗口几何报告字段由独立 builder 组装。剩余对话框、侧边页签和运行时报告段应继续小步拆分。
+3. `SelfTestRunner.Run` 是 Windows 集成测试的编排入口；纯 Core 断言由标准 Tests 覆盖，各功能已收口到窄检查方法，备份清理和三组 Dock 检查也有统一入口。JSON 字段由 10 个 report builder 按既有顺序组装，`Run` 不再直接重复这些报告细节。
 4. `PetArt.cs` 仍同时承担发布包生成、位图解码和运行时缓存；清单模型、别名/时长/渲染参数规则已移入 `Core/Art`，画布适配和描边则隔离在 Windows-only 的 `Features/Art/PetArtFrameRenderer.cs`。后续若引入第二个位图后端，再继续拆包 codec 与运行时加载器。
 5. 设置、便利贴、美术缓存和诊断已共用 `WindowsDataPaths` 选择 `%LocalAppData%\PennyPet`；具体文件名与读写仍留在各自适配器。未来平台只需提供自己的路径入口，不应把 Windows 目录规则移入 Core。
 
@@ -169,17 +169,17 @@ Windows 最大的五个耦合点：
 `PennyPet.Windows.csproj` 就是正式单文件 EXE 的构建入口，与 `dotnet build` 标准链共用同一套 MSBuild/Roslyn 编译器与 `LangVersion=latest`，不再通过旧 .NET Framework `csc.exe` 二次编译。构建流程：
 
 1. 递归编译 `desktop-pet` 下的 `.cs` 文件，排除 `bin`、`obj`、`dist`、`Tests` 与独立入口。
-2. `PennyPet.Tools`（通过 `ProjectReference` 先构建）生成 release art pack 与 startup art cache。
-3. `GeneratePennyArtResources` target 把这些资源以及图标、联系作者图片、带版本 manifest 一并嵌入 EXE。
+2. `PennyPet.Tools`（通过 `ProjectReference` 先构建）用 `GeneratePennyArtResources` 生成一份共享的 release art pack 与 startup art cache。
+3. `PennyPet.ArtResources.targets` 让模块化 Windows 程序集和正式 EXE 复用并嵌入同一份缓存产物，同时加入图标、联系作者图片与带版本 manifest。
 
 `desktop-pet/build.ps1` 与 `BuildOfficialRelease` target 都是薄封装：调用 `dotnet build` 并把产物复制到发布目录。`build-protected.ps1` 仍独立负责本地保护版。
 
-### 建议
+### 当前工程状态
 
-实验分支已经完成可回退的第二阶段工程化验证：
+当前仓库已经完成并保留以下工程化改动：
 
 - 根目录 `PennyPet.sln` 可由 Visual Studio 和 `dotnet` 打开。
-- `PennyPet.Core.csproj` 目标为 `netstandard2.0`，承载 Reminder、Sticky Note、Dock、动画、美术清单/时长、隐私和设置 codec 等纯规则；不引用 Form、Window、Registry、Screen 或 Bitmap。
+- `PennyPet.Core.csproj` 目标为 `netstandard2.0`，承载 Reminder、Sticky Note、Dock、动画、美术清单/时长、隐私和设置 codec 等纯规则；标准 Tests 会扫描 `Core/**`，禁止引入 WinForms、WPF、Registry、Screen、Bitmap 或 UIAutomation 引用。
 - `PennyPet.Windows.Core.csproj` 通过递归 Compile glob 编译 Windows 产品代码；名称中的 `Windows` 很重要，它不是跨平台核心。
 - `PennyPet.App.csproj` 只有正常桌宠入口，不携带 SelfTest/Tools 命令路由。
 - `PennyPet.Tools.csproj` 独立生成美术发布包、启动缓存和校验报告。
@@ -188,8 +188,8 @@ Windows 最大的五个耦合点：
 - `PennyPet.Windows.csproj` 与 `Program.cs` 继续保留为兼容单 EXE 编译入口。
 - `Directory.Build.props` 为同目录的项目隔离 `obj`，避免 NuGet 还原结果互相覆盖。
 - `ProductVersion.props` 是产品、程序集与发布文件名的唯一版本源；`Directory.Build.targets` 会从 `app.manifest.template` 生成带版本的 manifest。
-- Windows Core 的 MSBuild target 调用 Tools 生成并嵌入资源；独立 SelfTests 的完整报告为 `ok=true`。
-- `BuildOfficialRelease` 与 `build.ps1` 都复用 `PennyPet.Windows` 的 Release 构建，只把产物复制到发布目录；资源生成只有 `GeneratePennyArtResources` 这一套。
+- Tools 工程生成共享美术缓存，Windows Core 和正式 EXE 通过同一 `.targets` 嵌入；独立 SelfTests 的完整报告为 `ok=true`。
+- `BuildOfficialRelease` 与 `build.ps1` 都复用 `PennyPet.Windows` 的 Release 构建，只把产物复制到发布目录；CI 为最终产物生成 SPDX SBOM 和统一的 `SHA256SUMS.txt`。
 
 当前迁移门禁是：
 
@@ -211,6 +211,7 @@ Windows 最大的五个耦合点：
 | Todo / Schedule | 模型、增删改后的序列化与持久化兼容路径 |
 | 设置 | 默认值、INI 保存/读取、静默模式、启动和键盘显示选项 |
 | 数据恢复 | 原子写入、自动备份、损坏主文件恢复、加载失败不覆盖、旧数据继续创建 |
+| 历史兼容 | 固定的 v1-v9 便利贴 golden fixtures，保证所有已发布格式持续可读 |
 | Dock | 分组快照、父子/根关系、插入/拆分规则、隐藏恢复、屏幕安全位置和多种历史回归场景 |
 | 隐私 | 键盘功能默认关闭、按键累计、进程隔离、按键时焦点快照、目标变化 fail-closed、密码输入抑制规则 |
 | 发布资源 | 图标、动画包、启动缓存、联系人资源、逐像素透明和轮廓 |
@@ -404,16 +405,16 @@ Penny 客户端 -> Penny 自有后端 -> 第三方 API
 
 Mac 不是当前阶段的开发目标。若未来开始正式 Mac UI，最值得继续做的不是再拆 Windows 文件，而是：
 
-1. 固化设置、提醒和便利贴格式的兼容样例（golden files）。
+1. 便利贴 v1-v9 兼容样例已经固化；若 Mac 原型需要直接迁移设置或提醒，再为这两类格式补同样的 golden files。
 2. 以 `Core/Animation` 与 `Core/Art` 的现有行为作为 Mac 动画状态、别名和时长兼容规范；平台侧只替换图像解码、缓存和绘制。
 3. 明确 Mac 数据目录和 Windows 数据迁移方式。
 4. 用一个最小 AppKit 原型验证透明窗口、Retina 帧显示、鼠标事件和多屏坐标；该原型应在独立任务/项目中完成，不改写当前 Windows 实现。
 
 就当前 Windows 仓库而言，架构已经适合开始第一个真实 API Feature，不需要再进行大规模重构。下一步应先确定后端契约、隐私需求和失败体验，再由该 Feature 建立并验证共享 `ApiClient` 与 `OnlineCacheRepository`；不要继续为了文件行数整理稳定的窗口代码。
 
-## 13. 实验分支对外部建议的验证结果
+## 13. 已落地工程化改动与外部建议验证结果
 
-下列改动均先在副本中分阶段完成，并以完整 SelfTest 和专项探针作为门禁：
+下列改动已经落入当前仓库，并以完整 SelfTest 和专项探针作为门禁：
 
 | 建议 | 当前真实状态 | 决定 |
 |---|---|---|
@@ -424,4 +425,4 @@ Mac 不是当前阶段的开发目标。若未来开始正式 Mac UI，最值得
 | 敏感输入 fail-closed 与首次提示 | `PetKeyboardPrivacyPolicy` 管理首次确认；无法检查时隐藏 | 已完成自动策略测试；真实第三方/跨权限输入仍需人工回归 |
 | 危险本地路径二次确认 | `Core/Links/StickyLinkPolicy` 分类 executable/script/shortcut/UNC，`StickyLinkService` 仅执行 Windows 副作用 | 已完成纯规则与 WPF 确认接线；UNC 在用户确认前不会探测网络文件系统 |
 
-实验结果尚未自动成为正式发布方案。合并回主线前仍应完成人工中文 IME、Dock 组合拖拽、多屏、全局键盘隐私和危险路径确认回归，并让 CI 同时保留模块化与兼容单 EXE 两条门禁。
+当前正式发布方案已保留模块化与兼容单 EXE 两条 CI 门禁。每次相关改动发布前仍应完成人工中文 IME、Dock 组合拖拽、多屏、全局键盘隐私和危险路径确认回归。

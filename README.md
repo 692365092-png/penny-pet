@@ -16,7 +16,7 @@ GitHub Actions 会从公开源码自动生成一个完整的单文件 EXE。运�
 
 ## 从源码构建
 
-要求：Windows 10/11、Windows PowerShell 5.1、.NET Framework 4.8。
+要求：Windows 10/11、Windows PowerShell 5.1、.NET 8 SDK，以及 .NET Framework 4.8 Developer Pack（仅安装 4.8 Runtime 不包含构建所需的引用程序集）。
 
 使用 Visual Studio 或标准 .NET 工具进行源码编译检查：
 

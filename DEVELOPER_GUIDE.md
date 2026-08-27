@@ -10,7 +10,7 @@ Penny pet 是一个 Windows 桌面宠物。桌宠主体使用 WinForms 透明分
 
 仓库提供 `PennyPet.sln`。`PennyPet.Core` 目标为 `netstandard2.0`，包含提醒、便利贴数据、Dock、设置模型和兼容 codec 等纯规则；`PennyPet.Tests` 目标为 `net8.0` 并由 `dotnet test` 发现。Windows Core、App、Tools、SelfTests 和兼容单 EXE 项目继续目标为 .NET Framework 4.8。`PennyPet.Windows.Core` 仍是 Windows 产品程序集，不是跨平台核心。
 
-正式单文件发布由 `PennyPet.Windows` 的 Release 构建统一完成：`PennyPet.Windows.csproj` 使用与标准构建相同的 MSBuild/Roslyn 工具链，通过 `PennyPet.Tools` 生成美术发布包和首屏缓存并内嵌到 EXE。`desktop-pet/build.ps1` 与 `BuildOfficialRelease` target 都只是调用这条构建并把产物复制到发布目录，不再维护独立的旧版编译器路径。
+正式单文件发布由 `PennyPet.Windows` 的 Release 构建统一完成：`PennyPet.Windows.csproj` 使用与标准构建相同的 MSBuild/Roslyn 工具链。`PennyPet.Tools` 只生成一次共享美术发布包和首屏缓存，模块化 Windows 工程与正式 EXE 通过 `PennyPet.ArtResources.targets` 消费同一份产物。`desktop-pet/build.ps1` 与 `BuildOfficialRelease` target 都只是调用这条构建并把产物复制到发布目录，不再维护独立的旧版编译器路径。
 
 ## 2. 如何构建测试版
 
@@ -76,7 +76,7 @@ dotnet msbuild '.\desktop-pet\PennyPet.Windows.csproj' `
   - `StickyDockGroups`：组顺序、父子关系、规范化与快照恢复规则。
 - `Core/StickyNotes/StickyDockOperations.cs`：Dock 组插入、单成员抽离、隐藏槽位、快照合并和长按拆分判定；窗口层不得复制这些规则。
 - `Core/StickyNotes/StickyTabDropSession.cs`：跨 OLE 嵌套消息循环延迟提交页签拖放；来源窗口只作为不透明身份标识传入。
-- `Core/StickyNotes/StickyNoteCodec.cs`：v1-v9 数据行编解码、内容限制、旧颜色兼容和显示修复；不接触文件路径或桌面 UI。
+- `Core/StickyNotes/StickyNoteCodec.cs`：v1-v9 数据行编解码、内容限制、旧颜色兼容和显示修复；不接触文件路径或桌面 UI。`Tests/Fixtures/sticky-v1.txt` 至 `sticky-v9.txt` 是不可随意改写的历史格式样本，每个版本必须永久保持可读。
 - `Features/StickyNotes/StickyNoteRepository.cs`：读取、旧版迁移、备份、原子保存、dirty 状态、失败重试和紧急导出。
 - `StickyNotes.cs`：WinForms 管理器、标题输入框及 IME 友好输入辅助控件。
 - `StickyNoteWpf.cs`：WPF 窗口构造、总体生命周期、持久化和外观接线。
@@ -130,8 +130,8 @@ Dock 的关键不变量：
 - `Core/Keyboard/KeyDisplayAccumulator.cs`：不依赖系统时钟的连按/长按计数状态机。
 - `Core/Keyboard/PetKeyboardPrivacyPolicy.cs`：首次确认、旧偏好处理、Hook 启动门禁和检查不可用时的隐藏规则；不引用 Windows 类型。
 - `PennyPet.SelfTests.csproj`：独立 SelfTest / 探针 / 预览宿主。
-- `PennyPet.Tests.csproj`：不加载 WinForms/WPF 的标准 Core 单元测试，可直接运行 `dotnet test`。
-- `SelfTestRunner.cs`：文件系统、WinForms/WPF 与 Hook 的 Windows SelfTest 编排和 JSON 报告；各功能由窄检查方法负责；`RunStickyBackupCleanupCheck` 统一清理便利贴测试文件，`RunDockChecks` 汇总三组 Dock 检查，`BuildPersistenceReportFields`、`BuildStickyInteractionReportFields` 与 `BuildDockReportFields` 保持对应字段的既有顺序并通过 `Bool` 纳入总结果，不要在 `Run` 中重复这些细节或纯 Core 断言。
+- `PennyPet.Tests.csproj`：不加载 WinForms/WPF 的标准 Core 单元测试，可直接运行 `dotnet test`；其中的架构测试会扫描 `Core/**`，阻止 WinForms、WPF、Registry、Screen、Bitmap 和 UIAutomation 越界。
+- `SelfTestRunner.cs`：文件系统、WinForms/WPF 与 Hook 的 Windows SelfTest 编排和 JSON 报告；各功能由窄检查方法负责；`RunStickyBackupCleanupCheck` 统一清理便利贴测试文件，`RunDockChecks` 汇总三组 Dock 检查，10 个 report builder 保持既有字段顺序并通过 `Bool` 纳入总结果，不要在 `Run` 中重复这些细节或纯 Core 断言。
 - `PennySelfTests.cs`：Windows 探针和测试用预览渲染。
 
 按键显示对新用户默认关闭。关闭时不能安装全局键盘钩子；只有用户从菜单主动开启后才启动，重新关闭时立即卸载。不要把“关闭”简化成只隐藏文字覆盖层。

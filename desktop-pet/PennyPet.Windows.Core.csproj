@@ -33,34 +33,5 @@
     <ProjectReference Include="PennyPet.Tools.csproj"
       ReferenceOutputAssembly="false" />
   </ItemGroup>
-  <PropertyGroup>
-    <PennyGeneratedResourceDir>$(MSBuildProjectDirectory)\obj\$(MSBuildProjectName)\$(Configuration)\$(TargetFramework)\generated</PennyGeneratedResourceDir>
-    <PennyReleasePack>$(PennyGeneratedResourceDir)\release-art.ppap</PennyReleasePack>
-    <PennyStartupCache>$(PennyGeneratedResourceDir)\startup-art.cache</PennyStartupCache>
-  </PropertyGroup>
-  <ItemGroup>
-    <EmbeddedResource Include="$(PennyReleasePack)"
-      LogicalName="PennyPet.Art.ReleasePack" />
-    <EmbeddedResource Include="$(PennyStartupCache)"
-      LogicalName="PennyPet.Art.StartupCache" />
-    <EmbeddedResource Include="..\art\loading.png"
-      LogicalName="PennyPet.Startup.Loading" />
-    <EmbeddedResource Include="..\art\未标题-1.png"
-      LogicalName="PennyPet.ContactAuthor.Image" />
-    <EmbeddedResource Include="..\art\svg.png"
-      LogicalName="PennyPet.TabIcons.Reference" />
-    <EmbeddedResource Include="..\art\pet-art.json"
-      LogicalName="PennyPet.Art.Manifest" />
-    <PennyArtInputs Include="..\art\pet-art.json" />
-    <PennyArtInputs Include="..\art\*.gif" />
-  </ItemGroup>
-  <Target Name="GeneratePennyArtResources" BeforeTargets="PrepareResources"
-    Inputs="@(PennyArtInputs);$(MSBuildProjectDirectory)\bin\$(Configuration)\$(TargetFramework)\PennyPet.Tools.exe"
-    Outputs="$(PennyReleasePack);$(PennyStartupCache)">
-    <MakeDir Directories="$(PennyGeneratedResourceDir)" />
-    <Exec WorkingDirectory="$(MSBuildProjectDirectory)\.."
-      Command="&quot;$(MSBuildProjectDirectory)\bin\$(Configuration)\$(TargetFramework)\PennyPet.Tools.exe&quot; --write-release-pack=&quot;$(PennyReleasePack)&quot;" />
-    <Exec WorkingDirectory="$(MSBuildProjectDirectory)\.."
-      Command="&quot;$(MSBuildProjectDirectory)\bin\$(Configuration)\$(TargetFramework)\PennyPet.Tools.exe&quot; --write-startup-cache=&quot;$(PennyStartupCache)&quot;" />
-  </Target>
+  <Import Project="PennyPet.ArtResources.targets" />
 </Project>
