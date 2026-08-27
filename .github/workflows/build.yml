@@ -158,6 +158,7 @@ jobs:
             throw "No release files were downloaded."
           }
           gh release create $env:GITHUB_REF_NAME @assets `
+            --repo $env:GITHUB_REPOSITORY `
             --verify-tag `
             --title ("Penny pet " + $env:GITHUB_REF_NAME) `
             --generate-notes
