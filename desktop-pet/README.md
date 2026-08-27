@@ -93,9 +93,9 @@ GitHub 开源发布版使用 `build.ps1` 生成可审查、可自动测试的未
 - `LayeredSpriteRenderer.cs`：Windows 透明分层窗口渲染。
 - `Core/StickyNotes`：便利贴、待办、日程与 Dock 的纯数据、v1-v9 编解码、组关系变更及页签拖放会话，不引用桌面 UI。
 - `Features/StickyNotes`：便利贴窗口、编辑、Dock 协调、持久化、dirty 状态、自动重试与紧急导出。
-- `StickyNoteWpf.cs`：WPF 便利贴窗口本体；RichText/IME、链接和原生窗口行为分别位于 `StickyEditorController.cs`、`StickyLinkController.cs` 和 `StickyNativeWindowBehavior.cs`。
-- `StickyTodoController.cs` / `StickyScheduleController.cs`：待办和日程 UI 逻辑。
-- `StickyReminderController.cs` / `StickyAppearanceController.cs`：提醒条和外观 UI 逻辑。
+- `StickyNoteWpf.cs`：WPF 便利贴窗口本体；RichText/IME、链接和原生窗口行为分别位于 `StickyEditorCoordinator.cs`、`StickyLinkCoordinator.cs` 和 `StickyNativeWindowBehavior.cs`。
+- `StickyTodoCoordinator.cs` / `StickyScheduleCoordinator.cs`：待办和日程 UI 逻辑。
+- `StickyReminderCoordinator.cs` / `StickyAppearanceCoordinator.cs`：提醒条和外观 UI 逻辑。
 - `PetStickyDockCoordinator.cs`：Windows 便利贴吸附命中、拖拽、坐标同步与隐藏恢复适配；组关系规则由 Core 持有。
 - `StickyNotes.cs` / `StickyNoteTabs.cs`：管理界面、IME 辅助控件和侧边页签。
 - `ReminderUi.cs` / `Core/Reminders`：提醒界面以及纯提醒模型和规则。

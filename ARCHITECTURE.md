@@ -29,8 +29,8 @@
 ```text
 PennyPet.App -> PennyApplicationHost
   -> PetForm (Windows 窗口壳)
-       -> PetStartupController / PetAnimationRuntime
-       -> PetKeyboardOverlayController / PetBubbleController
+       -> PetStartupCoordinator / PetAnimationRuntime
+       -> PetKeyboardOverlayCoordinator / PetBubbleCoordinator
        -> Windows keyboard hook / focus inspector / overlay form
             -> PetKeyboardPrivacyPolicy / KeyDisplayAccumulator (Core)
        -> PetStickyWindowCoordinator / PetMenuActions
@@ -69,9 +69,9 @@ PennyPet.Tools -> PetArt 资源包/启动缓存生成
 | `PennyApplicationHost.cs` | 单实例、loading、异常兜底和正常应用运行 | Windows-only |
 | `PetForm.cs` | 桌宠窗口构造、关闭和位置生命周期 | Windows-only |
 | `PetAnimationRuntime.cs` | 计时器、资源预载、帧提交和鼠标互动桥 | Windows-only |
-| `PetStartupController.cs` | 延迟启动阶段和恢复窗口队列 | Windows-only |
-| `Features/KeyboardOverlay/PetKeyboardOverlayController.cs` | 键盘事件、隐私扫描和 overlay 协调 | Windows-only |
-| `PetBubbleController.cs` | 气泡生命周期和展示协调 | Windows-only |
+| `PetStartupCoordinator.cs` | 延迟启动阶段和恢复窗口队列 | Windows-only |
+| `Features/KeyboardOverlay/PetKeyboardOverlayCoordinator.cs` | 键盘事件、隐私扫描和 overlay 协调 | Windows-only |
+| `PetBubbleCoordinator.cs` | 气泡生命周期和展示协调 | Windows-only |
 | `PetStickyWindowCoordinator.cs` | 便利贴窗口创建、恢复、集中布局和页签协调 | Windows-only |
 | `PetContextMenu.cs` | 右键菜单构造与命令绑定 | Windows-only |
 | `Core/Animation/PetAnimationController.cs` | 动画状态、优先级、随机选择、冷却和恢复规则 | `PennyPet.Core`，可跨平台 |
@@ -106,14 +106,14 @@ PennyPet.Tools -> PetArt 资源包/启动缓存生成
 | `Core/StickyNotes/StickyDockOperations.cs` / `StickyTabDropSession.cs` | Dock 组插入、抽离、隐藏槽位、拆分判定和页签拖放提交会话 | `PennyPet.Core`；以数据和不透明来源标识工作，不引用 WinForms |
 | `Features/StickyNotes/StickyNoteRepository.cs` | 文件保存、备份、损坏恢复、dirty 状态和紧急导出 | 文件系统适配；格式由 Core codec 负责 |
 | `StickyNoteWpf.cs` | WPF 窗口构造、总体生命周期、外观和持久化接线 | Windows-only，高风险 |
-| `StickyEditorController.cs` | RichText、格式、焦点和 IME 组合输入 | Windows-only，最高风险 |
+| `StickyEditorCoordinator.cs` | RichText、格式、焦点和 IME 组合输入 | Windows-only，最高风险 |
 | `Core/Links/StickyNoteLinks.cs` / `StickyLinkPolicy.cs` | HTTP(S)/Windows 路径识别、打开风险分类与确认文案 | `PennyPet.Core`，无文件系统或 Shell 副作用 |
-| `StickyLinkController.cs` / `StickyLinkService.cs` | WPF 链接格式/点击、用户确认、存在性检查和 Shell 打开 | Windows-only 薄适配层 |
+| `StickyLinkCoordinator.cs` / `StickyLinkService.cs` | WPF 链接格式/点击、用户确认、存在性检查和 Shell 打开 | Windows-only 薄适配层 |
 | `StickyNativeWindowBehavior.cs` | Win32 消息、拖拽、resize 和最大化拦截 | Windows-only，高风险 |
-| `StickyTodoController.cs` | Todo UI 与本窗口内的增删改显示 | Windows-only UI；模型在 `StickyNoteModels` |
-| `StickyScheduleController.cs` | Schedule UI 与本窗口内的增删改显示 | Windows-only UI；模型在 `StickyNoteModels` |
-| `StickyReminderController.cs` | 便利贴提醒横幅 UI | Windows-only |
-| `StickyAppearanceController.cs` | 便利贴外观对话框协调 | Windows-only |
+| `StickyTodoCoordinator.cs` | Todo UI 与本窗口内的增删改显示 | Windows-only UI；模型在 `StickyNoteModels` |
+| `StickyScheduleCoordinator.cs` | Schedule UI 与本窗口内的增删改显示 | Windows-only UI；模型在 `StickyNoteModels` |
+| `StickyReminderCoordinator.cs` | 便利贴提醒横幅 UI | Windows-only |
+| `StickyAppearanceCoordinator.cs` | 便利贴外观对话框协调 | Windows-only |
 | `PetStickyDockCoordinator.cs` | 活窗口拖动、坐标布局、窗口同步和屏幕边界；组关系变更委托给 Core | Windows-only，高风险适配层 |
 | `StickyNoteTabs.cs` | 收起后的侧边标签窗口；拖放会话状态由 Core 对象持有 | Windows-only |
 | `StickyNotes.cs` | WinForms 管理器、标题框、IME 友好输入控件 | Windows-only |

@@ -45,7 +45,7 @@ dotnet msbuild '.\desktop-pet\PennyPet.Windows.csproj' `
 - `desktop-pet/PennyApplicationHost.cs`：正常应用的单实例、loading 和异常兜底。
 - `desktop-pet/Core/Animation/ArtPreloadReservations.cs`：动画懒加载请求和失败后的有限重试。
 - `desktop-pet/PetForm.cs`：桌宠 Windows 窗口构造、关闭和位置生命周期。
-- `PetStartupController.cs` / `PetAnimationRuntime.cs` / `PetBubbleController.cs` / `PetMenuActions.cs` 以及 `Features` 下的键盘、便利贴协调文件：PetForm 的职责 partial 文件。
+- `PetStartupCoordinator.cs` / `PetAnimationRuntime.cs` / `PetBubbleCoordinator.cs` / `PetMenuActions.cs` 以及 `Features` 下的键盘、便利贴协调文件：PetForm 的职责 partial 文件。
 - `desktop-pet/PetContextMenu.cs`：桌宠右键菜单构造与命令绑定。
 - `desktop-pet/Core/Animation/PetAnimationController.cs`：不依赖 WinForms 的动画状态、优先级、随机选择和冷却规则。
 - `desktop-pet/Core/Reminders/PetReminderCoordinator.cs`：不依赖 Windows UI 的提醒刷新和气泡替换规则。
@@ -80,14 +80,14 @@ dotnet msbuild '.\desktop-pet\PennyPet.Windows.csproj' `
 - `Features/StickyNotes/StickyNoteRepository.cs`：读取、旧版迁移、备份、原子保存、dirty 状态、失败重试和紧急导出。
 - `StickyNotes.cs`：WinForms 管理器、标题输入框及 IME 友好输入辅助控件。
 - `StickyNoteWpf.cs`：WPF 窗口构造、总体生命周期、持久化和外观接线。
-- `StickyEditorController.cs`：RichText、字体、焦点和 IME；这是最高风险文件，不得擅自简化事件顺序。
+- `StickyEditorCoordinator.cs`：RichText、字体、焦点和 IME；这是最高风险文件，不得擅自简化事件顺序。
 - `StickyNativeWindowBehavior.cs`：Win32 消息、拖拽、resize 和最大化拦截。
 - `Core/Links/StickyNoteLinks.cs` / `StickyLinkPolicy.cs`：HTTP(S)/Windows 路径识别、风险分类和确认文案；保持纯逻辑，不得访问文件系统或启动进程。
-- `StickyLinkController.cs` / `StickyLinkService.cs`：普通便利贴的 WPF 格式与点击，以及确认后的文件存在检查和 Windows Shell 打开。
-- `StickyTodoController.cs`：待办列表 UI、自身增删改和字号逻辑。
-- `StickyScheduleController.cs`：日程 UI、自身增删改和刷新逻辑。
-- `StickyReminderController.cs`：便利贴内提醒列表、倒计时和提醒操作。
-- `StickyAppearanceController.cs`：便利贴外观对话框协调。
+- `StickyLinkCoordinator.cs` / `StickyLinkService.cs`：普通便利贴的 WPF 格式与点击，以及确认后的文件存在检查和 Windows Shell 打开。
+- `StickyTodoCoordinator.cs`：待办列表 UI、自身增删改和字号逻辑。
+- `StickyScheduleCoordinator.cs`：日程 UI、自身增删改和刷新逻辑。
+- `StickyReminderCoordinator.cs`：便利贴内提醒列表、倒计时和提醒操作。
+- `StickyAppearanceCoordinator.cs`：便利贴外观对话框协调。
 - `PetStickyDockCoordinator.cs`：吸附命中、整组拖动、窗口坐标同步和屏幕安全边界；它是 `PetForm` 的 Windows-only partial 适配模块，组关系变更调用 `StickyDockOperations`。
 - `StickyNoteTabs.cs`：侧边页签、隐藏/恢复、类型图标；不再拥有拖放事务规则。
 - `StickyAppearanceDialog.cs`：颜色、透明度和文字颜色设置。
@@ -304,6 +304,6 @@ Feature 不知道 `SpeechBubbleForm` 的控件结构；Remote Service 不操作�
 
 ### 本地路径打开需要风险分级
 
-`Core/Links/StickyNoteLinks.cs` 把 URL 限制为 HTTP/HTTPS，并用与运行宿主无关的规则识别盘符和 UNC 路径；`Core/Links/StickyLinkPolicy.cs` 负责打开风险分类与确认文案。`Features/StickyNotes/StickyLinkService.cs` 只在确认后检查文件是否存在并调用 Windows Shell。普通文档和文件夹直接打开；可执行文件、脚本、快捷方式以及 UNC 网络路径必须二次确认，默认按钮为“不打开”。UNC 路径必须先取得用户确认，再探测网络文件系统。WPF 点击和小手光标仍在 `StickyLinkController.cs`。
+`Core/Links/StickyNoteLinks.cs` 把 URL 限制为 HTTP/HTTPS，并用与运行宿主无关的规则识别盘符和 UNC 路径；`Core/Links/StickyLinkPolicy.cs` 负责打开风险分类与确认文案。`Features/StickyNotes/StickyLinkService.cs` 只在确认后检查文件是否存在并调用 Windows Shell。普通文档和文件夹直接打开；可执行文件、脚本、快捷方式以及 UNC 网络路径必须二次确认，默认按钮为“不打开”。UNC 路径必须先取得用户确认，再探测网络文件系统。WPF 点击和小手光标仍在 `StickyLinkCoordinator.cs`。
 
 风险分类与确认文案已有纯逻辑测试。继续修改时仍要回归普通 URL、文件夹、常用文档、中文路径、长路径、无效路径和 IME/链接格式。
