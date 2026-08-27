@@ -672,6 +672,7 @@ namespace PennyPet
                 StringComparison.Ordinal))
             {
                 PositionNoteTabs();
+                ApplySideTabZOrder();
                 return;
             }
             _noteTabsSignature = signature;
@@ -684,6 +685,28 @@ namespace PennyPet
             _leftNoteTabs.SetNotes(left, 0);
             _rightNoteTabs.SetNotes(right, leftCount);
             PositionNoteTabs();
+            ApplySideTabZOrder();
+        }
+
+        private void ApplySideTabZOrder()
+        {
+            if (_leftNoteTabs == null || _rightNoteTabs == null || IsDisposed)
+                return;
+            bool hasVisibleNotes = _notes.GetAll().Exists(
+                delegate(StickyNoteData note) { return note.Visible; });
+            _leftNoteTabs.TopMost = !hasVisibleNotes;
+            _rightNoteTabs.TopMost = !hasVisibleNotes;
+            if (!hasVisibleNotes) return;
+
+            // Tabs and notes are both top-level windows.  When a note is
+            // visible, tabs must stay in the normal band so a semi-transparent
+            // note can be placed above them without becoming top-most itself.
+            foreach (StickyNoteWindow form in
+                new List<StickyNoteWindow>(_noteWindows.Values))
+            {
+                if (form == null || form.IsDisposed || !form.Visible) continue;
+                form.RaiseForDockDragWithoutActivation();
+            }
         }
 
         private void PositionNoteTabs()

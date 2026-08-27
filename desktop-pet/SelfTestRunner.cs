@@ -28,6 +28,7 @@ namespace PennyPet
             internal bool GreenHaloAbsent;
             internal bool ApplicationIconEmbeddedOk;
             internal bool StartupFrameEmbeddedOk;
+            internal bool StartupFrameMatchesIdleOk;
             internal bool StartupUsesSavedScaleOk;
             internal bool ContactAuthorFeatureOk;
             internal int[] AnimationCycleDurations;
@@ -94,6 +95,10 @@ namespace PennyPet
                     applicationIcon.Width >= 16 && applicationIcon.Height >= 16;
             }
             result.StartupFrameEmbeddedOk = StartupLoadingForm.HasEmbeddedFrame;
+            using (StartupLoadingForm loadingFrameForm =
+                new StartupLoadingForm(new PetSettings()))
+                result.StartupFrameMatchesIdleOk =
+                    loadingFrameForm.UsesNormalizedIdleFrameForTest();
             PetSettings loadingScaleSettings = new PetSettings
             {
                 ScalePercent = 150
@@ -2297,6 +2302,8 @@ namespace PennyPet
                     artChecks.ApplicationIconEmbeddedOk) + ",\n" +
                 "  \"startup_loading_frame_embedded_ok\": " + Bool(
                     artChecks.StartupFrameEmbeddedOk) + ",\n" +
+                "  \"startup_loading_matches_idle_frame_ok\": " + Bool(
+                    artChecks.StartupFrameMatchesIdleOk) + ",\n" +
                 "  \"startup_loading_uses_saved_pet_scale_ok\": " + Bool(
                     artChecks.StartupUsesSavedScaleOk) + ",\n" +
                 "  \"contact_author_feature_ok\": " + Bool(

@@ -68,6 +68,9 @@ namespace PennyPet
                         {
                             bool alreadyPressed = !_pressedKeys.Add(
                                 data.VirtualKeyCode);
+                            // Keep identity capture synchronous: privacy is
+                            // fail-closed only if the snapshot belongs to the
+                            // exact target that received this key-down event.
                             KeyboardFocusSnapshot focus =
                                 KeyboardFocusSnapshot.Capture();
                             if (ShouldPublishKeyDown(alreadyPressed) &&
