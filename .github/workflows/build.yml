@@ -98,10 +98,23 @@ jobs:
             throw "Penny self-tests failed."
           }
 
+      - name: Generate SHA-256 checksum
+        shell: powershell
+        run: |
+          $releaseExe = Join-Path "$env:GITHUB_WORKSPACE\release" `
+            ("Penny pet-" + $env:PENNY_PRODUCT_VERSION + ".exe")
+          $checksumFile = $releaseExe + ".sha256"
+          $hash = Get-FileHash -LiteralPath $releaseExe -Algorithm SHA256
+          Set-Content -LiteralPath $checksumFile `
+            -Value ($hash.Hash + "  " + [IO.Path]::GetFileName($releaseExe)) `
+            -Encoding ASCII
+
       - name: Upload single-file EXE
         uses: actions/upload-artifact@v4
         with:
           name: Penny-pet-Windows
-          path: release/Penny pet-*.exe
+          path: |
+            release/Penny pet-*.exe
+            release/Penny pet-*.exe.sha256
           if-no-files-found: error
           retention-days: 30
