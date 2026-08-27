@@ -24,10 +24,10 @@ GitHub Actions 会从公开源码自动生成一个完整的单文件 EXE。运�
 dotnet build ".\PennyPet.sln" --configuration Release
 ```
 
-解决方案会构建独立的 Windows Core、App、Tools 和 SelfTests；模块化 App 会通过 Tools 生成并嵌入美术资源。生成用于公开分发的兼容单文件 EXE 仍使用：
+解决方案会构建跨平台 `PennyPet.Core`、Windows Core、App、Tools、标准 Tests 和 SelfTests；模块化 App 会通过 Tools 生成并嵌入美术资源。生成用于公开分发的兼容单文件 EXE 仍使用：
 
 ```powershell
-.\desktop-pet\build.ps1 -TargetPlatform anycpu -OutputFile ".\release\Penny pet-1.0.exe"
+.\desktop-pet\build.ps1 -TargetPlatform anycpu -OutputFile ".\release\Penny pet-release.exe"
 ```
 
 构建过程会把 `art/pet-art.json` 引用的完整分辨率动画和启动缓存嵌入 EXE。生成结果仍然是一个文件。
@@ -35,13 +35,14 @@ dotnet build ".\PennyPet.sln" --configuration Release
 运行自动测试：
 
 ```powershell
-.\release\Penny pet-1.0.exe --self-test="$env:TEMP\penny-selftest.json"
+dotnet test ".\desktop-pet\PennyPet.Tests.csproj" --configuration Release
+.\release\Penny pet-release.exe --self-test="$env:TEMP\penny-selftest.json"
 ```
 
 ## 源码结构
 
 - `desktop-pet/`：Windows 桌宠、便利贴、待办、日程、提醒和自动测试。
-- `PennyPet.sln`：Windows Core、App、Tools、SelfTests 和兼容单 EXE 项目；正式单文件发布仍由 `build.ps1` 兜底。
+- `PennyPet.sln`：跨平台 Core、Windows Core、App、Tools、Tests、SelfTests 和兼容单 EXE 项目；正式单文件发布由 `build.ps1` 生成。
 - `art/`：构建单文件 EXE 所需的角色动画与界面美术。
 - `ARCHITECTURE.md`：拆分后的模块职责、Windows/通用边界，以及未来在线功能的 API、缓存和安全约束。
 - `DEVELOPER_GUIDE.md`：维护说明、数据位置、高风险兼容逻辑和新增 Feature 指南。

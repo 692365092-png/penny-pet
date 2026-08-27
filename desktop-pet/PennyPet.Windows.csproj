@@ -7,9 +7,12 @@
     <RootNamespace>PennyPet</RootNamespace>
     <AssemblyName>Penny pet</AssemblyName>
     <StartupObject>PennyPet.Program</StartupObject>
-    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationManifest>$(PennyGeneratedManifest)</ApplicationManifest>
     <ApplicationIcon>assets\app.ico</ApplicationIcon>
-    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <GenerateAssemblyTitleAttribute>false</GenerateAssemblyTitleAttribute>
+    <GenerateAssemblyDescriptionAttribute>false</GenerateAssemblyDescriptionAttribute>
+    <GenerateAssemblyProductAttribute>false</GenerateAssemblyProductAttribute>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <LangVersion>latest</LangVersion>
     <Platforms>AnyCPU;x86;x64</Platforms>
@@ -21,63 +24,11 @@
     <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
   </PropertyGroup>
 
-  <!--
-    Keep this list explicit. build.ps1 still owns the official two-pass,
-    resource-embedded release, while this project gives Visual Studio and
-    dotnet tooling a stable source graph for compilation and analysis.
-  -->
+  <!-- Sources are discovered recursively, so feature folders do not need a
+       duplicated compile list. -->
   <ItemGroup>
-    <Compile Include="AssemblyInfo.cs" />
-    <Compile Include="ArtPreloadReservations.cs" />
-    <Compile Include="ApplicationDiagnostics.cs" />
-    <Compile Include="ContactAuthorForm.cs" />
-    <Compile Include="DockPulseIndicator.cs" />
-    <Compile Include="GlobalKeyboardActivity.cs" />
-    <Compile Include="KeyboardOverlay.cs" />
-    <Compile Include="LayeredSpriteRenderer.cs" />
-    <Compile Include="PennySelfTests.cs" />
-    <Compile Include="PennyApplicationHost.cs" />
-    <Compile Include="PetAnimationController.cs" />
-    <Compile Include="PetAnimationRuntime.cs" />
-    <Compile Include="PetBubbleController.cs" />
-    <Compile Include="PetArt.cs" />
-    <Compile Include="PetContextMenu.cs" />
-    <Compile Include="PetForm.cs" />
-    <Compile Include="PetKeyboardPrivacyPolicy.cs" />
-    <Compile Include="PetKeyboardOverlayController.cs" />
-    <Compile Include="PetMenuActions.cs" />
-    <Compile Include="PetReminderCoordinator.cs" />
-    <Compile Include="PetReminderWindowsCoordinator.cs" />
-    <Compile Include="PetSettings.cs" />
-    <Compile Include="PetStartupController.cs" />
-    <Compile Include="PetStickyWindowCoordinator.cs" />
-    <Compile Include="Program.cs" />
-    <Compile Include="ReminderModels.cs" />
-    <Compile Include="ReminderUi.cs" />
-    <Compile Include="ReverseEngineeringEasterEgg.cs" />
-    <Compile Include="ScaleDialog.cs" />
-    <Compile Include="ScheduleItemDialog.cs" />
-    <Compile Include="SelfTestRunner.cs" />
-    <Compile Include="SpeechBubbleForm.cs" />
-    <Compile Include="StartupLoadingForm.cs" />
-    <Compile Include="StartupRegistration.cs" />
-    <Compile Include="StickyAppearanceController.cs" />
-    <Compile Include="StickyAppearanceDialog.cs" />
-    <Compile Include="StickyDockController.cs" />
-    <Compile Include="StickyEditorController.cs" />
-    <Compile Include="StickyNoteLinks.cs" />
-    <Compile Include="StickyNoteModels.cs" />
-    <Compile Include="StickyNoteRepository.cs" />
-    <Compile Include="StickyLinkController.cs" />
-    <Compile Include="StickyLinkService.cs" />
-    <Compile Include="StickyNotes.cs" />
-    <Compile Include="StickyNoteTabs.cs" />
-    <Compile Include="StickyNoteWpf.cs" />
-    <Compile Include="StickyNativeWindowBehavior.cs" />
-    <Compile Include="StickyReminderController.cs" />
-    <Compile Include="StickyScheduleController.cs" />
-    <Compile Include="StickyTodoController.cs" />
-    <Compile Include="WpfApplicationHost.cs" />
+    <Compile Include="**\*.cs"
+      Exclude="bin\**;obj\**;Tests\**;PennyPet.AppProgram.cs;PennyPet.SelfTestsProgram.cs;PennyPet.ToolsProgram.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -88,24 +39,51 @@
     <Reference Include="WindowsFormsIntegration" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="PennyPet.Tools.csproj"
+      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
   <PropertyGroup>
-    <PennyReleasePlatform>anycpu</PennyReleasePlatform>
-    <PennyReleasePlatform Condition="'$(PlatformTarget)' == 'x86'">x86</PennyReleasePlatform>
-    <PennyReleasePlatform Condition="'$(PlatformTarget)' == 'x64'">x64</PennyReleasePlatform>
+    <PennyGeneratedResourceDir>$(MSBuildProjectDirectory)\obj\$(MSBuildProjectName)\$(Configuration)\$(TargetFramework)\generated</PennyGeneratedResourceDir>
+    <PennyReleasePack>$(PennyGeneratedResourceDir)\release-art.ppap</PennyReleasePack>
+    <PennyStartupCache>$(PennyGeneratedResourceDir)\startup-art.cache</PennyStartupCache>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="$(PennyReleasePack)"
+      LogicalName="PennyPet.Art.ReleasePack" />
+    <EmbeddedResource Include="$(PennyStartupCache)"
+      LogicalName="PennyPet.Art.StartupCache" />
+    <EmbeddedResource Include="..\art\loading.png"
+      LogicalName="PennyPet.Startup.Loading" />
+    <EmbeddedResource Include="..\art\未标题-1.png"
+      LogicalName="PennyPet.ContactAuthor.Image" />
+    <EmbeddedResource Include="..\art\svg.png"
+      LogicalName="PennyPet.TabIcons.Reference" />
+    <EmbeddedResource Include="..\art\pet-art.json"
+      LogicalName="PennyPet.Art.Manifest" />
+    <PennyArtInputs Include="..\art\pet-art.json" />
+    <PennyArtInputs Include="..\art\*.gif" />
+  </ItemGroup>
+  <Target Name="GeneratePennyArtResources" BeforeTargets="PrepareResources"
+    Inputs="@(PennyArtInputs);$(MSBuildProjectDirectory)\bin\$(Configuration)\$(TargetFramework)\PennyPet.Tools.exe"
+    Outputs="$(PennyReleasePack);$(PennyStartupCache)">
+    <MakeDir Directories="$(PennyGeneratedResourceDir)" />
+    <Exec WorkingDirectory="$(MSBuildProjectDirectory)\.."
+      Command="&quot;$(MSBuildProjectDirectory)\bin\$(Configuration)\$(TargetFramework)\PennyPet.Tools.exe&quot; --write-release-pack=&quot;$(PennyReleasePack)&quot;" />
+    <Exec WorkingDirectory="$(MSBuildProjectDirectory)\.."
+      Command="&quot;$(MSBuildProjectDirectory)\bin\$(Configuration)\$(TargetFramework)\PennyPet.Tools.exe&quot; --write-startup-cache=&quot;$(PennyStartupCache)&quot;" />
+  </Target>
+
+  <PropertyGroup>
     <OfficialOutputFile Condition="'$(OfficialOutputFile)' == ''">$(MSBuildProjectDirectory)\dist\Penny pet.exe</OfficialOutputFile>
   </PropertyGroup>
 
-  <!--
-    This target intentionally delegates to the proven release pipeline. A
-    normal project Build is an IDE/compiler build and is not the distributable
-    single-file artifact.
-  -->
-  <Target Name="BuildOfficialRelease">
-    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\build.ps1&quot; -TargetPlatform $(PennyReleasePlatform) -OutputFile &quot;$(OfficialOutputFile)&quot;" />
-  </Target>
-
-  <Target Name="ExplainDeveloperBuild" AfterTargets="Build">
-    <Message Importance="high"
-      Text="PennyPet.Windows.csproj build completed for IDE/compiler validation. Use BuildOfficialRelease or build.ps1 for the resource-embedded single-file EXE." />
+  <!-- The normal Release build now embeds the art resources and produces the
+       distributable single-file EXE. BuildOfficialRelease is only the copy
+       step that places that same artifact under dist\. -->
+  <Target Name="BuildOfficialRelease" DependsOnTargets="Build">
+    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(OfficialOutputFile)'))" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFiles="$(OfficialOutputFile)" />
   </Target>
 </Project>

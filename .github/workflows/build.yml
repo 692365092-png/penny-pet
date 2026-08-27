@@ -20,19 +20,71 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Read product version
+        shell: powershell
+        run: |
+          [xml]$props = Get-Content -LiteralPath `
+            "$env:GITHUB_WORKSPACE\desktop-pet\ProductVersion.props" -Raw
+          $version = [string]$props.Project.PropertyGroup.PennyVersionPrefix
+          if ($version -notmatch '^\d+\.\d+$') {
+            throw "ProductVersion.props contains an invalid product version."
+          }
+          [IO.File]::AppendAllText($env:GITHUB_ENV,
+            "PENNY_PRODUCT_VERSION=$version" + [Environment]::NewLine,
+            (New-Object Text.UTF8Encoding($false)))
+
+      - name: Build solution
+        shell: powershell
+        run: dotnet build "$env:GITHUB_WORKSPACE\PennyPet.sln" --configuration Release
+
+      - name: Run discoverable core tests
+        shell: powershell
+        run: dotnet test "$env:GITHUB_WORKSPACE\desktop-pet\PennyPet.Tests.csproj" --configuration Release --no-build
+
+      - name: Run modular self-tests
+        shell: powershell
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP "penny-modular-selftest.json"
+          $hostExe = Join-Path $env:GITHUB_WORKSPACE `
+            "desktop-pet\bin\Release\net48\PennyPet.SelfTests.exe"
+          & $hostExe ("--self-test=" + $report)
+          if ($LASTEXITCODE -ne 0) {
+            throw "Modular Penny self-test host failed with exit code $LASTEXITCODE."
+          }
+          $result = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+          if (-not $result.ok) {
+            throw "Modular Penny self-tests failed."
+          }
+
       - name: Build one EXE
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\release" | Out-Null
+          $releaseExe = Join-Path "$env:GITHUB_WORKSPACE\release" `
+            ("Penny pet-" + $env:PENNY_PRODUCT_VERSION + ".exe")
           & "$env:GITHUB_WORKSPACE\desktop-pet\build.ps1" `
             -TargetPlatform anycpu `
-            -OutputFile "$env:GITHUB_WORKSPACE\release\Penny pet-1.0.exe"
+            -OutputFile $releaseExe
 
       - name: Run Penny self-tests
         shell: powershell
         run: |
           $report = Join-Path $env:RUNNER_TEMP "penny-selftest.json"
-          & "$env:GITHUB_WORKSPACE\release\Penny pet-1.0.exe" ("--self-test=" + $report)
+          $releaseExe = Join-Path "$env:GITHUB_WORKSPACE\release" `
+            ("Penny pet-" + $env:PENNY_PRODUCT_VERSION + ".exe")
+          $expectedAssemblyVersion = $env:PENNY_PRODUCT_VERSION + ".0.0"
+          $builtVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo(
+            $releaseExe)
+          if ($builtVersion.FileVersion -ne $expectedAssemblyVersion -or
+              $builtVersion.ProductVersion -ne $expectedAssemblyVersion) {
+            throw "Release version does not match ProductVersion.props."
+          }
+          & $releaseExe ("--self-test=" + $report)
           $deadline = [DateTime]::UtcNow.AddMinutes(5)
           while (-not (Test-Path -LiteralPath $report -PathType Leaf) -and
                  [DateTime]::UtcNow -lt $deadline) {
@@ -49,7 +101,7 @@ jobs:
       - name: Upload single-file EXE
         uses: actions/upload-artifact@v4
         with:
-          name: Penny-pet-1.0-Windows
-          path: release/Penny pet-1.0.exe
+          name: Penny-pet-Windows
+          path: release/Penny pet-*.exe
           if-no-files-found: error
           retention-days: 30

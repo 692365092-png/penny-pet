@@ -8,8 +8,21 @@ $ErrorActionPreference = "Stop"
 
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $WorkspaceRoot = Split-Path -Parent $ProjectRoot
+$VersionPropertiesPath = Join-Path $ProjectRoot "ProductVersion.props"
+[xml]$VersionProperties = Get-Content -LiteralPath $VersionPropertiesPath -Raw
+$VersionPrefixNode = $VersionProperties.SelectSingleNode(
+    "/Project/PropertyGroup/PennyVersionPrefix")
+$PennyVersionPrefix = if ($null -eq $VersionPrefixNode) {
+    ""
+} else { $VersionPrefixNode.InnerText.Trim() }
+if ($PennyVersionPrefix -notmatch '^\d+\.\d+$') {
+    throw "ProductVersion.props contains an invalid version prefix."
+}
+$PennyProductVersion = $PennyVersionPrefix
+$PennyAssemblyVersion = $PennyVersionPrefix + ".0.0"
+$ProtectedFileName = "Penny-" + $PennyProductVersion + ".exe"
 $FinalOutput = if ([String]::IsNullOrWhiteSpace($OutputFile)) {
-    Join-Path $WorkspaceRoot "Penny-1.0.exe"
+    Join-Path $WorkspaceRoot $ProtectedFileName
 } else {
     [IO.Path]::GetFullPath($OutputFile)
 }
@@ -28,8 +41,8 @@ $BuildRoot = Join-Path $TemporaryParent (
     "penny-protected-build-" + [Guid]::NewGuid().ToString("N"))
 $InputRoot = Join-Path $BuildRoot "input"
 $ProtectedRoot = Join-Path $BuildRoot "protected"
-$RawExe = Join-Path $InputRoot "Penny-1.0.exe"
-$ProtectedExe = Join-Path $ProtectedRoot "Penny-1.0.exe"
+$RawExe = Join-Path $InputRoot $ProtectedFileName
+$ProtectedExe = Join-Path $ProtectedRoot $ProtectedFileName
 $ProjectFile = Join-Path $BuildRoot "penny.crproj"
 $SelfTestFile = Join-Path $BuildRoot "protected-selftest.json"
 $StartupProbeFile = Join-Path $BuildRoot "protected-startup.json"
@@ -77,14 +90,14 @@ try {
     $escapedOutput = [Security.SecurityElement]::Escape($ProtectedRoot)
     $confuserProject = @"
 <?xml version="1.0" encoding="utf-8"?>
-<project outputDir="$escapedOutput" baseDir="$escapedInput" seed="PennyPet-1.0-NINII-1111">
+<project outputDir="$escapedOutput" baseDir="$escapedInput" seed="PennyPet-$PennyProductVersion-NINII-1111">
   <rule pattern="true" preset="none" inherit="false">
     <protection id="rename" />
     <protection id="constants" />
     <protection id="ctrl flow" />
     <protection id="anti ildasm" />
   </rule>
-  <module path="Penny-1.0.exe" />
+  <module path="$ProtectedFileName" />
 </project>
 "@
     [IO.File]::WriteAllText($ProjectFile, $confuserProject,
@@ -97,9 +110,10 @@ try {
     }
 
     $version = [Diagnostics.FileVersionInfo]::GetVersionInfo($ProtectedExe)
-    if ($version.FileVersion -ne "1.0.0.0" -or
-        $version.ProductVersion -ne "1.0.0.0") {
-        throw "Protected executable version is not 1.0.0.0."
+    if ($version.FileVersion -ne $PennyAssemblyVersion -or
+        $version.ProductVersion -ne $PennyAssemblyVersion) {
+        throw "Protected executable version does not match " +
+            "ProductVersion.props ($PennyAssemblyVersion)."
     }
 
     & $ProtectedExe ("--self-test=" + $SelfTestFile)
@@ -136,7 +150,8 @@ try {
     Copy-Item -LiteralPath $ProtectedExe -Destination $FinalOutput -Force
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $FinalOutput).Hash
     Write-Host ""
-    Write-Host "Protected Penny 1.0 built and verified:" -ForegroundColor Green
+    Write-Host ("Protected Penny " + $PennyProductVersion +
+        " built and verified:") -ForegroundColor Green
     Write-Host $FinalOutput
     Write-Host ("Size: " + [Math]::Round(
         (Get-Item -LiteralPath $FinalOutput).Length / 1MB, 2) + " MiB")

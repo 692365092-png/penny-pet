@@ -334,8 +334,7 @@ namespace PennyPet
 
         internal static int NormalizeScalePercent(int value)
         {
-            int clamped = Math.Max(50, Math.Min(200, value));
-            return ((clamped + 5) / 10) * 10;
+            return PetSettingRules.NormalizePetScalePercent(value);
         }
 
         internal static Size ScaledPetSize(int scalePercent)

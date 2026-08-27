@@ -26,7 +26,7 @@ namespace PennyPet
             ShowInTaskbar = false;
             TopMost = true;
             ClientSize = new Size(500, 290);
-            Font = StickyNoteForm.CreateSafeFont("Microsoft YaHei UI", 9F,
+            Font = StickyNoteWindow.CreateSafeFont("Microsoft YaHei UI", 9F,
                 FontStyle.Regular);
 
             Label hint = new Label();
@@ -46,7 +46,7 @@ namespace PennyPet
             _slider.Size = new Size(455, 54);
 
             _valueLabel = new Label();
-            _valueLabel.Font = StickyNoteForm.CreateSafeFont("Microsoft YaHei UI",
+            _valueLabel.Font = StickyNoteWindow.CreateSafeFont("Microsoft YaHei UI",
                 16F, FontStyle.Bold);
             _valueLabel.TextAlign = ContentAlignment.MiddleCenter;
             _valueLabel.Location = new Point(190, 105);

@@ -68,7 +68,7 @@ namespace PennyPet
                 if (oldBitmap != IntPtr.Zero) SelectObject(memoryDc, oldBitmap);
                 if (bitmapHandle != IntPtr.Zero) DeleteObject(bitmapHandle);
                 if (memoryDc != IntPtr.Zero) DeleteDC(memoryDc);
-                if (screenDc != IntPtr.Zero) ReleaseDC(IntPtr.Zero, screenDc);
+                if (screenDc != IntPtr.Zero) _ = ReleaseDC(IntPtr.Zero, screenDc);
             }
         }
 

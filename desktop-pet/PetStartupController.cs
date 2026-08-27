@@ -47,9 +47,13 @@ namespace PennyPet
             {
                 try
                 {
-                    string startupError;
-                    StartupRegistration.Apply(_settings.StartWithWindows,
-                        out startupError);
+                    if (!StartupRegistration.Apply(_settings.StartWithWindows,
+                        out string startupError))
+                    {
+                        ApplicationDiagnostics.ReportNonFatal(
+                            "deferred-startup-registration",
+                            new InvalidOperationException(startupError));
+                    }
                     _settings.Save();
                     ReminderTick(null, EventArgs.Empty);
                     _startupVisibleNotes = BuildStartupRestoreQueue();
@@ -79,7 +83,7 @@ namespace PennyPet
                 }
                 return;
             }
-            foreach (StickyNoteForm startupNote in _noteWindows.Values)
+            foreach (StickyNoteWindow startupNote in _noteWindows.Values)
             {
                 if (startupNote != null && !startupNote.IsDisposed &&
                     startupNote.IsVisible &&

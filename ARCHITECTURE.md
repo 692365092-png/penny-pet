@@ -6,21 +6,21 @@
 
 ## 1. 架构验收结论
 
-- `Program` 是兼容单 EXE 的命令路由；正常启动已委托 `PennyApplicationHost`，标准工程另有独立 App、Tools 和 SelfTests 入口。
+- `Program` 只处理演示入口和正常启动；测试/预览与美术命令分别委托 `Infrastructure/SelfTestCommandRouter` 和 `Infrastructure/ArtCommandRouter`，独立 App、Tools、SelfTests 与兼容单 EXE 共用同一套路由语义。
 - `PetForm.cs` 只保留桌宠窗口构造、关闭和位置生命周期。启动、动画运行时、键盘隐私、气泡、菜单动作和便利贴窗口协调位于职责明确的 partial 文件；它们仍共享同一个窗口状态，不是假装独立的服务层。
 - `StickyNoteForm` 仍是 WPF 便利贴窗口本体；编辑器/IME、链接、原生窗口行为、Todo、Schedule、提醒横幅、外观和 Dock 已按职责定位到独立 partial 文件。
 - 未发现平台无关核心中的循环依赖；未引入 DI container，也没有 interface / wrapper / service 数量膨胀。
 - Windows 窗口协调层仍存在 `PetForm` 与 `StickyNoteForm` 的双向协作。这是 Dock、隐藏/恢复和窗口生命周期造成的 Windows-only 耦合，不能在没有完整窗口回归测试时强拆。
-- `StickyDockController` 较长，但其中是历史上高风险的 Dock 算法与窗口协调。当前选择保留算法和顺序，不以行数为目标继续拆分。
-- 全部拆分以原样移动为主；完整 SelfTest、输入/消息循环/透明窗口/启动探针和兼容单 EXE 构建均通过。Dock 算法和 IME 事件顺序没有重写。
+- `PetStickyDockCoordinator` 仍负责高风险窗口坐标和拖拽副作用；组插入、抽离、隐藏槽位和拆分判定已迁入 `StickyDockOperations`，不再由 `PetForm` 定义领域规则。
+- 高风险修复阶段已通过完整 SelfTest、输入/消息循环/透明窗口/启动探针和兼容单 EXE 构建。后续行为不变的边界拆分采用一次最小构建验证，完整门禁留给 CI/发布阶段，IME 事件顺序仍未重写。
 
 当前仍值得关注的五个架构问题：
 
 1. `StickyNoteForm` 的 partial 文件仍共享大量窗口控件和状态；这是 WPF/IME 行为保持的取舍，不能误认为已经业务解耦。
 2. `PetForm` 的 partial 文件也共享主窗口状态；边界已可查找，但未来新增功能仍不能直接把网络/缓存塞进这些文件。
-3. `SelfTestRunner.Run` 是一个很长的测试编排方法；覆盖面充足但维护成本较高。本轮不改写断言和报告格式。
-4. `PetArt.cs` 同时包含资源清单、动画包、解码/缓存和渲染前处理，并有一处对 `LayeredSpriteRenderer` 的依赖；资源规则可复用，但位图实现尚未完全平台化。
-5. 设置和便利贴仓库的序列化/恢复规则可复用，但默认数据目录与诊断记录仍直接选择当前平台位置；未来共享项目需要把“路径选择”留给平台入口。
+3. `SelfTestRunner.Run` 仍是一个很长的 Windows 集成测试编排方法；纯 Core 重复项已删除，美术/启动资源、设置持久化、便利贴格式/恢复、Dock、富文本/IME、提醒横幅、Todo、日程、字体、独立对话框、侧边页签、通用窗口策略、提醒协调、键盘覆盖、动画、气泡及启动/缩放/桌宠壳层已分别收口到检查方法，备份清理和三组 Dock 检查也已有统一入口；持久化/历史兼容、便利贴交互及 Dock/窗口几何报告字段由独立 builder 组装。剩余对话框、侧边页签和运行时报告段应继续小步拆分。
+4. `PetArt.cs` 仍同时承担发布包生成、位图解码和运行时缓存；清单模型、别名/时长/渲染参数规则已移入 `Core/Art`，画布适配和描边则隔离在 Windows-only 的 `Features/Art/PetArtFrameRenderer.cs`。后续若引入第二个位图后端，再继续拆包 codec 与运行时加载器。
+5. 设置、便利贴、美术缓存和诊断已共用 `WindowsDataPaths` 选择 `%LocalAppData%\PennyPet`；具体文件名与读写仍留在各自适配器。未来平台只需提供自己的路径入口，不应把 Windows 目录规则移入 Core。
 
 ## 2. 主要模块与依赖方向
 
@@ -31,12 +31,16 @@ PennyPet.App -> PennyApplicationHost
   -> PetForm (Windows 窗口壳)
        -> PetStartupController / PetAnimationRuntime
        -> PetKeyboardOverlayController / PetBubbleController
+       -> Windows keyboard hook / focus inspector / overlay form
+            -> PetKeyboardPrivacyPolicy / KeyDisplayAccumulator (Core)
        -> PetStickyWindowCoordinator / PetMenuActions
        -> PetAnimationController (纯动画规则)
        -> PetReminderCoordinator (纯提醒状态/时间规则)
        -> PetReminderWindowsCoordinator (WinForms/WPF 提醒 UI 协调)
-       -> PetContextMenu / StickyDockController / Windows UI
-       -> PetArt -> LayeredSpriteRenderer
+        -> PetContextMenu / PetStickyDockCoordinator / Windows UI
+       -> PetArtPackage
+            -> PetArtRules (Core)
+            -> PetArtFrameRenderer -> LayeredSpriteRenderer
 
 StickyNoteForm (WPF 窗口)
   -> Sticky Todo / Schedule / Reminder / Appearance partial 模块
@@ -54,33 +58,42 @@ PennyPet.Tools -> PetArt 资源包/启动缓存生成
 兼容 Program + build.ps1 -> 保留原单 EXE 发布和 CI 命令面
 ```
 
-原则上，平台无关模块不应反向引用 `PetForm`、WPF、WinForms 或 Win32。当前主要例外是资源/设置外围：`PetArt` 的位图处理和 `PetSettings` 的默认路径/诊断仍需未来适配，而不是现在重写。
+原则上，平台无关模块不应反向引用 `PetForm`、WPF、WinForms 或 Win32。美术清单和别名/时长规则已经进入 Core；当前主要平台外围是 `PetArtPackage` 的位图解码/缓存与 `PetArtFrameRenderer` 的 GDI 画布处理，以及 `PetSettings` 的默认路径、备份和诊断。
 
 ### 入口和桌宠
 
 | 文件 | 责任 | 分类 |
 |---|---|---|
-| `Program.cs` | 兼容单 EXE 的工具/测试/正常启动路由 | Windows 兼容入口 |
+| `Program.cs` | 兼容单 EXE 的演示入口与正常启动 | Windows 兼容入口 |
+| `Infrastructure/*CommandRouter.cs` | App、Tools、SelfTests 共用的参数解析、命令路由和失败退出语义 | 工程基础设施 |
 | `PennyApplicationHost.cs` | 单实例、loading、异常兜底和正常应用运行 | Windows-only |
 | `PetForm.cs` | 桌宠窗口构造、关闭和位置生命周期 | Windows-only |
 | `PetAnimationRuntime.cs` | 计时器、资源预载、帧提交和鼠标互动桥 | Windows-only |
 | `PetStartupController.cs` | 延迟启动阶段和恢复窗口队列 | Windows-only |
-| `PetKeyboardOverlayController.cs` | 键盘事件、隐私扫描和 overlay 协调 | Windows-only |
+| `Features/KeyboardOverlay/PetKeyboardOverlayController.cs` | 键盘事件、隐私扫描和 overlay 协调 | Windows-only |
 | `PetBubbleController.cs` | 气泡生命周期和展示协调 | Windows-only |
 | `PetStickyWindowCoordinator.cs` | 便利贴窗口创建、恢复、集中布局和页签协调 | Windows-only |
 | `PetContextMenu.cs` | 右键菜单构造与命令绑定 | Windows-only |
-| `PetAnimationController.cs` | 动画状态、优先级、随机选择、冷却和恢复规则 | 可跨平台 |
-| `PetArt.cs` | 动画清单、帧包、解码、缓存和资源校验 | 部分可复用，位图后端待适配 |
+| `Core/Animation/PetAnimationController.cs` | 动画状态、优先级、随机选择、冷却和恢复规则 | `PennyPet.Core`，可跨平台 |
+| `Core/Animation/ArtPreloadReservations.cs` | 动画资源预加载去重与失败退避 | `PennyPet.Core`，可跨平台 |
+| `Core/Art/PetArtManifest.cs` / `PetArtRules.cs` | 美术清单模型、状态别名、渲染参数和帧时长规范化 | `PennyPet.Core`，不引用 Bitmap 或文件系统 |
+| `PetArt.cs` | 发布帧包、位图解码、运行时缓存和资源校验 | Windows/GDI 资源适配层 |
+| `Features/Art/AnimationClip.cs` / `PetArtFrameRenderer.cs` | GDI 帧生命周期、画布适配与可选内描边 | Windows-only；集中持有 Bitmap 与 `LayeredSpriteRenderer` 依赖 |
 | `LayeredSpriteRenderer.cs` | GDI / layered window 像素渲染 | Windows-only |
-| `GlobalKeyboardActivity.cs` | Windows 全局低级键盘 Hook | Windows-only |
-| `KeyboardOverlay.cs` | 键盘显示 UI、Windows 密码框探测 | 规则部分可移植，窗口/隐私探测 Windows-only |
+| `Features/KeyboardOverlay/GlobalKeyboardActivity.cs` | Windows 全局低级键盘 Hook；同步捕获按键发生时的焦点身份 | Windows-only |
+| `Features/KeyboardOverlay/KeyboardFocusSnapshot.cs` | 前台窗口、进程、线程、焦点 HWND 与 UIA RuntimeId 快照及一致性判断 | Windows-only |
+| `Features/KeyboardOverlay/KeyboardInputEventArgs.cs` / `KeyboardInputFormatter.cs` | Hook 事件快照载体、Windows 虚拟键与修饰键格式化 | Windows-only |
+| `Features/KeyboardOverlay/SensitiveInputDetector.cs` | UI Automation、Win32 密码样式和系统凭据进程检查 | Windows-only 证据采集器 |
+| `Features/KeyboardOverlay/KeyboardOverlayForm.cs` | 连按结果的透明窗口绘制、定位和淡出 | Windows-only 显示适配器 |
+| `Core/Keyboard/KeyDisplayAccumulator.cs` | 连按/长按显示计数状态机 | `PennyPet.Core`，调用者注入时间 |
+| `Core/Keyboard/PetKeyboardPrivacyPolicy.cs` | 首次确认、旧偏好、Hook 启动门禁与检查失败 fail-closed 判定 | `PennyPet.Core`，可跨平台 |
 
 ### 提醒
 
 | 文件 | 责任 | 分类 |
 |---|---|---|
-| `ReminderModels.cs` | 提醒数据、时间安排、短文本规则 | 可跨平台 |
-| `PetReminderCoordinator.cs` | 到点/预提醒状态、时间刷新、气泡替换规则 | 可跨平台 |
+| `Core/Reminders/ReminderModels.cs` | 提醒数据、时间安排、短文本规则 | `PennyPet.Core`，可跨平台 |
+| `Core/Reminders/PetReminderCoordinator.cs` | 到点/预提醒状态、时间刷新、气泡替换规则 | `PennyPet.Core`，可跨平台 |
 | `PetReminderWindowsCoordinator.cs` | 对话框、桌宠动画、气泡和便利贴 UI 协调 | Windows-only |
 | `ReminderUi.cs` | WinForms 提醒编辑窗口 | Windows-only |
 | `SpeechBubbleForm.cs` | 桌宠气泡窗口 | Windows-only |
@@ -89,26 +102,30 @@ PennyPet.Tools -> PetArt 资源包/启动缓存生成
 
 | 文件 | 责任 | 分类 |
 |---|---|---|
-| `StickyNoteModels.cs` | 便利贴、Todo、Schedule 数据模型和 Dock 关系快照规则 | 可跨平台；使用 `Point`/ARGB 值需薄适配 |
-| `StickyNoteRepository.cs` | 文本格式、保存、备份、损坏恢复和默认路径 | 格式/恢复可复用；默认路径待平台适配 |
+| `Core/StickyNotes/StickyNoteModels.cs` / `StickyNoteCodec.cs` | 便利贴、Todo、Schedule 数据模型、Dock 快照、v1-v9 编解码与修复规则 | `PennyPet.Core`；颜色只保存原始 ARGB 值，不引用 `System.Drawing` |
+| `Core/StickyNotes/StickyDockOperations.cs` / `StickyTabDropSession.cs` | Dock 组插入、抽离、隐藏槽位、拆分判定和页签拖放提交会话 | `PennyPet.Core`；以数据和不透明来源标识工作，不引用 WinForms |
+| `Features/StickyNotes/StickyNoteRepository.cs` | 文件保存、备份、损坏恢复、dirty 状态和紧急导出 | 文件系统适配；格式由 Core codec 负责 |
 | `StickyNoteWpf.cs` | WPF 窗口构造、总体生命周期、外观和持久化接线 | Windows-only，高风险 |
 | `StickyEditorController.cs` | RichText、格式、焦点和 IME 组合输入 | Windows-only，最高风险 |
-| `StickyLinkController.cs` / `StickyLinkService.cs` | 链接格式/点击及打开安全策略 | UI Windows-only；识别策略可测试 |
+| `Core/Links/StickyNoteLinks.cs` / `StickyLinkPolicy.cs` | HTTP(S)/Windows 路径识别、打开风险分类与确认文案 | `PennyPet.Core`，无文件系统或 Shell 副作用 |
+| `StickyLinkController.cs` / `StickyLinkService.cs` | WPF 链接格式/点击、用户确认、存在性检查和 Shell 打开 | Windows-only 薄适配层 |
 | `StickyNativeWindowBehavior.cs` | Win32 消息、拖拽、resize 和最大化拦截 | Windows-only，高风险 |
 | `StickyTodoController.cs` | Todo UI 与本窗口内的增删改显示 | Windows-only UI；模型在 `StickyNoteModels` |
 | `StickyScheduleController.cs` | Schedule UI 与本窗口内的增删改显示 | Windows-only UI；模型在 `StickyNoteModels` |
 | `StickyReminderController.cs` | 便利贴提醒横幅 UI | Windows-only |
 | `StickyAppearanceController.cs` | 便利贴外观对话框协调 | Windows-only |
-| `StickyDockController.cs` | 活窗口吸附、插入、拆分、拖动、隐藏/恢复和屏幕边界 | Windows-only，高风险 |
-| `StickyNoteTabs.cs` | 收起后的侧边标签窗口 | Windows-only |
+| `PetStickyDockCoordinator.cs` | 活窗口拖动、坐标布局、窗口同步和屏幕边界；组关系变更委托给 Core | Windows-only，高风险适配层 |
+| `StickyNoteTabs.cs` | 收起后的侧边标签窗口；拖放会话状态由 Core 对象持有 | Windows-only |
 | `StickyNotes.cs` | WinForms 管理器、标题框、IME 友好输入控件 | Windows-only |
 
 ### 设置、诊断与启动
 
 | 文件 | 责任 | 分类 |
 |---|---|---|
-| `PetSettings.cs` | 设置模型、INI 兼容格式、恢复 | 格式可复用；默认路径/诊断待适配 |
-| `ApplicationDiagnostics.cs` | Windows 用户目录中的诊断与原子文本写入 | 原子写入规则可复用；路径/日志实现待适配 |
+| `Core/Settings/PetSettingsData.cs` / `PetSettingsCodec.cs` | 设置模型、默认值、INI 新旧格式和提醒字段 | `PennyPet.Core`，可跨平台 |
+| `Infrastructure/Persistence/WindowsDataPaths.cs` | 统一选择 `%LocalAppData%\PennyPet`，供设置、便利贴、诊断和内嵌美术缓存使用 | Windows-only 路径入口，无读写副作用 |
+| `PetSettings.cs` | 文件大小门禁、主/备份恢复、原子保存和失败事件 | 文件系统平台适配；默认目录由 `WindowsDataPaths` 提供 |
+| `ApplicationDiagnostics.cs` | Windows 用户目录中的诊断与文本写入 | Windows 日志适配；默认目录由 `WindowsDataPaths` 提供 |
 | `StartupRegistration.cs` | 注册表开机启动 | Windows-only |
 
 ## 3. Windows / macOS 迁移地图
@@ -147,39 +164,41 @@ Windows 最大的五个耦合点：
 
 ## 4. 构建系统评估
 
-### 当前构建为什么不能直接换掉
+### 构建链路已统一到 SDK/Roslyn
 
-`desktop-pet/build.ps1` 会：
+`PennyPet.Windows.csproj` 就是正式单文件 EXE 的构建入口，与 `dotnet build` 标准链共用同一套 MSBuild/Roslyn 编译器与 `LangVersion=latest`，不再通过旧 .NET Framework `csc.exe` 二次编译。构建流程：
 
-1. 收集 `desktop-pet` 根目录下的 `.cs` 文件（当前**不递归**）。
-2. 使用 .NET Framework C# 编译器和固定 WPF / WinForms / UIAutomation 引用生成中间 EXE。
-3. 运行中间 EXE 生成 release art pack 与 startup art cache。
-4. 把上述资源二次嵌入，生成当前单文件 Windows EXE。
+1. 递归编译 `desktop-pet` 下的 `.cs` 文件，排除 `bin`、`obj`、`dist`、`Tests` 与独立入口。
+2. `PennyPet.Tools`（通过 `ProjectReference` 先构建）生成 release art pack 与 startup art cache。
+3. `GeneratePennyArtResources` target 把这些资源以及图标、联系作者图片、带版本 manifest 一并嵌入 EXE。
 
-`build-protected.ps1` 还会对成品进行保护、版本检查、完整 SelfTest、启动缓存探针和内嵌标记检查。GitHub Actions 也直接调用 `build.ps1`。因此仓促替换为 SDK-style 项目，最容易丢失的是二次资源生成、嵌入名称、单文件结果或保护版兼容性。
+`desktop-pet/build.ps1` 与 `BuildOfficialRelease` target 都是薄封装：调用 `dotnet build` 并把产物复制到发布目录。`build-protected.ps1` 仍独立负责本地保护版。
 
 ### 建议
 
 实验分支已经完成可回退的第二阶段工程化验证：
 
 - 根目录 `PennyPet.sln` 可由 Visual Studio 和 `dotnet` 打开。
-- `PennyPet.Windows.Core.csproj` 显式编译 Windows 产品代码；名称中的 `Windows` 很重要，它不是跨平台核心。
+- `PennyPet.Core.csproj` 目标为 `netstandard2.0`，承载 Reminder、Sticky Note、Dock、动画、美术清单/时长、隐私和设置 codec 等纯规则；不引用 Form、Window、Registry、Screen 或 Bitmap。
+- `PennyPet.Windows.Core.csproj` 通过递归 Compile glob 编译 Windows 产品代码；名称中的 `Windows` 很重要，它不是跨平台核心。
 - `PennyPet.App.csproj` 只有正常桌宠入口，不携带 SelfTest/Tools 命令路由。
 - `PennyPet.Tools.csproj` 独立生成美术发布包、启动缓存和校验报告。
-- `PennyPet.SelfTests.csproj` 独立承载 SelfTest、探针和预览入口。
+- `PennyPet.SelfTests.csproj` 独立承载资源、文件系统、WinForms/WPF、Hook 等 Windows SelfTest、探针和预览入口；纯 Core 规则只放在 `PennyPet.Tests`。
+- `PennyPet.Tests.csproj` 由 `dotnet test` 发现，直接引用纯 Core，不加载 Windows UI。
 - `PennyPet.Windows.csproj` 与 `Program.cs` 继续保留为兼容单 EXE 编译入口。
 - `Directory.Build.props` 为同目录的项目隔离 `obj`，避免 NuGet 还原结果互相覆盖。
+- `ProductVersion.props` 是产品、程序集与发布文件名的唯一版本源；`Directory.Build.targets` 会从 `app.manifest.template` 生成带版本的 manifest。
 - Windows Core 的 MSBuild target 调用 Tools 生成并嵌入资源；独立 SelfTests 的完整报告为 `ok=true`。
-- `BuildOfficialRelease` 明确委托现有 `build.ps1`，因此标准工具可以进入正式发布链，而不复制第二套资源算法。
+- `BuildOfficialRelease` 与 `build.ps1` 都复用 `PennyPet.Windows` 的 Release 构建，只把产物复制到发布目录；资源生成只有 `GeneratePennyArtResources` 这一套。
 
-仍然**不建议删除或绕过 `build.ps1`**。当前迁移门禁是：
+当前迁移门禁是：
 
 1. CI 同时构建解决方案和 `build.ps1` 单 EXE。
-2. 独立 SelfTests 与兼容单 EXE 的完整报告都必须为 `ok=true`，专项探针也必须一致。
-3. 确认一段维护期后，才评估是否让模块化 App 成为默认开发入口；签名发布仍可继续走旧脚本。
-4. 真正跨平台的纯逻辑项目是后续独立任务；不得把当前 `PennyPet.Windows.Core` 错称为共享核心。
+2. 标准 Core tests 必须通过；独立 SelfTests 与兼容单 EXE 的完整报告都必须为 `ok=true`，专项探针也必须一致。
+3. 签名发布可在现有链路上追加；`build-protected.ps1` 只保留给本地研究用途。
+4. 新的纯 Core 只覆盖已验证的模型和规则；不得把 `PennyPet.Windows.Core` 或现有持久化/UI 实现错称为跨平台。
 
-目录重排也应等构建系统能递归或显式发现文件后再进行。当前先保持 `.cs` 平铺，避免“文件移动了但没有被编译”。
+构建脚本和 SDK 工程现在使用一致的递归源码发现，键盘覆盖层与便利贴已经进入 `Features` 目录；后续目录调整不再需要复制源码清单，但仍应避免只按行数拆类。
 
 ## 5. 测试体系与行为规范
 
@@ -193,7 +212,7 @@ Windows 最大的五个耦合点：
 | 设置 | 默认值、INI 保存/读取、静默模式、启动和键盘显示选项 |
 | 数据恢复 | 原子写入、自动备份、损坏主文件恢复、加载失败不覆盖、旧数据继续创建 |
 | Dock | 分组快照、父子/根关系、插入/拆分规则、隐藏恢复、屏幕安全位置和多种历史回归场景 |
-| 隐私 | 键盘功能默认关闭、按键累计、进程隔离、密码输入抑制规则 |
+| 隐私 | 键盘功能默认关闭、按键累计、进程隔离、按键时焦点快照、目标变化 fail-closed、密码输入抑制规则 |
 | 发布资源 | 图标、动画包、启动缓存、联系人资源、逐像素透明和轮廓 |
 
 主要入口是 `--self-test=<json>`。此外还有：
@@ -379,14 +398,14 @@ Penny 客户端 -> Penny 自有后端 -> 第三方 API
 
 ## 12. 当前是否适合开始 Mac 版
 
-当前已经适合**开始独立的 Mac 技术验证和 UI 项目规划**，因为动画、提醒和持久化语义已有清晰边界，Windows-only 能力也已列出。但还不适合宣称“共享核心可以直接编译给 Mac”：当前没有标准共享项目，资源位图、默认路径和诊断仍需薄适配。
+当前已经适合**开始独立的 Mac 技术验证和 UI 项目规划**，因为提醒、便利贴数据、Dock 与设置规范化规则已有可直接编译的纯 Core，Windows-only 能力也已列出。但仍不能宣称 Windows 应用可直接移植：资源位图、平台数据目录、持久化、诊断和全部窗口交互仍需平台适配；Windows 的目录选择现已集中在一个入口。
 
 推荐路线是原生 **Swift + AppKit** 实现透明窗口、事件、Dock、输入权限、多显示器和 Retina；把本文件中的行为表、现有数据格式和纯规则测试作为兼容规范。若后续确实需要共享 C# 代码，可先把已验证的纯模型/规则建立为小型跨平台 .NET library，再单独评估互操作成本。不要为了共享少量规则而把整个 Windows UI 迁到 Avalonia、MAUI 或 Electron。
 
 Mac 不是当前阶段的开发目标。若未来开始正式 Mac UI，最值得继续做的不是再拆 Windows 文件，而是：
 
 1. 固化设置、提醒和便利贴格式的兼容样例（golden files）。
-2. 为纯动画/提醒规则建立独立、无 Windows UI 的测试项目。
+2. 以 `Core/Animation` 与 `Core/Art` 的现有行为作为 Mac 动画状态、别名和时长兼容规范；平台侧只替换图像解码、缓存和绘制。
 3. 明确 Mac 数据目录和 Windows 数据迁移方式。
 4. 用一个最小 AppKit 原型验证透明窗口、Retina 帧显示、鼠标事件和多屏坐标；该原型应在独立任务/项目中完成，不改写当前 Windows 实现。
 
@@ -400,9 +419,9 @@ Mac 不是当前阶段的开发目标。若未来开始正式 Mac UI，最值得
 |---|---|---|
 | 拆 `StickyNoteWpf.cs` | 原样迁移为窗口壳、编辑器/IME、链接和原生窗口行为；Todo/Schedule/Reminder/Appearance/Dock 保持既有 partial | 已完成；不重写 IME/Dock，完整 SelfTest 与三项 WPF 探针通过 |
 | 拆 `PetForm.cs` | 启动、动画运行时、键盘、气泡、菜单和便利贴窗口协调按职责分文件 | 已完成；`PetForm.cs` 约 498 行，partial 共享状态而不是回调式伪服务 |
-| 建立 `.csproj` / `.sln` | App、Windows Core、Tools、SelfTests 与兼容项目都有显式工程入口 | 已完成实验验证；解决方案 0 警告，旧 `build.ps1` 仍可生成单 EXE |
+| 建立 `.csproj` / `.sln` | App、Windows Core、Tools、Tests、SelfTests 与兼容项目都有显式工程入口 | 已完成；解决方案启用 warnings-as-errors 且保持 0 警告，`build.ps1` 复用 SDK/Roslyn 生成单 EXE |
 | 把 Tools/Tests 从主入口分离 | 独立 Tools 生成 art pack/cache，独立 SelfTests 运行完整报告和探针 | 已完成；兼容 `Program` 暂时保留旧命令面供 CI/回退 |
 | 敏感输入 fail-closed 与首次提示 | `PetKeyboardPrivacyPolicy` 管理首次确认；无法检查时隐藏 | 已完成自动策略测试；真实第三方/跨权限输入仍需人工回归 |
-| 危险本地路径二次确认 | `StickyLinkService` 分类 executable/script/shortcut/UNC，默认取消 | 已完成纯规则与 WPF 确认接线；普通 URL/文档行为保持 |
+| 危险本地路径二次确认 | `Core/Links/StickyLinkPolicy` 分类 executable/script/shortcut/UNC，`StickyLinkService` 仅执行 Windows 副作用 | 已完成纯规则与 WPF 确认接线；UNC 在用户确认前不会探测网络文件系统 |
 
 实验结果尚未自动成为正式发布方案。合并回主线前仍应完成人工中文 IME、Dock 组合拖拽、多屏、全局键盘隐私和危险路径确认回归，并让 CI 同时保留模块化与兼容单 EXE 两条门禁。

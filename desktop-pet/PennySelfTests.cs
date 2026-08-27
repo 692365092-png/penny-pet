@@ -36,7 +36,7 @@ namespace PennyPet
                         data.Text = "半透明便签输入回归测试 abcdefghijklmnopqrstuvwxyz";
                         data.IsTodoList = todoMode;
                         data.BackgroundOpacityPercent = opacity;
-                        data.ColorArgb = StickyNoteForm.PaletteColorForTest(
+                        data.ColorArgb = StickyNoteWindow.PaletteColorForTest(
                             caseCount % 33).ToArgb();
                         data.TextColorArgb = caseCount % 2 == 0
                             ? Color.Black.ToArgb() : Color.White.ToArgb();
@@ -44,7 +44,7 @@ namespace PennyPet
                         data.Height = 320;
                         if (todoMode)
                             data.TodoItems.Add(new StickyTodoItem("现有待办项目", false));
-                        using (StickyNoteForm note = new StickyNoteForm(data))
+                        using (StickyNoteWindow note = new StickyNoteWindow(data))
                         {
                             note.CreateControl();
                             singleWindowArchitecture &=
@@ -120,7 +120,7 @@ namespace PennyPet
             data.Y = -2400;
             data.Width = 360;
             data.Height = 260;
-            using (StickyNoteForm note = new StickyNoteForm(data))
+            using (StickyNoteWindow note = new StickyNoteWindow(data))
             using (System.Windows.Forms.Timer probeTimer =
                 new System.Windows.Forms.Timer())
             {
@@ -211,7 +211,7 @@ namespace PennyPet
                 StickyNoteData alphaData = CreateTransparencyProbeNote(
                     "Alpha 原始层检查", "文字必须保持完全不透明", noteOneColor,
                     requestedOpacity, 420, 320);
-                using (StickyNoteForm alphaNote = new StickyNoteForm(alphaData))
+                using (StickyNoteWindow alphaNote = new StickyNoteWindow(alphaData))
                 {
                     transparentWindowMode = alphaNote.AllowsTransparency &&
                         alphaNote.Background == System.Windows.Media.Brushes.Transparent;
@@ -236,8 +236,8 @@ namespace PennyPet
                     "透明便签 B", String.Empty, noteTwoColor, requestedOpacity,
                     420, 320);
                 using (Form stage = new Form())
-                using (StickyNoteForm noteOne = new StickyNoteForm(noteOneData))
-                using (StickyNoteForm noteTwo = new StickyNoteForm(noteTwoData))
+                using (StickyNoteWindow noteOne = new StickyNoteWindow(noteOneData))
+                using (StickyNoteWindow noteTwo = new StickyNoteWindow(noteTwoData))
                 using (Bitmap screenshot = new Bitmap(stageBounds.Width,
                     stageBounds.Height, PixelFormat.Format32bppArgb))
                 {
@@ -397,7 +397,7 @@ namespace PennyPet
                     source.SelectionFont = heading;
                 data.RichTextRtf = source.Rtf;
             }
-            using (StickyNoteForm note = new StickyNoteForm(data))
+            using (StickyNoteWindow note = new StickyNoteWindow(data))
             {
                 note.StartPosition = FormStartPosition.Manual;
                 Rectangle work = Screen.PrimaryScreen.WorkingArea;
@@ -453,7 +453,7 @@ namespace PennyPet
                 DateTime.Today.AddDays(58)));
             data.ScheduleItems.Add(new StickyScheduleItem("国庆节",
                 DateTime.Today.AddDays(175)));
-            using (StickyNoteForm note = new StickyNoteForm(data))
+            using (StickyNoteWindow note = new StickyNoteWindow(data))
             {
                 note.StartPosition = FormStartPosition.Manual;
                 Rectangle work = Screen.PrimaryScreen.WorkingArea;
@@ -499,7 +499,7 @@ namespace PennyPet
             data.Text = "这段文字始终保持完全不透明。\r\n可以点击正文继续输入。";
             data.Width = 420;
             data.Height = 300;
-            data.ColorArgb = StickyNoteForm.PaletteColorForTest(24).ToArgb();
+            data.ColorArgb = StickyNoteWindow.PaletteColorForTest(24).ToArgb();
             data.BackgroundOpacityPercent = 60;
             data.TextColorArgb = Color.Black.ToArgb();
             data.FontFamilyName = "Noto Sans SC DemiLight";
@@ -508,7 +508,7 @@ namespace PennyPet
             Rectangle stageBounds = new Rectangle(work.Left + 40, work.Top + 40,
                 Math.Min(1160, work.Width - 80), Math.Min(520, work.Height - 80));
             using (Form stage = new Form())
-            using (StickyNoteForm note = new StickyNoteForm(data))
+            using (StickyNoteWindow note = new StickyNoteWindow(data))
             {
                 stage.Text = "Penny 便签外观开发预览背景";
                 stage.FormBorderStyle = FormBorderStyle.None;
@@ -729,8 +729,8 @@ namespace PennyPet
 
             using (Bitmap canvas = new Bitmap(1080, 760, PixelFormat.Format32bppArgb))
             using (Graphics graphics = Graphics.FromImage(canvas))
-            using (StickyNoteForm yellow = new StickyNoteForm(yellowData))
-            using (StickyNoteForm blue = new StickyNoteForm(blueData))
+            using (StickyNoteWindow yellow = new StickyNoteWindow(yellowData))
+            using (StickyNoteWindow blue = new StickyNoteWindow(blueData))
             using (ScaleDialog scale = new ScaleDialog(100, 100))
             using (Bitmap yellowBitmap = new Bitmap(320, 300, PixelFormat.Format32bppArgb))
             using (Bitmap blueBitmap = new Bitmap(320, 300, PixelFormat.Format32bppArgb))
@@ -868,8 +868,32 @@ namespace PennyPet
         }
 
 
+        [ThreadStatic]
+        private static List<bool> _reportedChecks;
+
+        private static void BeginCheckCollection()
+        {
+            _reportedChecks = new List<bool>();
+        }
+
+        private static bool EndCheckCollection()
+        {
+            List<bool> checks = _reportedChecks;
+            _reportedChecks = null;
+            if (checks == null || checks.Count == 0) return false;
+            foreach (bool passed in checks)
+                if (!passed) return false;
+            return true;
+        }
+
+        private static void CancelCheckCollection()
+        {
+            _reportedChecks = null;
+        }
+
         private static string Bool(bool value)
         {
+            if (_reportedChecks != null) _reportedChecks.Add(value);
             return value ? "true" : "false";
         }
 

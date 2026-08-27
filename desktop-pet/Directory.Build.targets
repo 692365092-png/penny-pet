@@ -1,0 +1,16 @@
+<Project>
+  <!-- Windows needs a literal assemblyIdentity version. Generate the actual
+       manifest from the version-neutral template for each desktop project. -->
+  <Target Name="GeneratePennyApplicationManifest"
+    BeforeTargets="CoreCompile"
+    Inputs="$(PennyManifestTemplate);$(MSBuildThisFileDirectory)ProductVersion.props"
+    Outputs="$(PennyGeneratedManifest)"
+    Condition="'$(ApplicationManifest)' == '$(PennyGeneratedManifest)'">
+    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(PennyGeneratedManifest)'))" />
+    <Copy SourceFiles="$(PennyManifestTemplate)"
+      DestinationFiles="$(PennyGeneratedManifest)" />
+    <XmlPoke XmlInputPath="$(PennyGeneratedManifest)"
+      Query="/*[local-name()='assembly']/*[local-name()='assemblyIdentity']/@version"
+      Value="$(PennyAssemblyVersion)" />
+  </Target>
+</Project>

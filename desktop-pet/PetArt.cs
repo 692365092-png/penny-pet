@@ -13,78 +13,6 @@ using System.Web.Script.Serialization;
 
 namespace PennyPet
 {
-    [Obfuscation(Exclude = false, Feature = "-rename", ApplyToMembers = true)]
-    internal sealed class PetArtManifest
-    {
-        public int schemaVersion { get; set; }
-        public string displayName { get; set; }
-        public string fallbackState { get; set; }
-        public PetArtRenderSettings render { get; set; }
-        public Dictionary<string, PetArtStateDefinition> states { get; set; }
-    }
-
-    [Obfuscation(Exclude = false, Feature = "-rename", ApplyToMembers = true)]
-    internal sealed class PetArtRenderSettings
-    {
-        public string fit { get; set; }
-        public double anchorX { get; set; }
-        public double anchorY { get; set; }
-        public double scale { get; set; }
-        public int offsetX { get; set; }
-        public int offsetY { get; set; }
-        public int minimumFrameMs { get; set; }
-        public int maximumFrameMs { get; set; }
-        public bool innerOutline { get; set; }
-    }
-
-    [Obfuscation(Exclude = false, Feature = "-rename", ApplyToMembers = true)]
-    internal sealed class PetArtStateDefinition
-    {
-        public string file { get; set; }
-        public string folder { get; set; }
-        public string alias { get; set; }
-        public int[] durationsMs { get; set; }
-        public int defaultFrameMs { get; set; }
-        public double speed { get; set; }
-        public double renderScale { get; set; }
-        public double renderScaleY { get; set; }
-        public double renderOffsetX { get; set; }
-        public double renderOffsetY { get; set; }
-    }
-
-    internal sealed class AnimationClip : IDisposable
-    {
-        internal AnimationClip(string source, Bitmap[] frames, int[] durations)
-        {
-            Source = source;
-            Frames = frames;
-            Durations = durations;
-        }
-
-        internal readonly string Source;
-        internal readonly Bitmap[] Frames;
-        internal readonly int[] Durations;
-
-        internal int FrameCount
-        {
-            get { return Frames == null ? 0 : Frames.Length; }
-        }
-
-        internal int FrameDuration(int frame)
-        {
-            if (Durations == null || Durations.Length == 0) return 40;
-            int index = Math.Max(0, frame) % Durations.Length;
-            return Durations[index];
-        }
-
-        public void Dispose()
-        {
-            if (Frames == null) return;
-            foreach (Bitmap frame in Frames)
-                if (frame != null) frame.Dispose();
-        }
-    }
-
     internal sealed class PetArtPackage : IDisposable
     {
         private const string EmbeddedManifestResourceName =
@@ -160,7 +88,7 @@ namespace PennyPet
             _manifest = manifest;
             _canvasWidth = canvasWidth;
             _canvasHeight = canvasHeight;
-            _render = NormalizeRenderSettings(manifest.render);
+            _render = PetArtRules.NormalizeRenderSettings(manifest.render);
             _runtimeClips = new AnimationClip[RuntimeStateNames.Length];
             // A release build regenerates this cache from the current art, so
             // use it even when a development art folder sits next to the EXE.
@@ -319,8 +247,9 @@ namespace PennyPet
                 {
                     for (int row = 0; row < RuntimeStateNames.Length; row++)
                     {
-                        string terminalState = ResolveTerminalStateName(manifest,
-                            RuntimeStateNames[row]);
+                        string terminalState =
+                            PetArtRules.ResolveTerminalStateName(manifest,
+                                RuntimeStateNames[row]);
                         int clipIndex;
                         if (!clipByState.TryGetValue(terminalState, out clipIndex))
                         {
@@ -357,30 +286,6 @@ namespace PennyPet
                 {
                     foreach (RawAnimationClip clip in clips) clip.Dispose();
                 }
-            }
-        }
-
-        private static string ResolveTerminalStateName(PetArtManifest manifest,
-            string stateName)
-        {
-            HashSet<string> resolving = new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase);
-            string current = stateName;
-            while (true)
-            {
-                if (!resolving.Add(current))
-                    throw new InvalidDataException(
-                        "美术状态 alias 形成循环：" + stateName);
-                PetArtStateDefinition definition;
-                if (!manifest.states.TryGetValue(current, out definition) ||
-                    definition == null)
-                {
-                    current = String.IsNullOrWhiteSpace(manifest.fallbackState)
-                        ? "idle" : manifest.fallbackState.Trim();
-                    continue;
-                }
-                if (String.IsNullOrWhiteSpace(definition.alias)) return current;
-                current = definition.alias.Trim();
             }
         }
 
@@ -647,7 +552,7 @@ namespace PennyPet
             int rowPixels = frame.Width;
             if (destination.Length != rowPixels * frame.Height)
                 throw new ArgumentException("像素缓冲区尺寸不正确。",
-                    "destination");
+                    nameof(destination));
             BitmapData data = frame.LockBits(new Rectangle(0, 0,
                 frame.Width, frame.Height), ImageLockMode.ReadOnly,
                 PixelFormat.Format32bppPArgb);
@@ -665,7 +570,7 @@ namespace PennyPet
             int rowBytes = checked(frame.Width * 4);
             if (destination.Length != rowBytes * frame.Height)
                 throw new ArgumentException("像素缓冲区尺寸不正确。",
-                    "destination");
+                    nameof(destination));
             BitmapData data = frame.LockBits(new Rectangle(0, 0,
                 frame.Width, frame.Height), ImageLockMode.ReadOnly,
                 PixelFormat.Format32bppPArgb);
@@ -1170,8 +1075,7 @@ namespace PennyPet
 
         private static string EmbeddedArtRoot()
         {
-            return Path.Combine(Environment.GetFolderPath(
-                Environment.SpecialFolder.LocalApplicationData), "PennyPet",
+            return Path.Combine(WindowsDataPaths.PennyPetDirectory,
                 "embedded-art", EmbeddedArtPackageRevision);
         }
 
@@ -1211,27 +1115,6 @@ namespace PennyPet
             {
                 if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
             }
-        }
-
-        private static PetArtRenderSettings NormalizeRenderSettings(
-            PetArtRenderSettings value)
-        {
-            PetArtRenderSettings result = value ?? new PetArtRenderSettings();
-            if (String.IsNullOrWhiteSpace(result.fit)) result.fit = "contain";
-            result.anchorX = Clamp(result.anchorX, 0.0, 1.0, 0.5);
-            result.anchorY = Clamp(result.anchorY, 0.0, 1.0, 1.0);
-            if (result.scale <= 0.0) result.scale = 1.0;
-            if (result.minimumFrameMs <= 0) result.minimumFrameMs = 20;
-            if (result.maximumFrameMs < result.minimumFrameMs)
-                result.maximumFrameMs = Math.Max(1000, result.minimumFrameMs);
-            return result;
-        }
-
-        private static double Clamp(double value, double minimum, double maximum,
-            double fallback)
-        {
-            if (Double.IsNaN(value) || Double.IsInfinity(value)) return fallback;
-            return Math.Max(minimum, Math.Min(maximum, value));
         }
 
         private AnimationClip ResolveState(string stateName,
@@ -1395,69 +1278,21 @@ namespace PennyPet
 
         private int DefaultDuration(PetArtStateDefinition definition)
         {
-            return definition != null && definition.defaultFrameMs > 0
-                ? definition.defaultFrameMs : 40;
+            return PetArtRules.DefaultFrameDuration(definition);
         }
 
         private int NormalizeDuration(int milliseconds,
             PetArtStateDefinition definition)
         {
-            double speed = definition == null || definition.speed <= 0.0
-                ? 1.0 : definition.speed;
-            int adjusted = (int)Math.Round(milliseconds / speed);
-            return Math.Max(_render.minimumFrameMs,
-                Math.Min(_render.maximumFrameMs, adjusted));
+            return PetArtRules.NormalizeFrameDuration(milliseconds,
+                definition, _render);
         }
 
         private Bitmap NormalizeFrame(Image source,
             PetArtStateDefinition definition)
         {
-            Bitmap output = new Bitmap(_canvasWidth, _canvasHeight,
-                PixelFormat.Format32bppPArgb);
-            double stateScale = definition != null &&
-                definition.renderScale > 0.0
-                ? definition.renderScale : 1.0;
-            double stateScaleY = definition != null &&
-                definition.renderScaleY > 0.0
-                ? definition.renderScaleY : 1.0;
-            double sx = (double)_canvasWidth / Math.Max(1, source.Width);
-            double sy = (double)_canvasHeight / Math.Max(1, source.Height);
-            double fitScale;
-            if (String.Equals(_render.fit, "stretch",
-                StringComparison.OrdinalIgnoreCase))
-            {
-                sx *= _render.scale * stateScale;
-                sy *= _render.scale * stateScale * stateScaleY;
-            }
-            else
-            {
-                fitScale = String.Equals(_render.fit, "cover",
-                    StringComparison.OrdinalIgnoreCase)
-                    ? Math.Max(sx, sy) : Math.Min(sx, sy);
-                sx = sy = fitScale * _render.scale * stateScale;
-                sy *= stateScaleY;
-            }
-            int width = Math.Max(1, (int)Math.Round(source.Width * sx));
-            int height = Math.Max(1, (int)Math.Round(source.Height * sy));
-            int x = (int)Math.Round((_canvasWidth - width) * _render.anchorX +
-                _render.offsetX + (definition == null
-                    ? 0.0 : definition.renderOffsetX));
-            int y = (int)Math.Round((_canvasHeight - height) * _render.anchorY +
-                _render.offsetY + (definition == null
-                    ? 0.0 : definition.renderOffsetY));
-
-            using (Graphics graphics = Graphics.FromImage(output))
-            {
-                graphics.Clear(Color.Transparent);
-                graphics.CompositingMode = CompositingMode.SourceCopy;
-                graphics.CompositingQuality = CompositingQuality.HighQuality;
-                graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
-                graphics.DrawImage(source, new Rectangle(x, y, width, height),
-                    new Rectangle(0, 0, source.Width, source.Height), GraphicsUnit.Pixel);
-            }
-            if (_render.innerOutline) LayeredSpriteRenderer.ApplyInnerOutline(output);
-            return output;
+            return PetArtFrameRenderer.Render(source, definition, _render,
+                _canvasWidth, _canvasHeight);
         }
 
         internal int FrameCount(int row)
@@ -1503,7 +1338,7 @@ namespace PennyPet
         private AnimationClip GetClip(int row)
         {
             if (row < 0 || row >= _runtimeClips.Length)
-                throw new ArgumentOutOfRangeException("row");
+                throw new ArgumentOutOfRangeException(nameof(row));
             lock (_resolveGate)
             {
                 if (_disposed) throw new ObjectDisposedException("PetArtPackage");

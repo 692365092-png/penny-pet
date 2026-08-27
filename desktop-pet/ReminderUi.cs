@@ -110,7 +110,7 @@ namespace PennyPet
             ShowInTaskbar = false;
             TopMost = true;
             ClientSize = new Size(440, 487);
-            Font = StickyNoteForm.CreateSafeFont("Microsoft YaHei UI", 9F,
+            Font = StickyNoteWindow.CreateSafeFont("Microsoft YaHei UI", 9F,
                 FontStyle.Regular);
             ImeMode = ImeMode.NoControl;
 
@@ -247,7 +247,7 @@ namespace PennyPet
             get
             {
                 float points;
-                return StickyNoteForm.TryParseFontSize(
+                return StickyNoteWindow.TryParseFontSize(
                     Convert.ToString(_fontSize.SelectedItem), out points)
                     ? points : 10.5F;
             }
@@ -270,7 +270,7 @@ namespace PennyPet
             for (int index = 0; index < _fontSize.Items.Count; index++)
             {
                 float points;
-                if (!StickyNoteForm.TryParseFontSize(
+                if (!StickyNoteWindow.TryParseFontSize(
                     Convert.ToString(_fontSize.Items[index]), out points) ||
                     Math.Abs(points - 48F) >= 0.1F) continue;
                 _fontSize.SelectedIndex = index;
@@ -306,7 +306,7 @@ namespace PennyPet
             for (int index = 0; index < _fontSize.Items.Count; index++)
             {
                 float candidate;
-                if (!StickyNoteForm.TryParseFontSize(
+                if (!StickyNoteWindow.TryParseFontSize(
                     Convert.ToString(_fontSize.Items[index]), out candidate)) continue;
                 float distance = Math.Abs(candidate - requested);
                 if (distance >= bestDistance) continue;
@@ -321,7 +321,7 @@ namespace PennyPet
             if (_preview == null || _fontSize == null) return;
             string text = (_text.Text ?? String.Empty).Trim();
             _preview.Text = text.Length == 0 ? "提醒文字预览" : text;
-            _preview.Font = StickyNoteForm.CreateSafeFont("Microsoft YaHei UI",
+            _preview.Font = StickyNoteWindow.CreateSafeFont("Microsoft YaHei UI",
                 ReminderFontSizePoints, FontStyle.Regular);
         }
 

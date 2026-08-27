@@ -36,7 +36,7 @@ namespace PennyPet
             BackColor = Color.Black;
             TransparencyKey = Color.Black;
             DoubleBuffered = true;
-            Font = StickyNoteForm.CreateSafeFont(fontFamilyName,
+            Font = StickyNoteWindow.CreateSafeFont(fontFamilyName,
                 fontSizePoints, KeyboardOverlayForm.TextFontStyle);
             Size measured = TextRenderer.MeasureText(_text, Font,
                 new Size(396, 180), TextFormatFlags.WordBreak);

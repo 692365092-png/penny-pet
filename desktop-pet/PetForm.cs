@@ -46,12 +46,13 @@ namespace PennyPet
 
         private sealed class DockTarget
         {
-            public StickyNoteForm Parent;
-            public StickyNoteForm ExistingChild;
+            public StickyNoteWindow Parent;
+            public StickyNoteWindow ExistingChild;
         }
 
         private readonly System.Windows.Forms.Timer _animationTimer;
         private readonly System.Windows.Forms.Timer _reminderTimer;
+        private readonly System.Windows.Forms.Timer _persistenceRetryTimer;
         private readonly PetReminderCoordinator _reminderCoordinator =
             new PetReminderCoordinator();
         private long _lastReminderBannerSecond
@@ -88,8 +89,8 @@ namespace PennyPet
         private readonly StickyNoteRepository _notes;
         private readonly StickyNoteTabsForm _leftNoteTabs;
         private readonly StickyNoteTabsForm _rightNoteTabs;
-        private readonly Dictionary<string, StickyNoteForm> _noteWindows =
-            new Dictionary<string, StickyNoteForm>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, StickyNoteWindow> _noteWindows =
+            new Dictionary<string, StickyNoteWindow>(StringComparer.OrdinalIgnoreCase);
         private readonly Queue<BubbleMessage> _pendingBubbleTexts =
             new Queue<BubbleMessage>();
         private readonly Random _random = new Random();
@@ -151,18 +152,17 @@ namespace PennyPet
         private string _pendingOverlayText = String.Empty;
         private int _pendingOverlayOccurrences;
         private int _pendingOverlayVirtualKeyCode;
+        private KeyboardFocusSnapshot _pendingOverlayFocusSnapshot;
         private long _pendingOverlayGeneration;
         private bool _positioningNoteTabs;
         private string _noteTabsSignature = String.Empty;
         private bool _ownNoteImeComposing;
         private DateTime _ownNoteInputQuietUntilUtc;
-        private StickyNoteForm _activeNoteDrag;
+        private StickyNoteWindow _activeNoteDrag;
         private readonly List<StickyNoteData> _activeDockGroup =
             new List<StickyNoteData>();
         private readonly Dictionary<string, Point> _activeDockOriginalLocations =
             new Dictionary<string, Point>(StringComparer.OrdinalIgnoreCase);
-        private const int DockSplitHoldMilliseconds = 520;
-        private const int DockSplitPreHoldMovement = 7;
         // Keep every member inside a coordinate range that Win32 mouse
         // messages can address reliably.  A too-long chain is rejected at the
         // seam instead of relocating its root to make the tail fit.
@@ -170,8 +170,8 @@ namespace PennyPet
         private Point _activeNoteDragStartLocation;
         private Point _activeNoteDragLastLocation;
         private DateTime _activeNoteDragStartedUtc;
-        private StickyNoteForm _dockPreviewParent;
-        private StickyNoteForm _dockPreviewChild;
+        private StickyNoteWindow _dockPreviewParent;
+        private StickyNoteWindow _dockPreviewChild;
         private DockPulseIndicatorForm _dockPreviewIndicator;
         private DockPulseIndicatorForm _splitGuideIndicator;
         private StickyNoteData _splitRemainderSeed;
@@ -210,6 +210,7 @@ namespace PennyPet
             AutoScaleMode = AutoScaleMode.None;
 
             _settings = preloadedSettings ?? PetSettings.Load();
+            _settings.SaveFailed += PersistenceSaveFailed;
             if (PetKeyboardPrivacyPolicy.ShouldDisableUnacknowledgedLegacyOptIn(
                 _settings.ShowKeyOverlay,
                 _settings.KeyboardPrivacyNoticeAccepted))
@@ -232,6 +233,7 @@ namespace PennyPet
             _reminders = new ReminderSchedule();
             RestoreReminders();
             _notes = StickyNoteRepository.Load();
+            _notes.SaveFailed += PersistenceSaveFailed;
             ReconcileNoteReminders();
             _leftNoteTabs = new StickyNoteTabsForm(StickyTabSide.Left,
                 delegate(StickyNoteData note) { ShowStickyNote(note, true); },
@@ -249,8 +251,11 @@ namespace PennyPet
                 });
             if (!_settings.StartupPreferenceInitialized)
             {
+                // Startup is an explicit opt-in. First launch records the safe
+                // default; the context-menu action remains the single place
+                // that enables the registry entry.
                 _settings.StartupPreferenceInitialized = true;
-                _settings.StartWithWindows = true;
+                _settings.StartWithWindows = false;
                 _settings.Save();
             }
             _settings.ScalePercent = _scalePercent;
@@ -333,6 +338,11 @@ namespace PennyPet
             _reminderTimer.Interval = 500;
             _reminderTimer.Tick += ReminderTick;
             _reminderTimer.Start();
+            _persistenceRetryTimer = new System.Windows.Forms.Timer();
+            _persistenceRetryTimer.Interval = 5000;
+            _persistenceRetryTimer.Tick += RetryUnsavedPersistence;
+            if (_notes.HasUnsavedChanges || _settings.HasUnsavedChanges)
+                _persistenceRetryTimer.Start();
 
             MouseDown += PetMouseDown;
             MouseMove += PetMouseMove;
@@ -384,13 +394,15 @@ namespace PennyPet
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             SaveLocation();
-            foreach (StickyNoteForm noteWindow in
-                new List<StickyNoteForm>(_noteWindows.Values))
+            foreach (StickyNoteWindow noteWindow in
+                new List<StickyNoteWindow>(_noteWindows.Values))
             {
                 if (!noteWindow.IsDisposed) noteWindow.CloseForApplicationExit();
             }
             _noteWindows.Clear();
             _notes.Save();
+            _notes.SaveFailed -= PersistenceSaveFailed;
+            _settings.SaveFailed -= PersistenceSaveFailed;
             _leftNoteTabs.Close();
             _rightNoteTabs.Close();
             _keyboard.Dispose();
@@ -406,6 +418,7 @@ namespace PennyPet
             _menu.Dispose();
             _animationTimer.Dispose();
             _reminderTimer.Dispose();
+            _persistenceRetryTimer.Dispose();
             StopDeferredStartupWork();
             ClearDockPreview();
             ClearSplitGuide();

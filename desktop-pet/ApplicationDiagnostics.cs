@@ -19,9 +19,8 @@ namespace PennyPet
         {
             get
             {
-                string directory = Path.Combine(Environment.GetFolderPath(
-                    Environment.SpecialFolder.LocalApplicationData), "PennyPet");
-                return Path.Combine(directory, "diagnostics.log");
+                return Path.Combine(WindowsDataPaths.PennyPetDirectory,
+                    "diagnostics.log");
             }
         }
 

@@ -46,7 +46,7 @@ namespace PennyPet
         {
             System.Collections.Generic.List<ReminderItem> reminders =
                 _reminders.GetItems();
-            foreach (StickyNoteForm form in _noteWindows.Values)
+            foreach (StickyNoteWindow form in _noteWindows.Values)
             {
                 if (!form.IsDisposed) form.UpdateReminderBanner(reminders);
             }
@@ -66,7 +66,7 @@ namespace PennyPet
             if (changed) _notes.Save();
         }
 
-        private void PreviewReminderDraft(StickyNoteForm form,
+        private void PreviewReminderDraft(StickyNoteWindow form,
             ReminderDialog dialog, string noteId)
         {
             if (form == null || form.IsDisposed || dialog == null) return;
@@ -86,7 +86,7 @@ namespace PennyPet
                 existing.FontSizeTwips / 20F, existing.PreAlertEnabled,
                 existing.DeadlineUtc.ToLocalTime()))
             {
-                StickyNoteForm linkedForm = null;
+                StickyNoteWindow linkedForm = null;
                 if (!String.IsNullOrEmpty(existing.SourceNoteId))
                     _noteWindows.TryGetValue(existing.SourceNoteId,
                         out linkedForm);
@@ -120,7 +120,7 @@ namespace PennyPet
                 {
                     RefreshLinkedNoteReminderState(note);
                     _notes.Save();
-                    StickyNoteForm noteForm;
+                    StickyNoteWindow noteForm;
                     if (_noteWindows.TryGetValue(note.Id, out noteForm) &&
                         !noteForm.IsDisposed) noteForm.RefreshReminderState();
                 }
@@ -143,7 +143,7 @@ namespace PennyPet
             if (closePreAlert) CloseCurrentBubbleWithoutRestoringHover(true);
             _notes.Save();
             SaveReminders();
-            StickyNoteForm form;
+            StickyNoteWindow form;
             if (_noteWindows.TryGetValue(note.Id, out form) && !form.IsDisposed)
                 form.RefreshReminderState();
             RefreshMenuText();
@@ -315,7 +315,7 @@ namespace PennyPet
             RefreshLinkedNoteReminderState(note);
             if (makeVisible) note.Visible = true;
             _notes.Save();
-            StickyNoteForm form;
+            StickyNoteWindow form;
             if (_noteWindows.TryGetValue(note.Id, out form) && !form.IsDisposed)
                 form.RefreshReminderState();
             return note;

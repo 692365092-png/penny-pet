@@ -1,8 +1,19 @@
 <Project>
+  <Import Project="$(MSBuildThisFileDirectory)ProductVersion.props" />
   <!-- Multiple SDK projects live beside the legacy sources. Keep NuGet and
        compiler intermediates isolated so one restore cannot overwrite
        another project's assets file. -->
   <PropertyGroup>
     <BaseIntermediateOutputPath>obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+    <PennyManifestTemplate>$(MSBuildThisFileDirectory)app.manifest.template</PennyManifestTemplate>
+    <PennyGeneratedManifest>$(BaseIntermediateOutputPath)penny.app.manifest</PennyGeneratedManifest>
+    <Version>$(PennyPackageVersion)</Version>
+    <AssemblyVersion>$(PennyAssemblyVersion)</AssemblyVersion>
+    <FileVersion>$(PennyAssemblyVersion)</FileVersion>
+    <InformationalVersion>$(PennyAssemblyVersion)</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <!-- A clean build is now an enforced project invariant instead of a
+         convention that can silently regress as the codebase grows. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 </Project>

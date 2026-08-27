@@ -17,6 +17,8 @@
     <Compile Include="PennyPet.SelfTestsProgram.cs" />
     <Compile Include="PennySelfTests.cs" />
     <Compile Include="SelfTestRunner.cs" />
+    <Compile Include="Infrastructure\CommandLineArguments.cs" />
+    <Compile Include="Infrastructure\SelfTestCommandRouter.cs" />
     <ProjectReference Include="PennyPet.Windows.Core.csproj" />
   </ItemGroup>
   <ItemGroup>

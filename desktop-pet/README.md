@@ -10,12 +10,12 @@
 
 ## 构建和运行
 
-1. 使用根目录 `PennyPet.sln` 构建 Windows Core、App、Tools、SelfTests 与兼容项目。
+1. 使用根目录 `PennyPet.sln` 构建跨平台 Core、Windows Core、App、Tools、Tests、SelfTests 与兼容项目。
 2. 把美术放在仓库的 `art` 目录，并填写其中的 `pet-art.json`。
 3. 在 PowerShell 中运行 `./build.ps1 -OutputFile <输出路径>`，或调用项目的 `BuildOfficialRelease` target。
-4. 正式构建完成后会得到一个内嵌全部运行资源的单文件 EXE；普通项目 Build 的小型输出只用于编译验证，不可代替发布版。
+4. 正式构建完成后会得到一个内嵌全部运行资源的单文件 EXE；`PennyPet.Windows` 的 Release 输出就是该发布版，`build.ps1` / `BuildOfficialRelease` 仅把它复制到发布目录。
 
-GitHub 开源发布版使用 `build.ps1` 生成可复现的未混淆二进制，以便审查、自动测试和代码签名。`build-protected.ps1` 仅保留给本地研究用途，不是 GitHub 签名发布流程的一部分。
+GitHub 开源发布版使用 `build.ps1` 生成可审查、可自动测试的未混淆二进制。当前公开流水线不执行代码签名，也不承诺字节级可复现；`build-protected.ps1` 仅保留给本地研究用途。
 
 任何 .NET 混淆都只能显著提高分析成本，无法从理论上保证绝对不可逆。成品中保留了一组给分析者看的英文彩蛋线索，不参与正常功能，也不会重复填充大型无效数据。
 
@@ -81,24 +81,31 @@ GitHub 开源发布版使用 `build.ps1` 生成可复现的未混淆二进制，
 
 ## 代码结构
 
-- `Program.cs`：兼容单 EXE 的命令路由；正常模块化入口是 `PennyPet.AppProgram.cs`。
+- `Program.cs`：兼容单 EXE 的演示/正常入口；`Infrastructure` 下的共享路由统一承载测试、预览和美术命令。
 - `PennyApplicationHost.cs`：单实例、loading 与正常应用运行。
 - `PetForm.cs`：桌宠 Windows 窗口壳；启动、动画运行时、键盘、气泡、菜单和便利贴窗口协调分别位于对应 `Pet*.cs` partial 文件。
 - `PetContextMenu.cs`：桌宠右键菜单。
-- `PetAnimationController.cs`：动画状态、优先级、随机选择与恢复规则。
-- `PetReminderCoordinator.cs` / `PetReminderWindowsCoordinator.cs`：纯提醒规则与 Windows UI 协调。
-- `PetArt.cs`：外置美术包读取、GIF 时长解析、完整分辨率发布资源包、状态别名与画布适配。
+- `Core/Animation`：动画状态、优先级、随机选择、资源预加载退避与恢复规则。
+- `Core/Reminders` / `PetReminderWindowsCoordinator.cs`：纯提醒模型和规则与 Windows UI 协调。
+- `Core/Art`：美术清单模型、状态别名、渲染参数和帧时长规则，不引用位图或文件系统。
+- `PetArt.cs`：外置美术包读取、GIF 时长解析、完整分辨率发布资源包与运行时缓存。
+- `Features/Art`：Windows/GDI 动画帧生命周期、画布适配和可选内描边。
 - `LayeredSpriteRenderer.cs`：Windows 透明分层窗口渲染。
-- `StickyNoteModels.cs` / `StickyNoteRepository.cs`：便利贴数据模型、关系、持久化与恢复。
+- `Core/StickyNotes`：便利贴、待办、日程与 Dock 的纯数据、v1-v9 编解码、组关系变更及页签拖放会话，不引用桌面 UI。
+- `Features/StickyNotes`：便利贴窗口、编辑、Dock 协调、持久化、dirty 状态、自动重试与紧急导出。
 - `StickyNoteWpf.cs`：WPF 便利贴窗口本体；RichText/IME、链接和原生窗口行为分别位于 `StickyEditorController.cs`、`StickyLinkController.cs` 和 `StickyNativeWindowBehavior.cs`。
 - `StickyTodoController.cs` / `StickyScheduleController.cs`：待办和日程 UI 逻辑。
 - `StickyReminderController.cs` / `StickyAppearanceController.cs`：提醒条和外观 UI 逻辑。
-- `StickyDockController.cs`：Windows 便利贴吸附、拖拽、拆分与隐藏恢复协调。
+- `PetStickyDockCoordinator.cs`：Windows 便利贴吸附命中、拖拽、坐标同步与隐藏恢复适配；组关系规则由 Core 持有。
 - `StickyNotes.cs` / `StickyNoteTabs.cs`：管理界面、IME 辅助控件和侧边页签。
-- `ReminderUi.cs` / `ReminderModels.cs` / `PetSettings.cs`：提醒界面、数据模型与设置持久化。
+- `ReminderUi.cs` / `Core/Reminders`：提醒界面以及纯提醒模型和规则。
+- `Core/Settings` / `PetSettings.cs`：设置数据、INI 兼容 codec，以及 Windows 路径/备份/重试适配器。
+- `Infrastructure/Persistence/WindowsDataPaths.cs`：设置、便利贴、诊断和内嵌美术缓存共用的 Windows 数据目录入口。
 - `SpeechBubbleForm.cs` / `StartupRegistration.cs`：桌宠气泡与开机启动。
-- `GlobalKeyboardActivity.cs` / `KeyboardOverlay.cs`：全局键盘活动与按键显示。
-- `PennyPet.SelfTests.csproj` + `SelfTestRunner.cs` / `PennySelfTests.cs`：独立 SelfTest、专项探针和测试预览。
+- `Features/KeyboardOverlay`：全局键盘 Hook、事件快照、虚拟键格式化、Windows 敏感输入证据采集与透明显示窗口分别独立。
+- `Core/Keyboard`：首次确认、历史偏好禁用、Hook/fail-closed 隐私策略和连按计数状态机。
+- `PennyPet.Tests.csproj`：`dotnet test` 可发现的纯 Core 单元测试。
+- `PennyPet.SelfTests.csproj` + `SelfTestRunner.cs` / `PennySelfTests.cs`：资源、持久化、WinForms/WPF 与 Hook 的独立 Windows SelfTest、专项探针和预览；各功能已有独立检查方法，便利贴测试文件清理与三组 Dock 检查由统一入口协调，持久化/历史兼容、便利贴交互和 Dock/窗口几何报告字段也已分段组装，纯规则由标准 Tests 覆盖。
 
 更完整的开发入口、数据恢复说明、高风险兼容逻辑和新增在线 Feature 指南见项目根目录的 `DEVELOPER_GUIDE.md`；API、缓存、secret 和平台边界见 `ARCHITECTURE.md`。
 

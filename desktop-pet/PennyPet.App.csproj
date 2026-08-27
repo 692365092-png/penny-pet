@@ -7,7 +7,7 @@
     <RootNamespace>PennyPet</RootNamespace>
     <AssemblyName>PennyPet.App</AssemblyName>
     <StartupObject>PennyPet.PennyAppProgram</StartupObject>
-    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationManifest>$(PennyGeneratedManifest)</ApplicationManifest>
     <ApplicationIcon>assets\app.ico</ApplicationIcon>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <Platforms>AnyCPU;x86;x64</Platforms>

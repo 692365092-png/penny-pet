@@ -14,10 +14,16 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="LayeredSpriteRenderer.cs" />
+    <Compile Include="Features\Art\AnimationClip.cs" />
+    <Compile Include="Features\Art\PetArtFrameRenderer.cs" />
     <Compile Include="PetArt.cs" />
     <Compile Include="PennyPet.ToolsProgram.cs" />
+    <Compile Include="Infrastructure\CommandLineArguments.cs" />
+    <Compile Include="Infrastructure\ArtCommandRouter.cs" />
+    <Compile Include="Infrastructure\Persistence\WindowsDataPaths.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="System.Web.Extensions" />
+    <ProjectReference Include="PennyPet.Core.csproj" />
   </ItemGroup>
 </Project>

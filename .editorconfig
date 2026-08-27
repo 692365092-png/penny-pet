@@ -1,0 +1,9 @@
+root = true
+
+# Keep the latest-recommended analyzers for correctness and clarity, but mute
+# recommendations that would only churn this codebase.
+[*.cs]
+dotnet_diagnostic.CA1707.severity = none  # intentional underscore test names
+dotnet_diagnostic.CA1822.severity = none  # optional "mark static" suggestion
+dotnet_diagnostic.CA1825.severity = none  # Array.Empty micro-optimization
+dotnet_diagnostic.CA1861.severity = none  # static-array micro-optimization

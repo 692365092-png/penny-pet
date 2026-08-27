@@ -6,7 +6,7 @@ Please use GitHub Private Vulnerability Reporting / Security Advisories when ava
 
 ## Release integrity
 
-Official release binaries are intended to be built from this public repository by GitHub Actions. Signing credentials are stored only in encrypted GitHub Actions secrets and are never committed to the repository.
+Official release binaries are intended to be built from this public repository by GitHub Actions. The current public workflow produces an unsigned artifact. If signing is added later, credentials must live only in the CI secret store and must never be committed to the repository.
 
 ## Future online services
 

@@ -196,6 +196,7 @@ namespace PennyPet
         private void BeginExitSequence()
         {
             if (_exiting) return;
+            if (!FlushPersistenceBeforeExit()) return;
             _exiting = true;
             _reminderTimer.Stop();
             _dragging = false;
@@ -217,7 +218,7 @@ namespace PennyPet
 
         private bool HasFocusedOwnNoteTextInput()
         {
-            foreach (StickyNoteForm form in _noteWindows.Values)
+            foreach (StickyNoteWindow form in _noteWindows.Values)
             {
                 if (form != null && !form.IsDisposed &&
                     form.HasFocusedTextInput) return true;
