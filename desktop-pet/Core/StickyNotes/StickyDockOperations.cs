@@ -237,5 +237,28 @@ namespace PennyPet
             }
             return tail ?? seed;
         }
+
+        internal static bool CanDockBelow(int movingLeft, int movingTop,
+            int movingWidth, int movingHeight, int targetLeft, int targetTop,
+            int targetWidth, int targetHeight, int threshold)
+        {
+            int limit = Math.Max(4, threshold);
+            int targetBottom = targetTop + targetHeight;
+            if (Math.Abs(movingTop - targetBottom) > limit) return false;
+
+            int movingRight = movingLeft + movingWidth;
+            int targetRight = targetLeft + targetWidth;
+            int overlap = Math.Min(movingRight, targetRight) -
+                Math.Max(movingLeft, targetLeft);
+            int narrowerWidth = Math.Min(movingWidth, targetWidth);
+            int widerWidth = Math.Max(movingWidth, targetWidth);
+            bool aligned = Math.Abs(movingLeft - targetLeft) <= limit ||
+                Math.Abs(movingRight - targetRight) <= limit ||
+                Math.Abs((movingLeft + movingRight) -
+                    (targetLeft + targetRight)) <= limit * 2;
+            bool differentWidths = widerWidth >= narrowerWidth * 3 / 2;
+            return overlap >= Math.Max(48, narrowerWidth / 2) &&
+                (aligned || differentWidths);
+        }
     }
 }

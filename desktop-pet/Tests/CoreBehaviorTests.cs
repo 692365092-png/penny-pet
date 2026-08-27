@@ -77,6 +77,23 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyDockOperations_CanDockBelowMatchesWindowRule()
+        {
+            Assert.IsTrue(
+                StickyDockOperations.CanDockBelow(80, 400, 900, 300,
+                    400, 100, 280, 300, 20));
+            Assert.IsTrue(
+                StickyDockOperations.CanDockBelow(400, 400, 280, 300,
+                    80, 100, 900, 300, 20));
+            Assert.IsFalse(
+                StickyDockOperations.CanDockBelow(0, 500, 280, 300,
+                    0, 0, 280, 300, 20));
+            Assert.IsFalse(
+                StickyDockOperations.CanDockBelow(900, 400, 280, 300,
+                    0, 100, 280, 300, 20));
+        }
+
+        [TestMethod]
         public void ShortItemText_UsesOneSharedDisplayBudget()
         {
             Assert.IsTrue(ShortItemText.Fits(new string('中', 50)));

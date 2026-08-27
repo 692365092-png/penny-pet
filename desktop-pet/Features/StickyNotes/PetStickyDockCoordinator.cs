@@ -1002,22 +1002,9 @@ namespace PennyPet
         internal static bool CanDockBelow(Rectangle moving, Rectangle target,
             int threshold)
         {
-            int limit = Math.Max(4, threshold);
-            if (Math.Abs(moving.Top - target.Bottom) > limit) return false;
-            int overlap = Math.Min(moving.Right, target.Right) -
-                Math.Max(moving.Left, target.Left);
-            int narrowerWidth = Math.Min(moving.Width, target.Width);
-            int widerWidth = Math.Max(moving.Width, target.Width);
-            bool aligned = Math.Abs(moving.Left - target.Left) <= limit ||
-                Math.Abs(moving.Right - target.Right) <= limit ||
-                Math.Abs((moving.Left + moving.Right) -
-                    (target.Left + target.Right)) <= limit * 2;
-            // Width is normalized only after docking, so a 900px note must be
-            // allowed to meet a 280px note without first matching an edge or
-            // center. Half of the narrower window is an unambiguous target.
-            bool differentWidths = widerWidth >= narrowerWidth * 3 / 2;
-            return overlap >= Math.Max(48, narrowerWidth / 2) &&
-                (aligned || differentWidths);
+            return StickyDockOperations.CanDockBelow(moving.Left, moving.Top,
+                moving.Width, moving.Height, target.Left, target.Top,
+                target.Width, target.Height, threshold);
         }
 
         private void ClearDockPreview()
