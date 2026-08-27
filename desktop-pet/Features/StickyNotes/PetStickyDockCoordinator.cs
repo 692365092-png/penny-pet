@@ -880,31 +880,8 @@ namespace PennyPet
 
         private StickyNoteData FindActiveDockTail(StickyNoteData seed)
         {
-            if (seed == null) return null;
-            HashSet<string> activeIds = new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase);
-            foreach (StickyNoteData note in _activeDockGroup)
-                activeIds.Add(note.Id);
-            StickyNoteData tail = seed;
-            HashSet<string> visited = new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase);
-            while (tail != null && visited.Add(tail.Id))
-            {
-                StickyNoteData child = null;
-                foreach (StickyNoteData note in _notes.GetAll())
-                {
-                    if (activeIds.Contains(note.Id) && String.Equals(
-                        note.DockParentId, tail.Id,
-                        StringComparison.OrdinalIgnoreCase))
-                    {
-                        child = note;
-                        break;
-                    }
-                }
-                if (child == null) break;
-                tail = child;
-            }
-            return tail ?? seed;
+            return StickyDockOperations.FindActiveDockTail(_notes.GetAll(),
+                _activeDockGroup, seed);
         }
 
         private void ShowSplitGuide(StickyNoteWindow source)

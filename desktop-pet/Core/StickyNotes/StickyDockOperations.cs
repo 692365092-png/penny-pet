@@ -199,5 +199,43 @@ namespace PennyPet
             }
             return true;
         }
+
+        internal static StickyNoteData FindActiveDockTail(
+            IList<StickyNoteData> notes, IList<StickyNoteData> activeGroup,
+            StickyNoteData seed)
+        {
+            if (seed == null) return null;
+            HashSet<string> activeIds = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+            if (activeGroup != null)
+            {
+                foreach (StickyNoteData note in activeGroup)
+                    if (note != null) activeIds.Add(note.Id);
+            }
+
+            StickyNoteData tail = seed;
+            HashSet<string> visited = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+            while (tail != null && visited.Add(tail.Id))
+            {
+                StickyNoteData child = null;
+                if (notes != null)
+                {
+                    foreach (StickyNoteData note in notes)
+                    {
+                        if (note != null && activeIds.Contains(note.Id) &&
+                            String.Equals(note.DockParentId, tail.Id,
+                                StringComparison.OrdinalIgnoreCase))
+                        {
+                            child = note;
+                            break;
+                        }
+                    }
+                }
+                if (child == null) break;
+                tail = child;
+            }
+            return tail ?? seed;
+        }
     }
 }

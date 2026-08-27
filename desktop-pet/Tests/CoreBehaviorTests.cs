@@ -49,6 +49,34 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyDockOperations_FindActiveDockTailWalksActiveGroup()
+        {
+            StickyNoteData root = new StickyNoteData { Id = "root" };
+            StickyNoteData middle = new StickyNoteData
+            {
+                Id = "middle",
+                DockParentId = "root"
+            };
+            StickyNoteData tail = new StickyNoteData
+            {
+                Id = "tail",
+                DockParentId = "middle"
+            };
+
+            StickyNoteData found = StickyDockOperations.FindActiveDockTail(
+                new[] { root, middle, tail },
+                new[] { root, middle, tail },
+                root);
+
+            Assert.AreEqual(tail, found);
+            Assert.AreEqual(root,
+                StickyDockOperations.FindActiveDockTail(
+                    new[] { root, middle, tail },
+                    new[] { root },
+                    root));
+        }
+
+        [TestMethod]
         public void ShortItemText_UsesOneSharedDisplayBudget()
         {
             Assert.IsTrue(ShortItemText.Fits(new string('中', 50)));
