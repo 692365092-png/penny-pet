@@ -153,7 +153,6 @@ namespace PennyPet
                 return;
             }
             if (!Visible) Show();
-            BringToFront();
         }
 
         public void ShowNear(Rectangle petBounds, Rectangle workArea)
@@ -175,7 +174,6 @@ namespace PennyPet
                 _sourceNormalLeft = _side == StickyTabSide.Right
                     ? x + DragSourceVisualOffset : x;
             if (!Visible) Show();
-            BringToFront();
         }
 
         internal static int PetOverlapForWidth(int petWidth)

@@ -698,7 +698,12 @@ namespace PennyPet
                 StickyNoteWindowRules.ShouldKeepSideTabsTopMost(hasVisibleNotes);
             _rightNoteTabs.TopMost =
                 StickyNoteWindowRules.ShouldKeepSideTabsTopMost(hasVisibleNotes);
-            if (!hasVisibleNotes) return;
+            if (!hasVisibleNotes)
+            {
+                if (_leftNoteTabs.Visible) _leftNoteTabs.BringToFront();
+                if (_rightNoteTabs.Visible) _rightNoteTabs.BringToFront();
+                return;
+            }
             RaiseVisibleNotesAboveTabs();
         }
 
