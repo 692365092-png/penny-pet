@@ -6,10 +6,17 @@ namespace PennyPet
     // Coordinates deferred Windows startup without changing phase ordering.
     internal sealed partial class PetForm
     {
+        private enum StartupWorkPhase
+        {
+            StartInputs,
+            ApplyStartupPreferences,
+            RestoreNotes
+        }
+
         private void BeginDeferredStartupWork()
         {
             if (_startupWorkTimer != null) return;
-            _startupWorkPhase = 0;
+            _startupWorkPhase = StartupWorkPhase.StartInputs;
             _startupWorkTimer = new System.Windows.Forms.Timer();
             _startupWorkTimer.Interval = 90;
             _startupWorkTimer.Tick += DeferredStartupTick;
@@ -23,7 +30,7 @@ namespace PennyPet
                 StopDeferredStartupWork();
                 return;
             }
-            if (_startupWorkPhase == 0)
+            if (_startupWorkPhase == StartupWorkPhase.StartInputs)
             {
                 if (PetKeyboardPrivacyPolicy.ShouldStartHook(
                     _settings.ShowKeyOverlay,
@@ -40,10 +47,10 @@ namespace PennyPet
                     }
                 }
                 RefreshKeyboardMenuText();
-                _startupWorkPhase++;
+                _startupWorkPhase = StartupWorkPhase.ApplyStartupPreferences;
                 return;
             }
-            if (_startupWorkPhase == 1)
+            if (_startupWorkPhase == StartupWorkPhase.ApplyStartupPreferences)
             {
                 try
                 {
@@ -64,7 +71,7 @@ namespace PennyPet
                         "deferred-secondary-startup", error);
                     _startupVisibleNotes = new Queue<StickyNoteData>();
                 }
-                _startupWorkPhase++;
+                _startupWorkPhase = StartupWorkPhase.RestoreNotes;
                 return;
             }
             if (_startupVisibleNotes != null &&

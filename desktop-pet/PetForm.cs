@@ -176,7 +176,7 @@ namespace PennyPet
         private bool _activeNoteSplitEligible;
         private bool _synchronizingDockLayout;
         private System.Windows.Forms.Timer _startupWorkTimer;
-        private int _startupWorkPhase;
+        private StartupWorkPhase _startupWorkPhase;
         private Queue<StickyNoteData> _startupVisibleNotes;
         private bool _startupUiReady;
         private bool _startupArtReady;
