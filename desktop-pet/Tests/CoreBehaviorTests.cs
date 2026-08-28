@@ -44,6 +44,51 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void DailyNoteFeature_ProgressesDaysAndDetectsMissedDay()
+        {
+            DailyNoteEntry entry = new DailyNoteEntry("day", "body");
+            DateTime firstDate = new DateTime(2026, 8, 28);
+            DailyNoteProgress progress = new DailyNoteProgress();
+
+            DailyNoteAction first = DailyNoteFeature.Decide(firstDate,
+                progress, entry);
+            Assert.AreEqual(DailyNoteActionKind.Create, first.Kind);
+            Assert.AreEqual(1, first.DayNumber);
+
+            DailyNoteProgress issued = DailyNoteFeature.MarkIssued(
+                progress, firstDate, first.DayNumber);
+            DailyNoteAction sameDay = DailyNoteFeature.Decide(firstDate,
+                issued, entry);
+            Assert.AreEqual(DailyNoteActionKind.AlreadyIssued, sameDay.Kind);
+
+            DailyNoteAction next = DailyNoteFeature.Decide(
+                firstDate.AddDays(1), issued, entry);
+            Assert.AreEqual(DailyNoteActionKind.Create, next.Kind);
+            Assert.AreEqual(2, next.DayNumber);
+
+            DailyNoteAction missed = DailyNoteFeature.Decide(
+                firstDate.AddDays(3), issued, entry);
+            Assert.AreEqual(DailyNoteActionKind.MissedDay, missed.Kind);
+            Assert.AreEqual(2, missed.DayNumber);
+        }
+
+        [TestMethod]
+        public void DailyNoteFeature_CompletesAfterThirtyDays()
+        {
+            DailyNoteProgress progress = new DailyNoteProgress
+            {
+                IssuedDay = 30,
+                LastIssuedLocalDate = new DateTime(2026, 9, 26),
+                Completed = true
+            };
+            DailyNoteAction action = DailyNoteFeature.Decide(
+                new DateTime(2026, 9, 27), progress, null);
+
+            Assert.AreEqual(DailyNoteActionKind.ProgramComplete, action.Kind);
+            Assert.AreEqual(30, action.DayNumber);
+        }
+
+        [TestMethod]
         public void StickyDockOperations_CoordinateGuardUsesClampedHeights()
         {
             Assert.IsTrue(
