@@ -1,4 +1,4 @@
-# Compiled releases and local build output
+# Compiled releases and build output
 *.exe
 *.rar
 *.zip
@@ -35,4 +35,3 @@ secrets.json
 *.suo
 .DS_Store
 Thumbs.db
-
