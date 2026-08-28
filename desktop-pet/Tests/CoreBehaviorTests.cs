@@ -35,6 +35,49 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyUiCommand_CarriesOnlyPlatformNeutralData()
+        {
+            StickyUiCommand command = new StickyUiCommand(
+                StickyUiCommandKind.Show, "note-1", true);
+
+            Assert.AreEqual(StickyUiCommandKind.Show, command.Kind);
+            Assert.AreEqual("note-1", command.NoteId);
+            Assert.IsTrue(command.Flag);
+        }
+
+        [TestMethod]
+        public void StickyNoteData_CloneForPersistenceCopiesNestedState()
+        {
+            StickyNoteData source = new StickyNoteData();
+            source.Title = "source";
+            source.Text = "body";
+            source.IsTodoList = true;
+            source.TodoItems.Add(new StickyTodoItem("todo",
+                StickyTodoState.InProgress, true));
+            source.IsSchedule = true;
+            source.ScheduleItems.Add(new StickyScheduleItem("schedule",
+                new DateTime(2026, 8, 28), true));
+
+            StickyNoteData copy = source.CloneForPersistence();
+
+            Assert.AreEqual(source.Id, copy.Id);
+            Assert.AreEqual(source.Title, copy.Title);
+            Assert.AreEqual(source.Text, copy.Text);
+            Assert.AreEqual(1, copy.TodoItems.Count);
+            Assert.AreEqual(StickyTodoState.InProgress,
+                copy.TodoItems[0].State);
+            Assert.IsTrue(copy.TodoItems[0].IsPinned);
+            Assert.AreEqual(1, copy.ScheduleItems.Count);
+            Assert.AreEqual(new DateTime(2026, 8, 28),
+                copy.ScheduleItems[0].TargetDate);
+
+            copy.TodoItems[0].Text = "changed";
+            copy.ScheduleItems[0].Text = "changed";
+            Assert.AreEqual("todo", source.TodoItems[0].Text);
+            Assert.AreEqual("schedule", source.ScheduleItems[0].Text);
+        }
+
+        [TestMethod]
         public void PetStartupRules_ReleaseLoadingOnlyWhenReady()
         {
             Assert.IsFalse(PetStartupRules.CanReleaseStartupLoading(false, false));

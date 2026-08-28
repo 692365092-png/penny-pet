@@ -48,6 +48,7 @@ namespace PennyPet
                 if (form != null && !form.IsDisposed)
                     form.FlushPendingChanges();
 
+            _notes.WaitForPendingSaves();
             while (true)
             {
                 PersistenceResult noteResult = _notes.Save();

@@ -6,6 +6,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Reflection;
 using System.Text;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace PennyPet
@@ -1997,6 +1998,7 @@ namespace PennyPet
         {
             internal bool StartupDefaultOk;
             internal bool StartupLoadingReadinessGateOk;
+            internal bool StickyUiHostOk;
             internal bool ScaleRangeOk;
             internal bool ReverseReminderStepOk;
             internal bool PinActionTextOk;
@@ -2021,6 +2023,28 @@ namespace PennyPet
                 !PetStartupRules.CanReleaseStartupLoading(true, false) &&
                 !PetStartupRules.CanReleaseStartupLoading(false, true) &&
                 PetStartupRules.CanReleaseStartupLoading(true, true);
+            using (StickyUiHost host = new StickyUiHost())
+            {
+                host.Start();
+                int callerThread = Thread.CurrentThread.ManagedThreadId;
+                int stickyThread = host.Invoke(
+                    delegate { return Thread.CurrentThread.ManagedThreadId; });
+                StickyUiCommand captured = null;
+                host.SetCommandHandler(delegate(StickyUiCommand command)
+                {
+                    captured = command;
+                });
+                StickyUiCommand posted = new StickyUiCommand(
+                    StickyUiCommandKind.Show, "note-1", true);
+                host.Post(posted);
+                StickyUiCommand observed = host.Invoke(
+                    delegate { return captured; });
+                result.StickyUiHostOk = host.CheckAccess() == false &&
+                    stickyThread != callerThread &&
+                    observed != null &&
+                    observed.Kind == StickyUiCommandKind.Show &&
+                    observed.NoteId == "note-1";
+            }
             result.ScaleRangeOk =
                 PetForm.NormalizeScalePercent(47) == 50 &&
                 PetForm.NormalizeScalePercent(104) == 100 &&
@@ -2434,6 +2458,8 @@ namespace PennyPet
                     reminderCoordinatorChecks.BannerTickThrottleOk) + ",\n" +
                 "  \"startup_default_ok\": " + Bool(
                     shellChecks.StartupDefaultOk) + ",\n" +
+                "  \"sticky_ui_host_ok\": " + Bool(
+                    shellChecks.StickyUiHostOk) + ",\n" +
                 "  \"keyboard_hook_opt_in_and_default_off_ok\": " + Bool(
                     keyboardOverlayChecks.HookOptInDefaultOk) + ",\n" +
                 "  \"keyboard_privacy_notice_persistence_ok\": " + Bool(

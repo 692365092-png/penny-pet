@@ -407,8 +407,11 @@ namespace PennyPet
                 // report the second failure while the original data stays safe.
                 form = new StickyNoteWindow(note);
             }
-            form.NoteChanged += delegate { _notes.Save(); RefreshMenuText(); };
-            form.NoteChanged += delegate { RefreshNoteTabs(); };
+            form.NoteChanged += delegate
+            {
+                _notes.SaveAsync();
+                RefreshMenuText();
+            };
             form.HeaderDragStarted += StickyNoteHeaderDragStarted;
             form.HeaderDragMoved += StickyNoteHeaderDragMoved;
             form.HeaderDragCompleted += StickyNoteHeaderDragCompleted;
@@ -440,25 +443,7 @@ namespace PennyPet
             };
             form.TypingActivity += delegate
             {
-                // The pet and note windows share the WinForms UI thread.  Give
-                // committed editor text a short uncontested window before the
-                // next layered animation frame is rendered.
-                _ownNoteInputQuietUntilUtc = DateTime.UtcNow.AddMilliseconds(260);
                 TriggerTypingAnimation();
-            };
-            form.ImeCompositionChanged += delegate(object sender,
-                ImeCompositionEventArgs e)
-            {
-                _ownNoteImeComposing = e.Active;
-                if (e.Active)
-                {
-                    _ownNoteInputQuietUntilUtc = DateTime.UtcNow.AddMilliseconds(500);
-                }
-                else
-                {
-                    _ownNoteInputQuietUntilUtc = DateTime.UtcNow.AddMilliseconds(260);
-                    _nextFrameUtc = _ownNoteInputQuietUntilUtc;
-                }
             };
             form.CancelReminderRequested += delegate { CancelReminderForNote(note, true); };
             form.ModifyReminderRequested += delegate(object sender,
@@ -597,6 +582,8 @@ namespace PennyPet
 
         private void RefreshNoteTabs()
         {
+            ApplicationDiagnostics.WriteWindowLayerEvent("RefreshNoteTabs",
+                "structural");
             if (_leftNoteTabs == null || _rightNoteTabs == null || IsDisposed)
                 return;
             // Side tabs have their own persistent order.  Sorting them by the
@@ -632,6 +619,8 @@ namespace PennyPet
 
         private void ApplyNoteTabZOrder()
         {
+            ApplicationDiagnostics.WriteWindowLayerEvent("ApplyNoteTabZOrder",
+                "structural");
             if (_leftNoteTabs == null || _rightNoteTabs == null || IsDisposed)
                 return;
             bool hasVisibleNotes = _notes.GetAll().Exists(
@@ -651,6 +640,8 @@ namespace PennyPet
 
         private void RaiseVisibleNotesAboveTabs()
         {
+            ApplicationDiagnostics.WriteWindowLayerEvent(
+                "RaiseVisibleNotesAboveTabs", "structural");
             foreach (StickyNoteWindow form in
                 new List<StickyNoteWindow>(_noteWindows.Values))
             {

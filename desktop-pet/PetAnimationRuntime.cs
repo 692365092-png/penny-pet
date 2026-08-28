@@ -15,18 +15,13 @@ namespace PennyPet
         private void AnimationTick(object sender, EventArgs e)
         {
             DateTime now = DateTime.UtcNow;
-            if (!_exiting && (HasFocusedOwnNoteTextInput() ||
-                PetAnimationController.ShouldPauseOwnNoteAnimation(
-                    _ownNoteImeComposing,
-                    _ownNoteInputQuietUntilUtc, now))) return;
             if (_exiting)
             {
                 if (_row != WavingRow)
                 {
                     _row = WavingRow;
                     _frame = 0;
-                    _nextFrameUtc = now.AddMilliseconds(
-                        RuntimeFrameDuration(_row, _frame));
+                    ScheduleNextFrame(now);
                     RenderCurrentFrame();
                     return;
                 }
@@ -37,8 +32,7 @@ namespace PennyPet
                     return;
                 }
                 _frame++;
-                _nextFrameUtc = now.AddMilliseconds(
-                    RuntimeFrameDuration(_row, _frame));
+                ScheduleNextFrame(now);
                 RenderCurrentFrame();
                 return;
             }
@@ -55,8 +49,7 @@ namespace PennyPet
                 {
                     _row = _manualAnimationRow;
                     _frame = 0;
-                    _nextFrameUtc = now.AddMilliseconds(
-                        RuntimeFrameDuration(_row, _frame));
+                    ScheduleNextFrame(now);
                     RenderCurrentFrame();
                     return;
                 }
@@ -71,8 +64,7 @@ namespace PennyPet
                 {
                     _frame++;
                 }
-                _nextFrameUtc = now.AddMilliseconds(
-                    RuntimeFrameDuration(_row, _frame));
+                ScheduleNextFrame(now);
                 RenderCurrentFrame();
                 return;
             }
@@ -81,8 +73,7 @@ namespace PennyPet
             {
                 _row = wanted;
                 _frame = 0;
-                _nextFrameUtc = now.AddMilliseconds(
-                    RuntimeFrameDuration(_row, _frame));
+                ScheduleNextFrame(now);
                 RenderCurrentFrame();
                 return;
             }
@@ -95,8 +86,7 @@ namespace PennyPet
                 _idleRow = IdleRow;
                 _row = IdleRow;
                 _frame = 0;
-                _nextFrameUtc = now.AddMilliseconds(
-                    RuntimeFrameDuration(_row, _frame));
+                ScheduleNextFrame(now);
                 RenderCurrentFrame();
                 return;
             }
@@ -113,8 +103,7 @@ namespace PennyPet
             {
                 _frame = (_frame + 1) % RuntimeFrameCount(_row);
             }
-            _nextFrameUtc = now.AddMilliseconds(
-                RuntimeFrameDuration(_row, _frame));
+            ScheduleNextFrame(now);
             RenderCurrentFrame();
         }
 
@@ -126,6 +115,14 @@ namespace PennyPet
         private int RuntimeFrameDuration(int row, int frame)
         {
             return _art.FrameDuration(row, frame);
+        }
+
+        private void ScheduleNextFrame(DateTime now)
+        {
+            int duration = RuntimeFrameDuration(_row, _frame);
+            if (!_exiting && HasFocusedOwnNoteTextInput())
+                duration = Math.Max(40, duration * 2);
+            _nextFrameUtc = now.AddMilliseconds(duration);
         }
 
         private int RuntimeAnimationCycleDuration(int row)
@@ -211,8 +208,7 @@ namespace PennyPet
             if (!_art.IsRowLoaded(_manualAnimationRow)) return;
             _row = _manualAnimationRow;
             _frame = 0;
-            _nextFrameUtc = now.AddMilliseconds(
-                RuntimeFrameDuration(_row, _frame));
+            ScheduleNextFrame(now);
             RenderCurrentFrame();
         }
 
@@ -245,7 +241,7 @@ namespace PennyPet
             // loading image has disappeared.
             Thread preloadThread = new Thread(new ThreadStart(delegate
             {
-                int[] warmRows = { HoverRow, FailedRow };
+                int[] warmRows = { HoverRow, FailedRow, WaitingRow, ThinkingRow };
                 foreach (int row in warmRows)
                 {
                     if (_art.IsRowLoaded(row)) continue;
@@ -353,7 +349,11 @@ namespace PennyPet
             if (rowFrames == null || rowFrames.Length == 0) return;
             if (_frame < 0 || _frame >= rowFrames.Length) _frame = 0;
             Bitmap frame = rowFrames[_frame];
-            if (frame != null) LayeredSpriteRenderer.Show(this, frame);
+            if (frame != null && !LayeredSpriteRenderer.Show(this, frame))
+                ApplicationDiagnostics.ReportNonFatal(
+                    "layered-sprite-show",
+                    new InvalidOperationException(
+                        "Layered window update failed."));
         }
 
         private void BuildRenderedFrameCache()

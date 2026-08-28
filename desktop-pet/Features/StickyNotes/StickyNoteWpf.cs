@@ -1176,15 +1176,16 @@ namespace PennyPet
         private void ApplyColors()
         {
             Color paper = Color.FromArgb(Data.ColorArgb);
-            Color header = WF.ControlPaint.Light(paper, 0.18F);
+            Color header = paper;
+            Color body = WF.ControlPaint.LightLight(paper);
             Color toolbar = WF.ControlPaint.Light(paper, 0.08F);
             Color input = WF.ControlPaint.LightLight(paper);
-            Color reminder = WF.ControlPaint.Light(paper, 0.12F);
-            Color border = WF.ControlPaint.Dark(paper, 0.15F);
+            Color reminder = toolbar;
+            Color border = header;
             System.Windows.Media.Brush text = OpaqueBrush(EffectiveTextColor());
             int opacity = Math.Max(10, Math.Min(100,
                 Data.BackgroundOpacityPercent));
-            _shell.Background = AlphaBrush(paper, opacity);
+            _shell.Background = AlphaBrush(body, opacity);
             _shell.BorderBrush = AlphaBrush(border, Math.Max(35, opacity));
             _header.Background = AlphaBrush(header, opacity);
             RefreshHeaderTypeIcon(header);

@@ -48,14 +48,14 @@ namespace PennyPet
                 _keyboardUiDispatchQueued = false;
             }
             if (keyboardEvent == null || _dragging || _exiting) return;
-            TriggerTypingAnimation();
-            if (!_settings.ShowKeyOverlay ||
-                String.IsNullOrEmpty(keyboardEvent.DisplayText)) return;
-            if (IsOwnApplicationInputFocused())
+            if (HasFocusedOwnNoteTextInput() || IsOwnApplicationInputFocused())
             {
                 _keyOverlay.HideImmediately();
                 return;
             }
+            TriggerTypingAnimation();
+            if (!_settings.ShowKeyOverlay ||
+                String.IsNullOrEmpty(keyboardEvent.DisplayText)) return;
             QueuePrivacyCheckedOverlay(keyboardEvent.DisplayText, occurrences,
                 keyboardEvent.VirtualKeyCode, keyboardEvent.FocusSnapshot);
         }

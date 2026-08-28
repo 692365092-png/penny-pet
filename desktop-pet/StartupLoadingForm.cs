@@ -39,7 +39,30 @@ namespace PennyPet
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
-            if (_frame != null) LayeredSpriteRenderer.Show(this, _frame);
+            if (_frame == null) return;
+            bool first = LayeredSpriteRenderer.Show(this, _frame);
+            ApplicationDiagnostics.WriteWindowLayerEvent(
+                "StartupLoadingFrame",
+                _frame.Width + "x" + _frame.Height + " first=" + first);
+            System.Windows.Forms.Timer retry =
+                new System.Windows.Forms.Timer();
+            retry.Interval = 80;
+            retry.Tick += delegate
+            {
+                retry.Stop();
+                if (IsDisposed || _frame == null) return;
+                bool second = LayeredSpriteRenderer.Show(this, _frame);
+                ApplicationDiagnostics.WriteWindowLayerEvent(
+                    "StartupLoadingFrame",
+                    _frame.Width + "x" + _frame.Height + " second=" + second);
+                if (!second)
+                    ApplicationDiagnostics.ReportNonFatal(
+                        "startup-loading-show",
+                        new InvalidOperationException(
+                            "Startup loading frame could not be shown."));
+                retry.Dispose();
+            };
+            retry.Start();
         }
 
         internal static bool HasEmbeddedFrame
@@ -136,7 +159,10 @@ namespace PennyPet
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing && _frame != null) _frame.Dispose();
+            if (disposing && _frame != null)
+            {
+                _frame.Dispose();
+            }
             base.Dispose(disposing);
         }
     }

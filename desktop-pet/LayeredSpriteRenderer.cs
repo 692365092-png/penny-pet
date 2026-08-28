@@ -13,7 +13,6 @@ namespace PennyPet
         private const int UlwAlpha = 0x00000002;
         private const byte AcSrcOver = 0x00;
         private const byte AcSrcAlpha = 0x01;
-
         public static Bitmap ComposeFrame(Bitmap atlas, int row, int frame,
             int cellWidth, int cellHeight)
         {
@@ -35,12 +34,12 @@ namespace PennyPet
             return output;
         }
 
-        public static void Show(Form form, Bitmap bitmap)
+        public static bool Show(Form form, Bitmap bitmap)
         {
-            Show(form, bitmap, 255);
+            return Show(form, bitmap, 255);
         }
 
-        public static void Show(Form form, Bitmap bitmap, byte opacity)
+        public static bool Show(Form form, Bitmap bitmap, byte opacity)
         {
             IntPtr screenDc = GetDC(IntPtr.Zero);
             IntPtr memoryDc = CreateCompatibleDC(screenDc);
@@ -61,7 +60,11 @@ namespace PennyPet
 
                 bool ok = UpdateLayeredWindow(form.Handle, screenDc, ref destination,
                     ref size, memoryDc, ref source, 0, ref blend, UlwAlpha);
-                if (!ok) throw new Win32Exception(Marshal.GetLastWin32Error());
+                return ok;
+            }
+            catch
+            {
+                return false;
             }
             finally
             {

@@ -63,6 +63,33 @@ namespace PennyPet
             Write(context, error, "fatal");
         }
 
+        internal static void WriteWindowLayerEvent(string operation,
+            string reason)
+        {
+            if (_initialized == 0) return;
+            try
+            {
+                lock (LogGate)
+                {
+                    string path = LogFilePath;
+                    string directory = Path.GetDirectoryName(path);
+                    if (!String.IsNullOrEmpty(directory))
+                        Directory.CreateDirectory(directory);
+                    string line = "[" + DateTime.Now.ToString(
+                        "yyyy-MM-dd HH:mm:ss.fff") + "] window-layer / " +
+                        (operation ?? "unknown") + " / " +
+                        (reason ?? String.Empty) + " / thread=" +
+                        Thread.CurrentThread.ManagedThreadId +
+                        Environment.NewLine;
+                    File.AppendAllText(path, line, new UTF8Encoding(false));
+                }
+            }
+            catch
+            {
+                // Diagnostics must never become another application failure.
+            }
+        }
+
         private static void HandleUiThreadFailure(Exception error)
         {
             Write("unhandled-ui", error, "fatal");

@@ -46,7 +46,7 @@ namespace PennyPet
             title.TabStop = false;
             Controls.Add(title);
 
-            _xiaohongshuLogo = ArtworkBox(new Rectangle(0, 0, 104, 53));
+            _xiaohongshuLogo = ArtworkBox(new Rectangle(200, 81, 104, 53));
             _xiaohongshuLogo.SetBounds((ClientSize.Width - 104) / 2,
                 51, 104, 53);
             Controls.Add(_xiaohongshuLogo);

@@ -64,6 +64,11 @@ namespace PennyPet
             IsPinned = isPinned;
         }
 
+        internal StickyTodoItem CloneForPersistence()
+        {
+            return new StickyTodoItem(Text ?? String.Empty, State, IsPinned);
+        }
+
         public string Text;
         public StickyTodoState State;
         public bool IsPinned;
@@ -102,6 +107,12 @@ namespace PennyPet
                 try { return new DateTime(TargetDateTicks).Date; }
                 catch { return DateTime.Today; }
             }
+        }
+
+        internal StickyScheduleItem CloneForPersistence()
+        {
+            return new StickyScheduleItem(Text ?? String.Empty,
+                new DateTime(TargetDateTicks).Date, IsPinned);
         }
     }
 
@@ -172,6 +183,41 @@ namespace PennyPet
                 try { return new DateTime(ReminderUtcTicks, DateTimeKind.Utc); }
                 catch { return null; }
             }
+        }
+
+        internal StickyNoteData CloneForPersistence()
+        {
+            StickyNoteData copy = new StickyNoteData();
+            copy.Id = Id;
+            copy.Title = Title;
+            copy.Text = Text;
+            copy.RichTextRtf = RichTextRtf;
+            copy.FontFamilyName = FontFamilyName;
+            copy.FontSizeTwips = FontSizeTwips;
+            copy.IsTodoList = IsTodoList;
+            copy.IsSchedule = IsSchedule;
+            copy.ColorArgb = ColorArgb;
+            copy.BackgroundOpacityPercent = BackgroundOpacityPercent;
+            copy.TextColorArgb = TextColorArgb;
+            copy.Visible = Visible;
+            copy.AlwaysOnTop = AlwaysOnTop;
+            copy.X = X;
+            copy.Y = Y;
+            copy.Width = Width;
+            copy.Height = Height;
+            copy.DockParentId = DockParentId;
+            copy.DockGroupId = DockGroupId;
+            copy.DockGroupOrder = DockGroupOrder;
+            copy.TabOrder = TabOrder;
+            copy.CreatedUtcTicks = CreatedUtcTicks;
+            copy.ModifiedUtcTicks = ModifiedUtcTicks;
+            copy.ReminderUtcTicks = ReminderUtcTicks;
+            foreach (StickyTodoItem item in TodoItems)
+                if (item != null) copy.TodoItems.Add(item.CloneForPersistence());
+            foreach (StickyScheduleItem item in ScheduleItems)
+                if (item != null) copy.ScheduleItems.Add(
+                    item.CloneForPersistence());
+            return copy;
         }
 
         public string Summary

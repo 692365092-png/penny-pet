@@ -99,6 +99,7 @@ namespace PennyPet
             new ArtPreloadReservations();
         private readonly PetAnimationController _animation =
             new PetAnimationController();
+        private readonly StickyUiHost _stickyUiHost = new StickyUiHost();
 
         private PetArtPackage _art;
         private Bitmap[][] _renderedFrames;
@@ -156,8 +157,6 @@ namespace PennyPet
         private long _pendingOverlayGeneration;
         private bool _positioningNoteTabs;
         private string _noteTabsSignature = String.Empty;
-        private bool _ownNoteImeComposing;
-        private DateTime _ownNoteInputQuietUntilUtc;
         private StickyNoteWindow _activeNoteDrag;
         private readonly List<StickyNoteData> _activeDockGroup =
             new List<StickyNoteData>();
@@ -369,6 +368,7 @@ namespace PennyPet
             _keyboard = new GlobalKeyboardActivity();
             _keyboard.Activity += KeyboardActivity;
             RefreshKeyboardMenuText();
+            _stickyUiHost.Start();
 
             Shown += delegate
             {
@@ -400,6 +400,7 @@ namespace PennyPet
                 if (!noteWindow.IsDisposed) noteWindow.CloseForApplicationExit();
             }
             _noteWindows.Clear();
+            _stickyUiHost.Shutdown();
             _notes.Save();
             _notes.SaveFailed -= PersistenceSaveFailed;
             _settings.SaveFailed -= PersistenceSaveFailed;

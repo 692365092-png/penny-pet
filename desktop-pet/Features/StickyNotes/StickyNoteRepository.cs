@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Text;
+using System.Threading;
 
 namespace PennyPet
 {
@@ -18,6 +19,10 @@ namespace PennyPet
         private bool _hasUnsavedChanges;
         private Exception _lastSaveError;
         private int _consecutiveSaveFailures;
+        private readonly object _saveGate = new object();
+        private long _requestedGeneration;
+        private long _completedGeneration = -1;
+        private int _pendingAsyncSaves;
 
         internal event EventHandler<PersistenceFailedEventArgs> SaveFailed;
 
@@ -202,6 +207,11 @@ namespace PennyPet
             get { return _hasUnsavedChanges; }
         }
 
+        internal bool HasPendingSaves
+        {
+            get { lock (_saveGate) return _pendingAsyncSaves > 0; }
+        }
+
         internal Exception LastSaveError
         {
             get { return _lastSaveError; }
@@ -297,9 +307,71 @@ namespace PennyPet
             return SaveToFile(_filePath);
         }
 
+        internal void SaveAsync()
+        {
+            if (!_loadSucceeded)
+            {
+                RecordSaveFailure(new InvalidOperationException(
+                    "Sticky-note data was not loaded safely; refusing to overwrite it."));
+                return;
+            }
+            List<StickyNoteData> snapshot;
+            long generation;
+            lock (_saveGate)
+            {
+                snapshot = CloneNotes(_notes);
+                generation = ++_requestedGeneration;
+                _pendingAsyncSaves++;
+                _hasUnsavedChanges = true;
+            }
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                PersistenceResult result = WriteSnapshot(snapshot);
+                int consecutiveFailures = 0;
+                lock (_saveGate)
+                {
+                    _pendingAsyncSaves--;
+                    if (result.Succeeded)
+                    {
+                        _completedGeneration = Math.Max(_completedGeneration,
+                            generation);
+                        if (generation == _requestedGeneration)
+                        {
+                            _hasUnsavedChanges = false;
+                            _lastSaveError = null;
+                            _consecutiveSaveFailures = 0;
+                        }
+                    }
+                    else
+                    {
+                        _lastSaveError = result.Error;
+                        _consecutiveSaveFailures++;
+                        consecutiveFailures = _consecutiveSaveFailures;
+                    }
+                }
+                if (!result.Succeeded)
+                {
+                    EventHandler<PersistenceFailedEventArgs> handler = SaveFailed;
+                    if (handler != null)
+                        handler(this, new PersistenceFailedEventArgs(result,
+                            consecutiveFailures));
+                }
+            });
+        }
+
+        internal void WaitForPendingSaves()
+        {
+            while (HasPendingSaves) Thread.Sleep(10);
+        }
+
         internal PersistenceResult SaveToFile(string filePath)
         {
-            _hasUnsavedChanges = true;
+            long generation;
+            lock (_saveGate)
+            {
+                generation = ++_requestedGeneration;
+                _hasUnsavedChanges = true;
+            }
             // A temporary read/parse failure must never turn an existing note file
             // into an empty one. The next clean launch can read it again.
             if (!_loadSucceeded)
@@ -312,9 +384,17 @@ namespace PennyPet
                 foreach (StickyNoteData note in _notes)
                     lines.Add(StickyNoteCodec.SerializeLine(note));
                 AtomicTextFile.WriteAllLines(filePath, lines, true);
-                _hasUnsavedChanges = false;
-                _lastSaveError = null;
-                _consecutiveSaveFailures = 0;
+                lock (_saveGate)
+                {
+                    _completedGeneration = Math.Max(_completedGeneration,
+                        generation);
+                    if (generation == _requestedGeneration)
+                    {
+                        _hasUnsavedChanges = false;
+                        _lastSaveError = null;
+                        _consecutiveSaveFailures = 0;
+                    }
+                }
                 return PersistenceResult.Success();
             }
             catch (Exception error)
@@ -355,6 +435,35 @@ namespace PennyPet
                 handler(this, new PersistenceFailedEventArgs(result,
                     _consecutiveSaveFailures));
             return result;
+        }
+
+        private static List<StickyNoteData> CloneNotes(
+            IEnumerable<StickyNoteData> notes)
+        {
+            List<StickyNoteData> result = new List<StickyNoteData>();
+            if (notes != null)
+                foreach (StickyNoteData note in notes)
+                    if (note != null) result.Add(note.CloneForPersistence());
+            return result;
+        }
+
+        private PersistenceResult WriteSnapshot(List<StickyNoteData> snapshot)
+        {
+            try
+            {
+                StickyDockGroups.NormalizeAll(snapshot);
+                List<string> lines = new List<string>();
+                foreach (StickyNoteData note in snapshot)
+                    lines.Add(StickyNoteCodec.SerializeLine(note));
+                AtomicTextFile.WriteAllLines(_filePath, lines, true);
+                return PersistenceResult.Success();
+            }
+            catch (Exception error)
+            {
+                ApplicationDiagnostics.ReportNonFatal(
+                    "sticky-notes-save-async", error);
+                return PersistenceResult.Failure(error);
+            }
         }
 
         internal static bool RepairForDisplay(StickyNoteData note,
