@@ -253,18 +253,36 @@ namespace PennyPet
             _notes.SaveFailed += PersistenceSaveFailed;
             ReconcileNoteReminders();
             _leftNoteTabs = new StickyNoteTabsForm(StickyTabSide.Left,
-                delegate(StickyNoteData note) { ShowStickyNote(note, true); },
-                delegate(StickyNoteData note) { ConfirmDeleteStickyNote(note); },
-                delegate(StickyNoteData note, int index)
+                delegate(string noteId)
                 {
-                    ReorderStickyNoteTab(note, index);
+                    StickyNoteData note = _notes.Find(noteId);
+                    if (note != null) ShowStickyNote(note, true);
+                },
+                delegate(string noteId)
+                {
+                    StickyNoteData note = _notes.Find(noteId);
+                    if (note != null) ConfirmDeleteStickyNote(note);
+                },
+                delegate(string noteId, int index)
+                {
+                    StickyNoteData note = _notes.Find(noteId);
+                    if (note != null) ReorderStickyNoteTab(note, index);
                 });
             _rightNoteTabs = new StickyNoteTabsForm(StickyTabSide.Right,
-                delegate(StickyNoteData note) { ShowStickyNote(note, true); },
-                delegate(StickyNoteData note) { ConfirmDeleteStickyNote(note); },
-                delegate(StickyNoteData note, int index)
+                delegate(string noteId)
                 {
-                    ReorderStickyNoteTab(note, index);
+                    StickyNoteData note = _notes.Find(noteId);
+                    if (note != null) ShowStickyNote(note, true);
+                },
+                delegate(string noteId)
+                {
+                    StickyNoteData note = _notes.Find(noteId);
+                    if (note != null) ConfirmDeleteStickyNote(note);
+                },
+                delegate(string noteId, int index)
+                {
+                    StickyNoteData note = _notes.Find(noteId);
+                    if (note != null) ReorderStickyNoteTab(note, index);
                 });
             if (!_settings.StartupPreferenceInitialized)
             {

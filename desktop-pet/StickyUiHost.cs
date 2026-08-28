@@ -188,6 +188,16 @@ namespace PennyPet
                             return StickyUiCommandResult.NotHandled();
                         entry.Window.ApplyTopMostWindowState(command.Flag);
                         return CurrentResult(entry);
+                    case StickyUiCommandKind.SetBounds:
+                        if (!TryGetEntry(command.NoteId, out entry) ||
+                            command.Bounds == null)
+                            return StickyUiCommandResult.NotHandled();
+                        entry.Window.Left = command.Bounds.X;
+                        entry.Window.Top = command.Bounds.Y;
+                        entry.Window.Width = command.Bounds.Width;
+                        entry.Window.Height = command.Bounds.Height;
+                        entry.Window.UpdateLayout();
+                        return CurrentResult(entry);
                     case StickyUiCommandKind.Close:
                         return CloseCanaryWindow(command.NoteId);
                     case StickyUiCommandKind.CloseAll:
@@ -232,6 +242,12 @@ namespace PennyPet
             window.InputFocusChanged += CanaryInputFocusChanged;
             window.ImeCompositionChanged += CanaryImeCompositionChanged;
             window.Shown += CanaryShown;
+            window.LocationChanged += CanaryBoundsChanged;
+            window.SizeChanged += CanaryBoundsChanged;
+            window.HeaderDragStarted += CanaryHeaderDragStarted;
+            window.HeaderDragMoved += CanaryHeaderDragMoved;
+            window.HeaderDragCompleted += CanaryHeaderDragCompleted;
+            window.DockHorizontalResizing += CanaryDockHorizontalResizing;
             window.CancelReminderRequested += CanaryCancelReminderRequested;
             window.ModifyReminderRequested += CanaryModifyReminderRequested;
             window.DeleteReminderRequested += CanaryDeleteReminderRequested;
@@ -269,6 +285,12 @@ namespace PennyPet
             window.InputFocusChanged -= CanaryInputFocusChanged;
             window.ImeCompositionChanged -= CanaryImeCompositionChanged;
             window.Shown -= CanaryShown;
+            window.LocationChanged -= CanaryBoundsChanged;
+            window.SizeChanged -= CanaryBoundsChanged;
+            window.HeaderDragStarted -= CanaryHeaderDragStarted;
+            window.HeaderDragMoved -= CanaryHeaderDragMoved;
+            window.HeaderDragCompleted -= CanaryHeaderDragCompleted;
+            window.DockHorizontalResizing -= CanaryDockHorizontalResizing;
             window.CancelReminderRequested -= CanaryCancelReminderRequested;
             window.ModifyReminderRequested -= CanaryModifyReminderRequested;
             window.DeleteReminderRequested -= CanaryDeleteReminderRequested;
@@ -344,6 +366,40 @@ namespace PennyPet
             if (!TryGetEntry(sender as StickyNoteWindow, out entry)) return;
             PostEvent(new StickyUiEvent(StickyUiEventKind.FirstRendered,
                 entry.Window.Data.Id, null, true, entry.Sequence));
+        }
+
+        private void CanaryBoundsChanged(object sender, EventArgs e)
+        {
+            StickyWindowEntry entry;
+            if (!TryGetEntry(sender as StickyNoteWindow, out entry)) return;
+            EmitSnapshot(entry, StickyUiEventKind.BoundsChanged);
+        }
+
+        private void CanaryHeaderDragStarted(object sender, EventArgs e)
+        {
+            PostWindowRequest(sender, StickyUiEventKind.HeaderDragStarted);
+        }
+
+        private void CanaryHeaderDragMoved(object sender, EventArgs e)
+        {
+            PostWindowRequest(sender, StickyUiEventKind.HeaderDragMoved);
+        }
+
+        private void CanaryHeaderDragCompleted(object sender, EventArgs e)
+        {
+            PostWindowRequest(sender, StickyUiEventKind.HeaderDragCompleted);
+        }
+
+        private void CanaryDockHorizontalResizing(object sender,
+            DockHorizontalResizeEventArgs e)
+        {
+            StickyWindowEntry entry;
+            if (!TryGetEntry(sender as StickyNoteWindow, out entry)) return;
+            PostEvent(new StickyUiEvent(
+                StickyUiEventKind.DockHorizontalResizing,
+                entry.Window.Data.Id, null, false, entry.Sequence,
+                null, e == null ? 0 : e.Left,
+                e == null ? 0 : e.Width));
         }
 
         private void CanaryCancelReminderRequested(object sender,

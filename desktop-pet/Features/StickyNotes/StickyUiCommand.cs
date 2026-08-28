@@ -10,6 +10,7 @@ namespace PennyPet
         Hide,
         FocusPrimaryInput,
         SetTopMost,
+        SetBounds,
         Close,
         CloseAll
     }
@@ -17,18 +18,21 @@ namespace PennyPet
     internal sealed class StickyUiCommand
     {
         internal StickyUiCommand(StickyUiCommandKind kind, string noteId,
-            bool flag, StickyNoteUiSnapshot snapshot = null)
+            bool flag, StickyNoteUiSnapshot snapshot = null,
+            StickyUiBounds bounds = null)
         {
             Kind = kind;
             NoteId = noteId ?? String.Empty;
             Flag = flag;
             Snapshot = snapshot;
+            Bounds = bounds;
         }
 
         internal StickyUiCommandKind Kind { get; private set; }
         internal string NoteId { get; private set; }
         internal bool Flag { get; private set; }
         internal StickyNoteUiSnapshot Snapshot { get; private set; }
+        internal StickyUiBounds Bounds { get; private set; }
     }
 
     // Immutable cross-thread value snapshot. The WPF STA creates its own
@@ -174,6 +178,22 @@ namespace PennyPet
         internal bool IsPinned { get; private set; }
     }
 
+    internal sealed class StickyUiBounds
+    {
+        internal StickyUiBounds(int x, int y, int width, int height)
+        {
+            X = x;
+            Y = y;
+            Width = width;
+            Height = height;
+        }
+
+        internal int X { get; private set; }
+        internal int Y { get; private set; }
+        internal int Width { get; private set; }
+        internal int Height { get; private set; }
+    }
+
     internal enum StickyUiEventKind
     {
         SnapshotChanged,
@@ -181,6 +201,11 @@ namespace PennyPet
         InputFocusChanged,
         ImeCompositionChanged,
         FirstRendered,
+        BoundsChanged,
+        HeaderDragStarted,
+        HeaderDragMoved,
+        HeaderDragCompleted,
+        DockHorizontalResizing,
         CancelReminderRequested,
         ModifyReminderRequested,
         DeleteReminderRequested,
@@ -195,7 +220,7 @@ namespace PennyPet
     {
         internal StickyUiEvent(StickyUiEventKind kind, string noteId,
             StickyNoteUiSnapshot snapshot, bool flag, long sequence,
-            ReminderItem reminder = null)
+            ReminderItem reminder = null, int left = 0, int width = 0)
         {
             Kind = kind;
             NoteId = noteId ?? String.Empty;
@@ -203,6 +228,8 @@ namespace PennyPet
             Flag = flag;
             Sequence = sequence;
             Reminder = reminder;
+            Left = left;
+            Width = width;
         }
 
         internal StickyUiEventKind Kind { get; private set; }
@@ -211,6 +238,8 @@ namespace PennyPet
         internal bool Flag { get; private set; }
         internal long Sequence { get; private set; }
         internal ReminderItem Reminder { get; private set; }
+        internal int Left { get; private set; }
+        internal int Width { get; private set; }
     }
 
     internal enum StickyUiCommandStatus

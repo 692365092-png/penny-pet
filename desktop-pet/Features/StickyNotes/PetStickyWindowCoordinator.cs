@@ -604,6 +604,11 @@ namespace PennyPet
                 MarkFirstRendered(value.NoteId);
                 return;
             }
+            if (value.Kind == StickyUiEventKind.BoundsChanged)
+            {
+                ApplyHostedStickySnapshot(value.Snapshot, value.Sequence, false);
+                return;
+            }
             if (value.Kind == StickyUiEventKind.Closed)
             {
                 ApplyHostedStickySnapshot(value.Snapshot, value.Sequence);
@@ -899,11 +904,14 @@ namespace PennyPet
                 return;
             // Side tabs have their own persistent order.  Sorting them by the
             // note's modified time here used to undo every successful drag.
-            List<StickyNoteData> hidden = _notes.GetHiddenInTabOrder();
+            List<StickyNoteData> hiddenData = _notes.GetHiddenInTabOrder();
+            List<SideTabSnapshot> hidden = new List<SideTabSnapshot>();
+            foreach (StickyNoteData note in hiddenData)
+                hidden.Add(SideTabSnapshot.FromData(note));
             StringBuilder signatureBuilder = new StringBuilder();
-            foreach (StickyNoteData note in hidden)
+            foreach (SideTabSnapshot note in hidden)
             {
-                signatureBuilder.Append(note.Id).Append('|')
+                signatureBuilder.Append(note.NoteId).Append('|')
                     .Append(note.DisplayTitle).Append('|')
                     .Append(note.ColorArgb).Append('\n');
             }
@@ -919,8 +927,8 @@ namespace PennyPet
             Rectangle work = Screen.FromRectangle(Bounds).WorkingArea;
             int leftCount = StickyNoteTabsForm.CalculateLeftCount(hidden.Count,
                 Height, work);
-            List<StickyNoteData> left = hidden.GetRange(0, leftCount);
-            List<StickyNoteData> right = hidden.GetRange(leftCount,
+            List<SideTabSnapshot> left = hidden.GetRange(0, leftCount);
+            List<SideTabSnapshot> right = hidden.GetRange(leftCount,
                 hidden.Count - leftCount);
             _leftNoteTabs.SetNotes(left, 0);
             _rightNoteTabs.SetNotes(right, leftCount);

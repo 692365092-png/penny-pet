@@ -36,9 +36,9 @@ namespace PennyPet
             new List<StickyNoteTabsForm>();
 
         private readonly StickyTabSide _side;
-        private readonly Action<StickyNoteData> _openNote;
-        private readonly Action<StickyNoteData> _deleteNote;
-        private readonly Action<StickyNoteData, int> _reorderNote;
+        private readonly Action<string> _openNote;
+        private readonly Action<string> _deleteNote;
+        private readonly Action<string, int> _reorderNote;
         private readonly ToolTip _toolTip;
         private readonly System.Windows.Forms.Timer _layoutAnimationTimer;
         private int _globalStartIndex;
@@ -55,15 +55,15 @@ namespace PennyPet
         private bool _ownedResourcesDisposed;
 
         public StickyNoteTabsForm(StickyTabSide side,
-            Action<StickyNoteData> openNote)
+            Action<string> openNote)
             : this(side, openNote, null, null)
         {
         }
 
         public StickyNoteTabsForm(StickyTabSide side,
-            Action<StickyNoteData> openNote,
-            Action<StickyNoteData> deleteNote,
-            Action<StickyNoteData, int> reorderNote)
+            Action<string> openNote,
+            Action<string> deleteNote,
+            Action<string, int> reorderNote)
         {
             _side = side;
             _openNote = openNote;
@@ -153,6 +153,21 @@ namespace PennyPet
                 return;
             }
             if (!Visible) Show();
+        }
+
+        public void SetNotes(IList<SideTabSnapshot> notes)
+        {
+            SetNotes(notes, 0);
+        }
+
+        public void SetNotes(IList<SideTabSnapshot> notes,
+            int globalStartIndex)
+        {
+            List<StickyNoteData> displayNotes = new List<StickyNoteData>();
+            if (notes != null)
+                foreach (SideTabSnapshot note in notes)
+                    if (note != null) displayNotes.Add(note.ToDisplayData());
+            SetNotes(displayNotes, globalStartIndex);
         }
 
         public void ShowNear(Rectangle petBounds, Rectangle workArea)
@@ -341,12 +356,12 @@ namespace PennyPet
             // Do not post this with BeginInvoke: the OLE nested message loop
             // may dispatch it before DoDragDrop returns. The source control
             // completes the session after OLE has fully unwound.
-            Action<StickyNoteData, int> reorder = _reorderNote;
+            Action<string, int> reorder = _reorderNote;
             StickyNoteTabsForm target = this;
             DragSession.QueueCommit(moved, delegate
             {
                 if (target.IsDisposed) return;
-                reorder(moved, destination);
+                reorder(moved.Id, destination);
             });
         }
 
@@ -885,8 +900,8 @@ namespace PennyPet
 
         private readonly StickyNoteData _note;
         private readonly StickyTabSide _side;
-        private readonly Action<StickyNoteData> _openNote;
-        private readonly Action<StickyNoteData> _deleteNote;
+        private readonly Action<string> _openNote;
+        private readonly Action<string> _deleteNote;
         private readonly System.Windows.Forms.Timer _longPressTimer;
         private readonly ContextMenuStrip _menu;
         private bool _hover;
@@ -912,8 +927,8 @@ namespace PennyPet
         }
 
         public StickyNoteTabControl(StickyNoteData note, StickyTabSide side,
-            Action<StickyNoteData> openNote,
-            Action<StickyNoteData> deleteNote)
+            Action<string> openNote,
+            Action<string> deleteNote)
         {
             _note = note;
             _side = side;
@@ -936,7 +951,7 @@ namespace PennyPet
             delete.Click += delegate
             {
                 if (_deleteNote != null && !IsDisposed)
-                    BeginInvoke((MethodInvoker)delegate { _deleteNote(_note); });
+                    BeginInvoke((MethodInvoker)delegate { _deleteNote(_note.Id); });
             };
             _menu.Items.Add(open);
             _menu.Items.Add(delete);
@@ -976,7 +991,7 @@ namespace PennyPet
         private void OpenNoteDeferred()
         {
             if (_openNote == null || IsDisposed) return;
-            BeginInvoke((MethodInvoker)delegate { _openNote(_note); });
+            BeginInvoke((MethodInvoker)delegate { _openNote(_note.Id); });
         }
 
         private void LongPressTimerTick(object sender, EventArgs e)

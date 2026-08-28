@@ -808,9 +808,9 @@ namespace PennyPet
                 List<StickyNoteData> previewRight = tabNotes.GetRange(
                     previewLeftCount, tabNotes.Count - previewLeftCount);
                 using (StickyNoteTabsForm leftTabs = new StickyNoteTabsForm(
-                    StickyTabSide.Left, delegate(StickyNoteData note) { }))
+                    StickyTabSide.Left, delegate(string noteId) { }))
                 using (StickyNoteTabsForm rightTabs = new StickyNoteTabsForm(
-                    StickyTabSide.Right, delegate(StickyNoteData note) { }))
+                    StickyTabSide.Right, delegate(string noteId) { }))
                 using (PetArtPackage petArt = PetArtPackage.Load(192, 208))
                 {
                     Bitmap petFrame = petArt.GetFrame(0, 0);

@@ -123,3 +123,5 @@ Windows Coordinator 把 `Point`、`Size`、`Rectangle` 等平台对象转换为 
 未来新增业务功能应优先判断哪些规则可保持平台无关，并避免把网络、业务状态和持久化决策直接塞入 Windows 窗口类。具体 Feature/Application 架构由当时负责的程序员根据真实需求设计，本文件不预设类名、目录、API、缓存、状态机、DI、Repository interface 或空工程。
 
 只有出现真实需求和调用者时才建立相应边界，并用最小可运行测试保护。跨平台拆分定义的是技术边界，不替未来接手程序员决定产品流程。
+
+UI ownership 按 framework / message-loop 划分，而不是要求同一 feature 的所有窗口必须位于同一个线程。WPF `StickyNoteWindow` 可以继续由 `StickyUiHost` 的 WPF Dispatcher STA 承载；WinForms Side Tabs 可以留在 Pet/WinForms UI thread，只要它们只消费 typed snapshot，并只产生 typed user-action，不直接访问 hosted WPF 窗口。

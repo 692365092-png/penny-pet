@@ -334,6 +334,62 @@ namespace PennyPet.Tests
                 "Fallback must keep the note expected on the legacy path.");
         }
 
+        [TestMethod]
+        public void SideTabs_UseTypedSnapshotAndNoteIdActions()
+        {
+            string tabs = ReadSource(
+                "Features/StickyNotes/StickyNoteTabs.cs");
+            string snapshots = ReadSource(
+                "Features/StickyNotes/SideTabSnapshot.cs");
+
+            Assert.IsTrue(snapshots.Contains("NoteId") &&
+                snapshots.Contains("ColorArgb") &&
+                snapshots.Contains("Visible"),
+                "Side tabs must consume a pure value snapshot.");
+            Assert.IsTrue(tabs.Contains("Action<string> _openNote") &&
+                tabs.Contains("Action<string> _deleteNote") &&
+                tabs.Contains("Action<string, int> _reorderNote"),
+                "Side tab user actions must be typed note-id actions.");
+            Assert.IsTrue(tabs.Contains(
+                "SetNotes(IList<SideTabSnapshot>"),
+                "Side tabs must accept snapshot input.");
+        }
+
+        [TestMethod]
+        public void DockTypedProtocol_HasBoundsCommandAndEvents()
+        {
+            string commands = ReadSource(
+                "Features/StickyNotes/StickyUiCommand.cs");
+            string host = ReadSource("StickyUiHost.cs");
+
+            Assert.IsTrue(commands.Contains("SetBounds") &&
+                commands.Contains("StickyUiBounds") &&
+                commands.Contains("BoundsChanged"),
+                "Dock protocol must expose typed bounds command/event data.");
+            Assert.IsTrue(host.Contains("StickyUiCommandKind.SetBounds") &&
+                host.Contains("StickyUiEventKind.BoundsChanged"),
+                "StickyUiHost must execute and report typed bounds changes.");
+        }
+
+        [TestMethod]
+        public void DockTypedProtocol_ForwardsHeaderDragAndResizeEvents()
+        {
+            string commands = ReadSource(
+                "Features/StickyNotes/StickyUiCommand.cs");
+            string host = ReadSource("StickyUiHost.cs");
+
+            Assert.IsTrue(commands.Contains("HeaderDragStarted") &&
+                commands.Contains("HeaderDragMoved") &&
+                commands.Contains("HeaderDragCompleted") &&
+                commands.Contains("DockHorizontalResizing"),
+                "Dock protocol must expose header drag and resize event kinds.");
+            Assert.IsTrue(host.Contains("window.HeaderDragStarted +=") &&
+                host.Contains("window.HeaderDragMoved +=") &&
+                host.Contains("window.HeaderDragCompleted +=") &&
+                host.Contains("window.DockHorizontalResizing +="),
+                "StickyUiHost must forward dock drag/resize events.");
+        }
+
         private static string ReadSource(string relativePath)
         {
             string root = FindDesktopPetDirectory();

@@ -1486,9 +1486,9 @@ namespace PennyPet
             StickyNoteData boundaryNote = new StickyNoteData();
             StickyNoteData targetNote = new StickyNoteData();
             using (StickyNoteTabsForm left = new StickyNoteTabsForm(
-                StickyTabSide.Left, delegate(StickyNoteData note) { }))
+                StickyTabSide.Left, delegate(string noteId) { }))
             using (StickyNoteTabsForm right = new StickyNoteTabsForm(
-                StickyTabSide.Right, delegate(StickyNoteData note) { }))
+                StickyTabSide.Right, delegate(string noteId) { }))
             {
                 left.SetNotes(new List<StickyNoteData> { previewNote }, 0);
                 right.SetNotes(new List<StickyNoteData>
@@ -1537,9 +1537,9 @@ namespace PennyPet
             StickyNoteData reverseSource = new StickyNoteData();
             StickyNoteData reverseTail = new StickyNoteData();
             using (StickyNoteTabsForm left = new StickyNoteTabsForm(
-                StickyTabSide.Left, delegate(StickyNoteData note) { }))
+                StickyTabSide.Left, delegate(string noteId) { }))
             using (StickyNoteTabsForm right = new StickyNoteTabsForm(
-                StickyTabSide.Right, delegate(StickyNoteData note) { }))
+                StickyTabSide.Right, delegate(string noteId) { }))
             {
                 left.SetNotes(new List<StickyNoteData>
                     { reverseTop, reverseBoundary }, 0);
@@ -1579,8 +1579,8 @@ namespace PennyPet
                 ink.GetBrightness() < paper.GetBrightness();
             using (StickyNoteTabControl tab = new StickyNoteTabControl(
                 restoredNote, StickyTabSide.Left,
-                delegate(StickyNoteData note) { },
-                delegate(StickyNoteData note) { }))
+                delegate(string noteId) { },
+                delegate(string noteId) { }))
                 result.DeleteCommandOk = tab.HasDeleteCommand;
             result.ZOrderPolicyOk =
                 StickyNoteWindowRules.ShouldKeepSideTabsTopMost(false) &&
