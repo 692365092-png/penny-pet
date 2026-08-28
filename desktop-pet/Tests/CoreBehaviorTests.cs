@@ -35,6 +35,15 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void PetStartupRules_ReleaseLoadingOnlyWhenReady()
+        {
+            Assert.IsFalse(PetStartupRules.CanReleaseStartupLoading(false, false));
+            Assert.IsFalse(PetStartupRules.CanReleaseStartupLoading(true, false));
+            Assert.IsFalse(PetStartupRules.CanReleaseStartupLoading(false, true));
+            Assert.IsTrue(PetStartupRules.CanReleaseStartupLoading(true, true));
+        }
+
+        [TestMethod]
         public void StickyDockOperations_CoordinateGuardUsesClampedHeights()
         {
             Assert.IsTrue(

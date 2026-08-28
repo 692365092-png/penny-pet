@@ -117,7 +117,7 @@ namespace PennyPet
 
         private void TryRaiseStartupReady()
         {
-            if (_startupReadyRaised || !CanReleaseStartupLoading(
+            if (_startupReadyRaised || !PetStartupRules.CanReleaseStartupLoading(
                 _startupUiReady, _startupArtReady) ||
                 IsDisposed || _exiting) return;
             _startupDisplaySuppressed = false;
@@ -125,12 +125,6 @@ namespace PennyPet
             RenderCurrentFrame();
             EventHandler ready = StartupReady;
             if (ready != null) ready(this, EventArgs.Empty);
-        }
-
-        internal static bool CanReleaseStartupLoading(bool uiReady,
-            bool artReady)
-        {
-            return uiReady && artReady;
         }
 
         private Queue<StickyNoteData> BuildStartupRestoreQueue()

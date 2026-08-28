@@ -2017,10 +2017,10 @@ namespace PennyPet
                     "C:\\Program Files\\Penny pet.exe") ==
                     "\"C:\\Program Files\\Penny pet.exe\"";
             result.StartupLoadingReadinessGateOk =
-                !PetForm.CanReleaseStartupLoading(false, false) &&
-                !PetForm.CanReleaseStartupLoading(true, false) &&
-                !PetForm.CanReleaseStartupLoading(false, true) &&
-                PetForm.CanReleaseStartupLoading(true, true);
+                !PetStartupRules.CanReleaseStartupLoading(false, false) &&
+                !PetStartupRules.CanReleaseStartupLoading(true, false) &&
+                !PetStartupRules.CanReleaseStartupLoading(false, true) &&
+                PetStartupRules.CanReleaseStartupLoading(true, true);
             result.ScaleRangeOk =
                 PetForm.NormalizeScalePercent(47) == 50 &&
                 PetForm.NormalizeScalePercent(104) == 100 &&
