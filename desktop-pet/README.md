@@ -21,9 +21,11 @@ GitHub 开源发布版使用 `build.ps1` 生成可审查、可自动测试的未
 
 构建时会读取 `pet-art.json` 实际引用到的 GIF/逐帧 PNG，把完整源画布、透明通道、帧数和帧时长无损写入按动画懒加载的发布资源包。发布 EXE 不再内嵌、落盘或运行时解析 GIF；发给朋友时仍只需要发送 `Penny桌宠.exe`，不需要附带 `art` 文件夹。
 
+> **美术资源许可：** `art/` 中由泥泥NINII创作的原创美术资源，以及由其生成、打包或缓存的发布视觉资源，不属于软件源代码的 GPL-3.0-or-later 授权范围。版权与使用限制见根目录 [`ASSET_LICENSE.md`](../ASSET_LICENSE.md)。
+
 ## 美术接口
 
-接口入口：`..\art\pet-art.json`。完整填写说明：`..\art\美术接口说明.md`。
+接口入口：`..\art\pet-art.json`。清单中的 `states` 指向 GIF 或逐帧 PNG 目录，未绘制状态可使用 `alias` 复用现有状态。
 
 最简单的状态写法：
 
@@ -61,7 +63,7 @@ GitHub 开源发布版使用 `build.ps1` 生成可审查、可自动测试的未
 - `键盘活动动作之一.gif`、`键盘活动动作之二.gif`：检测到键盘活动时随机播放。
 - `提醒通知.gif`：提醒触发时播放。
 - `退出动作.gif`：退出程序时完整播放一次。
-- `icon.png`：Windows 应用图标源图，构建时使用转换后的 `assets/app.ico`。
+- `assets/app-icon-1024.png`：Windows 应用图标源图；构建项目使用其派生的 `assets/app.ico`。
 
 目前没有按文件名对应上的“向左移动”和“向右移动”GIF，这两个预留状态暂时复用悬停/拖拽动画。
 
@@ -107,7 +109,7 @@ GitHub 开源发布版使用 `build.ps1` 生成可审查、可自动测试的未
 - `PennyPet.Tests.csproj`：`dotnet test` 可发现的纯 Core 单元测试。
 - `PennyPet.SelfTests.csproj` + `SelfTestRunner.cs` / `PennySelfTests.cs`：资源、持久化、WinForms/WPF 与 Hook 的独立 Windows SelfTest、专项探针和预览；各功能已有独立检查方法，便利贴测试文件清理与三组 Dock 检查由统一入口协调，持久化/历史兼容、便利贴交互和 Dock/窗口几何报告字段也已分段组装，纯规则由标准 Tests 覆盖。
 
-更完整的开发入口、数据恢复说明、高风险兼容逻辑和新增在线 Feature 指南见项目根目录的 `DEVELOPER_GUIDE.md`；API、缓存、secret 和平台边界见 `ARCHITECTURE.md`。
+更完整的开发入口、数据恢复说明和高风险兼容逻辑见项目根目录的 `DEVELOPER_GUIDE.md`；当前平台边界与迁移地图见 `ARCHITECTURE.md`。
 
 用户数据保存在 `%LocalAppData%\PennyPet`。
 

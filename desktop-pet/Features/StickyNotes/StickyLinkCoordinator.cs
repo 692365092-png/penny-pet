@@ -35,7 +35,7 @@ namespace PennyPet
                     string text = new TextRange(paragraph.ContentStart,
                         paragraph.ContentEnd).Text ?? String.Empty;
                     foreach (StickyLinkMatch match in
-                        StickyNoteLinkDetector.Find(text))
+                        WindowsStickyNoteLinkDetector.Find(text))
                     {
                         TextPointer start = PointerAtCharacterOffset(
                             paragraph.ContentStart, paragraph.ContentEnd,
@@ -53,7 +53,7 @@ namespace PennyPet
                             Inline.TextDecorationsProperty,
                             W.TextDecorations.Underline);
                         _ordinaryLinkRanges.Add(new OrdinaryLinkRange(start,
-                            end, match.Target, match.IsLocalPath));
+                            end, match.Target, match.IsFileTarget));
                     }
                 }
                 _editor.ToolTip = _ordinaryLinkRanges.Count == 0 ? null :
@@ -174,7 +174,7 @@ namespace PennyPet
             if (link == null || String.IsNullOrWhiteSpace(link.Target)) return;
             Exception error;
             StickyLinkOpenResult result = StickyLinkService.Open(link.Target,
-                link.IsLocalPath,
+                link.IsFileTarget,
                 delegate(StickyLinkOpenRisk risk, string target)
                 {
                     return W.MessageBox.Show(this,
@@ -197,18 +197,18 @@ namespace PennyPet
         private sealed class OrdinaryLinkRange
         {
             internal OrdinaryLinkRange(TextPointer start, TextPointer end,
-                string target, bool localPath)
+                string target, bool fileTarget)
             {
                 Start = start;
                 End = end;
                 Target = target;
-                IsLocalPath = localPath;
+                IsFileTarget = fileTarget;
             }
 
             internal TextPointer Start { get; private set; }
             internal TextPointer End { get; private set; }
             internal string Target { get; private set; }
-            internal bool IsLocalPath { get; private set; }
+            internal bool IsFileTarget { get; private set; }
         }
 
     }

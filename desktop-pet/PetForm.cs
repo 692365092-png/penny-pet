@@ -255,7 +255,7 @@ namespace PennyPet
                 // default; the context-menu action remains the single place
                 // that enables the registry entry.
                 _settings.StartupPreferenceInitialized = true;
-                _settings.StartWithWindows = false;
+                _settings.StartAtLogin = false;
                 _settings.Save();
             }
             _settings.ScalePercent = _scalePercent;
@@ -311,7 +311,7 @@ namespace PennyPet
             menuCommands.ContactAuthor = ShowContactAuthor;
             menuCommands.Exit = BeginExitSequence;
             _petContextMenu = new PetContextMenu(_art.DisplayName,
-                _settings.StartWithWindows, _settings.ShowKeyOverlay,
+                _settings.StartAtLogin, _settings.ShowKeyOverlay,
                 _settings.SilentMode, menuCommands);
             ContextMenuStrip = _petContextMenu.Menu;
 

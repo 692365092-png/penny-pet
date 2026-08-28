@@ -11,7 +11,7 @@ namespace PennyPet
         public int X;
         public int Y;
         public bool StartupPreferenceInitialized;
-        public bool StartWithWindows;
+        public bool StartAtLogin;
         public int ScalePercent = 100;
         public bool ShowKeyOverlay;
         public bool KeyboardPrivacyNoticeAccepted;
@@ -46,7 +46,7 @@ namespace PennyPet
             X = source.X;
             Y = source.Y;
             StartupPreferenceInitialized = source.StartupPreferenceInitialized;
-            StartWithWindows = source.StartWithWindows;
+            StartAtLogin = source.StartAtLogin;
             ScalePercent = source.ScalePercent;
             ShowKeyOverlay = source.ShowKeyOverlay;
             KeyboardPrivacyNoticeAccepted =

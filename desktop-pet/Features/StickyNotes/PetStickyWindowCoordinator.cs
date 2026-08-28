@@ -133,14 +133,13 @@ namespace PennyPet
             Rectangle work = Screen.FromRectangle(Bounds).WorkingArea;
             float scale = PetScreenScale();
             Size size = StickyPhysicalSize(form, scale);
-            int offset = (_notes.GetAll().Count % 7) * 18;
-            int x = Left - size.Width - 12 - offset;
-            if (x < work.Left)
-                x = Math.Min(work.Right - size.Width, Right + 12 + offset);
-            int y = Top + offset;
-            x = Math.Max(work.Left, Math.Min(x, work.Right - size.Width));
-            y = Math.Max(work.Top, Math.Min(y, work.Bottom - size.Height));
-            form.ShowRestoredAtPhysicalBounds(new Rectangle(x, y,
+            DockPoint location = DockGeometry.CalculateCascadedWindowLocation(
+                new DockRect(work.Left, work.Top, work.Width, work.Height),
+                new DockRect(Left, Top, Width, Height),
+                new DockSize(size.Width, size.Height),
+                _notes.GetAll().Count, 0);
+            form.ShowRestoredAtPhysicalBounds(new Rectangle(location.X,
+                location.Y,
                 size.Width, size.Height));
             form.EnableWinFormsKeyboardInterop();
             form.BringToFront();
@@ -279,117 +278,28 @@ namespace PennyPet
         private static List<Rectangle> CalculateStickyRecoveryLayout(
             Rectangle work, IList<Size> componentSizes, float scale)
         {
+            List<DockSize> sizes = new List<DockSize>();
+            if (componentSizes != null)
+                foreach (Size size in componentSizes)
+                    sizes.Add(new DockSize(size.Width, size.Height));
+            List<DockRect> layout = DockGeometry.CalculateRecoveryLayout(
+                new DockRect(work.Left, work.Top, work.Width, work.Height),
+                sizes, scale);
             List<Rectangle> result = new List<Rectangle>();
-            int count = componentSizes == null ? 0 : componentSizes.Count;
-            for (int index = 0; index < count; index++)
-                result.Add(Rectangle.Empty);
-            if (count == 0) return result;
-
-            const int margin = 24;
-            const int gap = 18;
-            int scaledMargin = Math.Max(1, (int)Math.Round(margin * scale));
-            int scaledGap = Math.Max(1, (int)Math.Round(gap * scale));
-            int minimumWidth = Math.Max(1, (int)Math.Round(280 * scale));
-            int maximumWidth = Math.Max(minimumWidth,
-                (int)Math.Round(900 * scale));
-            int minimumHeight = Math.Max(1, (int)Math.Round(220 * scale));
-            int rowWidthLimit = Math.Max(minimumWidth,
-                work.Width - scaledMargin * 2);
-            List<List<int>> rows = new List<List<int>>();
-            List<int> normal = new List<int>();
-            List<int> oversized = new List<int>();
-            for (int index = 0; index < count; index++)
-            {
-                Size size = componentSizes[index];
-                // The height is the sum of every member in a docked group, so
-                // a four-note stack is treated as one long component.
-                bool isOversized = size.Width >= Math.Max(
-                    (int)Math.Round(520 * scale),
-                    work.Width * 45 / 100) || size.Height >= Math.Max(
-                    (int)Math.Round(520 * scale),
-                    work.Height * 50 / 100);
-                if (isOversized) oversized.Add(index);
-                else normal.Add(index);
-            }
-
-            List<int> row = new List<int>();
-            int rowWidth = 0;
-            foreach (int index in normal)
-            {
-                int width = Math.Max(minimumWidth, Math.Min(maximumWidth,
-                    componentSizes[index].Width));
-                int nextWidth = row.Count == 0 ? width :
-                    rowWidth + scaledGap + width;
-                if (row.Count > 0 && nextWidth > rowWidthLimit)
-                {
-                    rows.Add(row);
-                    row = new List<int>();
-                    rowWidth = 0;
-                }
-                row.Add(index);
-                rowWidth = rowWidth == 0 ? width :
-                    rowWidth + scaledGap + width;
-            }
-            if (row.Count > 0) rows.Add(row);
-            // Wide/long single notes and whole docked stacks get their own
-            // lower rows, horizontally centered below the ordinary notes.
-            foreach (int index in oversized)
-                rows.Add(new List<int>(new int[] { index }));
-
-            List<int> rowHeights = new List<int>();
-            int totalHeight = 0;
-            foreach (List<int> recoveryRow in rows)
-            {
-                int height = minimumHeight;
-                foreach (int index in recoveryRow)
-                    height = Math.Max(height, Math.Min(componentSizes[index].Height,
-                        Math.Max(minimumHeight, work.Height * 58 / 100)));
-                rowHeights.Add(height);
-                totalHeight += height;
-            }
-            totalHeight += Math.Max(0, rows.Count - 1) * scaledGap;
-            int y = work.Top + Math.Max(scaledMargin,
-                (work.Height - totalHeight) / 2);
-            for (int rowIndex = 0; rowIndex < rows.Count; rowIndex++)
-            {
-                List<int> recoveryRow = rows[rowIndex];
-                int width = 0;
-                foreach (int index in recoveryRow)
-                {
-                    if (width > 0) width += scaledGap;
-                    width += Math.Max(minimumWidth, Math.Min(maximumWidth,
-                        componentSizes[index].Width));
-                }
-                int x = work.Left + (work.Width - width) / 2;
-                foreach (int index in recoveryRow)
-                {
-                    int itemWidth = Math.Max(minimumWidth,
-                        Math.Min(maximumWidth,
-                        componentSizes[index].Width));
-                    result[index] = new Rectangle(x, y, itemWidth,
-                        componentSizes[index].Height);
-                    x += itemWidth + scaledGap;
-                }
-                y += rowHeights[rowIndex] + scaledGap;
-            }
+            foreach (DockRect rect in layout)
+                result.Add(new Rectangle(rect.Left, rect.Top, rect.Width,
+                    rect.Height));
             return result;
         }
 
         internal static Point CalculateStickyRecoveryAnchor(Rectangle work,
             Rectangle pet, Size window, int componentIndex)
         {
-            int preferredLeft = pet.Left - window.Width - 12;
-            if (preferredLeft < work.Left) preferredLeft = pet.Right + 12;
-            int targetLeft = Math.Max(work.Left,
-                Math.Min(preferredLeft, work.Right - window.Width));
-            int availableTop = Math.Max(1, work.Height - 36);
-            int relativeTop = pet.Top - work.Top +
-                Math.Max(0, componentIndex) * 34;
-            relativeTop %= availableTop;
-            if (relativeTop < 0) relativeTop += availableTop;
-            int targetTop = Math.Max(work.Top,
-                Math.Min(work.Top + relativeTop, work.Bottom - 32));
-            return new Point(targetLeft, targetTop);
+            DockPoint point = DockGeometry.CalculateRecoveryAnchor(
+                new DockRect(work.Left, work.Top, work.Width, work.Height),
+                new DockRect(pet.Left, pet.Top, pet.Width, pet.Height),
+                new DockSize(window.Width, window.Height), componentIndex);
+            return new Point(point.X, point.Y);
         }
 
         private void RollBackFailedStickyCreation(StickyNoteData note)
@@ -430,11 +340,12 @@ namespace PennyPet
                 return null;
             }
             Rectangle work = Screen.FromRectangle(Bounds).WorkingArea;
-            int offset = (_notes.GetAll().Count % 7) * 18;
-            int x = Left - 332 - offset;
-            if (x < work.Left) x = Math.Min(work.Right - 332, Right + 12 + offset);
-            int y = Math.Max(work.Top, Math.Min(Top + offset, work.Bottom - 312));
-            StickyNoteData note = _notes.Create(text, new Point(x, y));
+            DockPoint location = DockGeometry.CalculateCascadedWindowLocation(
+                new DockRect(work.Left, work.Top, work.Width, work.Height),
+                new DockRect(Left, Top, Width, Height),
+                new DockSize(320, 300), _notes.GetAll().Count, 12);
+            StickyNoteData note = _notes.Create(text,
+                new Point(location.X, location.Y));
             if (note == null)
             {
                 ShowBubble("便利贴创建失败，原有数据没有被修改。请查看诊断记录。");
@@ -700,16 +611,14 @@ namespace PennyPet
                 int reserveRight = _rightNoteTabs.Controls.Count > 0
                     ? StickyNoteTabsForm.TabWidth -
                         StickyNoteTabsForm.PetOverlapForWidth(Width) + 2 : 0;
-                int minimumLeft = work.Left + reserveLeft;
-                int maximumLeft = work.Right - reserveRight - Width;
-                if (maximumLeft >= minimumLeft)
+                DockPoint location = DockGeometry
+                    .CalculatePetLocationWithSideTabs(
+                        new DockRect(Left, Top, Width, Height),
+                        new DockRect(work.Left, work.Top, work.Width,
+                            work.Height), reserveLeft, reserveRight);
+                if (location.X != Left || location.Y != Top)
                 {
-                    int adjustedX = Math.Max(minimumLeft,
-                        Math.Min(Left, maximumLeft));
-                    int adjustedY = Math.Max(work.Top,
-                        Math.Min(Top, work.Bottom - Height));
-                    if (adjustedX != Left || adjustedY != Top)
-                        Location = new Point(adjustedX, adjustedY);
+                    Location = new Point(location.X, location.Y);
                 }
                 _leftNoteTabs.ShowNear(Bounds, work);
                 _rightNoteTabs.ShowNear(Bounds, work);

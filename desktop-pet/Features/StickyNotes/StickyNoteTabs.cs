@@ -159,21 +159,19 @@ namespace PennyPet
         public void ShowNear(Rectangle petBounds, Rectangle workArea)
         {
             if (Controls.Count == 0) return;
-            int visualOverlap = PetOverlapForWidth(petBounds.Width);
-            int x = _side == StickyTabSide.Left
-                ? petBounds.Left - TabWidth + visualOverlap
-                : petBounds.Right - visualOverlap;
-            if (_sourceHorizontallyOffset &&
-                _side == StickyTabSide.Right) x -= DragSourceVisualOffset;
-            x = Math.Max(workArea.Left + 2,
-                Math.Min(x, workArea.Right - Width - 2));
-            int y = petBounds.Top + (petBounds.Height - Height) / 2;
-            y = Math.Max(workArea.Top + 4,
-                Math.Min(y, workArea.Bottom - Height - 4));
-            Location = new Point(x, y);
+            DockPoint location = DockGeometry.CalculateSideTabLocation(
+                new DockRect(petBounds.Left, petBounds.Top, petBounds.Width,
+                    petBounds.Height),
+                new DockRect(workArea.Left, workArea.Top, workArea.Width,
+                    workArea.Height), new DockSize(Width, Height),
+                _side == StickyTabSide.Left,
+                PetOverlapForWidth(petBounds.Width),
+                _sourceHorizontallyOffset && _side == StickyTabSide.Right
+                    ? DragSourceVisualOffset : 0);
+            Location = new Point(location.X, location.Y);
             if (_sourceHorizontallyOffset)
                 _sourceNormalLeft = _side == StickyTabSide.Right
-                    ? x + DragSourceVisualOffset : x;
+                    ? location.X + DragSourceVisualOffset : location.X;
             if (!Visible) Show();
             BringToFront();
         }
@@ -183,35 +181,27 @@ namespace PennyPet
             // Idle art begins about 44 px inside its 192 px sprite cell. The
             // overlap scales with the pet so the visible tab-to-character gap
             // stays at half of the old fixed-20 px result at every zoom level.
-            int transparentMargin = (int)Math.Round(
-                Math.Max(0, petWidth) * 44.0 / 192.0);
-            return (20 + transparentMargin) / 2;
+            return DockGeometry.CalculateSideTabOverlap(petWidth);
         }
 
         internal static int ScreenCapacity(Rectangle workArea)
         {
-            return Math.Max(1, (workArea.Height - 16) / (TabHeight + TabGap));
+            return DockGeometry.CalculateSideTabScreenCapacity(workArea.Height,
+                TabHeight, TabGap);
         }
 
         internal static int PreferredLeftCapacity(int petHeight,
             Rectangle workArea)
         {
-            int fitScreen = ScreenCapacity(workArea);
-            int alongsidePet = Math.Max(4,
-                (Math.Max(TabHeight, petHeight) + TabGap) / (TabHeight + TabGap));
-            return Math.Min(fitScreen, alongsidePet);
+            return DockGeometry.CalculatePreferredSideTabCount(petHeight,
+                workArea.Height, TabHeight, TabGap);
         }
 
         internal static int CalculateLeftCount(int totalCount, int petHeight,
             Rectangle workArea)
         {
-            if (totalCount <= 0) return 0;
-            int screenCapacity = ScreenCapacity(workArea);
-            int preferred = PreferredLeftCapacity(petHeight, workArea);
-            int left = Math.Min(totalCount, preferred);
-            if (totalCount - left > screenCapacity)
-                left = Math.Min(screenCapacity, totalCount - screenCapacity);
-            return Math.Max(0, left);
+            return DockGeometry.CalculateLeftSideTabCount(totalCount,
+                petHeight, workArea.Height, TabHeight, TabGap);
         }
 
         private IEnumerable<Control> ControlsAsList()

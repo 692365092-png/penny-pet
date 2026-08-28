@@ -266,7 +266,7 @@ namespace PennyPet
                 {
                     if (item == null) continue;
                     if (builder.Length > 0) builder.Append('\n');
-                    builder.Append(item.Completed ? '1' : '0').Append('\t')
+                    builder.Append((int)item.State).Append('\t')
                         .Append(item.IsPinned ? '1' : '0').Append('\t')
                         .Append((item.Text ?? String.Empty).Replace("\r", " ")
                             .Replace("\n", " "));
@@ -298,8 +298,12 @@ namespace PennyPet
                 if (output.Count >= StickyNoteLimits.MaximumTodoItemsPerNote)
                     throw new InvalidDataException(
                         "Todo content exceeds safety limits.");
+                int stateValue;
+                if (!Int32.TryParse(line.Substring(0, separator),
+                    out stateValue) || stateValue < 0 || stateValue > 2)
+                    stateValue = 0;
                 output.Add(new StickyTodoItem(text,
-                    line.Substring(0, separator) == "1", isPinned));
+                    (StickyTodoState)stateValue, isPinned));
             }
         }
 

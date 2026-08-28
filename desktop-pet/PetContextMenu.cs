@@ -9,7 +9,7 @@ namespace PennyPet
     {
         private readonly PetContextMenuCommands _commands;
 
-        internal PetContextMenu(string displayName, bool startWithWindows,
+        internal PetContextMenu(string displayName, bool startAtLogin,
             bool showKeyOverlay, bool silentMode,
             PetContextMenuCommands commands)
         {
@@ -44,7 +44,7 @@ namespace PennyPet
             ScaleItem.Click += delegate { _commands.ShowScale(); };
             StartupItem = new ToolStripMenuItem("开机自动启动");
             StartupItem.CheckOnClick = true;
-            StartupItem.Checked = startWithWindows;
+            StartupItem.Checked = startAtLogin;
             StartupItem.Click += _commands.StartupClick;
             KeyboardItem = new ToolStripMenuItem("按键显示：正在检查");
             KeyboardItem.CheckOnClick = true;

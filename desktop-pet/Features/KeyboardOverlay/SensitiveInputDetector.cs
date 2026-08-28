@@ -87,9 +87,10 @@ namespace PennyPet
                 // Failure to inspect one fallback must not publish input.
             }
             if (!snapshot.StillMatchesCurrentTarget()) return true;
+            bool sensitiveTargetDetected = automationPassword ||
+                standardPassword || knownCredentialWindow;
             return PetKeyboardPrivacyPolicy.ShouldSuppressCapturedInput(
-                automationPassword, standardPassword,
-                knownCredentialWindow,
+                sensitiveTargetDetected,
                 automationInspected || nativeInspected);
         }
 

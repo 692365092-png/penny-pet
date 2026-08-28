@@ -65,23 +65,11 @@ namespace PennyPet
         internal static System.Drawing.Point CalculateAppearanceDialogLocation(
             Rectangle note, Size dialog, Rectangle work)
         {
-            const int gap = 8;
-            int x = note.Left + (note.Width - dialog.Width) / 2;
-            x = Math.Max(work.Left, Math.Min(x, work.Right - dialog.Width));
-            int below = note.Bottom + gap;
-            int above = note.Top - dialog.Height - gap;
-            int y;
-            if (below + dialog.Height <= work.Bottom) y = below;
-            else if (above >= work.Top) y = above;
-            else
-            {
-                int belowSpace = work.Bottom - note.Bottom;
-                int aboveSpace = note.Top - work.Top;
-                y = belowSpace >= aboveSpace
-                    ? work.Bottom - dialog.Height : work.Top;
-            }
-            y = Math.Max(work.Top, Math.Min(y, work.Bottom - dialog.Height));
-            return new System.Drawing.Point(x, y);
+            DockPoint point = DockGeometry.CalculatePopupLocation(
+                new DockRect(note.Left, note.Top, note.Width, note.Height),
+                new DockSize(dialog.Width, dialog.Height),
+                new DockRect(work.Left, work.Top, work.Width, work.Height), 8);
+            return new System.Drawing.Point(point.X, point.Y);
         }
 
         private void CloseAppearanceDialogAsCancel()

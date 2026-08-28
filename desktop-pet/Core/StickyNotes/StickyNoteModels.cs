@@ -28,6 +28,13 @@ namespace PennyPet
         public const long MaximumDataFileBytes = 32L * 1024L * 1024L;
     }
 
+    internal enum StickyTodoState
+    {
+        Pending = 0,
+        Completed = 1,
+        InProgress = 2
+    }
+
     internal sealed class StickyTodoItem
     {
         public StickyTodoItem(string text, bool completed)
@@ -36,15 +43,29 @@ namespace PennyPet
         }
 
         public StickyTodoItem(string text, bool completed, bool isPinned)
+            : this(text, completed ? StickyTodoState.Completed :
+                StickyTodoState.Pending, isPinned)
+        {
+        }
+
+        public StickyTodoItem(string text, StickyTodoState state,
+            bool isPinned = false)
         {
             Text = ShortItemText.NormalizeAndTruncate(text);
-            Completed = completed;
+            State = state;
             IsPinned = isPinned;
         }
 
         public string Text;
-        public bool Completed;
+        public StickyTodoState State;
         public bool IsPinned;
+
+        public bool Completed
+        {
+            get { return State == StickyTodoState.Completed; }
+            set { State = value ? StickyTodoState.Completed :
+                StickyTodoState.Pending; }
+        }
     }
 
     internal sealed class StickyScheduleItem

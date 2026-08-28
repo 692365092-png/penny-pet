@@ -47,7 +47,7 @@ namespace PennyPet
             {
                 try
                 {
-                    if (!StartupRegistration.Apply(_settings.StartWithWindows,
+                    if (!StartupRegistration.Apply(_settings.StartAtLogin,
                         out string startupError))
                     {
                         ApplicationDiagnostics.ReportNonFatal(
@@ -110,7 +110,7 @@ namespace PennyPet
 
         private void TryRaiseStartupReady()
         {
-            if (_startupReadyRaised || !CanReleaseStartupLoading(
+            if (_startupReadyRaised || !StartupRestorePlanner.CanReleaseLoading(
                 _startupUiReady, _startupArtReady) ||
                 IsDisposed || _exiting) return;
             _startupDisplaySuppressed = false;
@@ -120,27 +120,11 @@ namespace PennyPet
             if (ready != null) ready(this, EventArgs.Empty);
         }
 
-        internal static bool CanReleaseStartupLoading(bool uiReady,
-            bool artReady)
-        {
-            return uiReady && artReady;
-        }
-
         private Queue<StickyNoteData> BuildStartupRestoreQueue()
         {
-            Queue<StickyNoteData> result = new Queue<StickyNoteData>();
-            HashSet<string> restored = new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase);
-            foreach (StickyNoteData note in _notes.GetAll())
-            {
-                if (!note.Visible || restored.Contains(note.Id)) continue;
-                List<StickyNoteData> group =
-                    BuildDockChainOrderIncludingHidden(note);
-                foreach (StickyNoteData member in group)
-                    restored.Add(member.Id);
-                result.Enqueue(note);
-            }
-            return result;
+            return new Queue<StickyNoteData>(
+                StartupRestorePlanner.BuildVisibleRestoreSeeds(
+                    _notes.GetAll()));
         }
 
         private void StopDeferredStartupWork()

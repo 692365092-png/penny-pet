@@ -181,5 +181,13 @@ namespace PennyPet
         {
             return componentCount > 1 && !String.IsNullOrEmpty(parentId);
         }
+
+        internal static void SetGroupAlwaysOnTop(
+            IList<StickyNoteData> notes, bool alwaysOnTop)
+        {
+            if (notes == null) return;
+            foreach (StickyNoteData note in notes)
+                if (note != null) note.AlwaysOnTop = alwaysOnTop;
+        }
     }
 }

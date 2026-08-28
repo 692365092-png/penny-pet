@@ -178,7 +178,7 @@ namespace PennyPet
                 restored.GetItems()[4].Text == "reminder-4";
             string persistenceTestPath = outputPath + ".settings-test.ini";
             memorySettings.StartupPreferenceInitialized = true;
-            memorySettings.StartWithWindows = false;
+            memorySettings.StartAtLogin = false;
             memorySettings.ScalePercent = 170;
             memorySettings.ShowKeyOverlay = false;
             memorySettings.KeyboardPrivacyNoticeAccepted = true;
@@ -194,7 +194,7 @@ namespace PennyPet
                 diskSettings.Reminders[0].FontSizeTwips == 480 &&
                 diskSettings.Reminders[0].PreAlertEnabled &&
                 diskSettings.StartupPreferenceInitialized &&
-                !diskSettings.StartWithWindows &&
+                !diskSettings.StartAtLogin &&
                 diskSettings.ScalePercent == 170 &&
                 !diskSettings.ShowKeyOverlay &&
                 diskSettings.KeyboardPrivacyNoticeAccepted &&
@@ -1083,6 +1083,7 @@ namespace PennyPet
             internal bool CaretTypingFormatSwitchOk;
             internal bool SingleNativeImeCommitOk;
             internal bool UnifiedContextMenusOk;
+            internal bool WindowsLinkPolicyOk;
         }
 
         private static StickyEditorCheckResult RunStickyEditorChecks()
@@ -1157,6 +1158,8 @@ namespace PennyPet
                 result.UnifiedContextMenusOk =
                     firstFormatNote.ExerciseUnifiedNoteContextMenusForTest();
             }
+            result.WindowsLinkPolicyOk =
+                StickyLinkService.WindowsPolicyIsSafeForTest();
             return result;
         }
 
@@ -1218,7 +1221,7 @@ namespace PennyPet
             StickyTodoWindowCheckResult result =
                 new StickyTodoWindowCheckResult();
             result.GroupingOk = note.VisibleTodoItemCount == 2 &&
-                note.TodoGroupCount == 2;
+                note.TodoGroupCount == 3;
             bool completedMarker;
             string cleaned = StickyNoteWindow.ParseTodoTextLine(
                 "[ ][ ][x] 最推荐的修改方法", out completedMarker);
@@ -1724,9 +1727,9 @@ namespace PennyPet
                 !PetKeyboardPrivacyPolicy.RequiresFirstUseNotice(true, true) &&
                 PetKeyboardPrivacyPolicy.ShouldDisableUnacknowledgedLegacyOptIn(
                     true, false) &&
-                PetKeyboardPrivacyPolicy.FirstUseNotice.IndexOf("杀毒软件",
+                PetForm.WindowsKeyboardFirstUseNotice.IndexOf("杀毒软件",
                     StringComparison.Ordinal) >= 0 &&
-                PetKeyboardPrivacyPolicy.FirstUseNotice.IndexOf("误报",
+                PetForm.WindowsKeyboardFirstUseNotice.IndexOf("误报",
                     StringComparison.Ordinal) >= 0;
             result.TextScaleChoicesOk =
                 KeyboardOverlayForm.NormalizeTextScalePercent(55) == 60 &&
@@ -2003,15 +2006,15 @@ namespace PennyPet
             StickyNoteData restoredNote)
         {
             WindowShellCheckResult result = new WindowShellCheckResult();
-            result.StartupDefaultOk = !new PetSettings().StartWithWindows &&
+            result.StartupDefaultOk = !new PetSettings().StartAtLogin &&
                 StartupRegistration.BuildCommand(
                     "C:\\Program Files\\Penny pet.exe") ==
                     "\"C:\\Program Files\\Penny pet.exe\"";
             result.StartupLoadingReadinessGateOk =
-                !PetForm.CanReleaseStartupLoading(false, false) &&
-                !PetForm.CanReleaseStartupLoading(true, false) &&
-                !PetForm.CanReleaseStartupLoading(false, true) &&
-                PetForm.CanReleaseStartupLoading(true, true);
+                !StartupRestorePlanner.CanReleaseLoading(false, false) &&
+                !StartupRestorePlanner.CanReleaseLoading(true, false) &&
+                !StartupRestorePlanner.CanReleaseLoading(false, true) &&
+                StartupRestorePlanner.CanReleaseLoading(true, true);
             result.ScaleRangeOk =
                 PetForm.NormalizeScalePercent(47) == 50 &&
                 PetForm.NormalizeScalePercent(104) == 100 &&
@@ -2269,6 +2272,8 @@ namespace PennyPet
                     editorChecks.SingleNativeImeCommitOk) + ",\n" +
                 "  \"sticky_editor_and_window_context_actions_ok\": " + Bool(
                     editorChecks.UnifiedContextMenusOk) + ",\n" +
+                "  \"sticky_windows_link_policy_ok\": " + Bool(
+                    editorChecks.WindowsLinkPolicyOk) + ",\n" +
                 "  \"sticky_note_types_never_convert_ok\": " + Bool(
                     shellChecks.TodoChecks.FixedTypeActionsOk) + ",\n" +
                 "  \"sticky_font_size_parsing_ok\": " + Bool(

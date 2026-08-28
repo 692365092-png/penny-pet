@@ -425,6 +425,12 @@ namespace PennyPet
             _saveTimer.Tick += delegate
             {
                 _saveTimer.Stop();
+                if (ShouldDeferAutoSave(_editorTextCompositionActive,
+                    _lastInputUtc, DateTime.UtcNow))
+                {
+                    _saveTimer.Start();
+                    return;
+                }
                 PersistNow();
             };
             _linkRefreshTimer = new DispatcherTimer(
@@ -654,7 +660,7 @@ namespace PennyPet
             }
         }
         internal int VisibleTodoItemCount { get { return Data.TodoItems.Count; } }
-        internal int TodoGroupCount { get { return 2; } }
+        internal int TodoGroupCount { get { return 3; } }
         internal int ReminderBannerLineCount { get { return _reminderList.Items.Count; } }
         internal int ReminderBannerRebuildCountForTest
         {
@@ -754,7 +760,7 @@ namespace PennyPet
             EnsureOnScreen();
             if (!IsVisible) Show();
             base.WindowState = W.WindowState.Normal;
-            Topmost = Data.AlwaysOnTop;
+            ApplyTopMostWindowState(Data.AlwaysOnTop);
             Activate();
             int requestedBeforeInteraction = _userInteractionGeneration;
             Dispatcher.BeginInvoke(DispatcherPriority.Input,
@@ -793,7 +799,7 @@ namespace PennyPet
             EnsureOnScreen();
             if (!IsVisible) Show();
             base.WindowState = W.WindowState.Normal;
-            Topmost = Data.AlwaysOnTop;
+            ApplyTopMostWindowState(Data.AlwaysOnTop);
         }
 
         internal bool HasCompletedFirstRender
@@ -817,7 +823,7 @@ namespace PennyPet
             Data.Height = bounds.Height;
             if (!IsVisible) Show();
             base.WindowState = W.WindowState.Normal;
-            Topmost = Data.AlwaysOnTop;
+            ApplyTopMostWindowState(Data.AlwaysOnTop);
         }
 
         // Screen.WorkingArea and the WinForms pet use physical pixels, while
@@ -831,7 +837,7 @@ namespace PennyPet
             Data.Visible = true;
             if (!IsVisible) Show();
             base.WindowState = W.WindowState.Normal;
-            Topmost = Data.AlwaysOnTop;
+            ApplyTopMostWindowState(Data.AlwaysOnTop);
             IntPtr hwnd = Handle;
             if (hwnd != IntPtr.Zero)
             {
@@ -1170,8 +1176,8 @@ namespace PennyPet
         private void ApplyColors()
         {
             Color paper = Color.FromArgb(Data.ColorArgb);
-            Color header = WF.ControlPaint.Dark(paper, 0.08F);
-            Color toolbar = WF.ControlPaint.Light(paper, 0.04F);
+            Color header = WF.ControlPaint.Light(paper, 0.18F);
+            Color toolbar = WF.ControlPaint.Light(paper, 0.08F);
             Color input = WF.ControlPaint.LightLight(paper);
             Color reminder = WF.ControlPaint.Light(paper, 0.12F);
             Color border = WF.ControlPaint.Dark(paper, 0.15F);
@@ -1368,14 +1374,14 @@ namespace PennyPet
 
         private void ToggleTopMost()
         {
-            ApplyGroupTopMost(!Data.AlwaysOnTop);
+            Data.AlwaysOnTop = !Data.AlwaysOnTop;
+            ApplyTopMostWindowState(Data.AlwaysOnTop);
             Raise(PinStateChanged);
             PersistNow();
         }
 
-        internal void ApplyGroupTopMost(bool alwaysOnTop)
+        internal void ApplyTopMostWindowState(bool alwaysOnTop)
         {
-            Data.AlwaysOnTop = alwaysOnTop;
             Topmost = alwaysOnTop;
             _pinButton.Content = PinActionText(alwaysOnTop);
         }
@@ -2118,12 +2124,18 @@ namespace PennyPet
                 if (todoRow != null) break;
             }
             bool todoMenuOk = todoRow != null && todoRow.ContextMenu != null &&
-                todoRow.ContextMenu.Items.Count == 3 &&
+                todoRow.ContextMenu.Items.Count == 6 &&
                 Convert.ToString(((WC.MenuItem)todoRow.ContextMenu.Items[0]).Header)
                     == "编辑待办" &&
                 Convert.ToString(((WC.MenuItem)todoRow.ContextMenu.Items[1]).Header)
-                    == "删除待办" &&
+                    == "设为未完成" &&
                 Convert.ToString(((WC.MenuItem)todoRow.ContextMenu.Items[2]).Header)
+                    == "设为进行中" &&
+                Convert.ToString(((WC.MenuItem)todoRow.ContextMenu.Items[3]).Header)
+                    == "设为已完成" &&
+                Convert.ToString(((WC.MenuItem)todoRow.ContextMenu.Items[4]).Header)
+                    == "删除待办" &&
+                Convert.ToString(((WC.MenuItem)todoRow.ContextMenu.Items[5]).Header)
                     == "置顶待办";
             WC.Grid todoGrid = todoRow == null ? null : todoRow.Child as WC.Grid;
             WC.CheckBox todoCheck = todoGrid == null ? null :
@@ -2134,7 +2146,13 @@ namespace PennyPet
                 todoEditor != null && Object.ReferenceEquals(
                     todoCheck.ContextMenu, todoRow.ContextMenu) &&
                 Object.ReferenceEquals(todoEditor.ContextMenu,
-                    todoRow.ContextMenu);
+                    todoRow.ContextMenu) &&
+                NextTodoState(StickyTodoState.Pending) ==
+                    StickyTodoState.InProgress &&
+                NextTodoState(StickyTodoState.InProgress) ==
+                    StickyTodoState.Completed &&
+                NextTodoState(StickyTodoState.Completed) ==
+                    StickyTodoState.Pending;
             UpdateReminderBanner(new ReminderItem[] {
                 new ReminderItem(DateTime.UtcNow.AddMinutes(5), "右键提醒测试") });
             WC.ListBoxItem reminderRow = _reminderList.Items.Count == 0
@@ -2213,10 +2231,12 @@ namespace PennyPet
 
         internal bool ExerciseGroupTopMostForTest()
         {
-            ApplyGroupTopMost(false);
+            Data.AlwaysOnTop = false;
+            ApplyTopMostWindowState(false);
             bool unpinned = !Data.AlwaysOnTop && !Topmost &&
                 CurrentPinActionText == "置顶";
-            ApplyGroupTopMost(true);
+            Data.AlwaysOnTop = true;
+            ApplyTopMostWindowState(true);
             bool pinned = Data.AlwaysOnTop && Topmost &&
                 CurrentPinActionText == "取消置顶";
             return unpinned && pinned;

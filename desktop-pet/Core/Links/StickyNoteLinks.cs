@@ -7,53 +7,43 @@ namespace PennyPet
     internal sealed class StickyLinkMatch
     {
         internal StickyLinkMatch(int start, int length, string text,
-            string target, bool localPath)
+            string target, bool fileTarget)
         {
             Start = start;
             Length = length;
             Text = text;
             Target = target;
-            IsLocalPath = localPath;
+            IsFileTarget = fileTarget;
         }
 
         internal int Start { get; private set; }
         internal int Length { get; private set; }
         internal string Text { get; private set; }
         internal string Target { get; private set; }
-        internal bool IsLocalPath { get; private set; }
+        internal bool IsFileTarget { get; private set; }
     }
 
-    // Pure text detection shared by the desktop adapter and standard tests.
-    // It deliberately does not use Path.IsPathRooted because that method
-    // interprets Windows paths differently on non-Windows hosts.
+    // Shared HTTP(S) text detection. Each platform adds its own file-target
+    // syntax before presenting the combined matches.
     internal static class StickyNoteLinkDetector
     {
         private static readonly Regex WebAddress = new Regex(
             @"(?i)(?:^|(?<=[\s\(\[\{（【《]))(?<value>(?:https?://|www\.)[^\s<>\""']+)",
             RegexOptions.Compiled | RegexOptions.Multiline);
 
-        private static readonly Regex LocalPath = new Regex(
-            @"(?im)(?:^|(?<=[\s\(\[\{（【《]))(?<value>(?:[a-z]:\\|\\\\)[^\r\n]+)",
-            RegexOptions.Compiled);
-
         private const string TrailingPunctuation =
             " \t.,;:!?，。；：！？、)]}）】》>\"'";
 
-        internal static IList<StickyLinkMatch> Find(string text)
+        internal static IList<StickyLinkMatch> FindWebAddresses(string text)
         {
             List<StickyLinkMatch> result = new List<StickyLinkMatch>();
             if (String.IsNullOrEmpty(text)) return result;
-            AddMatches(result, text, WebAddress, false);
-            AddMatches(result, text, LocalPath, true);
-            result.Sort(delegate(StickyLinkMatch left, StickyLinkMatch right)
-            {
-                return left.Start.CompareTo(right.Start);
-            });
+            AddMatches(result, text, WebAddress);
             return result;
         }
 
         private static void AddMatches(List<StickyLinkMatch> result,
-            string text, Regex expression, bool localPath)
+            string text, Regex expression)
         {
             foreach (Match match in expression.Matches(text))
             {
@@ -65,25 +55,16 @@ namespace PennyPet
                 if (length <= 0) continue;
                 string value = valueGroup.Value.Substring(0, length);
                 string target;
-                if (!TryNormalizeTarget(value, localPath, out target)) continue;
-                if (Overlaps(result, valueGroup.Index, length)) continue;
+                if (!TryNormalizeWebTarget(value, out target)) continue;
                 result.Add(new StickyLinkMatch(valueGroup.Index, length,
-                    value, target, localPath));
+                    value, target, false));
             }
         }
 
-        private static bool TryNormalizeTarget(string value, bool localPath,
+        private static bool TryNormalizeWebTarget(string value,
             out string target)
         {
             target = String.Empty;
-            if (localPath)
-            {
-                string candidate = value.Trim().Trim('"');
-                if (!IsWindowsRootedPath(candidate)) return false;
-                target = candidate;
-                return true;
-            }
-
             string candidateUrl = value.StartsWith("www.",
                 StringComparison.OrdinalIgnoreCase) ? "https://" + value : value;
             Uri uri;
@@ -93,29 +74,6 @@ namespace PennyPet
                 return false;
             target = uri.AbsoluteUri;
             return true;
-        }
-
-        private static bool IsWindowsRootedPath(string value)
-        {
-            if (String.IsNullOrEmpty(value)) return false;
-            if (value.StartsWith("\\\\", StringComparison.Ordinal))
-                return true;
-            return value.Length >= 3 &&
-                ((value[0] >= 'A' && value[0] <= 'Z') ||
-                 (value[0] >= 'a' && value[0] <= 'z')) &&
-                value[1] == ':' && value[2] == '\\';
-        }
-
-        private static bool Overlaps(List<StickyLinkMatch> matches,
-            int start, int length)
-        {
-            int end = start + length;
-            foreach (StickyLinkMatch match in matches)
-            {
-                int matchEnd = match.Start + match.Length;
-                if (start < matchEnd && end > match.Start) return true;
-            }
-            return false;
         }
     }
 }

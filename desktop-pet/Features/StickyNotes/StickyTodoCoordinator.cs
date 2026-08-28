@@ -69,7 +69,7 @@ namespace PennyPet
             List<StickyTodoItem> peers = new List<StickyTodoItem>();
             foreach (StickyTodoItem item in Data.TodoItems)
             {
-                if (item.Completed == _selectedTodo.Completed &&
+                if (item.State == _selectedTodo.State &&
                     item.IsPinned == _selectedTodo.IsPinned)
                     peers.Add(item);
             }
@@ -93,8 +93,9 @@ namespace PennyPet
             try
             {
                 _todoRows.Children.Clear();
-                AddTodoSection("未完成", false);
-                AddTodoSection("已完成", true);
+                AddTodoSection("未完成", StickyTodoState.Pending);
+                AddTodoSection("进行中", StickyTodoState.InProgress);
+                AddTodoSection("已完成", StickyTodoState.Completed);
                 int completed = 0;
                 foreach (StickyTodoItem item in Data.TodoItems)
                     if (item.Completed) completed++;
@@ -104,7 +105,7 @@ namespace PennyPet
             RefreshTodoRowColors();
         }
 
-        private void AddTodoSection(string title, bool completed)
+        private void AddTodoSection(string title, StickyTodoState state)
         {
             WC.TextBlock heading = new WC.TextBlock();
             heading.Text = title;
@@ -122,7 +123,7 @@ namespace PennyPet
                 bool pinned = pass == 0;
                 foreach (StickyTodoItem item in Data.TodoItems)
                 {
-                    if (item.Completed != completed ||
+                    if (item.State != state ||
                         item.IsPinned != pinned) continue;
                     _todoRows.Children.Add(CreateTodoRow(item));
                 }
@@ -142,24 +143,15 @@ namespace PennyPet
             grid.ColumnDefinitions.Add(Column(new W.GridLength(1,
                 W.GridUnitType.Star)));
             WC.CheckBox check = new WC.CheckBox();
-            check.IsChecked = item.Completed;
+            check.IsThreeState = true;
+            check.IsChecked = item.State == StickyTodoState.InProgress
+                ? (bool?)null : item.State == StickyTodoState.Completed;
             check.VerticalAlignment = W.VerticalAlignment.Center;
             check.Margin = new W.Thickness(0, 0, 6, 0);
-            check.Checked += delegate
+            check.Click += delegate
             {
                 if (_rebuildingTodos) return;
-                item.Completed = true;
-                _selectedTodo = item;
-                RefreshTodoList();
-                PersistNow();
-            };
-            check.Unchecked += delegate
-            {
-                if (_rebuildingTodos) return;
-                item.Completed = false;
-                _selectedTodo = item;
-                RefreshTodoList();
-                PersistNow();
+                SetTodoState(item, NextTodoState(item.State));
             };
             WC.TextBox editor = PlainTextBox();
             editor.Tag = item;
@@ -188,7 +180,7 @@ namespace PennyPet
                     BeginTodoInlineEdit(editor, editor.Text.Length);
                 });
             // TextBox and CheckBox otherwise supply/inherit their own menu and
-            // can bypass the row-specific three commands.
+            // can bypass the row-specific commands.
             editor.ContextMenu = border.ContextMenu;
             check.ContextMenu = border.ContextMenu;
             border.PreviewMouseRightButtonDown += delegate
@@ -248,10 +240,33 @@ namespace PennyPet
                 RefreshTodoRowColors();
                 if (beginEdit != null) beginEdit();
             });
+            AddMenuItem(menu, "设为未完成", delegate
+                { SetTodoState(item, StickyTodoState.Pending); });
+            AddMenuItem(menu, "设为进行中", delegate
+                { SetTodoState(item, StickyTodoState.InProgress); });
+            AddMenuItem(menu, "设为已完成", delegate
+                { SetTodoState(item, StickyTodoState.Completed); });
             AddMenuItem(menu, "删除待办", delegate { DeleteTodo(item); });
             AddMenuItem(menu, item.IsPinned ? "取消置顶待办" : "置顶待办",
                 delegate { PinTodo(item); });
             return menu;
+        }
+
+        private void SetTodoState(StickyTodoItem item, StickyTodoState state)
+        {
+            if (item == null) return;
+            item.State = state;
+            _selectedTodo = item;
+            RefreshTodoList();
+            PersistNow();
+        }
+
+        internal static StickyTodoState NextTodoState(StickyTodoState state)
+        {
+            if (state == StickyTodoState.Pending)
+                return StickyTodoState.InProgress;
+            return state == StickyTodoState.InProgress
+                ? StickyTodoState.Completed : StickyTodoState.Pending;
         }
 
         private void DeleteTodo(StickyTodoItem item)
@@ -296,13 +311,13 @@ namespace PennyPet
             {
                 for (int index = 0; index < items.Count; index++)
                     if (items[index] != null &&
-                        items[index].Completed == inserted.Completed)
+                        items[index].State == inserted.State)
                         return index;
                 return items.Count;
             }
             for (int index = 0; index < items.Count; index++)
                 if (items[index] != null &&
-                    items[index].Completed == inserted.Completed &&
+                    items[index].State == inserted.State &&
                     !items[index].IsPinned) return index;
             return items.Count;
         }

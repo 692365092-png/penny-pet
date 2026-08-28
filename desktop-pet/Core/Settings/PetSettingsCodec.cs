@@ -55,7 +55,9 @@ namespace PennyPet
                 }
                 else if (key == "StartWithWindows")
                 {
-                    settings.StartWithWindows = value != "0";
+                    // Preserve the v1 key on disk; the shared setting means
+                    // start when the user logs in on the current platform.
+                    settings.StartAtLogin = value != "0";
                     recognized = true;
                 }
                 else if (key == "ScalePercent" &&
@@ -157,7 +159,7 @@ namespace PennyPet
             lines.Add("StartupPreferenceInitialized=" +
                 (settings.StartupPreferenceInitialized ? "1" : "0"));
             lines.Add("StartWithWindows=" +
-                (settings.StartWithWindows ? "1" : "0"));
+                (settings.StartAtLogin ? "1" : "0"));
             lines.Add("ScalePercent=" + PetSettingRules
                 .NormalizePetScalePercent(settings.ScalePercent));
             lines.Add("ShowKeyOverlay=" +

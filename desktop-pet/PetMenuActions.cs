@@ -8,6 +8,15 @@ namespace PennyPet
     // Owns user commands invoked by the pet context menu and tray.
     internal sealed partial class PetForm
     {
+        internal const string WindowsKeyboardFirstUseNotice =
+            "按键显示会使用 Windows 全局键盘活动监听，在桌宠旁显示按键名称。\n\n" +
+            "Penny 不会保存或上传按键内容，并会尽力识别密码框和敏感输入。" +
+            "但第三方、自绘、跨权限或远程窗口可能无法被完全识别。\n\n" +
+            "由于此功能会使用 Windows 全局键盘监听，部分杀毒软件或安全软件" +
+            "可能会将它误报为风险行为或进行拦截。\n\n" +
+            "处理密码、验证码、支付或其他高敏感信息时，请先关闭按键显示。" +
+            "是否确认开启？";
+
         private void RefreshMenuText()
         {
             _cancelItem.DropDownItems.Clear();
@@ -115,7 +124,7 @@ namespace PennyPet
                 _settings.KeyboardPrivacyNoticeAccepted))
             {
                 DialogResult notice = MessageBox.Show(this,
-                    PetKeyboardPrivacyPolicy.FirstUseNotice,
+                    WindowsKeyboardFirstUseNotice,
                     "开启按键显示前请确认",
                     MessageBoxButtons.OKCancel, MessageBoxIcon.Warning,
                     MessageBoxDefaultButton.Button2);
@@ -188,7 +197,7 @@ namespace PennyPet
                 return;
             }
             _settings.StartupPreferenceInitialized = true;
-            _settings.StartWithWindows = desired;
+            _settings.StartAtLogin = desired;
             _settings.Save();
             ShowBubble(desired ? "开机自动启动已开启。" : "开机自动启动已关闭。");
         }

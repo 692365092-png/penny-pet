@@ -1,5 +1,8 @@
 Penny pet
-Copyright (C) 2026 NiNii and contributors
+Copyright (C) 2026 泥泥NINII and contributors
+
+Software source code license:
+GNU General Public License v3.0 or later (GPL-3.0-or-later)
 
 This program is free software: you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the Free
@@ -13,6 +16,12 @@ FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 The complete license text is available at:
 https://www.gnu.org/licenses/gpl-3.0.txt
 
+License scope notice:
+Except where otherwise stated, GPL-3.0-or-later applies to the software source
+code in this repository. Artwork and visual assets created by 泥泥NINII are
+not licensed under GPL-3.0-or-later and remain subject to the separate terms
+in ASSET_LICENSE.md. The GPL license for the software source code must not be
+interpreted as granting any license to those artwork assets.
+
 The Penny pet name, character identity, and author attribution are not granted
 as trademarks by this software license.
-
