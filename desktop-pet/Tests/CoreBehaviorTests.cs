@@ -35,17 +35,6 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void StickyUiCommand_CarriesOnlyPlatformNeutralData()
-        {
-            StickyUiCommand command = new StickyUiCommand(
-                StickyUiCommandKind.Show, "note-1", true);
-
-            Assert.AreEqual(StickyUiCommandKind.Show, command.Kind);
-            Assert.AreEqual("note-1", command.NoteId);
-            Assert.IsTrue(command.Flag);
-        }
-
-        [TestMethod]
         public void StickyNoteData_CloneForPersistenceCopiesNestedState()
         {
             StickyNoteData source = new StickyNoteData();

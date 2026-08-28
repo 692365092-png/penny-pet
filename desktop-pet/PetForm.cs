@@ -400,7 +400,8 @@ namespace PennyPet
                 if (!noteWindow.IsDisposed) noteWindow.CloseForApplicationExit();
             }
             _noteWindows.Clear();
-            _stickyUiHost.Shutdown();
+            _stickyUiHost.BeginShutdown();
+            _stickyUiHost.WaitForExit(5000);
             _notes.Save();
             _notes.SaveFailed -= PersistenceSaveFailed;
             _settings.SaveFailed -= PersistenceSaveFailed;

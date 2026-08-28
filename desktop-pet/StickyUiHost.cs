@@ -13,12 +13,8 @@ namespace PennyPet
         private Thread _thread;
         private Dispatcher _dispatcher;
         private Exception _startupError;
-        private Action<StickyUiCommand> _commandHandler;
-
-        internal Dispatcher Dispatcher
-        {
-            get { return _dispatcher; }
-        }
+        private Func<StickyUiCommand, StickyUiCommandResult> _commandHandler;
+        private bool _acceptingCommands = true;
 
         internal void Start()
         {
@@ -57,63 +53,67 @@ namespace PennyPet
             }
         }
 
-        internal void Invoke(Action action)
-        {
-            if (action == null) throw new ArgumentNullException(nameof(action));
-            _dispatcher.Invoke(action);
-        }
-
-        internal T Invoke<T>(Func<T> function)
-        {
-            if (function == null) throw new ArgumentNullException(nameof(function));
-            return _dispatcher.Invoke(function);
-        }
-
-        internal void BeginInvoke(Action action)
-        {
-            if (action == null) throw new ArgumentNullException(nameof(action));
-            _dispatcher.BeginInvoke(action);
-        }
-
-        internal bool CheckAccess()
-        {
-            return _dispatcher != null && _dispatcher.CheckAccess();
-        }
-
-        internal void SetCommandHandler(Action<StickyUiCommand> handler)
+        internal void SetCommandHandler(
+            Func<StickyUiCommand, StickyUiCommandResult> handler)
         {
             lock (_gate) _commandHandler = handler;
         }
 
-        internal void Post(StickyUiCommand command)
+        internal StickyUiCommandResult SendCommand(StickyUiCommand command)
         {
-            Action<StickyUiCommand> handler;
-            lock (_gate) handler = _commandHandler;
-            if (handler == null || _dispatcher == null ||
-                _dispatcher.HasShutdownStarted ||
-                _dispatcher.HasShutdownFinished) return;
-            _dispatcher.BeginInvoke((Action)delegate { handler(command); });
-        }
-
-        internal void Shutdown()
-        {
+            if (command == null) throw new ArgumentNullException(nameof(command));
+            Func<StickyUiCommand, StickyUiCommandResult> handler;
             Dispatcher dispatcher;
-            Thread thread;
             lock (_gate)
             {
+                if (!_acceptingCommands) return StickyUiCommandResult.NotAccepted();
+                handler = _commandHandler;
                 dispatcher = _dispatcher;
-                thread = _thread;
             }
+            if (handler == null || dispatcher == null ||
+                dispatcher.HasShutdownStarted ||
+                dispatcher.HasShutdownFinished)
+                return StickyUiCommandResult.NotHandled();
+            try
+            {
+                return dispatcher.Invoke(
+                    new Func<StickyUiCommandResult>(
+                        delegate { return handler(command); }));
+            }
+            catch (Exception error)
+            {
+                return StickyUiCommandResult.Failed(error);
+            }
+        }
+
+        internal void StopAcceptingCommands()
+        {
+            lock (_gate) _acceptingCommands = false;
+        }
+
+        internal void BeginShutdown()
+        {
+            StopAcceptingCommands();
+            Dispatcher dispatcher;
+            lock (_gate) dispatcher = _dispatcher;
             if (dispatcher != null && !dispatcher.HasShutdownStarted &&
                 !dispatcher.HasShutdownFinished)
                 dispatcher.BeginInvokeShutdown(DispatcherPriority.Send);
+        }
+
+        internal bool WaitForExit(int timeoutMilliseconds)
+        {
+            Thread thread;
+            lock (_gate) thread = _thread;
             if (thread != null && thread != Thread.CurrentThread)
-                thread.Join(5000);
+                return thread.Join(timeoutMilliseconds);
+            return thread == null || thread == Thread.CurrentThread;
         }
 
         public void Dispose()
         {
-            Shutdown();
+            BeginShutdown();
+            WaitForExit(5000);
         }
     }
 }

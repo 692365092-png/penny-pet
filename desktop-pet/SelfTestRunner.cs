@@ -2026,24 +2026,23 @@ namespace PennyPet
             using (StickyUiHost host = new StickyUiHost())
             {
                 host.Start();
-                int callerThread = Thread.CurrentThread.ManagedThreadId;
-                int stickyThread = host.Invoke(
-                    delegate { return Thread.CurrentThread.ManagedThreadId; });
-                StickyUiCommand captured = null;
+                int stickyThread = 0;
                 host.SetCommandHandler(delegate(StickyUiCommand command)
                 {
-                    captured = command;
+                    stickyThread = Thread.CurrentThread.ManagedThreadId;
+                    return StickyUiCommandResult.Handled();
                 });
                 StickyUiCommand posted = new StickyUiCommand(
                     StickyUiCommandKind.Show, "note-1", true);
-                host.Post(posted);
-                StickyUiCommand observed = host.Invoke(
-                    delegate { return captured; });
-                result.StickyUiHostOk = host.CheckAccess() == false &&
-                    stickyThread != callerThread &&
-                    observed != null &&
-                    observed.Kind == StickyUiCommandKind.Show &&
-                    observed.NoteId == "note-1";
+                StickyUiCommandResult commandResult = host.SendCommand(posted);
+                host.BeginShutdown();
+                host.WaitForExit(5000);
+                StickyUiCommandResult afterShutdown =
+                    host.SendCommand(posted);
+                result.StickyUiHostOk =
+                    commandResult.Status == StickyUiCommandStatus.Handled &&
+                    stickyThread != Thread.CurrentThread.ManagedThreadId &&
+                    afterShutdown.Status == StickyUiCommandStatus.NotAccepted;
             }
             result.ScaleRangeOk =
                 PetForm.NormalizeScalePercent(47) == 50 &&

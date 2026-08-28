@@ -34,12 +34,12 @@ namespace PennyPet
             return output;
         }
 
-        public static bool Show(Form form, Bitmap bitmap)
+        public static void Show(Form form, Bitmap bitmap)
         {
-            return Show(form, bitmap, 255);
+            Show(form, bitmap, 255);
         }
 
-        public static bool Show(Form form, Bitmap bitmap, byte opacity)
+        public static void Show(Form form, Bitmap bitmap, byte opacity)
         {
             IntPtr screenDc = GetDC(IntPtr.Zero);
             IntPtr memoryDc = CreateCompatibleDC(screenDc);
@@ -60,11 +60,7 @@ namespace PennyPet
 
                 bool ok = UpdateLayeredWindow(form.Handle, screenDc, ref destination,
                     ref size, memoryDc, ref source, 0, ref blend, UlwAlpha);
-                return ok;
-            }
-            catch
-            {
-                return false;
+                if (!ok) throw new Win32Exception(Marshal.GetLastWin32Error());
             }
             finally
             {

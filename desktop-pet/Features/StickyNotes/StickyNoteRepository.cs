@@ -20,15 +20,20 @@ namespace PennyPet
         private Exception _lastSaveError;
         private int _consecutiveSaveFailures;
         private readonly object _saveGate = new object();
+        private readonly SynchronizationContext _uiContext;
         private long _requestedGeneration;
         private long _completedGeneration = -1;
-        private int _pendingAsyncSaves;
+        private long _lastWrittenGeneration = -1;
+        private bool _writerRunning;
+        private List<StickyNoteData> _latestSnapshot;
+        private long _latestGeneration = -1;
 
         internal event EventHandler<PersistenceFailedEventArgs> SaveFailed;
 
         private StickyNoteRepository(string filePath)
         {
             _filePath = filePath;
+            _uiContext = SynchronizationContext.Current;
         }
 
         private static string DefaultFilePath
@@ -209,7 +214,7 @@ namespace PennyPet
 
         internal bool HasPendingSaves
         {
-            get { lock (_saveGate) return _pendingAsyncSaves > 0; }
+            get { lock (_saveGate) return _writerRunning; }
         }
 
         internal Exception LastSaveError
@@ -311,26 +316,53 @@ namespace PennyPet
         {
             if (!_loadSucceeded)
             {
-                RecordSaveFailure(new InvalidOperationException(
-                    "Sticky-note data was not loaded safely; refusing to overwrite it."));
+                NotifySaveFailed(PersistenceResult.Failure(
+                    new InvalidOperationException(
+                        "Sticky-note data was not loaded safely; refusing to overwrite it.")),
+                    _consecutiveSaveFailures + 1);
                 return;
             }
-            List<StickyNoteData> snapshot;
-            long generation;
+            bool startWriter;
             lock (_saveGate)
             {
-                snapshot = CloneNotes(_notes);
-                generation = ++_requestedGeneration;
-                _pendingAsyncSaves++;
+                _latestSnapshot = CloneNotes(_notes);
+                _latestGeneration = ++_requestedGeneration;
                 _hasUnsavedChanges = true;
+                startWriter = !_writerRunning;
+                if (startWriter) _writerRunning = true;
             }
-            ThreadPool.QueueUserWorkItem(delegate
+            if (startWriter)
+                ThreadPool.QueueUserWorkItem(delegate { AsyncWriterLoop(); });
+        }
+
+        internal void WaitForPendingSaves()
+        {
+            while (HasPendingSaves) Thread.Sleep(10);
+        }
+
+        private void AsyncWriterLoop()
+        {
+            while (true)
             {
+                List<StickyNoteData> snapshot;
+                long generation;
+                lock (_saveGate)
+                {
+                    if (_latestSnapshot == null ||
+                        _latestGeneration <= _lastWrittenGeneration)
+                    {
+                        _writerRunning = false;
+                        return;
+                    }
+                    snapshot = _latestSnapshot;
+                    generation = _latestGeneration;
+                }
                 PersistenceResult result = WriteSnapshot(snapshot);
                 int consecutiveFailures = 0;
                 lock (_saveGate)
                 {
-                    _pendingAsyncSaves--;
+                    _lastWrittenGeneration = Math.Max(_lastWrittenGeneration,
+                        generation);
                     if (result.Succeeded)
                     {
                         _completedGeneration = Math.Max(_completedGeneration,
@@ -351,25 +383,26 @@ namespace PennyPet
                 }
                 if (!result.Succeeded)
                 {
-                    EventHandler<PersistenceFailedEventArgs> handler = SaveFailed;
-                    if (handler != null)
-                        handler(this, new PersistenceFailedEventArgs(result,
-                            consecutiveFailures));
+                    NotifySaveFailed(result, consecutiveFailures);
+                    lock (_saveGate)
+                    {
+                        _writerRunning = false;
+                        _latestSnapshot = null;
+                    }
+                    return;
                 }
-            });
-        }
-
-        internal void WaitForPendingSaves()
-        {
-            while (HasPendingSaves) Thread.Sleep(10);
+            }
         }
 
         internal PersistenceResult SaveToFile(string filePath)
         {
+            WaitForPendingSaves();
             long generation;
             lock (_saveGate)
             {
                 generation = ++_requestedGeneration;
+                _latestSnapshot = null;
+                _latestGeneration = generation;
                 _hasUnsavedChanges = true;
             }
             // A temporary read/parse failure must never turn an existing note file
@@ -387,6 +420,8 @@ namespace PennyPet
                 lock (_saveGate)
                 {
                     _completedGeneration = Math.Max(_completedGeneration,
+                        generation);
+                    _lastWrittenGeneration = Math.Max(_lastWrittenGeneration,
                         generation);
                     if (generation == _requestedGeneration)
                     {
@@ -430,11 +465,22 @@ namespace PennyPet
             _lastSaveError = error;
             _consecutiveSaveFailures++;
             PersistenceResult result = PersistenceResult.Failure(error);
-            EventHandler<PersistenceFailedEventArgs> handler = SaveFailed;
-            if (handler != null)
-                handler(this, new PersistenceFailedEventArgs(result,
-                    _consecutiveSaveFailures));
+            NotifySaveFailed(result, _consecutiveSaveFailures);
             return result;
+        }
+
+        private void NotifySaveFailed(PersistenceResult result,
+            int consecutiveFailures)
+        {
+            EventHandler<PersistenceFailedEventArgs> handler = SaveFailed;
+            if (handler == null) return;
+            PersistenceFailedEventArgs args = new PersistenceFailedEventArgs(
+                result, consecutiveFailures);
+            if (_uiContext == null ||
+                SynchronizationContext.Current == _uiContext)
+                handler(this, args);
+            else
+                _uiContext.Post(delegate { handler(this, args); }, null);
         }
 
         private static List<StickyNoteData> CloneNotes(

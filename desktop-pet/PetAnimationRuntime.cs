@@ -349,11 +349,7 @@ namespace PennyPet
             if (rowFrames == null || rowFrames.Length == 0) return;
             if (_frame < 0 || _frame >= rowFrames.Length) _frame = 0;
             Bitmap frame = rowFrames[_frame];
-            if (frame != null && !LayeredSpriteRenderer.Show(this, frame))
-                ApplicationDiagnostics.ReportNonFatal(
-                    "layered-sprite-show",
-                    new InvalidOperationException(
-                        "Layered window update failed."));
+            if (frame != null) LayeredSpriteRenderer.Show(this, frame);
         }
 
         private void BuildRenderedFrameCache()
