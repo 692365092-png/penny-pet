@@ -132,6 +132,7 @@ namespace PennyPet
         private bool _closingForExit;
         private bool _disposed;
         private bool _shownRaised;
+        private bool _inputFocusReportQueued;
         private bool _updatingFormatToolbar;
         private bool _rebuildingTodos;
         private bool _rebuildingSchedules;
@@ -479,6 +480,8 @@ namespace PennyPet
             _layout.PreviewMouseLeftButtonDown +=
                 NoteSurfacePreviewMouseLeftButtonDown;
             Deactivated += WindowDeactivated;
+            GotKeyboardFocus += delegate { QueueInputFocusChanged(); };
+            LostKeyboardFocus += delegate { QueueInputFocusChanged(); };
 
             SourceInitialized += delegate
             {
@@ -532,6 +535,7 @@ namespace PennyPet
         public event EventHandler NewTodoRequested;
         public event EventHandler NewScheduleRequested;
         public event EventHandler TypingActivity;
+        public event EventHandler InputFocusChanged;
         public event EventHandler<ImeCompositionEventArgs> ImeCompositionChanged;
         public event EventHandler Shown;
         public event EventHandler HeaderDragStarted;
@@ -1436,6 +1440,18 @@ namespace PennyPet
         private void Raise(EventHandler handler)
         {
             if (handler != null) handler(this, EventArgs.Empty);
+        }
+
+        private void QueueInputFocusChanged()
+        {
+            if (_inputFocusReportQueued || _disposed) return;
+            _inputFocusReportQueued = true;
+            Dispatcher.BeginInvoke(DispatcherPriority.Input,
+                new Action(delegate
+                {
+                    _inputFocusReportQueued = false;
+                    if (!_disposed) Raise(InputFocusChanged);
+                }));
         }
 
         private void Raise(EventHandler<ReminderActionEventArgs> handler,

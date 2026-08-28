@@ -140,6 +140,7 @@ namespace PennyPet
                             _pendingOverlayGeneration)) return;
                     }
                     if (_dragging || _exiting || !_settings.ShowKeyOverlay ||
+                        HasFocusedOwnNoteTextInput() ||
                         IsOwnApplicationInputFocused() || sensitive)
                     {
                         _keyOverlay.HideImmediately();

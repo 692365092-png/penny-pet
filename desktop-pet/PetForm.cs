@@ -106,6 +106,7 @@ namespace PennyPet
         private bool _canaryExitRequested;
         private bool _canaryExitPrepared;
         private bool _canaryImeComposing;
+        private bool _canaryInputFocused;
         private long _canaryAppliedSequence;
 
         private PetArtPackage _art;
@@ -401,6 +402,15 @@ namespace PennyPet
                 value.ExStyle |= 0x00080000;
                 return value;
             }
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            base.OnFormClosing(e);
+            if (e.Cancel || _canaryExitPrepared ||
+                String.IsNullOrEmpty(_canaryNoteId)) return;
+            e.Cancel = true;
+            BeginStickyCanaryExitIfNeeded();
         }
 
         protected override void OnFormClosed(FormClosedEventArgs e)

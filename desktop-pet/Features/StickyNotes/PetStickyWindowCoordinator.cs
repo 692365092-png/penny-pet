@@ -581,6 +581,11 @@ namespace PennyPet
                 if (!_exiting) TriggerTypingAnimation();
                 return;
             }
+            if (value.Kind == StickyUiEventKind.InputFocusChanged)
+            {
+                _canaryInputFocused = value.Flag;
+                return;
+            }
             if (value.Kind == StickyUiEventKind.ImeCompositionChanged)
             {
                 _canaryImeComposing = value.Flag;
@@ -618,6 +623,7 @@ namespace PennyPet
             _canaryDisabled = true;
             _canaryNoteId = String.Empty;
             _canaryImeComposing = false;
+            _canaryInputFocused = false;
             _stickyUiHost.BeginShutdown();
             StickyNoteData note = _notes.Find(noteId);
             if (note == null) return;
@@ -664,6 +670,7 @@ namespace PennyPet
                     ApplyStickyCanarySnapshot(result.Snapshot,
                         result.Sequence);
                     _canaryImeComposing = false;
+                    _canaryInputFocused = false;
                     _canaryExitPrepared = true;
                     _stickyUiHost.BeginShutdown();
                     BeginExitSequence();

@@ -215,6 +215,7 @@ namespace PennyPet
             _lastCanarySnapshot = command.Snapshot;
             window.NoteChanged += CanaryNoteChanged;
             window.TypingActivity += CanaryTypingActivity;
+            window.InputFocusChanged += CanaryInputFocusChanged;
             window.ImeCompositionChanged += CanaryImeCompositionChanged;
             window.CloseRequested += CanaryCloseRequested;
             window.FormClosed += CanaryWindowClosed;
@@ -244,6 +245,7 @@ namespace PennyPet
             if (window == null) return;
             window.NoteChanged -= CanaryNoteChanged;
             window.TypingActivity -= CanaryTypingActivity;
+            window.InputFocusChanged -= CanaryInputFocusChanged;
             window.ImeCompositionChanged -= CanaryImeCompositionChanged;
             window.CloseRequested -= CanaryCloseRequested;
             window.FormClosed -= CanaryWindowClosed;
@@ -265,6 +267,15 @@ namespace PennyPet
         {
             PostEvent(new StickyUiEvent(StickyUiEventKind.TypingActivity,
                 CurrentCanaryId(), null, true, _snapshotSequence));
+        }
+
+        private void CanaryInputFocusChanged(object sender, EventArgs e)
+        {
+            StickyNoteWindow window = sender as StickyNoteWindow;
+            if (window == null || window.IsDisposed) return;
+            PostEvent(new StickyUiEvent(StickyUiEventKind.InputFocusChanged,
+                window.Data.Id, null, window.HasFocusedTextInput,
+                _snapshotSequence));
         }
 
         private void CanaryImeCompositionChanged(object sender,
@@ -300,6 +311,8 @@ namespace PennyPet
             _snapshotSequence++;
             DetachCanaryWindowHandlers(closed);
             _canaryWindow = null;
+            PostEvent(new StickyUiEvent(StickyUiEventKind.InputFocusChanged,
+                snapshot.NoteId, null, false, _snapshotSequence));
             PostEvent(new StickyUiEvent(StickyUiEventKind.Closed,
                 snapshot.NoteId, snapshot, false, _snapshotSequence));
         }

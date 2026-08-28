@@ -1099,6 +1099,7 @@ namespace PennyPet
                 _canaryDisabled = true;
                 _canaryNoteId = String.Empty;
                 _canaryImeComposing = false;
+                _canaryInputFocused = false;
             }
             RefreshDockResizeRoles();
             RefreshMenuText();

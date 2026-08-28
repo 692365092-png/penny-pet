@@ -172,6 +172,49 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyUiCanary_ReportsInputFocusForOverlayPrivacy()
+        {
+            string commands = ReadSource(
+                "Features/StickyNotes/StickyUiCommand.cs");
+            string host = ReadSource("StickyUiHost.cs");
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string overlay = ReadSource(
+                "Features/KeyboardOverlay/PetKeyboardOverlayCoordinator.cs");
+
+            Assert.IsTrue(commands.Contains("InputFocusChanged") &&
+                host.Contains("window.HasFocusedTextInput") &&
+                coordinator.Contains("_canaryInputFocused = value.Flag"),
+                "Sticky STA must asynchronously report a plain focus flag.");
+            Assert.IsTrue(overlay.Contains(
+                "HasFocusedOwnNoteTextInput() ||") &&
+                overlay.Contains("IsOwnApplicationInputFocused() || sensitive"),
+                "Both keyboard-overlay privacy checks must suppress own input.");
+        }
+
+        [TestMethod]
+        public void StickyUiCanary_ExternalCloseUsesAsyncFinalSnapshotProtocol()
+        {
+            string form = ReadSource("PetForm.cs");
+            string closing = Between(form,
+                "protected override void OnFormClosing",
+                "protected override void OnFormClosed");
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+
+            Assert.IsTrue(closing.Contains("e.Cancel = true") &&
+                closing.Contains("BeginStickyCanaryExitIfNeeded()"),
+                "External close must pause before PetForm disposal.");
+            int apply = coordinator.IndexOf(
+                "ApplyStickyCanarySnapshot(result.Snapshot",
+                StringComparison.Ordinal);
+            int prepared = coordinator.IndexOf(
+                "_canaryExitPrepared = true", StringComparison.Ordinal);
+            Assert.IsTrue(apply >= 0 && prepared > apply,
+                "Final snapshot must reach the canonical owner before close resumes.");
+        }
+
+        [TestMethod]
         public void StickyUiCanary_LeavesStartupLoadingAndExcludedTypesOnLegacyPath()
         {
             string startup = ReadSource("PetStartupCoordinator.cs");

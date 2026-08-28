@@ -112,6 +112,7 @@ namespace PennyPet
     {
         SnapshotChanged,
         TypingActivity,
+        InputFocusChanged,
         ImeCompositionChanged,
         Closed
     }
