@@ -279,99 +279,31 @@ namespace PennyPet
         private static List<Rectangle> CalculateStickyRecoveryLayout(
             Rectangle work, IList<Size> componentSizes, float scale)
         {
+            List<DockSize> dockSizes = new List<DockSize>();
+            if (componentSizes != null)
+            {
+                foreach (Size size in componentSizes)
+                    dockSizes.Add(new DockSize
+                    {
+                        Width = size.Width,
+                        Height = size.Height
+                    });
+            }
+            List<DockRect> dockLayout =
+                StickyDockGeometry.CalculateStickyRecoveryLayout(
+                    new DockRect
+                    {
+                        Left = work.Left,
+                        Top = work.Top,
+                        Width = work.Width,
+                        Height = work.Height
+                    },
+                    dockSizes,
+                    scale);
             List<Rectangle> result = new List<Rectangle>();
-            int count = componentSizes == null ? 0 : componentSizes.Count;
-            for (int index = 0; index < count; index++)
-                result.Add(Rectangle.Empty);
-            if (count == 0) return result;
-
-            const int margin = 24;
-            const int gap = 18;
-            int scaledMargin = Math.Max(1, (int)Math.Round(margin * scale));
-            int scaledGap = Math.Max(1, (int)Math.Round(gap * scale));
-            int minimumWidth = Math.Max(1, (int)Math.Round(280 * scale));
-            int maximumWidth = Math.Max(minimumWidth,
-                (int)Math.Round(900 * scale));
-            int minimumHeight = Math.Max(1, (int)Math.Round(220 * scale));
-            int rowWidthLimit = Math.Max(minimumWidth,
-                work.Width - scaledMargin * 2);
-            List<List<int>> rows = new List<List<int>>();
-            List<int> normal = new List<int>();
-            List<int> oversized = new List<int>();
-            for (int index = 0; index < count; index++)
-            {
-                Size size = componentSizes[index];
-                // The height is the sum of every member in a docked group, so
-                // a four-note stack is treated as one long component.
-                bool isOversized = size.Width >= Math.Max(
-                    (int)Math.Round(520 * scale),
-                    work.Width * 45 / 100) || size.Height >= Math.Max(
-                    (int)Math.Round(520 * scale),
-                    work.Height * 50 / 100);
-                if (isOversized) oversized.Add(index);
-                else normal.Add(index);
-            }
-
-            List<int> row = new List<int>();
-            int rowWidth = 0;
-            foreach (int index in normal)
-            {
-                int width = Math.Max(minimumWidth, Math.Min(maximumWidth,
-                    componentSizes[index].Width));
-                int nextWidth = row.Count == 0 ? width :
-                    rowWidth + scaledGap + width;
-                if (row.Count > 0 && nextWidth > rowWidthLimit)
-                {
-                    rows.Add(row);
-                    row = new List<int>();
-                    rowWidth = 0;
-                }
-                row.Add(index);
-                rowWidth = rowWidth == 0 ? width :
-                    rowWidth + scaledGap + width;
-            }
-            if (row.Count > 0) rows.Add(row);
-            // Wide/long single notes and whole docked stacks get their own
-            // lower rows, horizontally centered below the ordinary notes.
-            foreach (int index in oversized)
-                rows.Add(new List<int>(new int[] { index }));
-
-            List<int> rowHeights = new List<int>();
-            int totalHeight = 0;
-            foreach (List<int> recoveryRow in rows)
-            {
-                int height = minimumHeight;
-                foreach (int index in recoveryRow)
-                    height = Math.Max(height, Math.Min(componentSizes[index].Height,
-                        Math.Max(minimumHeight, work.Height * 58 / 100)));
-                rowHeights.Add(height);
-                totalHeight += height;
-            }
-            totalHeight += Math.Max(0, rows.Count - 1) * scaledGap;
-            int y = work.Top + Math.Max(scaledMargin,
-                (work.Height - totalHeight) / 2);
-            for (int rowIndex = 0; rowIndex < rows.Count; rowIndex++)
-            {
-                List<int> recoveryRow = rows[rowIndex];
-                int width = 0;
-                foreach (int index in recoveryRow)
-                {
-                    if (width > 0) width += scaledGap;
-                    width += Math.Max(minimumWidth, Math.Min(maximumWidth,
-                        componentSizes[index].Width));
-                }
-                int x = work.Left + (work.Width - width) / 2;
-                foreach (int index in recoveryRow)
-                {
-                    int itemWidth = Math.Max(minimumWidth,
-                        Math.Min(maximumWidth,
-                        componentSizes[index].Width));
-                    result[index] = new Rectangle(x, y, itemWidth,
-                        componentSizes[index].Height);
-                    x += itemWidth + scaledGap;
-                }
-                y += rowHeights[rowIndex] + scaledGap;
-            }
+            foreach (DockRect item in dockLayout)
+                result.Add(new Rectangle(item.Left, item.Top,
+                    item.Width, item.Height));
             return result;
         }
 

@@ -162,6 +162,37 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyDockGeometry_RecoveryLayoutUsesWorkAreaCentering()
+        {
+            List<DockSize> sizes = new List<DockSize>
+            {
+                new DockSize { Width = 320, Height = 300 },
+                new DockSize { Width = 280, Height = 220 }
+            };
+            List<DockRect> layout =
+                StickyDockGeometry.CalculateStickyRecoveryLayout(
+                    new DockRect
+                    {
+                        Left = 0,
+                        Top = 0,
+                        Width = 1920,
+                        Height = 1040
+                    },
+                    sizes,
+                    1F);
+
+            Assert.AreEqual(2, layout.Count);
+            Assert.AreEqual(651, layout[0].Left);
+            Assert.AreEqual(370, layout[0].Top);
+            Assert.AreEqual(320, layout[0].Width);
+            Assert.AreEqual(300, layout[0].Height);
+            Assert.AreEqual(989, layout[1].Left);
+            Assert.AreEqual(370, layout[1].Top);
+            Assert.AreEqual(280, layout[1].Width);
+            Assert.AreEqual(220, layout[1].Height);
+        }
+
+        [TestMethod]
         public void ShortItemText_UsesOneSharedDisplayBudget()
         {
             Assert.IsTrue(ShortItemText.Fits(new string('中', 50)));
