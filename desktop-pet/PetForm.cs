@@ -46,8 +46,8 @@ namespace PennyPet
 
         private sealed class DockTarget
         {
-            public StickyNoteWindow Parent;
-            public StickyNoteWindow ExistingChild;
+            public string ParentNoteId;
+            public string ExistingChildNoteId;
         }
 
         private readonly System.Windows.Forms.Timer _animationTimer;
