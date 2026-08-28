@@ -2026,6 +2026,7 @@ namespace PennyPet
             internal bool StartupDefaultOk;
             internal bool StartupLoadingReadinessGateOk;
             internal bool StickyUiHostOk;
+            internal bool StickyCanaryLifecycleOk;
             internal bool ScaleRangeOk;
             internal bool ReverseReminderStepOk;
             internal bool PinActionTextOk;
@@ -2102,6 +2103,7 @@ namespace PennyPet
                     shutdownCompleted && afterShutdown != null &&
                     afterShutdown.Status == StickyUiCommandStatus.NotAccepted;
             }
+            result.StickyCanaryLifecycleOk = RunStickyCanaryLifecycleCheck();
             result.ScaleRangeOk =
                 PetForm.NormalizeScalePercent(47) == 50 &&
                 PetForm.NormalizeScalePercent(104) == 100 &&
@@ -2130,6 +2132,84 @@ namespace PennyPet
                     !note.UsesLegacyInputProxyForTest &&
                     note.LegacyInputProxyHandleForTest == IntPtr.Zero;
                 result.StickyResizePaintingOk = note.UsesBufferedResizePainting;
+            }
+            return result;
+        }
+
+        private static bool RunStickyCanaryLifecycleCheck()
+        {
+            int petThread = Thread.CurrentThread.ManagedThreadId;
+            int eventThread = 0;
+            StickyUiEvent lastEvent = null;
+            SynchronizationContext petContext =
+                new WindowsFormsSynchronizationContext();
+            StickyNoteData canonical = new StickyNoteData();
+            canonical.Text = "detached-before-post";
+            canonical.X = -2400;
+            canonical.Y = -2400;
+            canonical.Width = 320;
+            canonical.Height = 300;
+            StickyNoteUiSnapshot detached =
+                StickyNoteUiSnapshot.FromData(canonical);
+            canonical.Text = "pet-owned-after-post";
+
+            using (StickyUiHost host = new StickyUiHost())
+            {
+                host.Start();
+                host.ConfigureCanary(delegate(StickyUiEvent value)
+                {
+                    eventThread = Thread.CurrentThread.ManagedThreadId;
+                    lastEvent = value;
+                }, petContext);
+                StickyUiCommandResult created = PostStickyCommandAndWait(host,
+                    new StickyUiCommand(StickyUiCommandKind.Create,
+                        canonical.Id, false, detached), petContext);
+                bool detachedOwnership = created != null &&
+                    created.Status == StickyUiCommandStatus.Handled &&
+                    created.Snapshot != null &&
+                    created.Snapshot.Text == "detached-before-post" &&
+                    canonical.Text == "pet-owned-after-post" &&
+                    created.OwnerThreadId != petThread;
+
+                StickyUiCommandResult hidden = PostStickyCommandAndWait(host,
+                    new StickyUiCommand(StickyUiCommandKind.Hide,
+                        canonical.Id, false), petContext);
+                StickyUiCommandResult shown = PostStickyCommandAndWait(host,
+                    new StickyUiCommand(StickyUiCommandKind.Show,
+                        canonical.Id, false), petContext);
+                StickyUiCommandResult closed = PostStickyCommandAndWait(host,
+                    new StickyUiCommand(StickyUiCommandKind.Close,
+                        canonical.Id, false), petContext);
+                host.BeginShutdown();
+                bool exited = host.WaitForExit(5000);
+                return detachedOwnership && hidden != null &&
+                    hidden.Status == StickyUiCommandStatus.Handled &&
+                    hidden.Snapshot != null && !hidden.Snapshot.Visible &&
+                    shown != null &&
+                    shown.Status == StickyUiCommandStatus.Handled &&
+                    shown.Snapshot != null && shown.Snapshot.Visible &&
+                    closed != null &&
+                    closed.Status == StickyUiCommandStatus.Handled &&
+                    closed.Snapshot != null && exited &&
+                    eventThread == petThread && lastEvent != null &&
+                    lastEvent.NoteId == canonical.Id;
+            }
+        }
+
+        private static StickyUiCommandResult PostStickyCommandAndWait(
+            StickyUiHost host, StickyUiCommand command,
+            SynchronizationContext completionContext)
+        {
+            StickyUiCommandResult result = null;
+            using (ManualResetEventSlim completed =
+                new ManualResetEventSlim(false))
+            {
+                host.PostCommand(command, delegate(StickyUiCommandResult value)
+                {
+                    result = value;
+                    completed.Set();
+                }, completionContext);
+                WaitForSignalWithUiPump(completed, 5000);
             }
             return result;
         }
@@ -2531,6 +2611,8 @@ namespace PennyPet
                     shellChecks.StartupDefaultOk) + ",\n" +
                 "  \"sticky_ui_host_ok\": " + Bool(
                     shellChecks.StickyUiHostOk) + ",\n" +
+                "  \"sticky_canary_lifecycle_ok\": " + Bool(
+                    shellChecks.StickyCanaryLifecycleOk) + ",\n" +
                 "  \"keyboard_hook_opt_in_and_default_off_ok\": " + Bool(
                     keyboardOverlayChecks.HookOptInDefaultOk) + ",\n" +
                 "  \"keyboard_privacy_notice_persistence_ok\": " + Bool(

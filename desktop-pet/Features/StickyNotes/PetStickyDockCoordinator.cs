@@ -1050,6 +1050,7 @@ namespace PennyPet
         private void HideStickyNote(StickyNoteData note)
         {
             if (note == null) return;
+            if (PostStickyCanaryHide(note)) return;
             List<StickyNoteData> snapshot =
                 BuildDockChainOrderIncludingHidden(note);
             StickyNoteWindow root = null;
@@ -1082,6 +1083,10 @@ namespace PennyPet
         private void DeleteStickyNote(StickyNoteData note)
         {
             if (note == null) return;
+            bool wasCanary = IsStickyCanary(note);
+            if (wasCanary)
+                PostStickyCanaryCommand(new StickyUiCommand(
+                    StickyUiCommandKind.Close, note.Id, false), null);
             DetachDockRelations(note);
             CancelReminderForNote(note, false);
             StickyNoteWindow form;
@@ -1089,6 +1094,12 @@ namespace PennyPet
                 form.CloseForApplicationExit();
             _noteWindows.Remove(note.Id);
             _notes.Remove(note);
+            if (wasCanary)
+            {
+                _canaryDisabled = true;
+                _canaryNoteId = String.Empty;
+                _canaryImeComposing = false;
+            }
             RefreshDockResizeRoles();
             RefreshMenuText();
             RefreshNoteTabs();

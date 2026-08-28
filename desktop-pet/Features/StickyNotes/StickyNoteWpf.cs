@@ -621,6 +621,11 @@ namespace PennyPet
         IntPtr WF.IWin32Window.Handle { get { return Handle; } }
 
         internal bool UsesImeCompatibleEditor { get { return true; } }
+
+        internal bool IsImeCompositionActiveForHost
+        {
+            get { return _editorTextCompositionActive; }
+        }
         internal bool ExerciseOrdinaryLinkRefreshForTest()
         {
             if (Data.IsTodoList || Data.IsSchedule) return false;

@@ -100,6 +100,13 @@ namespace PennyPet
         private readonly PetAnimationController _animation =
             new PetAnimationController();
         private readonly StickyUiHost _stickyUiHost = new StickyUiHost();
+        private SynchronizationContext _petUiContext;
+        private string _canaryNoteId = String.Empty;
+        private bool _canaryDisabled;
+        private bool _canaryExitRequested;
+        private bool _canaryExitPrepared;
+        private bool _canaryImeComposing;
+        private long _canaryAppliedSequence;
 
         private PetArtPackage _art;
         private Bitmap[][] _renderedFrames;
@@ -369,6 +376,11 @@ namespace PennyPet
             _keyboard.Activity += KeyboardActivity;
             RefreshKeyboardMenuText();
             _stickyUiHost.Start();
+            _petUiContext =
+                SynchronizationContext.Current as WindowsFormsSynchronizationContext
+                ?? new WindowsFormsSynchronizationContext();
+            _stickyUiHost.ConfigureCanary(StickyCanaryEventReceived,
+                _petUiContext);
 
             Shown += delegate
             {
@@ -401,7 +413,6 @@ namespace PennyPet
             }
             _noteWindows.Clear();
             _stickyUiHost.BeginShutdown();
-            _stickyUiHost.WaitForExit(5000);
             _notes.Save();
             _notes.SaveFailed -= PersistenceSaveFailed;
             _settings.SaveFailed -= PersistenceSaveFailed;

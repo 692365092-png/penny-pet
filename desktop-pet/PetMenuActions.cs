@@ -205,6 +205,7 @@ namespace PennyPet
         private void BeginExitSequence()
         {
             if (_exiting) return;
+            if (BeginStickyCanaryExitIfNeeded()) return;
             if (!FlushPersistenceBeforeExit()) return;
             _exiting = true;
             _reminderTimer.Stop();

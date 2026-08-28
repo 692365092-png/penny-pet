@@ -129,6 +129,65 @@ namespace PennyPet.Tests
                 "The old synchronous command API must not remain available.");
         }
 
+        [TestMethod]
+        public void StickyUiCanary_UsesDetachedTypedOwnershipBoundary()
+        {
+            string commands = ReadSource(
+                "Features/StickyNotes/StickyUiCommand.cs");
+            string host = ReadSource("StickyUiHost.cs");
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+
+            Assert.IsTrue(commands.Contains("StickyNoteUiSnapshot") &&
+                commands.Contains("CreateWorkingCopy()") &&
+                commands.Contains("StickyUiEventKind"),
+                "Canary must exchange typed values and create a detached working copy.");
+            Assert.IsTrue(host.Contains(
+                "private StickyNoteWindow _canaryWindow;") &&
+                host.Contains("new StickyNoteWindow(workingCopy)"),
+                "Only StickyUiHost may own the Canary WPF window reference.");
+            Assert.IsTrue(coordinator.Contains(
+                "StickyNoteUiSnapshot.FromData(note)") &&
+                coordinator.Contains("snapshot.ApplyTo(canonical)"),
+                "Pet must send snapshots and apply updates to its canonical model.");
+        }
+
+        [TestMethod]
+        public void StickyUiCanary_DoesNotSynchronouslyWaitAcrossUiThreads()
+        {
+            string host = ReadSource("StickyUiHost.cs");
+            string posted = Between(host, "internal void PostCommand(",
+                "private StickyUiCommandResult HandleCanaryCommand");
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+
+            Assert.IsFalse(posted.Contains("Dispatcher.Invoke") ||
+                posted.Contains(".Wait(") || posted.Contains(".Result"),
+                "Command dispatch must never synchronously wait on the sticky STA.");
+            Assert.IsFalse(coordinator.Contains("Control.Invoke") ||
+                coordinator.Contains("Dispatcher.Invoke") ||
+                coordinator.Contains("Task.Wait") ||
+                coordinator.Contains("Task.Result"),
+                "Pet-side Canary coordination must stay fully asynchronous.");
+        }
+
+        [TestMethod]
+        public void StickyUiCanary_LeavesStartupLoadingAndExcludedTypesOnLegacyPath()
+        {
+            string startup = ReadSource("PetStartupCoordinator.cs");
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+
+            Assert.IsFalse(startup.Contains("Canary") ||
+                startup.Contains("StickyUiHost"),
+                "Canary must not change startup restore or loading readiness.");
+            Assert.IsTrue(coordinator.Contains("!note.IsTodoList") &&
+                coordinator.Contains("!note.IsSchedule") &&
+                coordinator.Contains("note.ReminderUtcTicks <= 0") &&
+                coordinator.Contains("String.IsNullOrEmpty(note.DockGroupId)"),
+                "Todo, Schedule, Reminder and Dock notes must remain on legacy UI.");
+        }
+
         private static string ReadSource(string relativePath)
         {
             string root = FindDesktopPetDirectory();
