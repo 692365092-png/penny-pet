@@ -424,6 +424,7 @@ namespace PennyPet
                 _notes.SaveAsync();
                 RefreshMenuText();
             };
+            form.Shown += delegate { MarkFirstRendered(note.Id); };
             form.HeaderDragStarted += StickyNoteHeaderDragStarted;
             form.HeaderDragMoved += StickyNoteHeaderDragMoved;
             form.HeaderDragCompleted += StickyNoteHeaderDragCompleted;
@@ -512,8 +513,7 @@ namespace PennyPet
 
         private static bool IsHostedStickyEligible(StickyNoteData note)
         {
-            return note != null && !note.IsTodoList && !note.IsSchedule &&
-                note.ReminderUtcTicks <= 0 &&
+            return note != null &&
                 String.IsNullOrEmpty(note.DockParentId) &&
                 String.IsNullOrEmpty(note.DockGroupId);
         }
@@ -599,6 +599,35 @@ namespace PennyPet
                 }
                 return;
             }
+            if (value.Kind == StickyUiEventKind.FirstRendered)
+            {
+                MarkFirstRendered(value.NoteId);
+                return;
+            }
+            if (value.Kind == StickyUiEventKind.Closed)
+            {
+                ApplyHostedStickySnapshot(value.Snapshot, value.Sequence);
+                _hostedNoteIds.Remove(value.NoteId);
+                ForgetHostedStickyState(value.NoteId);
+                _renderedFirstRenderNoteIds.Remove(value.NoteId);
+                return;
+            }
+            if (value.Kind == StickyUiEventKind.CancelReminderRequested)
+            {
+                StickyNoteData note = _notes.Find(value.NoteId);
+                if (note != null) CancelReminderForNote(note, true);
+                return;
+            }
+            if (value.Kind == StickyUiEventKind.ModifyReminderRequested)
+            {
+                if (value.Reminder != null) EditReminder(value.Reminder);
+                return;
+            }
+            if (value.Kind == StickyUiEventKind.DeleteReminderRequested)
+            {
+                if (value.Reminder != null) CancelReminder(value.Reminder, true);
+                return;
+            }
             if (value.Kind == StickyUiEventKind.DeleteRequested)
             {
                 ConfirmHostedStickyDelete(value.NoteId);
@@ -655,6 +684,8 @@ namespace PennyPet
             if (!_hostedNoteIds.Remove(noteId)) return;
             ReportHostedStickyCommandFailure(context, result);
             ForgetHostedStickyState(noteId);
+            _renderedFirstRenderNoteIds.Remove(noteId);
+            _expectedFirstRenderNoteIds.Add(noteId);
             StickyNoteData note = _notes.Find(noteId);
             if (note == null) return;
             try
@@ -775,8 +806,7 @@ namespace PennyPet
         {
             if (note == null) return;
             if (PostHostedStickyShow(note, focusEditor)) return;
-            if (allowHosted && persistVisibility &&
-                TryStartHostedSticky(note, focusEditor)) return;
+            if (allowHosted && TryStartHostedSticky(note, focusEditor)) return;
             List<StickyNoteData> storedDockOrder =
                 BuildDockChainOrderIncludingHidden(note);
             bool anyHiddenDockMember = storedDockOrder.Exists(

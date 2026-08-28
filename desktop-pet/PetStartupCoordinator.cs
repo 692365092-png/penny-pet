@@ -90,12 +90,7 @@ namespace PennyPet
                 }
                 return;
             }
-            foreach (StickyNoteWindow startupNote in _noteWindows.Values)
-            {
-                if (startupNote != null && !startupNote.IsDisposed &&
-                    startupNote.IsVisible &&
-                    !startupNote.HasCompletedFirstRender) return;
-            }
+            if (!AllExpectedNotesHaveFirstRendered()) return;
             try
             {
                 NormalizeAllDockGroups();
@@ -129,6 +124,8 @@ namespace PennyPet
 
         private Queue<StickyNoteData> BuildStartupRestoreQueue()
         {
+            _expectedFirstRenderNoteIds.Clear();
+            _renderedFirstRenderNoteIds.Clear();
             Queue<StickyNoteData> result = new Queue<StickyNoteData>();
             HashSet<string> restored = new HashSet<string>(
                 StringComparer.OrdinalIgnoreCase);
@@ -138,10 +135,26 @@ namespace PennyPet
                 List<StickyNoteData> group =
                     BuildDockChainOrderIncludingHidden(note);
                 foreach (StickyNoteData member in group)
+                {
                     restored.Add(member.Id);
+                    _expectedFirstRenderNoteIds.Add(member.Id);
+                }
                 result.Enqueue(note);
             }
             return result;
+        }
+
+        private bool AllExpectedNotesHaveFirstRendered()
+        {
+            foreach (string noteId in _expectedFirstRenderNoteIds)
+                if (!_renderedFirstRenderNoteIds.Contains(noteId)) return false;
+            return true;
+        }
+
+        internal void MarkFirstRendered(string noteId)
+        {
+            if (String.IsNullOrEmpty(noteId)) return;
+            _renderedFirstRenderNoteIds.Add(noteId);
         }
 
         private void StopDeferredStartupWork()

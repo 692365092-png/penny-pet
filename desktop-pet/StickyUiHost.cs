@@ -231,6 +231,10 @@ namespace PennyPet
             window.TypingActivity += CanaryTypingActivity;
             window.InputFocusChanged += CanaryInputFocusChanged;
             window.ImeCompositionChanged += CanaryImeCompositionChanged;
+            window.Shown += CanaryShown;
+            window.CancelReminderRequested += CanaryCancelReminderRequested;
+            window.ModifyReminderRequested += CanaryModifyReminderRequested;
+            window.DeleteReminderRequested += CanaryDeleteReminderRequested;
             window.CloseRequested += CanaryCloseRequested;
             window.DeleteRequested += CanaryDeleteRequested;
             window.NewNoteRequested += CanaryNewNoteRequested;
@@ -264,6 +268,10 @@ namespace PennyPet
             window.TypingActivity -= CanaryTypingActivity;
             window.InputFocusChanged -= CanaryInputFocusChanged;
             window.ImeCompositionChanged -= CanaryImeCompositionChanged;
+            window.Shown -= CanaryShown;
+            window.CancelReminderRequested -= CanaryCancelReminderRequested;
+            window.ModifyReminderRequested -= CanaryModifyReminderRequested;
+            window.DeleteReminderRequested -= CanaryDeleteReminderRequested;
             window.CloseRequested -= CanaryCloseRequested;
             window.DeleteRequested -= CanaryDeleteRequested;
             window.NewNoteRequested -= CanaryNewNoteRequested;
@@ -330,6 +338,37 @@ namespace PennyPet
             }
         }
 
+        private void CanaryShown(object sender, EventArgs e)
+        {
+            StickyWindowEntry entry;
+            if (!TryGetEntry(sender as StickyNoteWindow, out entry)) return;
+            PostEvent(new StickyUiEvent(StickyUiEventKind.FirstRendered,
+                entry.Window.Data.Id, null, true, entry.Sequence));
+        }
+
+        private void CanaryCancelReminderRequested(object sender,
+            EventArgs e)
+        {
+            PostWindowRequest(sender,
+                StickyUiEventKind.CancelReminderRequested);
+        }
+
+        private void CanaryModifyReminderRequested(object sender,
+            ReminderActionEventArgs e)
+        {
+            PostReminderRequest(sender,
+                StickyUiEventKind.ModifyReminderRequested,
+                e == null ? null : e.Reminder);
+        }
+
+        private void CanaryDeleteReminderRequested(object sender,
+            ReminderActionEventArgs e)
+        {
+            PostReminderRequest(sender,
+                StickyUiEventKind.DeleteReminderRequested,
+                e == null ? null : e.Reminder);
+        }
+
         private void CanaryCloseRequested(object sender, EventArgs e)
         {
             StickyWindowEntry entry;
@@ -367,6 +406,15 @@ namespace PennyPet
                 false, entry.Sequence));
         }
 
+        private void PostReminderRequest(object sender,
+            StickyUiEventKind kind, ReminderItem reminder)
+        {
+            StickyWindowEntry entry;
+            if (!TryGetEntry(sender as StickyNoteWindow, out entry)) return;
+            PostEvent(new StickyUiEvent(kind, entry.Window.Data.Id, null,
+                false, entry.Sequence, reminder));
+        }
+
         private void CanaryWindowClosed(object sender, FormClosedEventArgs e)
         {
             StickyNoteWindow closed = sender as StickyNoteWindow;
@@ -374,7 +422,9 @@ namespace PennyPet
             StickyNoteUiSnapshot snapshot =
                 StickyNoteUiSnapshot.FromData(closed.Data);
             StickyWindowEntry entry;
-            if (!TryGetEntry(closed, out entry) || _batchClosing) return;
+            if (_batchClosing || !_windows.TryGetValue(snapshot.NoteId,
+                out entry) || entry == null ||
+                !Object.ReferenceEquals(entry.Window, closed)) return;
             entry.LastSnapshot = snapshot;
             entry.Sequence++;
             DetachWindowHandlers(closed);

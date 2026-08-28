@@ -111,6 +111,10 @@ namespace PennyPet
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _hostedDeletePending =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _expectedFirstRenderNoteIds =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _renderedFirstRenderNoteIds =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private bool _hostedExitRequested;
         private bool _hostedCloseAllInFlight;
         private bool _hostedExitPrepared;

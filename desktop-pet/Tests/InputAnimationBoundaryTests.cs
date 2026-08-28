@@ -269,12 +269,69 @@ namespace PennyPet.Tests
             Assert.IsFalse(startup.Contains("HostedSticky") ||
                 startup.Contains("StickyUiHost"),
                 "Step 1 must not change startup restore or loading readiness.");
-            Assert.IsTrue(coordinator.Contains("!note.IsTodoList") &&
-                coordinator.Contains("!note.IsSchedule") &&
-                coordinator.Contains("note.ReminderUtcTicks <= 0") &&
-                coordinator.Contains("String.IsNullOrEmpty(note.DockGroupId)") &&
+            Assert.IsTrue(coordinator.Contains("String.IsNullOrEmpty(note.DockGroupId)") &&
+                coordinator.Contains("String.IsNullOrEmpty(note.DockParentId)") &&
                 coordinator.Contains("_noteWindows.TryGetValue(note.Id"),
-                "Todo, Schedule, Reminder and Dock notes must remain on legacy UI.");
+                "Dock notes must remain on legacy UI.");
+        }
+
+        [TestMethod]
+        public void StartupRestore_TracksExpectedAndRenderedNoteIds()
+        {
+            string startup = ReadSource("PetStartupCoordinator.cs");
+            string form = ReadSource("PetForm.cs");
+
+            Assert.IsTrue(startup.Contains(
+                "_expectedFirstRenderNoteIds.Clear()"),
+                "Startup restore must reset expected first-render ids.");
+            Assert.IsTrue(startup.Contains(
+                "_renderedFirstRenderNoteIds.Clear()"),
+                "Startup restore must reset rendered first-render ids.");
+            Assert.IsTrue(startup.Contains(
+                "_expectedFirstRenderNoteIds.Add(member.Id)"),
+                "Startup restore must expect each restored note member.");
+            Assert.IsTrue(startup.Contains(
+                "AllExpectedNotesHaveFirstRendered()"),
+                "Startup completion must wait on the expected set.");
+            Assert.IsTrue(form.Contains("_expectedFirstRenderNoteIds") &&
+                form.Contains("_renderedFirstRenderNoteIds"),
+                "PetForm must own the startup readiness id sets.");
+        }
+
+        [TestMethod]
+        public void HostedFirstRendered_UpdatesPetReadiness()
+        {
+            string host = ReadSource("StickyUiHost.cs");
+            string coordinator =
+                ReadSource("Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string command = ReadSource(
+                "Features/StickyNotes/StickyUiCommand.cs");
+
+            Assert.IsTrue(command.Contains("FirstRendered"),
+                "StickyUiEventKind must include FirstRendered.");
+            Assert.IsTrue(host.Contains(
+                "StickyUiEventKind.FirstRendered"),
+                "StickyUiHost must emit FirstRendered.");
+            Assert.IsTrue(coordinator.Contains(
+                "MarkFirstRendered(value.NoteId)"),
+                "Pet coordinator must mark hosted first render.");
+        }
+
+        [TestMethod]
+        public void HostedCreateFallback_AdjustsReadinessSets()
+        {
+            string coordinator =
+                ReadSource("Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string fallback = Between(coordinator,
+                "private void FallBackHostedStickyToLegacy",
+                "private static void ReportHostedStickyCommandFailure");
+
+            Assert.IsTrue(fallback.Contains(
+                "_renderedFirstRenderNoteIds.Remove(noteId)"),
+                "Fallback must remove the failed hosted id from rendered.");
+            Assert.IsTrue(fallback.Contains(
+                "_expectedFirstRenderNoteIds.Add(noteId)"),
+                "Fallback must keep the note expected on the legacy path.");
         }
 
         private static string ReadSource(string relativePath)

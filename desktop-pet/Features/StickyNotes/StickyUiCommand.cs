@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace PennyPet
 {
@@ -47,12 +48,27 @@ namespace PennyPet
             TextColorArgb = source.TextColorArgb;
             Visible = source.Visible;
             AlwaysOnTop = source.AlwaysOnTop;
+            IsTodoList = source.IsTodoList;
+            IsSchedule = source.IsSchedule;
             X = source.X;
             Y = source.Y;
             Width = source.Width;
             Height = source.Height;
             CreatedUtcTicks = source.CreatedUtcTicks;
             ModifiedUtcTicks = source.ModifiedUtcTicks;
+            ReminderUtcTicks = source.ReminderUtcTicks;
+            List<StickyTodoUiSnapshot> todos =
+                new List<StickyTodoUiSnapshot>();
+            foreach (StickyTodoItem item in source.TodoItems)
+                if (item != null) todos.Add(
+                    new StickyTodoUiSnapshot(item));
+            TodoItems = todos.ToArray();
+            List<StickyScheduleUiSnapshot> schedules =
+                new List<StickyScheduleUiSnapshot>();
+            foreach (StickyScheduleItem item in source.ScheduleItems)
+                if (item != null) schedules.Add(
+                    new StickyScheduleUiSnapshot(item));
+            ScheduleItems = schedules.ToArray();
         }
 
         internal string NoteId { get; private set; }
@@ -66,12 +82,17 @@ namespace PennyPet
         internal int TextColorArgb { get; private set; }
         internal bool Visible { get; private set; }
         internal bool AlwaysOnTop { get; private set; }
+        internal bool IsTodoList { get; private set; }
+        internal bool IsSchedule { get; private set; }
         internal int X { get; private set; }
         internal int Y { get; private set; }
         internal int Width { get; private set; }
         internal int Height { get; private set; }
         internal long CreatedUtcTicks { get; private set; }
         internal long ModifiedUtcTicks { get; private set; }
+        internal long ReminderUtcTicks { get; private set; }
+        internal StickyTodoUiSnapshot[] TodoItems { get; private set; }
+        internal StickyScheduleUiSnapshot[] ScheduleItems { get; private set; }
 
         internal static StickyNoteUiSnapshot FromData(StickyNoteData source)
         {
@@ -100,13 +121,57 @@ namespace PennyPet
             target.TextColorArgb = TextColorArgb;
             target.Visible = Visible;
             target.AlwaysOnTop = AlwaysOnTop;
+            target.IsTodoList = IsTodoList;
+            target.IsSchedule = IsSchedule;
             target.X = X;
             target.Y = Y;
             target.Width = Width;
             target.Height = Height;
             target.CreatedUtcTicks = CreatedUtcTicks;
             target.ModifiedUtcTicks = ModifiedUtcTicks;
+            target.ReminderUtcTicks = ReminderUtcTicks;
+            target.TodoItems.Clear();
+            if (TodoItems != null)
+                foreach (StickyTodoUiSnapshot item in TodoItems)
+                    if (item != null) target.TodoItems.Add(
+                        new StickyTodoItem(item.Text, item.State,
+                            item.IsPinned));
+            target.ScheduleItems.Clear();
+            if (ScheduleItems != null)
+                foreach (StickyScheduleUiSnapshot item in ScheduleItems)
+                    if (item != null) target.ScheduleItems.Add(
+                        new StickyScheduleItem(item.Text,
+                            new DateTime(item.TargetDateTicks),
+                            item.IsPinned));
         }
+    }
+
+    internal sealed class StickyTodoUiSnapshot
+    {
+        internal StickyTodoUiSnapshot(StickyTodoItem source)
+        {
+            Text = source.Text ?? String.Empty;
+            State = source.State;
+            IsPinned = source.IsPinned;
+        }
+
+        internal string Text { get; private set; }
+        internal StickyTodoState State { get; private set; }
+        internal bool IsPinned { get; private set; }
+    }
+
+    internal sealed class StickyScheduleUiSnapshot
+    {
+        internal StickyScheduleUiSnapshot(StickyScheduleItem source)
+        {
+            Text = source.Text ?? String.Empty;
+            TargetDateTicks = source.TargetDateTicks;
+            IsPinned = source.IsPinned;
+        }
+
+        internal string Text { get; private set; }
+        internal long TargetDateTicks { get; private set; }
+        internal bool IsPinned { get; private set; }
     }
 
     internal enum StickyUiEventKind
@@ -115,6 +180,10 @@ namespace PennyPet
         TypingActivity,
         InputFocusChanged,
         ImeCompositionChanged,
+        FirstRendered,
+        CancelReminderRequested,
+        ModifyReminderRequested,
+        DeleteReminderRequested,
         DeleteRequested,
         NewNoteRequested,
         NewTodoRequested,
@@ -125,13 +194,15 @@ namespace PennyPet
     internal sealed class StickyUiEvent
     {
         internal StickyUiEvent(StickyUiEventKind kind, string noteId,
-            StickyNoteUiSnapshot snapshot, bool flag, long sequence)
+            StickyNoteUiSnapshot snapshot, bool flag, long sequence,
+            ReminderItem reminder = null)
         {
             Kind = kind;
             NoteId = noteId ?? String.Empty;
             Snapshot = snapshot;
             Flag = flag;
             Sequence = sequence;
+            Reminder = reminder;
         }
 
         internal StickyUiEventKind Kind { get; private set; }
@@ -139,6 +210,7 @@ namespace PennyPet
         internal StickyNoteUiSnapshot Snapshot { get; private set; }
         internal bool Flag { get; private set; }
         internal long Sequence { get; private set; }
+        internal ReminderItem Reminder { get; private set; }
     }
 
     internal enum StickyUiCommandStatus

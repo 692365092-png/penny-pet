@@ -2143,6 +2143,8 @@ namespace PennyPet
             StickyUiEvent lastEvent = null;
             HashSet<string> eventNoteIds = new HashSet<string>(
                 StringComparer.OrdinalIgnoreCase);
+            HashSet<StickyUiEventKind> eventKinds =
+                new HashSet<StickyUiEventKind>();
             SynchronizationContext petContext =
                 new WindowsFormsSynchronizationContext();
             StickyNoteData canonical = new StickyNoteData();
@@ -2160,6 +2162,30 @@ namespace PennyPet
             second.Y = -2000;
             second.Width = 320;
             second.Height = 300;
+            StickyNoteData todo = new StickyNoteData();
+            todo.IsTodoList = true;
+            todo.Text = "todo-detached";
+            todo.TodoItems.Add(new StickyTodoItem("todo", false));
+            todo.X = -1600;
+            todo.Y = -1600;
+            todo.Width = 320;
+            todo.Height = 300;
+            StickyNoteData schedule = new StickyNoteData();
+            schedule.IsSchedule = true;
+            schedule.Text = "schedule-detached";
+            schedule.ScheduleItems.Add(new StickyScheduleItem(
+                "schedule", DateTime.Today));
+            schedule.X = -1200;
+            schedule.Y = -1200;
+            schedule.Width = 320;
+            schedule.Height = 300;
+            StickyNoteData reminder = new StickyNoteData();
+            reminder.Text = "reminder-detached";
+            reminder.ReminderUtcTicks = DateTime.UtcNow.AddHours(1).Ticks;
+            reminder.X = -800;
+            reminder.Y = -800;
+            reminder.Width = 320;
+            reminder.Height = 300;
 
             using (StickyUiHost host = new StickyUiHost())
             {
@@ -2168,7 +2194,11 @@ namespace PennyPet
                 {
                     eventThread = Thread.CurrentThread.ManagedThreadId;
                     lastEvent = value;
-                    if (value != null) eventNoteIds.Add(value.NoteId);
+                    if (value != null)
+                    {
+                        eventNoteIds.Add(value.NoteId);
+                        eventKinds.Add(value.Kind);
+                    }
                 }, petContext);
                 StickyUiCommandResult created = PostStickyCommandAndWait(host,
                     new StickyUiCommand(StickyUiCommandKind.Create,
@@ -2184,6 +2214,21 @@ namespace PennyPet
                         new StickyUiCommand(StickyUiCommandKind.Create,
                             second.Id, false,
                             StickyNoteUiSnapshot.FromData(second)), petContext);
+                StickyUiCommandResult todoCreated =
+                    PostStickyCommandAndWait(host,
+                        new StickyUiCommand(StickyUiCommandKind.Create,
+                            todo.Id, false,
+                            StickyNoteUiSnapshot.FromData(todo)), petContext);
+                StickyUiCommandResult scheduleCreated =
+                    PostStickyCommandAndWait(host,
+                        new StickyUiCommand(StickyUiCommandKind.Create,
+                            schedule.Id, false,
+                            StickyNoteUiSnapshot.FromData(schedule)), petContext);
+                StickyUiCommandResult reminderCreated =
+                    PostStickyCommandAndWait(host,
+                        new StickyUiCommand(StickyUiCommandKind.Create,
+                            reminder.Id, false,
+                            StickyNoteUiSnapshot.FromData(reminder)), petContext);
 
                 StickyUiCommandResult hidden = PostStickyCommandAndWait(host,
                     new StickyUiCommand(StickyUiCommandKind.Hide,
@@ -2191,6 +2236,12 @@ namespace PennyPet
                 StickyUiCommandResult shown = PostStickyCommandAndWait(host,
                     new StickyUiCommand(StickyUiCommandKind.Show,
                         canonical.Id, false), petContext);
+                StickyUiCommandResult closedOne = PostStickyCommandAndWait(host,
+                    new StickyUiCommand(StickyUiCommandKind.Close,
+                        canonical.Id, false), petContext);
+                StickyUiCommandResult reopened = PostStickyCommandAndWait(host,
+                    new StickyUiCommand(StickyUiCommandKind.Create,
+                        canonical.Id, false, detached), petContext);
                 StickyUiCommandResult closed = PostStickyCommandAndWait(host,
                     new StickyUiCommand(StickyUiCommandKind.CloseAll,
                         String.Empty, false), petContext);
@@ -2199,20 +2250,36 @@ namespace PennyPet
                 bool closedBoth = closed != null &&
                     closed.Status == StickyUiCommandStatus.Handled &&
                     closed.FinalSnapshots != null &&
-                    closed.FinalSnapshots.Length == 2;
+                    closed.FinalSnapshots.Length == 5;
                 return detachedOwnership && hidden != null &&
                     hidden.Status == StickyUiCommandStatus.Handled &&
                     hidden.Snapshot != null && !hidden.Snapshot.Visible &&
                     shown != null &&
                     shown.Status == StickyUiCommandStatus.Handled &&
                     shown.Snapshot != null && shown.Snapshot.Visible &&
+                    closedOne != null &&
+                    closedOne.Status == StickyUiCommandStatus.Handled &&
+                    reopened != null &&
+                    reopened.Status == StickyUiCommandStatus.Handled &&
                     secondCreated != null &&
                     secondCreated.Status == StickyUiCommandStatus.Handled &&
                     secondCreated.OwnerThreadId == created.OwnerThreadId &&
+                    todoCreated != null &&
+                    todoCreated.Status == StickyUiCommandStatus.Handled &&
+                    scheduleCreated != null &&
+                    scheduleCreated.Status == StickyUiCommandStatus.Handled &&
+                    reminderCreated != null &&
+                    reminderCreated.Status == StickyUiCommandStatus.Handled &&
                     closedBoth && exited &&
                     eventThread == petThread && lastEvent != null &&
                     eventNoteIds.Contains(canonical.Id) &&
-                    eventNoteIds.Contains(second.Id);
+                    eventNoteIds.Contains(second.Id) &&
+                    eventNoteIds.Contains(todo.Id) &&
+                    eventNoteIds.Contains(schedule.Id) &&
+                    eventNoteIds.Contains(reminder.Id) &&
+                    eventKinds.Contains(StickyUiEventKind.FirstRendered) &&
+                    eventKinds.Contains(StickyUiEventKind.SnapshotChanged) &&
+                    eventKinds.Contains(StickyUiEventKind.Closed);
             }
         }
 
