@@ -149,7 +149,7 @@ namespace PennyPet
             if (seed == null) return;
             ClearDockPreview();
             ClearSplitGuide();
-            _activeNoteDrag = source;
+            _activeNoteDragId = snapshot.NoteId;
             _activeNoteDragStartLocation = new Point(snapshot.X, snapshot.Y);
             _activeNoteDragLastLocation = new Point(snapshot.X, snapshot.Y);
             _activeNoteDragStartedUtc = DateTime.UtcNow;
@@ -177,12 +177,14 @@ namespace PennyPet
         private void StickyNoteHeaderDragMoved(object sender, EventArgs e)
         {
             StickyNoteWindow source = sender as StickyNoteWindow;
-            if (_movingDockGroup || source == null ||
-                !Object.ReferenceEquals(source, _activeNoteDrag)) return;
+            if (source == null) return;
             DockWindowSnapshot snapshot =
                 DockWindowSnapshot.FromData(source.Data);
             StickyNoteData seed = _notes.Find(snapshot.NoteId);
             if (seed == null) return;
+            if (_movingDockGroup ||
+                !String.Equals(snapshot.NoteId, _activeNoteDragId,
+                    StringComparison.OrdinalIgnoreCase)) return;
             Point current = source.Location;
             int dx = current.X - _activeNoteDragLastLocation.X;
             int dy = current.Y - _activeNoteDragLastLocation.Y;
@@ -270,12 +272,13 @@ namespace PennyPet
         private void StickyNoteHeaderDragCompleted(object sender, EventArgs e)
         {
             StickyNoteWindow source = sender as StickyNoteWindow;
-            if (source == null || !Object.ReferenceEquals(source,
-                _activeNoteDrag)) return;
+            if (source == null) return;
             DockWindowSnapshot snapshot =
                 DockWindowSnapshot.FromData(source.Data);
             StickyNoteData seed = _notes.Find(snapshot.NoteId);
             if (seed == null) return;
+            if (!String.Equals(snapshot.NoteId, _activeNoteDragId,
+                StringComparison.OrdinalIgnoreCase)) return;
             DockTarget target = FindDockTarget(seed);
             if (target != null && !CanSafelyCombineDockComponents(
                 target, seed)) target = null;
@@ -356,7 +359,7 @@ namespace PennyPet
             ClearSplitGuide();
             RefreshDockResizeRoles();
             _notes.Save();
-            _activeNoteDrag = null;
+            _activeNoteDragId = null;
             _activeDockGroup.Clear();
             _activeDockOriginalLocations.Clear();
             _activeNoteDetached = false;
@@ -536,6 +539,12 @@ namespace PennyPet
                 form != null && !form.IsDisposed ? form : null;
         }
 
+        private StickyNoteData ActiveDragNote()
+        {
+            return String.IsNullOrEmpty(_activeNoteDragId)
+                ? null : _notes.Find(_activeNoteDragId);
+        }
+
         internal static List<Rectangle> CalculateUnifiedDockLayout(
             IList<Size> sizes, int left, int top, int width)
         {
@@ -650,7 +659,7 @@ namespace PennyPet
         {
             StickyNoteWindow source = sender as StickyNoteWindow;
             if (_synchronizingDockLayout || _movingDockGroup ||
-                _activeNoteDrag != null ||
+                _activeNoteDragId != null ||
                 source == null || source.IsDisposed) return;
             source.Data.Width = source.Width;
             source.Data.Height = source.Height;
@@ -721,7 +730,7 @@ namespace PennyPet
         {
             StickyNoteWindow source = sender as StickyNoteWindow;
             if (_synchronizingDockLayout || _movingDockGroup ||
-                _activeNoteDrag != null || source == null ||
+                _activeNoteDragId != null || source == null ||
                 source.IsDisposed) return;
             DockWindowSnapshot snapshot =
                 DockWindowSnapshot.FromData(source.Data);
@@ -759,7 +768,7 @@ namespace PennyPet
         {
             StickyNoteWindow source = sender as StickyNoteWindow;
             if (_synchronizingDockLayout || _movingDockGroup ||
-                _activeNoteDrag != null || source == null ||
+                _activeNoteDragId != null || source == null ||
                 source.IsDisposed || e == null) return;
             DockWindowSnapshot snapshot =
                 DockWindowSnapshot.FromData(source.Data);
@@ -1097,8 +1106,8 @@ namespace PennyPet
 
         private void ClearDockPreview()
         {
-            if (_activeNoteDrag != null && !_activeNoteDrag.IsDisposed)
-                _activeNoteDrag.SetDockPreview(false, false);
+            StickyNoteWindow active = GetLegacyWindow(ActiveDragNote());
+            if (active != null) active.SetDockPreview(false, false);
             if (_dockPreviewParent != null && !_dockPreviewParent.IsDisposed)
                 _dockPreviewParent.SetDockPreview(false, false);
             if (_dockPreviewChild != null && !_dockPreviewChild.IsDisposed)

@@ -175,7 +175,7 @@ namespace PennyPet
         private long _pendingOverlayGeneration;
         private bool _positioningNoteTabs;
         private string _noteTabsSignature = String.Empty;
-        private StickyNoteWindow _activeNoteDrag;
+        private string _activeNoteDragId;
         private readonly List<StickyNoteData> _activeDockGroup =
             new List<StickyNoteData>();
         private readonly Dictionary<string, Point> _activeDockOriginalLocations =
