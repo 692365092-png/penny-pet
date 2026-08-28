@@ -4,9 +4,27 @@ Penny pet 是一款 Windows 桌面宠物，包含透明角色动画、普通便�
 
 ![Penny pet](art/loading.png)
 
-## 下载与运行
+## 下载最新版
 
-GitHub Actions 会从公开源码自动生成一个完整的单文件 EXE。运行时不需要另外安装美术包，也不需要把 GIF 文件放在 EXE 旁边。
+### [点这里进入最新版下载页面](https://github.com/692365092-png/penny-pet/releases/latest)
+
+适用于 Windows 10 和 Windows 11。打开下载页面后，在 **Assets** 区域点击
+**Penny-pet-Windows.exe**，下载完成后双击运行即可。无需安装，也不需要下载其他文件。
+
+请只从本仓库的 Release 页面下载，以免拿到被他人修改的版本。
+
+### 如果 Windows 阻止运行
+
+Penny pet 目前没有购买商业代码签名证书，因此第一次运行时，Windows 可能显示
+“Windows 已保护你的电脑”。这表示 Windows 暂时无法确认发布者身份，并不表示程序一定有问题。
+
+确认文件来自上面的官方仓库后，可以点击 **更多信息**，再点击 **仍要运行**。
+如果杀毒软件仍然阻止文件，或下载来源不是本仓库，请不要关闭安全软件强行运行。
+
+Release 页面同时提供 `SHA256SUMS.txt` 校验文件，供需要核对文件完整性的用户使用；
+普通用户不需要下载它。
+
+## 使用说明
 
 > 按键显示功能默认关闭。开启后只在本机显示按键名称，不保存或上传键盘内容；程序会尽力识别并隐藏密码框和敏感输入，但无法保证识别所有第三方或自绘输入框，处理高敏感信息时建议关闭此功能。
 
@@ -16,7 +34,7 @@ GitHub Actions 会从公开源码自动生成一个完整的单文件 EXE。运�
 
 ## 从源码构建
 
-要求：Windows 10/11、Windows PowerShell 5.1、.NET Framework 4.8。
+要求：Windows 10/11、Windows PowerShell 5.1、.NET 8 SDK，以及 .NET Framework 4.8 Developer Pack（仅安装 4.8 Runtime 不包含构建所需的引用程序集）。
 
 使用 Visual Studio 或标准 .NET 工具进行源码编译检查：
 

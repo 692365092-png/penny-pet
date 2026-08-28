@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 
+// Windows-only local/HTTP link scanner. Mac should provide its own path and URL policy.
 namespace PennyPet
 {
     internal sealed class StickyLinkMatch

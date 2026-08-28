@@ -61,8 +61,9 @@ dotnet test '.\desktop-pet\PennyPet.Tests.csproj' --configuration Release
 - `Core/StickyNotes/StickyNoteCodec.cs`：v1-v9 数据行编解码、内容限制和旧格式兼容。
 - `Core/StickyNotes/StickyDockOperations.cs`：组插入、抽离、隐藏槽位、快照、统一置顶数据和长按拆分判定。
 - `Core/StickyNotes/StickyTabDropSession.cs`：跨 OLE 嵌套消息循环的页签拖放事务。
-- `Core/StickyNotes/DockGeometry.cs`：`DockPoint`、`DockSize`、`DockRect`，以及 Dock 统一布局、divider、header 可达性、恢复、新建、页签、弹窗和异常拖拽恢复的纯数值规则。
-- `Core/StickyNotes/StartupRestorePlanner.cs`：每个可见 Dock 组件恢复一次的顺序和 UI/美术 readiness 纯门禁；不是完整启动状态机。
+- `Core/StickyNotes/StickyDockGeometry.cs`：`DockPoint`、`DockSize`、`DockRect`，以及 Dock 统一布局、divider、header 可达性、恢复、新建、页签、弹窗和异常拖拽恢复的纯数值规则。
+- `Core/Startup/PetStartupRules.cs`：UI/美术 readiness 纯门禁；不是完整启动状态机。
+- `Core/DailyNote/DailyNoteFeature.cs`：已经落地的三十日进度、同日幂等、断签和完成判定；后续 UI、内容来源和持久化按真实需求设计。
 - `Features/StickyNotes/StickyNoteRepository.cs`：Windows 文件读取、迁移、备份、原子保存、dirty、重试和紧急导出。
 - `Features/StickyNotes/StickyNoteWpf.cs`：WPF 窗口构造、总体生命周期、持久化和外观接线。
 - `Features/StickyNotes/StickyEditorCoordinator.cs`：RichText、字体、焦点和 IME；最高风险。
@@ -72,14 +73,15 @@ dotnet test '.\desktop-pet\PennyPet.Tests.csproj' --configuration Release
 - `Features/StickyNotes/PetStickyDockCoordinator.cs`：Windows 屏幕/DPI/窗口事实采集、原生几何转换和真实窗口副作用。
 - `Features/StickyNotes/StickyNoteTabs.cs`：侧边页签和隐藏/恢复 UI。
 
-`DockGeometry` 持有平台无关几何，Windows Coordinator 负责把 `Point`、`Size`、`Rectangle` 转成 `DockPoint`、`DockSize`、`DockRect`，调用 Core 后再移动或缩放窗口。`DockCoordinateSafetyLimit = 30000` 是 Win32 限制，由 Windows 层传入，不能下沉成跨平台业务常量。
+`StickyDockGeometry` 持有平台无关几何，Windows Coordinator 负责把 `Point`、`Size`、`Rectangle` 转成 `DockPoint`、`DockSize`、`DockRect`，调用 Core 后再移动或缩放窗口。`DockCoordinateSafetyLimit = 30000` 是 Win32 限制，由 Windows 层传入，不能下沉成跨平台业务常量。
 
 Dock 修改必须同时检查：组关系、组内顺序、持久化快照、统一宽度、相邻高度、隐藏/恢复、插入/抽离、置顶和屏幕安全边界。不要把 Dock 简化成“坐标相邻”。
 
 ### 链接边界
 
-- `Core/Links/StickyNoteLinks.cs`：当前只识别 HTTP(S) 并保存平台中性的匹配数据；不得解释盘符、UNC 或 Windows 文件扩展名。
-- `Features/StickyNotes/StickyLinkService.cs`：Windows 盘符/UNC、危险扩展名、确认文案、文件探测和 Shell 打开。
+- `Features/StickyNotes/StickyNoteLinks.cs`：HTTP(S) 与 Windows 本地路径的链接匹配。
+- `Features/StickyNotes/StickyLinkPolicy.cs`：危险扩展名、快捷方式与 UNC 风险分类和确认文案。
+- `Features/StickyNotes/StickyLinkService.cs`：文件探测、用户确认和 Shell 打开。
 - `Features/StickyNotes/StickyLinkCoordinator.cs`：WPF 链接格式、点击和小手光标。
 
 未来 macOS 文件目标必须使用自己的路径和安全语义，不能复用 Windows 盘符/UNC 策略。
@@ -93,7 +95,7 @@ Dock 修改必须同时检查：组关系、组内顺序、持久化快照、统
 - `StartupRegistration.cs`：Windows Registry 开机启动。
 - `PetStartupCoordinator.cs`：Windows Timer、窗口创建、首帧等待、注册表和事件协调。
 
-当前 Core 只有 `StartupRestorePlanner` 的恢复/readiness 小规则，不得将其描述为完整跨平台启动框架。
+当前 Core 只有 `PetStartupRules` 的 readiness 小规则，不得将其描述为完整跨平台启动框架。
 
 ### 键盘显示与隐私
 

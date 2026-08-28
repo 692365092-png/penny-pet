@@ -59,29 +59,60 @@ namespace PennyPet
                 _frame.Size == expected;
         }
 
+        internal bool UsesNormalizedIdleFrameForTest()
+        {
+            if (_frame == null) return false;
+            Size canvas = PetForm.ScaledPetSize(100);
+            if (_frame.Size != canvas) return false;
+            using (PetArtPackage art = PetArtPackage.Load(canvas.Width,
+                canvas.Height))
+            using (Bitmap expected = art.GetFrame(0, 0))
+            {
+                if (expected == null || expected.Size != _frame.Size)
+                    return false;
+                for (int y = 0; y < _frame.Height; y++)
+                    for (int x = 0; x < _frame.Width; x++)
+                        if (_frame.GetPixel(x, y).ToArgb() !=
+                            expected.GetPixel(x, y).ToArgb())
+                            return false;
+            }
+            return true;
+        }
+
         private static Bitmap LoadScaledFrame(Size size)
         {
-            using (Stream stream = typeof(StartupLoadingForm).Assembly
-                .GetManifestResourceStream(ResourceName))
+            // The loading window must show the exact same normalized idle frame
+            // as PetForm.  Using the generated startup cache instead of the
+            // legacy loading.png avoids the old stretch/aspect mismatch.
+            Size canvas = PetForm.ScaledPetSize(100);
+            using (PetArtPackage art = PetArtPackage.Load(canvas.Width,
+                canvas.Height))
             {
-                if (stream == null) return null;
-                using (Bitmap source = new Bitmap(stream))
-                {
-                    Bitmap output = new Bitmap(size.Width, size.Height,
-                        System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-                    using (Graphics graphics = Graphics.FromImage(output))
-                    {
-                        graphics.Clear(Color.Transparent);
-                        graphics.CompositingMode = CompositingMode.SourceCopy;
-                        graphics.InterpolationMode =
-                            InterpolationMode.HighQualityBicubic;
-                        graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
-                        graphics.DrawImage(source,
-                            new Rectangle(Point.Empty, size));
-                    }
-                    return output;
-                }
+                Bitmap source = art.GetFrame(0, 0);
+                return ResizeStartupFrame(source, size);
             }
+        }
+
+        private static Bitmap ResizeStartupFrame(Bitmap source, Size size)
+        {
+            if (source.Width == size.Width && source.Height == size.Height)
+                return new Bitmap(source);
+
+            Bitmap output = new Bitmap(size.Width, size.Height,
+                System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            using (Graphics graphics = Graphics.FromImage(output))
+            {
+                graphics.Clear(Color.Transparent);
+                graphics.CompositingMode = CompositingMode.SourceCopy;
+                graphics.InterpolationMode =
+                    InterpolationMode.HighQualityBicubic;
+                graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                graphics.DrawImage(source,
+                    new Rectangle(Point.Empty, size),
+                    new Rectangle(Point.Empty, source.Size),
+                    GraphicsUnit.Pixel);
+            }
+            return output;
         }
 
         private static Point ResolveLocation(PetSettings settings, Size size)

@@ -28,6 +28,7 @@ namespace PennyPet
             internal bool GreenHaloAbsent;
             internal bool ApplicationIconEmbeddedOk;
             internal bool StartupFrameEmbeddedOk;
+            internal bool StartupFrameMatchesIdleOk;
             internal bool StartupUsesSavedScaleOk;
             internal bool ContactAuthorFeatureOk;
             internal int[] AnimationCycleDurations;
@@ -94,6 +95,10 @@ namespace PennyPet
                     applicationIcon.Width >= 16 && applicationIcon.Height >= 16;
             }
             result.StartupFrameEmbeddedOk = StartupLoadingForm.HasEmbeddedFrame;
+            using (StartupLoadingForm loadingFrameForm =
+                new StartupLoadingForm(new PetSettings()))
+                result.StartupFrameMatchesIdleOk =
+                    loadingFrameForm.UsesNormalizedIdleFrameForTest();
             PetSettings loadingScaleSettings = new PetSettings
             {
                 ScalePercent = 150
@@ -1029,10 +1034,10 @@ namespace PennyPet
                 PetForm.CanDockBelow(new Rectangle(400, 400, 280, 300),
                     new Rectangle(80, 100, 900, 300), 20);
             result.LongCoordinateGuardOk =
-                PetForm.IsDockCoordinateRangeSafe(100,
-                    new int[] { 700, 700, 700 }) &&
-                !PetForm.IsDockCoordinateRangeSafe(29000,
-                    new int[] { 700, 700 });
+                StickyDockOperations.IsDockCoordinateRangeSafe(100,
+                    new int[] { 700, 700, 700 }, 30000) &&
+                !StickyDockOperations.IsDockCoordinateRangeSafe(29000,
+                    new int[] { 700, 700 }, 30000);
             Rectangle recoveredDrag = StickyNoteWindow
                 .CalculateRecoveredHeaderDragBounds(
                     new Rectangle(100, 100, 320, 300),
@@ -1083,7 +1088,6 @@ namespace PennyPet
             internal bool CaretTypingFormatSwitchOk;
             internal bool SingleNativeImeCommitOk;
             internal bool UnifiedContextMenusOk;
-            internal bool WindowsLinkPolicyOk;
         }
 
         private static StickyEditorCheckResult RunStickyEditorChecks()
@@ -1158,8 +1162,6 @@ namespace PennyPet
                 result.UnifiedContextMenusOk =
                     firstFormatNote.ExerciseUnifiedNoteContextMenusForTest();
             }
-            result.WindowsLinkPolicyOk =
-                StickyLinkService.WindowsPolicyIsSafeForTest();
             return result;
         }
 
@@ -1412,6 +1414,7 @@ namespace PennyPet
             internal bool ScaledGapOk;
             internal bool VectorIconColorOk;
             internal bool DeleteCommandOk;
+            internal bool ZOrderPolicyOk;
         }
 
         private static StickySideTabCheckResult RunStickySideTabChecks(
@@ -1551,6 +1554,9 @@ namespace PennyPet
                 delegate(StickyNoteData note) { },
                 delegate(StickyNoteData note) { }))
                 result.DeleteCommandOk = tab.HasDeleteCommand;
+            result.ZOrderPolicyOk =
+                StickyNoteWindowRules.ShouldKeepSideTabsTopMost(false) &&
+                !StickyNoteWindowRules.ShouldKeepSideTabsTopMost(true);
             return result;
         }
 
@@ -2011,10 +2017,10 @@ namespace PennyPet
                     "C:\\Program Files\\Penny pet.exe") ==
                     "\"C:\\Program Files\\Penny pet.exe\"";
             result.StartupLoadingReadinessGateOk =
-                !StartupRestorePlanner.CanReleaseLoading(false, false) &&
-                !StartupRestorePlanner.CanReleaseLoading(true, false) &&
-                !StartupRestorePlanner.CanReleaseLoading(false, true) &&
-                StartupRestorePlanner.CanReleaseLoading(true, true);
+                !PetStartupRules.CanReleaseStartupLoading(false, false) &&
+                !PetStartupRules.CanReleaseStartupLoading(true, false) &&
+                !PetStartupRules.CanReleaseStartupLoading(false, true) &&
+                PetStartupRules.CanReleaseStartupLoading(true, true);
             result.ScaleRangeOk =
                 PetForm.NormalizeScalePercent(47) == 50 &&
                 PetForm.NormalizeScalePercent(104) == 100 &&
@@ -2272,8 +2278,6 @@ namespace PennyPet
                     editorChecks.SingleNativeImeCommitOk) + ",\n" +
                 "  \"sticky_editor_and_window_context_actions_ok\": " + Bool(
                     editorChecks.UnifiedContextMenusOk) + ",\n" +
-                "  \"sticky_windows_link_policy_ok\": " + Bool(
-                    editorChecks.WindowsLinkPolicyOk) + ",\n" +
                 "  \"sticky_note_types_never_convert_ok\": " + Bool(
                     shellChecks.TodoChecks.FixedTypeActionsOk) + ",\n" +
                 "  \"sticky_font_size_parsing_ok\": " + Bool(
@@ -2302,6 +2306,8 @@ namespace PennyPet
                     artChecks.ApplicationIconEmbeddedOk) + ",\n" +
                 "  \"startup_loading_frame_embedded_ok\": " + Bool(
                     artChecks.StartupFrameEmbeddedOk) + ",\n" +
+                "  \"startup_loading_matches_idle_frame_ok\": " + Bool(
+                    artChecks.StartupFrameMatchesIdleOk) + ",\n" +
                 "  \"startup_loading_uses_saved_pet_scale_ok\": " + Bool(
                     artChecks.StartupUsesSavedScaleOk) + ",\n" +
                 "  \"contact_author_feature_ok\": " + Bool(
@@ -2384,7 +2390,9 @@ namespace PennyPet
                 "  \"side_tab_scaled_visual_gap_halved_ok\": " + Bool(
                     sideTabChecks.ScaledGapOk) + ",\n" +
                 "  \"side_tab_vector_icon_uses_darker_tab_color_ok\": " + Bool(
-                    sideTabChecks.VectorIconColorOk) + ",\n";
+                    sideTabChecks.VectorIconColorOk) + ",\n" +
+                "  \"side_tab_z_order_policy_ok\": " + Bool(
+                    sideTabChecks.ZOrderPolicyOk) + ",\n";
         }
 
         private static string BuildPolicyKeyboardReminderReportFields(

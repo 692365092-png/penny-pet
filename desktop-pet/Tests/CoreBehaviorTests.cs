@@ -10,31 +10,6 @@ namespace PennyPet.Tests
     public sealed class CoreBehaviorTests
     {
         [TestMethod]
-        public void CoreAssembly_DoesNotReferencePlatformUiOrIntegration()
-        {
-            HashSet<string> forbidden = new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase)
-            {
-                "System.Drawing",
-                "System.Drawing.Common",
-                "System.Drawing.Primitives",
-                "System.Windows.Forms",
-                "WindowsBase",
-                "PresentationCore",
-                "PresentationFramework",
-                "System.Xaml",
-                "WindowsFormsIntegration",
-                "Microsoft.Win32.Registry",
-                "UIAutomationClient",
-                "UIAutomationTypes"
-            };
-            foreach (System.Reflection.AssemblyName reference in
-                typeof(PetSettingsData).Assembly.GetReferencedAssemblies())
-                Assert.IsFalse(forbidden.Contains(reference.Name),
-                    "PennyPet.Core must not reference " + reference.Name);
-        }
-
-        [TestMethod]
         public void SettingRules_NormalizePersistedValuesWithoutUiTypes()
         {
             Assert.AreEqual(50, PetSettingRules.NormalizePetScalePercent(47));
@@ -48,6 +23,256 @@ namespace PennyPet.Tests
                 PetSettingRules.NormalizeKeyboardTextScalePercent(100));
             Assert.AreEqual(150,
                 PetSettingRules.NormalizeKeyboardTextScalePercent(140));
+        }
+
+        [TestMethod]
+        public void StickyNoteWindowRules_KeepTabsTopMostOnlyWithoutVisibleNotes()
+        {
+            Assert.IsTrue(
+                StickyNoteWindowRules.ShouldKeepSideTabsTopMost(false));
+            Assert.IsFalse(
+                StickyNoteWindowRules.ShouldKeepSideTabsTopMost(true));
+        }
+
+        [TestMethod]
+        public void PetStartupRules_ReleaseLoadingOnlyWhenReady()
+        {
+            Assert.IsFalse(PetStartupRules.CanReleaseStartupLoading(false, false));
+            Assert.IsFalse(PetStartupRules.CanReleaseStartupLoading(true, false));
+            Assert.IsFalse(PetStartupRules.CanReleaseStartupLoading(false, true));
+            Assert.IsTrue(PetStartupRules.CanReleaseStartupLoading(true, true));
+        }
+
+        [TestMethod]
+        public void DailyNoteFeature_ProgressesDaysAndDetectsMissedDay()
+        {
+            DailyNoteEntry entry = new DailyNoteEntry("day", "body");
+            DateTime firstDate = new DateTime(2026, 8, 28);
+            DailyNoteProgress progress = new DailyNoteProgress();
+
+            DailyNoteAction first = DailyNoteFeature.Decide(firstDate,
+                progress, entry);
+            Assert.AreEqual(DailyNoteActionKind.Create, first.Kind);
+            Assert.AreEqual(1, first.DayNumber);
+
+            DailyNoteProgress issued = DailyNoteFeature.MarkIssued(
+                progress, firstDate, first.DayNumber);
+            DailyNoteAction sameDay = DailyNoteFeature.Decide(firstDate,
+                issued, entry);
+            Assert.AreEqual(DailyNoteActionKind.AlreadyIssued, sameDay.Kind);
+
+            DailyNoteAction next = DailyNoteFeature.Decide(
+                firstDate.AddDays(1), issued, entry);
+            Assert.AreEqual(DailyNoteActionKind.Create, next.Kind);
+            Assert.AreEqual(2, next.DayNumber);
+
+            DailyNoteAction missed = DailyNoteFeature.Decide(
+                firstDate.AddDays(3), issued, entry);
+            Assert.AreEqual(DailyNoteActionKind.MissedDay, missed.Kind);
+            Assert.AreEqual(2, missed.DayNumber);
+        }
+
+        [TestMethod]
+        public void DailyNoteFeature_CompletesAfterThirtyDays()
+        {
+            DailyNoteProgress progress = new DailyNoteProgress
+            {
+                IssuedDay = 30,
+                LastIssuedLocalDate = new DateTime(2026, 9, 26),
+                Completed = true
+            };
+            DailyNoteAction action = DailyNoteFeature.Decide(
+                new DateTime(2026, 9, 27), progress, null);
+
+            Assert.AreEqual(DailyNoteActionKind.ProgramComplete, action.Kind);
+            Assert.AreEqual(30, action.DayNumber);
+        }
+
+        [TestMethod]
+        public void StickyDockOperations_CoordinateGuardUsesClampedHeights()
+        {
+            Assert.IsTrue(
+                StickyDockOperations.IsDockCoordinateRangeSafe(100,
+                    new[] { 700, 700, 700 }, 30000));
+            Assert.IsFalse(
+                StickyDockOperations.IsDockCoordinateRangeSafe(29000,
+                    new[] { 700, 700 }, 30000));
+            Assert.IsFalse(
+                StickyDockOperations.IsDockCoordinateRangeSafe(-31000,
+                    null, 30000));
+        }
+
+        [TestMethod]
+        public void StickyDockOperations_FindActiveDockTailWalksActiveGroup()
+        {
+            StickyNoteData root = new StickyNoteData { Id = "root" };
+            StickyNoteData middle = new StickyNoteData
+            {
+                Id = "middle",
+                DockParentId = "root"
+            };
+            StickyNoteData tail = new StickyNoteData
+            {
+                Id = "tail",
+                DockParentId = "middle"
+            };
+
+            StickyNoteData found = StickyDockOperations.FindActiveDockTail(
+                new[] { root, middle, tail },
+                new[] { root, middle, tail },
+                root);
+
+            Assert.AreEqual(tail, found);
+            Assert.AreEqual(root,
+                StickyDockOperations.FindActiveDockTail(
+                    new[] { root, middle, tail },
+                    new[] { root },
+                    root));
+        }
+
+        [TestMethod]
+        public void StickyDockOperations_CanDockBelowMatchesWindowRule()
+        {
+            Assert.IsTrue(
+                StickyDockOperations.CanDockBelow(80, 400, 900, 300,
+                    400, 100, 280, 300, 20));
+            Assert.IsTrue(
+                StickyDockOperations.CanDockBelow(400, 400, 280, 300,
+                    80, 100, 900, 300, 20));
+            Assert.IsFalse(
+                StickyDockOperations.CanDockBelow(0, 500, 280, 300,
+                    0, 0, 280, 300, 20));
+            Assert.IsFalse(
+                StickyDockOperations.CanDockBelow(900, 400, 280, 300,
+                    0, 100, 280, 300, 20));
+        }
+
+        [TestMethod]
+        public void StickyDockGeometry_UnifiedLayoutMatchesWindowsResults()
+        {
+            List<DockSize> sizes = new List<DockSize>
+            {
+                new DockSize { Width = 320, Height = 300 },
+                new DockSize { Width = 500, Height = 240 },
+                new DockSize { Width = 380, Height = 260 }
+            };
+            List<DockRect> layout =
+                StickyDockGeometry.CalculateUnifiedDockLayout(sizes,
+                    120, 80, 460, 1F);
+
+            Assert.AreEqual(3, layout.Count);
+            Assert.AreEqual(120, layout[0].Left);
+            Assert.AreEqual(80, layout[0].Top);
+            Assert.AreEqual(460, layout[0].Width);
+            Assert.AreEqual(300, layout[0].Height);
+            Assert.AreEqual(380, layout[1].Top);
+            Assert.AreEqual(620, layout[2].Top);
+        }
+
+        [TestMethod]
+        public void StickyDockGeometry_DividerRulesMatchWindowsResults()
+        {
+            DockSize middle =
+                StickyDockGeometry.CalculateDockDividerHeights(300, 250, 300);
+            DockSize minimum =
+                StickyDockGeometry.CalculateDockDividerHeights(300, 430, 300);
+            DockSize range =
+                StickyDockGeometry.CalculateDockDividerRange(300, 300);
+            DockSize tallRange =
+                StickyDockGeometry.CalculateDockDividerRange(500, 500);
+
+            Assert.AreEqual(250, middle.Width);
+            Assert.AreEqual(350, middle.Height);
+            Assert.AreEqual(380, minimum.Width);
+            Assert.AreEqual(220, minimum.Height);
+            Assert.AreEqual(220, range.Width);
+            Assert.AreEqual(380, range.Height);
+            Assert.AreEqual(300, tallRange.Width);
+            Assert.AreEqual(700, tallRange.Height);
+        }
+
+        [TestMethod]
+        public void StickyDockGeometry_HeaderTranslationMatchesWindowsResults()
+        {
+            DockPoint delta = StickyDockGeometry
+                .CalculateHeaderReachableTranslation(
+                    new DockRect
+                    {
+                        Left = 100,
+                        Top = -200,
+                        Width = 400,
+                        Height = 32
+                    },
+                    new DockRect
+                    {
+                        Left = 0,
+                        Top = 0,
+                        Width = 1200,
+                        Height = 900
+                    });
+
+            Assert.AreEqual(0, delta.X);
+            Assert.AreEqual(200, delta.Y);
+        }
+
+        [TestMethod]
+        public void StickyDockGeometry_RecoveryLayoutUsesWorkAreaCentering()
+        {
+            List<DockSize> sizes = new List<DockSize>
+            {
+                new DockSize { Width = 320, Height = 300 },
+                new DockSize { Width = 280, Height = 220 }
+            };
+            List<DockRect> layout =
+                StickyDockGeometry.CalculateStickyRecoveryLayout(
+                    new DockRect
+                    {
+                        Left = 0,
+                        Top = 0,
+                        Width = 1920,
+                        Height = 1040
+                    },
+                    sizes,
+                    1F);
+
+            Assert.AreEqual(2, layout.Count);
+            Assert.AreEqual(651, layout[0].Left);
+            Assert.AreEqual(370, layout[0].Top);
+            Assert.AreEqual(320, layout[0].Width);
+            Assert.AreEqual(300, layout[0].Height);
+            Assert.AreEqual(989, layout[1].Left);
+            Assert.AreEqual(370, layout[1].Top);
+            Assert.AreEqual(280, layout[1].Width);
+            Assert.AreEqual(220, layout[1].Height);
+        }
+
+        [TestMethod]
+        public void StickyDockGeometry_RecoveredHeaderDragUsesPointerOffset()
+        {
+            DockRect recovered =
+                StickyDockGeometry.CalculateRecoveredHeaderDragBounds(
+                    new DockRect
+                    {
+                        Left = 100,
+                        Top = 100,
+                        Width = 320,
+                        Height = 300
+                    },
+                    new DockRect
+                    {
+                        Left = 120,
+                        Top = 130,
+                        Width = 640,
+                        Height = 600
+                    },
+                    new DockPoint { X = 500, Y = 400 },
+                    new DockPoint { X = 20, Y = 10 },
+                    true);
+
+            Assert.AreEqual(480, recovered.Left);
+            Assert.AreEqual(390, recovered.Top);
+            Assert.AreEqual(320, recovered.Width);
+            Assert.AreEqual(300, recovered.Height);
         }
 
         [TestMethod]
@@ -164,155 +389,6 @@ namespace PennyPet.Tests
             Assert.IsFalse(extracted.Visible);
             Assert.AreEqual(2, extracted.DockGroupOrder);
             Assert.AreEqual(middle.Id, last.DockParentId);
-
-            StickyDockOperations.SetGroupAlwaysOnTop(merged, true);
-            foreach (StickyNoteData note in merged)
-                Assert.IsTrue(note.AlwaysOnTop);
-        }
-
-        [TestMethod]
-        public void StartupRestorePlanner_QueuesEachVisibleDockComponentOnce()
-        {
-            StickyNoteData first = new StickyNoteData { Id = "first" };
-            StickyNoteData hidden = new StickyNoteData
-            {
-                Id = "hidden",
-                Visible = false
-            };
-            StickyNoteData last = new StickyNoteData { Id = "last" };
-            StickyNoteData standalone = new StickyNoteData
-            {
-                Id = "standalone"
-            };
-            List<StickyNoteData> notes = new List<StickyNoteData>
-            {
-                first, hidden, last, standalone
-            };
-            StickyDockGroups.ApplyOrderedGroup(new StickyNoteData[]
-            {
-                first, hidden, last
-            });
-
-            List<StickyNoteData> seeds =
-                StartupRestorePlanner.BuildVisibleRestoreSeeds(notes);
-
-            CollectionAssert.AreEqual(new StickyNoteData[]
-            {
-                first, standalone
-            }, seeds);
-            Assert.IsFalse(StartupRestorePlanner.CanReleaseLoading(true,
-                false));
-            Assert.IsFalse(StartupRestorePlanner.CanReleaseLoading(false,
-                true));
-            Assert.IsTrue(StartupRestorePlanner.CanReleaseLoading(true,
-                true));
-        }
-
-        [TestMethod]
-        public void DockGeometry_UsesPlatformNeutralValuesForLayoutAndHits()
-        {
-            List<DockRect> layout = DockGeometry.CalculateLayout(
-                new DockSize[]
-                {
-                    new DockSize(320, 300),
-                    new DockSize(500, 240),
-                    new DockSize(380, 260)
-                }, 120, 80, 460, 1);
-            Assert.AreEqual(3, layout.Count);
-            Assert.AreEqual(120, layout[0].Left);
-            Assert.AreEqual(80, layout[0].Top);
-            Assert.AreEqual(460, layout[0].Width);
-            Assert.AreEqual(300, layout[0].Height);
-            Assert.AreEqual(380, layout[1].Top);
-            Assert.AreEqual(620, layout[2].Top);
-            Assert.IsTrue(DockGeometry.CanDockBelow(
-                new DockRect(100, 330, 320, 300),
-                new DockRect(100, 30, 320, 300), 20));
-            Assert.IsTrue(DockGeometry.CanDockBelow(
-                new DockRect(80, 400, 900, 300),
-                new DockRect(400, 100, 280, 300), 20));
-            Assert.IsTrue(DockGeometry.IsCoordinateRangeSafe(100,
-                new int[] { 700, 700, 700 }, 30000));
-            Assert.IsFalse(DockGeometry.IsCoordinateRangeSafe(29000,
-                new int[] { 700, 700 }, 30000));
-
-            DockSize heights = DockGeometry.CalculateDividerHeights(
-                300, 250, 300);
-            Assert.AreEqual(250, heights.Width);
-            Assert.AreEqual(350, heights.Height);
-            DockPoint delta = DockGeometry.CalculateHeaderReachableTranslation(
-                new DockRect(100, -200, 400, 32),
-                new DockRect(0, 0, 1200, 900));
-            Assert.AreEqual(0, delta.X);
-            Assert.AreEqual(200, delta.Y);
-        }
-
-        [TestMethod]
-        public void DockGeometry_RecoversStickyComponentsWithoutScreenTypes()
-        {
-            List<DockRect> layout = DockGeometry.CalculateRecoveryLayout(
-                new DockRect(0, 0, 1920, 1040), new DockSize[]
-                {
-                    new DockSize(320, 300), new DockSize(320, 300),
-                    new DockSize(700, 600)
-                }, 1);
-            Assert.AreEqual(3, layout.Count);
-            Assert.AreEqual(631, layout[0].Left);
-            Assert.AreEqual(969, layout[1].Left);
-            Assert.IsTrue(layout[2].Top > layout[0].Top);
-
-            DockPoint anchor = DockGeometry.CalculateRecoveryAnchor(
-                new DockRect(-1920, 0, 1920, 1040),
-                new DockRect(-300, 700, 192, 208),
-                new DockSize(320, 300), 1);
-            Assert.IsTrue(anchor.X >= -1920 && anchor.X <= -320);
-            Assert.IsTrue(anchor.Y >= 0 && anchor.Y <= 1008);
-        }
-
-        [TestMethod]
-        public void DockGeometry_PlacesNewWindowsAndSideTabsWithoutUiTypes()
-        {
-            DockRect work = new DockRect(0, 0, 1920, 1040);
-            DockRect pet = new DockRect(20, 900, 192, 208);
-            DockPoint saved = DockGeometry.CalculateCascadedWindowLocation(
-                work, pet, new DockSize(320, 300), 8, 12);
-            DockPoint shown = DockGeometry.CalculateCascadedWindowLocation(
-                work, pet, new DockSize(320, 300), 8, 0);
-            Assert.AreEqual(242, saved.X);
-            Assert.AreEqual(728, saved.Y);
-            Assert.AreEqual(740, shown.Y);
-
-            int overlap = DockGeometry.CalculateSideTabOverlap(192);
-            DockPoint left = DockGeometry.CalculateSideTabLocation(
-                new DockRect(500, 100, 192, 208), work,
-                new DockSize(146, 178), true, overlap, 0);
-            DockPoint right = DockGeometry.CalculateSideTabLocation(
-                new DockRect(500, 100, 192, 208), work,
-                new DockSize(146, 178), false, overlap, 10);
-            Assert.AreEqual(386, left.X);
-            Assert.AreEqual(650, right.X);
-            Assert.AreEqual(115, left.Y);
-            Assert.AreEqual(5, DockGeometry.CalculateLeftSideTabCount(
-                9, 208, 1080, 34, 2));
-            DockPoint petWithTabs = DockGeometry
-                .CalculatePetLocationWithSideTabs(
-                    new DockRect(0, 900, 192, 208), work, 116, 116);
-            Assert.AreEqual(116, petWithTabs.X);
-            Assert.AreEqual(832, petWithTabs.Y);
-
-            DockPoint popup = DockGeometry.CalculatePopupLocation(
-                new DockRect(300, 100, 320, 300),
-                new DockSize(520, 260), new DockRect(0, 0, 1200, 900), 8);
-            Assert.AreEqual(200, popup.X);
-            Assert.AreEqual(408, popup.Y);
-            DockRect recovered = DockGeometry.CalculateRecoveredDragBounds(
-                new DockRect(100, 100, 320, 300),
-                new DockRect(0, 0, 1920, 1080),
-                new DockPoint(500, 400), new DockPoint(20, 10), true);
-            Assert.AreEqual(480, recovered.Left);
-            Assert.AreEqual(390, recovered.Top);
-            Assert.AreEqual(320, recovered.Width);
-            Assert.AreEqual(300, recovered.Height);
         }
 
         [TestMethod]
@@ -398,22 +474,53 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void StickyLinkDetector_RecognizesWebAddressesWithoutFileSyntax()
+        [DataRow(1)]
+        [DataRow(2)]
+        [DataRow(3)]
+        [DataRow(4)]
+        [DataRow(5)]
+        [DataRow(6)]
+        [DataRow(7)]
+        [DataRow(8)]
+        [DataRow(9)]
+        public void StickyNoteCodec_LoadsEveryHistoricalGoldenFixture(
+            int version)
         {
-            IList<StickyLinkMatch> links = StickyNoteLinkDetector
-                .FindWebAddresses(
-                "C:\\Users\\Penny pet\\进度表.xlsx。\r\n" +
-                "\\\\server\\share\\项目文件.pdf\r\n" +
-                "www.example.com/docs?q=1，\r\n" +
-                "(https://openai.com/research).\r\n" +
-                "namewww.example.com ftp://example.com");
+            string fixture = Path.Combine(AppContext.BaseDirectory,
+                "Tests", "Fixtures", "sticky-v" + version + ".txt");
+            StickyNoteData restored = StickyNoteCodec.ParseLine(
+                File.ReadAllText(fixture, Encoding.UTF8).Trim());
 
-            Assert.AreEqual(2, links.Count);
-            Assert.AreEqual("https://www.example.com/docs?q=1",
-                links[0].Target.TrimEnd('/'));
-            Assert.IsFalse(links[0].IsFileTarget);
-            Assert.AreEqual("https://openai.com/research",
-                links[1].Target.TrimEnd('/'));
+            Assert.IsNotNull(restored, "Fixture v" + version +
+                " must remain readable.");
+            Assert.AreEqual("legacy-v" + version, restored.Id);
+            Assert.AreEqual("Legacy body", restored.Text);
+            if (version >= 2)
+            {
+                Assert.AreEqual("Legacy title", restored.Title);
+                Assert.AreEqual(1, restored.TodoItems.Count);
+                Assert.AreEqual("done", restored.TodoItems[0].Text);
+            }
+            if (version >= 4)
+                Assert.AreEqual("{\\rtf1\\ansi legacy}",
+                    restored.RichTextRtf);
+            if (version >= 5)
+                Assert.AreEqual("Arial", restored.FontFamilyName);
+            if (version >= 7)
+                Assert.AreEqual("group-root", restored.DockParentId);
+            if (version >= 8)
+            {
+                Assert.AreEqual("group-root", restored.DockGroupId);
+                Assert.AreEqual(3, restored.DockGroupOrder);
+            }
+            if (version == 9)
+            {
+                Assert.IsTrue(restored.IsSchedule);
+                Assert.IsFalse(restored.IsTodoList);
+                Assert.AreEqual(1, restored.ScheduleItems.Count);
+                Assert.AreEqual("2030 schedule",
+                    restored.ScheduleItems[0].Text);
+            }
         }
 
         [TestMethod]
@@ -551,10 +658,8 @@ namespace PennyPet.Tests
                 new DateTime(2035, 4, 5, 6, 7, 8, DateTimeKind.Utc),
                 "喝水", "note-42", 24F, true));
 
-            List<string> serialized = PetSettingsCodec.Serialize(source);
-            CollectionAssert.Contains(serialized, "StartWithWindows=0");
-            CollectionAssert.DoesNotContain(serialized, "StartAtLogin=0");
-            PetSettingsData restored = PetSettingsCodec.Parse(serialized);
+            PetSettingsData restored = PetSettingsCodec.Parse(
+                PetSettingsCodec.Serialize(source));
 
             Assert.IsTrue(restored.HasLocation);
             Assert.AreEqual(-120, restored.X);

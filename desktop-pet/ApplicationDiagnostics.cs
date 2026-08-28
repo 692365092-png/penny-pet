@@ -115,24 +115,33 @@ namespace PennyPet
 
     internal static class AtomicTextFile
     {
+        private static readonly object WriteGate = new object();
+
         internal static void WriteAllLines(string filePath,
             IEnumerable<string> lines, bool keepBackup)
         {
-            string fullPath = Path.GetFullPath(filePath);
-            string directory = Path.GetDirectoryName(fullPath);
-            if (!String.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
-            string temporary = fullPath + ".tmp";
-            File.WriteAllLines(temporary,
-                new List<string>(lines ?? new string[0]).ToArray(),
-                new UTF8Encoding(false));
-            if (File.Exists(fullPath))
+            // ponytail: global lock, per-path locks if save throughput matters.
+            // One process-wide gate keeps temporary-file replacement safe even
+            // if two repositories ever save from different threads.
+            lock (WriteGate)
             {
-                string backup = keepBackup ? fullPath + ".bak" : null;
-                File.Replace(temporary, fullPath, backup, true);
-            }
-            else
-            {
-                File.Move(temporary, fullPath);
+                string fullPath = Path.GetFullPath(filePath);
+                string directory = Path.GetDirectoryName(fullPath);
+                if (!String.IsNullOrEmpty(directory))
+                    Directory.CreateDirectory(directory);
+                string temporary = fullPath + ".tmp";
+                File.WriteAllLines(temporary,
+                    new List<string>(lines ?? new string[0]).ToArray(),
+                    new UTF8Encoding(false));
+                if (File.Exists(fullPath))
+                {
+                    string backup = keepBackup ? fullPath + ".bak" : null;
+                    File.Replace(temporary, fullPath, backup, true);
+                }
+                else
+                {
+                    File.Move(temporary, fullPath);
+                }
             }
         }
     }

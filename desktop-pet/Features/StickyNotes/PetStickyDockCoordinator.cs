@@ -27,12 +27,11 @@ namespace PennyPet
             rootLeft += translation.X;
             rootTop += translation.Y;
             List<Size> sizes = new List<Size>();
-            StickyDockOperations.SetGroupAlwaysOnTop(ordered,
-                rootData.AlwaysOnTop);
             foreach (StickyNoteData member in ordered)
             {
                 sizes.Add(new Size(member.Width, member.Height));
                 member.Visible = true;
+                member.AlwaysOnTop = rootData.AlwaysOnTop;
             }
             StickyDockGroups.ApplyOrderedGroup(ordered);
             List<Rectangle> layout = CalculateUnifiedDockLayout(sizes,
@@ -69,9 +68,9 @@ namespace PennyPet
             if (component.Count == 0)
                 component = BuildDockComponent(source.Data);
             bool alwaysOnTop = source.Data.AlwaysOnTop;
-            StickyDockOperations.SetGroupAlwaysOnTop(component, alwaysOnTop);
             foreach (StickyNoteData note in component)
             {
+                note.AlwaysOnTop = alwaysOnTop;
                 StickyNoteWindow member;
                 if (_noteWindows.TryGetValue(note.Id, out member) &&
                     member != null && !member.IsDisposed)
@@ -296,10 +295,9 @@ namespace PennyPet
                     bool groupTopMost = targetSnapshot.Count == 0
                         ? parent.Data.AlwaysOnTop :
                         targetSnapshot[0].AlwaysOnTop;
-                    StickyDockOperations.SetGroupAlwaysOnTop(mergedSnapshot,
-                        groupTopMost);
                     foreach (StickyNoteData note in mergedSnapshot)
                     {
+                        note.AlwaysOnTop = groupTopMost;
                         StickyNoteWindow member;
                         if (_noteWindows.TryGetValue(note.Id, out member) &&
                             member != null && !member.IsDisposed)
@@ -482,22 +480,22 @@ namespace PennyPet
         {
             List<DockSize> dockSizes = new List<DockSize>();
             if (sizes != null)
+            {
                 foreach (Size size in sizes)
-                    dockSizes.Add(new DockSize(size.Width, size.Height));
-            List<DockRect> layout = DockGeometry.CalculateLayout(dockSizes,
-                left, top, width, scale);
+                    dockSizes.Add(new DockSize
+                    {
+                        Width = size.Width,
+                        Height = size.Height
+                    });
+            }
+            List<DockRect> dockLayout =
+                StickyDockGeometry.CalculateUnifiedDockLayout(dockSizes,
+                    left, top, width, scale);
             List<Rectangle> result = new List<Rectangle>();
-            foreach (DockRect rect in layout)
-                result.Add(new Rectangle(rect.Left, rect.Top, rect.Width,
-                    rect.Height));
+            foreach (DockRect item in dockLayout)
+                result.Add(new Rectangle(item.Left, item.Top,
+                    item.Width, item.Height));
             return result;
-        }
-
-        internal static bool IsDockCoordinateRangeSafe(int top,
-            IList<int> heights)
-        {
-            return DockGeometry.IsCoordinateRangeSafe(top, heights,
-                DockCoordinateSafetyLimit);
         }
 
         private bool CanSafelyCombineDockComponents(DockTarget target,
@@ -528,7 +526,8 @@ namespace PennyPet
                     out form) && form != null && !form.IsDisposed &&
                     form.Visible) heights.Add(form.Height);
             }
-            return IsDockCoordinateRangeSafe(root.Top, heights);
+            return StickyDockOperations.IsDockCoordinateRangeSafe(root.Top,
+                heights, DockCoordinateSafetyLimit);
         }
 
         private void NormalizeDockComponent(StickyNoteData seed)
@@ -552,10 +551,9 @@ namespace PennyPet
                 LayoutDockChain(ordered, rootAnchor.X, rootAnchor.Y,
                     rootWidth);
                 bool groupTopMost = ordered[0].AlwaysOnTop;
-                StickyDockOperations.SetGroupAlwaysOnTop(ordered,
-                    groupTopMost);
                 foreach (StickyNoteData note in ordered)
                 {
+                    note.AlwaysOnTop = groupTopMost;
                     StickyNoteWindow member;
                     if (_noteWindows.TryGetValue(note.Id, out member) &&
                         member != null && !member.IsDisposed)
@@ -752,17 +750,18 @@ namespace PennyPet
             int previousUpperHeight, int requestedUpperHeight,
             int currentLowerHeight)
         {
-            DockSize result = DockGeometry.CalculateDividerHeights(
-                previousUpperHeight, requestedUpperHeight, currentLowerHeight);
-            return new Size(result.Width, result.Height);
+            DockSize adjusted = StickyDockGeometry.CalculateDockDividerHeights(
+                previousUpperHeight, requestedUpperHeight,
+                currentLowerHeight);
+            return new Size(adjusted.Width, adjusted.Height);
         }
 
         internal static Size CalculateDockDividerRange(int upperHeight,
             int lowerHeight)
         {
-            DockSize result = DockGeometry.CalculateDividerRange(upperHeight,
-                lowerHeight);
-            return new Size(result.Width, result.Height);
+            DockSize range = StickyDockGeometry.CalculateDockDividerRange(
+                upperHeight, lowerHeight);
+            return new Size(range.Width, range.Height);
         }
 
         private StickyNoteData FindDockRoot(StickyNoteData seed)
@@ -822,10 +821,22 @@ namespace PennyPet
         internal static Point CalculateHeaderReachableTranslation(
             Rectangle header, Rectangle work)
         {
-            DockPoint delta = DockGeometry.CalculateHeaderReachableTranslation(
-                new DockRect(header.Left, header.Top, header.Width,
-                    header.Height),
-                new DockRect(work.Left, work.Top, work.Width, work.Height));
+            DockPoint delta = StickyDockGeometry
+                .CalculateHeaderReachableTranslation(
+                    new DockRect
+                    {
+                        Left = header.Left,
+                        Top = header.Top,
+                        Width = header.Width,
+                        Height = header.Height
+                    },
+                    new DockRect
+                    {
+                        Left = work.Left,
+                        Top = work.Top,
+                        Width = work.Width,
+                        Height = work.Height
+                    });
             return new Point(delta.X, delta.Y);
         }
 
@@ -862,31 +873,8 @@ namespace PennyPet
 
         private StickyNoteData FindActiveDockTail(StickyNoteData seed)
         {
-            if (seed == null) return null;
-            HashSet<string> activeIds = new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase);
-            foreach (StickyNoteData note in _activeDockGroup)
-                activeIds.Add(note.Id);
-            StickyNoteData tail = seed;
-            HashSet<string> visited = new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase);
-            while (tail != null && visited.Add(tail.Id))
-            {
-                StickyNoteData child = null;
-                foreach (StickyNoteData note in _notes.GetAll())
-                {
-                    if (activeIds.Contains(note.Id) && String.Equals(
-                        note.DockParentId, tail.Id,
-                        StringComparison.OrdinalIgnoreCase))
-                    {
-                        child = note;
-                        break;
-                    }
-                }
-                if (child == null) break;
-                tail = child;
-            }
-            return tail ?? seed;
+            return StickyDockOperations.FindActiveDockTail(_notes.GetAll(),
+                _activeDockGroup, seed);
         }
 
         private void ShowSplitGuide(StickyNoteWindow source)
@@ -1007,11 +995,9 @@ namespace PennyPet
         internal static bool CanDockBelow(Rectangle moving, Rectangle target,
             int threshold)
         {
-            return DockGeometry.CanDockBelow(
-                new DockRect(moving.Left, moving.Top, moving.Width,
-                    moving.Height),
-                new DockRect(target.Left, target.Top, target.Width,
-                    target.Height), threshold);
+            return StickyDockOperations.CanDockBelow(moving.Left, moving.Top,
+                moving.Width, moving.Height, target.Left, target.Top,
+                target.Width, target.Height, threshold);
         }
 
         private void ClearDockPreview()

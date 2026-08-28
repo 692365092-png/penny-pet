@@ -28,6 +28,14 @@ namespace PennyPet
         public const long MaximumDataFileBytes = 32L * 1024L * 1024L;
     }
 
+    internal static class StickyNoteWindowRules
+    {
+        internal static bool ShouldKeepSideTabsTopMost(bool hasVisibleNotes)
+        {
+            return !hasVisibleNotes;
+        }
+    }
+
     internal enum StickyTodoState
     {
         Pending = 0,

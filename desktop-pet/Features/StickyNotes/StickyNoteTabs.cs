@@ -153,13 +153,12 @@ namespace PennyPet
                 return;
             }
             if (!Visible) Show();
-            BringToFront();
         }
 
         public void ShowNear(Rectangle petBounds, Rectangle workArea)
         {
             if (Controls.Count == 0) return;
-            DockPoint location = DockGeometry.CalculateSideTabLocation(
+            DockPoint location = StickyDockGeometry.CalculateSideTabLocation(
                 new DockRect(petBounds.Left, petBounds.Top, petBounds.Width,
                     petBounds.Height),
                 new DockRect(workArea.Left, workArea.Top, workArea.Width,
@@ -173,7 +172,6 @@ namespace PennyPet
                 _sourceNormalLeft = _side == StickyTabSide.Right
                     ? location.X + DragSourceVisualOffset : location.X;
             if (!Visible) Show();
-            BringToFront();
         }
 
         internal static int PetOverlapForWidth(int petWidth)
@@ -181,26 +179,26 @@ namespace PennyPet
             // Idle art begins about 44 px inside its 192 px sprite cell. The
             // overlap scales with the pet so the visible tab-to-character gap
             // stays at half of the old fixed-20 px result at every zoom level.
-            return DockGeometry.CalculateSideTabOverlap(petWidth);
+            return StickyDockGeometry.CalculateSideTabOverlap(petWidth);
         }
 
         internal static int ScreenCapacity(Rectangle workArea)
         {
-            return DockGeometry.CalculateSideTabScreenCapacity(workArea.Height,
+            return StickyDockGeometry.CalculateSideTabScreenCapacity(workArea.Height,
                 TabHeight, TabGap);
         }
 
         internal static int PreferredLeftCapacity(int petHeight,
             Rectangle workArea)
         {
-            return DockGeometry.CalculatePreferredSideTabCount(petHeight,
+            return StickyDockGeometry.CalculatePreferredSideTabCount(petHeight,
                 workArea.Height, TabHeight, TabGap);
         }
 
         internal static int CalculateLeftCount(int totalCount, int petHeight,
             Rectangle workArea)
         {
-            return DockGeometry.CalculateLeftSideTabCount(totalCount,
+            return StickyDockGeometry.CalculateLeftSideTabCount(totalCount,
                 petHeight, workArea.Height, TabHeight, TabGap);
         }
 

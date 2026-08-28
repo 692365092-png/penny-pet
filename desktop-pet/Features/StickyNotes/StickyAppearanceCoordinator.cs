@@ -65,7 +65,7 @@ namespace PennyPet
         internal static System.Drawing.Point CalculateAppearanceDialogLocation(
             Rectangle note, Size dialog, Rectangle work)
         {
-            DockPoint point = DockGeometry.CalculatePopupLocation(
+            DockPoint point = StickyDockGeometry.CalculatePopupLocation(
                 new DockRect(note.Left, note.Top, note.Width, note.Height),
                 new DockSize(dialog.Width, dialog.Height),
                 new DockRect(work.Left, work.Top, work.Width, work.Height), 8);

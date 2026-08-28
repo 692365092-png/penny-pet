@@ -109,14 +109,27 @@ namespace PennyPet
             Rectangle start, Rectangle current, System.Drawing.Point cursor,
             System.Drawing.Point pointerOffset, bool systemChangedGeometry)
         {
-            DockRect result = DockGeometry.CalculateRecoveredDragBounds(
-                new DockRect(start.Left, start.Top, start.Width, start.Height),
-                new DockRect(current.Left, current.Top, current.Width,
-                    current.Height), new DockPoint(cursor.X, cursor.Y),
-                new DockPoint(pointerOffset.X, pointerOffset.Y),
-                systemChangedGeometry);
-            return new Rectangle(result.Left, result.Top, result.Width,
-                result.Height);
+            DockRect recovered =
+                StickyDockGeometry.CalculateRecoveredHeaderDragBounds(
+                    new DockRect
+                    {
+                        Left = start.Left,
+                        Top = start.Top,
+                        Width = start.Width,
+                        Height = start.Height
+                    },
+                    new DockRect
+                    {
+                        Left = current.Left,
+                        Top = current.Top,
+                        Width = current.Width,
+                        Height = current.Height
+                    },
+                    new DockPoint { X = cursor.X, Y = cursor.Y },
+                    new DockPoint { X = pointerOffset.X, Y = pointerOffset.Y },
+                    systemChangedGeometry);
+            return new Rectangle(recovered.Left, recovered.Top,
+                recovered.Width, recovered.Height);
         }
 
         private static T FindVisualParent<T>(W.DependencyObject value)

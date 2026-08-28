@@ -10,11 +10,12 @@
 - `PennyPet.Windows.Core`、`PennyPet.App`、`PennyPet.Windows` 和 `PennyPet.SelfTests` 仍是 Windows 实现或宿主。
 - `PetForm` 和 `StickyNoteWindow` 已按职责拆成 partial 文件，但仍共享窗口状态；这是一条代码定位边界，不是假装独立的服务层。
 - 高风险 IME、WPF/WinForms 消息桥、Window Message、Keyboard Hook、UI Automation、GDI、Shell、Registry 和真实窗口副作用继续留在 Windows 实现。
-- Dock 组关系、统一置顶数据、页签拖放会话、纯数值几何与启动恢复规划已进入 Core。
-- Windows 路径、UNC、危险扩展名、确认文案、文件探测和 Shell 打开留在 `Features/StickyNotes`。
+- Dock 组关系、统一置顶数据、页签拖放会话和纯数值几何已进入 Core；启动 Core 当前只包含 loading readiness 纯判定。
+- HTTP(S) 与 Windows 路径/UNC 链接识别、危险扩展名、确认文案、文件探测和 Shell 打开位于 `Features/StickyNotes`。
+- `Core/DailyNote/DailyNoteFeature.cs` 已包含三十日每日便利贴的纯进度判定；当前文档只记录已落地规则，不预设后续 UI、内容来源或持久化结构。
 - 当前没有 `PennyPet.Mac`、完整跨平台 Application 层、网络服务或完整平台无关启动状态机。
 
-`CoreBehaviorTests.CoreAssembly_DoesNotReferencePlatformUiOrIntegration` 会检查编译后 Core 的程序集引用，阻止 Drawing、WinForms、WPF、Registry 和 UI Automation 进入共享层。这个门禁只证明代码依赖；盘符、UNC、Win32 坐标限制、键码和权限模型等语义上的平台假设仍需人工审查。
+`CoreArchitectureTests` 会检查编译后 Core 的程序集引用，阻止 Drawing、WinForms、WPF、Registry 和 UI Automation 进入共享层。这个门禁只证明代码依赖；盘符、UNC、Win32 坐标限制、键码和权限模型等语义上的平台假设仍需人工审查。
 
 ## 2. 依赖方向
 
@@ -60,9 +61,10 @@ PennyPet.Tools -> 美术发布包和启动缓存生成
 | `Core/StickyNotes/StickyNoteCodec.cs` | v1-v9 数据行编解码、兼容和内容限制 | 平台无关 |
 | `Core/StickyNotes/StickyDockOperations.cs` | Dock 组插入、抽离、隐藏槽位、快照和统一置顶数据 | 平台无关 |
 | `Core/StickyNotes/StickyTabDropSession.cs` | 页签拖放事务 | 平台无关；窗口来源是不透明身份 |
-| `Core/StickyNotes/DockGeometry.cs` | `DockPoint`、`DockSize`、`DockRect` 及 Dock、divider、header 可达性、恢复、新建、页签、弹窗和异常拖拽恢复几何 | 平台无关纯数值规则 |
-| `Core/StickyNotes/StartupRestorePlanner.cs` | 可见 Dock 组件恢复种子和 UI/美术 readiness 门禁 | 平台无关的小范围启动判定，不是完整启动框架 |
-| `Core/Links/StickyNoteLinks.cs` | HTTP(S) 文本识别和平台中性匹配数据 | 平台无关；当前实际文件仍在 Core |
+| `Core/StickyNotes/StickyDockGeometry.cs` | `DockPoint`、`DockSize`、`DockRect` 及 Dock、divider、header 可达性、恢复、新建、页签、弹窗和异常拖拽恢复几何 | 平台无关纯数值规则 |
+| `Core/Startup/PetStartupRules.cs` | UI/美术 readiness 门禁 | 平台无关的小范围启动判定，不是完整启动框架 |
+| `Core/DailyNote/DailyNoteFeature.cs` | 三十日进度、同日幂等、断签与完成判定 | 平台无关纯规则；不预设 UI 和存储 |
+| `Features/StickyNotes/StickyNoteLinks.cs` / `StickyLinkPolicy.cs` | HTTP(S)、Windows 路径和危险目标策略 | Windows-only 链接策略 |
 | `Features/StickyNotes/StickyNoteRepository.cs` | Windows 文件保存、备份、损坏恢复、dirty 和重试 | Windows 文件系统适配 |
 | `Features/StickyNotes/StickyLinkService.cs` | 盘符/UNC、扩展名风险、确认、文件探测和 Shell 打开 | Windows-only 路径策略 |
 | `Features/StickyNotes/StickyLinkCoordinator.cs` | WPF 链接格式、点击和光标 | Windows-only UI |
@@ -84,7 +86,7 @@ Windows Coordinator 把 `Point`、`Size`、`Rectangle` 等平台对象转换为 
 | `Features/KeyboardOverlay` | Hook、虚拟键、UIA/Win32 敏感输入证据和覆盖窗口 | Windows-only |
 | `PetStartupCoordinator.cs` | Timer、Registry、窗口创建、首帧等待和事件触发 | Windows-only 启动协调 |
 
-启动方面目前只有 `StartupRestorePlanner` 中的小范围纯判定可复用。文档不得把它描述成完整的跨平台启动状态机。
+启动方面目前只有 `PetStartupRules` 中的小范围 readiness 判定可复用。文档不得把它描述成完整的跨平台启动状态机。
 
 ## 4. Windows / macOS 迁移地图
 
@@ -93,7 +95,8 @@ Windows Coordinator 把 `Point`、`Size`、`Rectangle` 等平台对象转换为 
 | 动画 | manifest、状态、概率、时长和冷却 | AppKit 窗口、ImageIO/CGImage 解码和帧提交 |
 | 桌宠交互 | 动画选择和部分拖拽语义 | 鼠标事件、透明窗口、Space 和 Z-order |
 | 便利贴 | 数据、codec、Todo/Schedule、Dock 关系和纯几何 | AppKit 编辑器、窗口、文件路径和恢复副作用 |
-| Dock | `DockGeometry` 与组不变量 | `NSScreen` 坐标、DPI/Retina、窗口移动和吸附反馈 |
+| Dock | `StickyDockGeometry` 与组不变量 | `NSScreen` 坐标、DPI/Retina、窗口移动和吸附反馈 |
+| 每日便利贴 | 三十日进度和日期判定 | 产品 UI、内容来源、平台通知与持久化接线 |
 | 提醒 | 模型和时间规则 | macOS 调度、唤醒和 UI |
 | 键盘隐私 | 标准化 fail-closed 判定 | Event Tap、Accessibility、Secure Input 和权限引导 |
 | 登录启动 | `StartAtLogin` 设置语义 | Login Item / ServiceManagement |

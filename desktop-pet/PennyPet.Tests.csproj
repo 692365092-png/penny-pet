@@ -13,6 +13,10 @@
     <ProjectReference Include="PennyPet.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="Tests\Fixtures\sticky-v*.txt"
+      CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
     <PackageReference Include="MSTest.TestAdapter" Version="4.3.3" />
     <PackageReference Include="MSTest.TestFramework" Version="4.3.3" />

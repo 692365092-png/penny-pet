@@ -164,8 +164,8 @@ namespace PennyPet
         private readonly Dictionary<string, Point> _activeDockOriginalLocations =
             new Dictionary<string, Point>(StringComparer.OrdinalIgnoreCase);
         // Keep every member inside a coordinate range that Win32 mouse
-        // messages can address reliably.  A too-long chain is rejected at the
-        // seam instead of relocating its root to make the tail fit.
+        // messages can address reliably. This is a Windows platform limit, not
+        // a Penny business rule, so Core receives it as a parameter.
         private const int DockCoordinateSafetyLimit = 30000;
         private Point _activeNoteDragStartLocation;
         private Point _activeNoteDragLastLocation;
@@ -180,7 +180,7 @@ namespace PennyPet
         private bool _activeNoteSplitEligible;
         private bool _synchronizingDockLayout;
         private System.Windows.Forms.Timer _startupWorkTimer;
-        private int _startupWorkPhase;
+        private StartupWorkPhase _startupWorkPhase;
         private Queue<StickyNoteData> _startupVisibleNotes;
         private bool _startupUiReady;
         private bool _startupArtReady;

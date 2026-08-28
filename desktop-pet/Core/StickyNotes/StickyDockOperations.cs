@@ -182,12 +182,80 @@ namespace PennyPet
             return componentCount > 1 && !String.IsNullOrEmpty(parentId);
         }
 
-        internal static void SetGroupAlwaysOnTop(
-            IList<StickyNoteData> notes, bool alwaysOnTop)
+        internal static bool IsDockCoordinateRangeSafe(int top,
+            IList<int> heights, int coordinateLimit)
         {
-            if (notes == null) return;
-            foreach (StickyNoteData note in notes)
-                if (note != null) note.AlwaysOnTop = alwaysOnTop;
+            long y = top;
+            if (y < -coordinateLimit || y > coordinateLimit) return false;
+            if (heights == null) return true;
+            foreach (int value in heights)
+            {
+                int height = Math.Max(220, Math.Min(700, value));
+                y += height;
+                if (y < -coordinateLimit || y > coordinateLimit) return false;
+            }
+            return true;
+        }
+
+        internal static StickyNoteData FindActiveDockTail(
+            IList<StickyNoteData> notes, IList<StickyNoteData> activeGroup,
+            StickyNoteData seed)
+        {
+            if (seed == null) return null;
+            HashSet<string> activeIds = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+            if (activeGroup != null)
+            {
+                foreach (StickyNoteData note in activeGroup)
+                    if (note != null) activeIds.Add(note.Id);
+            }
+
+            StickyNoteData tail = seed;
+            HashSet<string> visited = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+            while (tail != null && visited.Add(tail.Id))
+            {
+                StickyNoteData child = null;
+                if (notes != null)
+                {
+                    foreach (StickyNoteData note in notes)
+                    {
+                        if (note != null && activeIds.Contains(note.Id) &&
+                            String.Equals(note.DockParentId, tail.Id,
+                                StringComparison.OrdinalIgnoreCase))
+                        {
+                            child = note;
+                            break;
+                        }
+                    }
+                }
+                if (child == null) break;
+                tail = child;
+            }
+            return tail ?? seed;
+        }
+
+        internal static bool CanDockBelow(int movingLeft, int movingTop,
+            int movingWidth, int movingHeight, int targetLeft, int targetTop,
+            int targetWidth, int targetHeight, int threshold)
+        {
+            int limit = Math.Max(4, threshold);
+            int targetBottom = targetTop + targetHeight;
+            if (Math.Abs(movingTop - targetBottom) > limit) return false;
+
+            int movingRight = movingLeft + movingWidth;
+            int targetRight = targetLeft + targetWidth;
+            int overlap = Math.Min(movingRight, targetRight) -
+                Math.Max(movingLeft, targetLeft);
+            int narrowerWidth = Math.Min(movingWidth, targetWidth);
+            int widerWidth = Math.Max(movingWidth, targetWidth);
+            bool aligned = Math.Abs(movingLeft - targetLeft) <= limit ||
+                Math.Abs(movingRight - targetRight) <= limit ||
+                Math.Abs((movingLeft + movingRight) -
+                    (targetLeft + targetRight)) <= limit * 2;
+            bool differentWidths = widerWidth >= narrowerWidth * 3 / 2;
+            return overlap >= Math.Max(48, narrowerWidth / 2) &&
+                (aligned || differentWidths);
         }
     }
 }

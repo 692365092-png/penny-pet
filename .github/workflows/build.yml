@@ -66,7 +66,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\release" | Out-Null
           $releaseExe = Join-Path "$env:GITHUB_WORKSPACE\release" `
-            ("Penny pet-" + $env:PENNY_PRODUCT_VERSION + ".exe")
+            "Penny-pet-Windows.exe"
           & "$env:GITHUB_WORKSPACE\desktop-pet\build.ps1" `
             -TargetPlatform anycpu `
             -OutputFile $releaseExe
@@ -76,7 +76,7 @@ jobs:
         run: |
           $report = Join-Path $env:RUNNER_TEMP "penny-selftest.json"
           $releaseExe = Join-Path "$env:GITHUB_WORKSPACE\release" `
-            ("Penny pet-" + $env:PENNY_PRODUCT_VERSION + ".exe")
+            "Penny-pet-Windows.exe"
           $expectedAssemblyVersion = $env:PENNY_PRODUCT_VERSION + ".0.0"
           $builtVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo(
             $releaseExe)
@@ -98,15 +98,28 @@ jobs:
             throw "Penny self-tests failed."
           }
 
-      - name: Generate SHA-256 checksum
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: release
+          format: spdx-json
+          output-file: release/Penny-pet.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Generate SHA-256 checksums
         shell: powershell
         run: |
-          $releaseExe = Join-Path "$env:GITHUB_WORKSPACE\release" `
-            ("Penny pet-" + $env:PENNY_PRODUCT_VERSION + ".exe")
-          $checksumFile = $releaseExe + ".sha256"
-          $hash = Get-FileHash -LiteralPath $releaseExe -Algorithm SHA256
-          Set-Content -LiteralPath $checksumFile `
-            -Value ($hash.Hash + "  " + [IO.Path]::GetFileName($releaseExe)) `
+          $releaseDir = Join-Path $env:GITHUB_WORKSPACE "release"
+          $checksumFile = Join-Path $releaseDir "SHA256SUMS.txt"
+          $lines = Get-ChildItem -LiteralPath $releaseDir -File |
+            Where-Object Name -ne "SHA256SUMS.txt" |
+            Sort-Object Name |
+            ForEach-Object {
+              $hash = Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256
+              $hash.Hash + "  " + $_.Name
+            }
+          Set-Content -LiteralPath $checksumFile -Value $lines `
             -Encoding ASCII
 
       - name: Upload single-file EXE
@@ -114,7 +127,38 @@ jobs:
         with:
           name: Penny-pet-Windows
           path: |
-            release/Penny pet-*.exe
-            release/Penny pet-*.exe.sha256
+            release/Penny-pet-Windows.exe
+            release/Penny-pet.spdx.json
+            release/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
+
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-and-test
+    runs-on: windows-2022
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download tested release files
+        uses: actions/download-artifact@v4
+        with:
+          name: Penny-pet-Windows
+          path: release
+
+      - name: Publish GitHub release
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = @(Get-ChildItem -LiteralPath release -File |
+            ForEach-Object FullName)
+          if ($assets.Count -eq 0) {
+            throw "No release files were downloaded."
+          }
+          gh release create $env:GITHUB_REF_NAME @assets `
+            --repo $env:GITHUB_REPOSITORY `
+            --verify-tag `
+            --title ("Penny pet " + $env:GITHUB_REF_NAME) `
+            --generate-notes

@@ -133,13 +133,14 @@ namespace PennyPet
             Rectangle work = Screen.FromRectangle(Bounds).WorkingArea;
             float scale = PetScreenScale();
             Size size = StickyPhysicalSize(form, scale);
-            DockPoint location = DockGeometry.CalculateCascadedWindowLocation(
-                new DockRect(work.Left, work.Top, work.Width, work.Height),
-                new DockRect(Left, Top, Width, Height),
-                new DockSize(size.Width, size.Height),
-                _notes.GetAll().Count, 0);
-            form.ShowRestoredAtPhysicalBounds(new Rectangle(location.X,
-                location.Y,
+            int offset = (_notes.GetAll().Count % 7) * 18;
+            int x = Left - size.Width - 12 - offset;
+            if (x < work.Left)
+                x = Math.Min(work.Right - size.Width, Right + 12 + offset);
+            int y = Top + offset;
+            x = Math.Max(work.Left, Math.Min(x, work.Right - size.Width));
+            y = Math.Max(work.Top, Math.Min(y, work.Bottom - size.Height));
+            form.ShowRestoredAtPhysicalBounds(new Rectangle(x, y,
                 size.Width, size.Height));
             form.EnableWinFormsKeyboardInterop();
             form.BringToFront();
@@ -278,28 +279,59 @@ namespace PennyPet
         private static List<Rectangle> CalculateStickyRecoveryLayout(
             Rectangle work, IList<Size> componentSizes, float scale)
         {
-            List<DockSize> sizes = new List<DockSize>();
+            List<DockSize> dockSizes = new List<DockSize>();
             if (componentSizes != null)
+            {
                 foreach (Size size in componentSizes)
-                    sizes.Add(new DockSize(size.Width, size.Height));
-            List<DockRect> layout = DockGeometry.CalculateRecoveryLayout(
-                new DockRect(work.Left, work.Top, work.Width, work.Height),
-                sizes, scale);
+                    dockSizes.Add(new DockSize
+                    {
+                        Width = size.Width,
+                        Height = size.Height
+                    });
+            }
+            List<DockRect> dockLayout =
+                StickyDockGeometry.CalculateStickyRecoveryLayout(
+                    new DockRect
+                    {
+                        Left = work.Left,
+                        Top = work.Top,
+                        Width = work.Width,
+                        Height = work.Height
+                    },
+                    dockSizes,
+                    scale);
             List<Rectangle> result = new List<Rectangle>();
-            foreach (DockRect rect in layout)
-                result.Add(new Rectangle(rect.Left, rect.Top, rect.Width,
-                    rect.Height));
+            foreach (DockRect item in dockLayout)
+                result.Add(new Rectangle(item.Left, item.Top,
+                    item.Width, item.Height));
             return result;
         }
 
         internal static Point CalculateStickyRecoveryAnchor(Rectangle work,
             Rectangle pet, Size window, int componentIndex)
         {
-            DockPoint point = DockGeometry.CalculateRecoveryAnchor(
-                new DockRect(work.Left, work.Top, work.Width, work.Height),
-                new DockRect(pet.Left, pet.Top, pet.Width, pet.Height),
-                new DockSize(window.Width, window.Height), componentIndex);
-            return new Point(point.X, point.Y);
+            DockPoint anchor = StickyDockGeometry.CalculateStickyRecoveryAnchor(
+                new DockRect
+                {
+                    Left = work.Left,
+                    Top = work.Top,
+                    Width = work.Width,
+                    Height = work.Height
+                },
+                new DockRect
+                {
+                    Left = pet.Left,
+                    Top = pet.Top,
+                    Width = pet.Width,
+                    Height = pet.Height
+                },
+                new DockSize
+                {
+                    Width = window.Width,
+                    Height = window.Height
+                },
+                componentIndex);
+            return new Point(anchor.X, anchor.Y);
         }
 
         private void RollBackFailedStickyCreation(StickyNoteData note)
@@ -340,12 +372,11 @@ namespace PennyPet
                 return null;
             }
             Rectangle work = Screen.FromRectangle(Bounds).WorkingArea;
-            DockPoint location = DockGeometry.CalculateCascadedWindowLocation(
-                new DockRect(work.Left, work.Top, work.Width, work.Height),
-                new DockRect(Left, Top, Width, Height),
-                new DockSize(320, 300), _notes.GetAll().Count, 12);
-            StickyNoteData note = _notes.Create(text,
-                new Point(location.X, location.Y));
+            int offset = (_notes.GetAll().Count % 7) * 18;
+            int x = Left - 332 - offset;
+            if (x < work.Left) x = Math.Min(work.Right - 332, Right + 12 + offset);
+            int y = Math.Max(work.Top, Math.Min(Top + offset, work.Bottom - 312));
+            StickyNoteData note = _notes.Create(text, new Point(x, y));
             if (note == null)
             {
                 ShowBubble("便利贴创建失败，原有数据没有被修改。请查看诊断记录。");
@@ -583,6 +614,7 @@ namespace PennyPet
                 StringComparison.Ordinal))
             {
                 PositionNoteTabs();
+                ApplyNoteTabZOrder();
                 return;
             }
             _noteTabsSignature = signature;
@@ -595,6 +627,36 @@ namespace PennyPet
             _leftNoteTabs.SetNotes(left, 0);
             _rightNoteTabs.SetNotes(right, leftCount);
             PositionNoteTabs();
+            ApplyNoteTabZOrder();
+        }
+
+        private void ApplyNoteTabZOrder()
+        {
+            if (_leftNoteTabs == null || _rightNoteTabs == null || IsDisposed)
+                return;
+            bool hasVisibleNotes = _notes.GetAll().Exists(
+                delegate(StickyNoteData note) { return note.Visible; });
+            _leftNoteTabs.TopMost =
+                StickyNoteWindowRules.ShouldKeepSideTabsTopMost(hasVisibleNotes);
+            _rightNoteTabs.TopMost =
+                StickyNoteWindowRules.ShouldKeepSideTabsTopMost(hasVisibleNotes);
+            if (!hasVisibleNotes)
+            {
+                if (_leftNoteTabs.Visible) _leftNoteTabs.BringToFront();
+                if (_rightNoteTabs.Visible) _rightNoteTabs.BringToFront();
+                return;
+            }
+            RaiseVisibleNotesAboveTabs();
+        }
+
+        private void RaiseVisibleNotesAboveTabs()
+        {
+            foreach (StickyNoteWindow form in
+                new List<StickyNoteWindow>(_noteWindows.Values))
+            {
+                if (form == null || form.IsDisposed || !form.Visible) continue;
+                form.RaiseForDockDragWithoutActivation();
+            }
         }
 
         private void PositionNoteTabs()
@@ -611,14 +673,16 @@ namespace PennyPet
                 int reserveRight = _rightNoteTabs.Controls.Count > 0
                     ? StickyNoteTabsForm.TabWidth -
                         StickyNoteTabsForm.PetOverlapForWidth(Width) + 2 : 0;
-                DockPoint location = DockGeometry
-                    .CalculatePetLocationWithSideTabs(
-                        new DockRect(Left, Top, Width, Height),
-                        new DockRect(work.Left, work.Top, work.Width,
-                            work.Height), reserveLeft, reserveRight);
-                if (location.X != Left || location.Y != Top)
+                int minimumLeft = work.Left + reserveLeft;
+                int maximumLeft = work.Right - reserveRight - Width;
+                if (maximumLeft >= minimumLeft)
                 {
-                    Location = new Point(location.X, location.Y);
+                    int adjustedX = Math.Max(minimumLeft,
+                        Math.Min(Left, maximumLeft));
+                    int adjustedY = Math.Max(work.Top,
+                        Math.Min(Top, work.Bottom - Height));
+                    if (adjustedX != Left || adjustedY != Top)
+                        Location = new Point(adjustedX, adjustedY);
                 }
                 _leftNoteTabs.ShowNear(Bounds, work);
                 _rightNoteTabs.ShowNear(Bounds, work);

@@ -11,6 +11,9 @@ namespace PennyPet
         internal static void Run()
         {
             bool createdNew;
+            // Local\ scopes the mutex to the current interactive session.
+            // Global\ would also block other terminal-service users from
+            // running a desktop pet in their own session, which is not wanted.
             _singleInstance = new Mutex(true, "Local\\PennyPet.SingleInstance",
                 out createdNew);
             if (!createdNew)
@@ -58,4 +61,3 @@ namespace PennyPet
         }
     }
 }
-
