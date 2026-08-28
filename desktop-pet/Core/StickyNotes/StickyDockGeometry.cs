@@ -107,6 +107,20 @@ namespace PennyPet
             return new DockPoint { X = dx, Y = dy };
         }
 
+        internal static DockRect CalculateRecoveredHeaderDragBounds(
+            DockRect start, DockRect current, DockPoint cursor,
+            DockPoint pointerOffset, bool systemChangedGeometry)
+        {
+            if (!systemChangedGeometry) return current;
+            return new DockRect
+            {
+                Left = cursor.X - pointerOffset.X,
+                Top = cursor.Y - pointerOffset.Y,
+                Width = start.Width,
+                Height = start.Height
+            };
+        }
+
         internal static DockPoint CalculateStickyRecoveryAnchor(
             DockRect work, DockRect pet, DockSize window, int componentIndex)
         {

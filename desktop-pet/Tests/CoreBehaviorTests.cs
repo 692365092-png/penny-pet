@@ -193,6 +193,35 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyDockGeometry_RecoveredHeaderDragUsesPointerOffset()
+        {
+            DockRect recovered =
+                StickyDockGeometry.CalculateRecoveredHeaderDragBounds(
+                    new DockRect
+                    {
+                        Left = 100,
+                        Top = 100,
+                        Width = 320,
+                        Height = 300
+                    },
+                    new DockRect
+                    {
+                        Left = 120,
+                        Top = 130,
+                        Width = 640,
+                        Height = 600
+                    },
+                    new DockPoint { X = 500, Y = 400 },
+                    new DockPoint { X = 20, Y = 10 },
+                    true);
+
+            Assert.AreEqual(480, recovered.Left);
+            Assert.AreEqual(390, recovered.Top);
+            Assert.AreEqual(320, recovered.Width);
+            Assert.AreEqual(300, recovered.Height);
+        }
+
+        [TestMethod]
         public void ShortItemText_UsesOneSharedDisplayBudget()
         {
             Assert.IsTrue(ShortItemText.Fits(new string('中', 50)));
