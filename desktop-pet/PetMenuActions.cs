@@ -205,7 +205,7 @@ namespace PennyPet
         private void BeginExitSequence()
         {
             if (_exiting) return;
-            if (BeginStickyCanaryExitIfNeeded()) return;
+            if (BeginHostedStickyExitIfNeeded()) return;
             if (!FlushPersistenceBeforeExit()) return;
             _exiting = true;
             _reminderTimer.Stop();
@@ -228,7 +228,7 @@ namespace PennyPet
 
         private bool HasFocusedOwnNoteTextInput()
         {
-            if (_canaryInputFocused) return true;
+            if (_hostedInputFocused.Count > 0) return true;
             foreach (StickyNoteWindow form in _noteWindows.Values)
             {
                 if (form != null && !form.IsDisposed &&

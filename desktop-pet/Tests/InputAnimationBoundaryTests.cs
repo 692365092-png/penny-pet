@@ -137,19 +137,22 @@ namespace PennyPet.Tests
             string host = ReadSource("StickyUiHost.cs");
             string coordinator = ReadSource(
                 "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string pet = ReadSource("PetForm.cs");
 
             Assert.IsTrue(commands.Contains("StickyNoteUiSnapshot") &&
                 commands.Contains("CreateWorkingCopy()") &&
                 commands.Contains("StickyUiEventKind"),
-                "Canary must exchange typed values and create a detached working copy.");
+                "Hosted notes must exchange typed values and detached copies.");
             Assert.IsTrue(host.Contains(
-                "private StickyNoteWindow _canaryWindow;") &&
+                "Dictionary<string, StickyWindowEntry> _windows") &&
+                host.Contains("internal long Sequence;") &&
                 host.Contains("new StickyNoteWindow(workingCopy)"),
-                "Only StickyUiHost may own the Canary WPF window reference.");
+                "Only StickyUiHost may own hosted WPF window references.");
             Assert.IsTrue(coordinator.Contains(
                 "StickyNoteUiSnapshot.FromData(note)") &&
-                coordinator.Contains("snapshot.ApplyTo(canonical)"),
-                "Pet must send snapshots and apply updates to its canonical model.");
+                coordinator.Contains("snapshot.ApplyTo(canonical)") &&
+                pet.Contains("Dictionary<string, long>"),
+                "Pet must apply each note using an independent sequence.");
         }
 
         [TestMethod]
@@ -183,8 +186,8 @@ namespace PennyPet.Tests
                 "Features/KeyboardOverlay/PetKeyboardOverlayCoordinator.cs");
 
             Assert.IsTrue(commands.Contains("InputFocusChanged") &&
-                host.Contains("window.HasFocusedTextInput") &&
-                coordinator.Contains("_canaryInputFocused = value.Flag"),
+                host.Contains("entry.Window.HasFocusedTextInput") &&
+                coordinator.Contains("_hostedInputFocused.Add(value.NoteId)"),
                 "Sticky STA must asynchronously report a plain focus flag.");
             Assert.IsTrue(overlay.Contains(
                 "HasFocusedOwnNoteTextInput() ||") &&
@@ -203,15 +206,57 @@ namespace PennyPet.Tests
                 "Features/StickyNotes/PetStickyWindowCoordinator.cs");
 
             Assert.IsTrue(closing.Contains("e.Cancel = true") &&
-                closing.Contains("BeginStickyCanaryExitIfNeeded()"),
+                closing.Contains("BeginHostedStickyExitIfNeeded()"),
                 "External close must pause before PetForm disposal.");
             int apply = coordinator.IndexOf(
-                "ApplyStickyCanarySnapshot(result.Snapshot",
+                "ApplyHostedStickySnapshot(\n" +
+                "                                finalSnapshot.Snapshot",
                 StringComparison.Ordinal);
             int prepared = coordinator.IndexOf(
-                "_canaryExitPrepared = true", StringComparison.Ordinal);
+                "_hostedExitPrepared = true", StringComparison.Ordinal);
             Assert.IsTrue(apply >= 0 && prepared > apply,
                 "Final snapshot must reach the canonical owner before close resumes.");
+        }
+
+        [TestMethod]
+        public void StickyUiRegistry_CloseAllPreflightsImeAndSuppressesEvents()
+        {
+            string host = ReadSource("StickyUiHost.cs");
+            int preflight = host.IndexOf(
+                "entry.Window.IsImeCompositionActiveForHost",
+                StringComparison.Ordinal);
+            int batch = host.IndexOf("_batchClosing = true",
+                StringComparison.Ordinal);
+
+            Assert.IsTrue(preflight >= 0 && batch > preflight &&
+                host.Contains("if (_batchClosing) return;") &&
+                host.Contains("StickyUiFinalSnapshot"),
+                "CloseAll must preflight every IME before a quiet final batch.");
+        }
+
+        [TestMethod]
+        public void StickyUiRegistry_DeletesOnlyAfterHandledCloseAndForwardsRequests()
+        {
+            string commands = ReadSource(
+                "Features/StickyNotes/StickyUiCommand.cs");
+            string host = ReadSource("StickyUiHost.cs");
+            string dock = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            int handled = dock.IndexOf(
+                "result.Status != StickyUiCommandStatus.Handled",
+                StringComparison.Ordinal);
+            int remove = dock.IndexOf("_notes.Remove(note)",
+                StringComparison.Ordinal);
+
+            Assert.IsTrue(commands.Contains("DeleteRequested") &&
+                commands.Contains("NewNoteRequested") &&
+                commands.Contains("NewTodoRequested") &&
+                commands.Contains("NewScheduleRequested") &&
+                host.Contains("window.DeleteRequested +=") &&
+                host.Contains("PostWindowRequest("),
+                "Window-level application requests must cross as typed events.");
+            Assert.IsTrue(handled >= 0 && remove > handled,
+                "Canonical deletion must happen only after handled close.");
         }
 
         [TestMethod]
@@ -221,13 +266,14 @@ namespace PennyPet.Tests
             string coordinator = ReadSource(
                 "Features/StickyNotes/PetStickyWindowCoordinator.cs");
 
-            Assert.IsFalse(startup.Contains("Canary") ||
+            Assert.IsFalse(startup.Contains("HostedSticky") ||
                 startup.Contains("StickyUiHost"),
-                "Canary must not change startup restore or loading readiness.");
+                "Step 1 must not change startup restore or loading readiness.");
             Assert.IsTrue(coordinator.Contains("!note.IsTodoList") &&
                 coordinator.Contains("!note.IsSchedule") &&
                 coordinator.Contains("note.ReminderUtcTicks <= 0") &&
-                coordinator.Contains("String.IsNullOrEmpty(note.DockGroupId)"),
+                coordinator.Contains("String.IsNullOrEmpty(note.DockGroupId)") &&
+                coordinator.Contains("_noteWindows.TryGetValue(note.Id"),
                 "Todo, Schedule, Reminder and Dock notes must remain on legacy UI.");
         }
 

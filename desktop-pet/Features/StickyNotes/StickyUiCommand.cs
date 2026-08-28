@@ -9,7 +9,8 @@ namespace PennyPet
         Hide,
         FocusPrimaryInput,
         SetTopMost,
-        Close
+        Close,
+        CloseAll
     }
 
     internal sealed class StickyUiCommand
@@ -114,6 +115,10 @@ namespace PennyPet
         TypingActivity,
         InputFocusChanged,
         ImeCompositionChanged,
+        DeleteRequested,
+        NewNoteRequested,
+        NewTodoRequested,
+        NewScheduleRequested,
         Closed
     }
 
@@ -144,16 +149,34 @@ namespace PennyPet
         Failed
     }
 
+    internal sealed class StickyUiFinalSnapshot
+    {
+        internal StickyUiFinalSnapshot(StickyNoteUiSnapshot snapshot,
+            long sequence)
+        {
+            if (snapshot == null)
+                throw new ArgumentNullException(nameof(snapshot));
+            NoteId = snapshot.NoteId;
+            Snapshot = snapshot;
+            Sequence = sequence;
+        }
+
+        internal string NoteId { get; private set; }
+        internal StickyNoteUiSnapshot Snapshot { get; private set; }
+        internal long Sequence { get; private set; }
+    }
+
     internal sealed class StickyUiCommandResult
     {
         private StickyUiCommandResult(StickyUiCommandStatus status,
             string error, StickyNoteUiSnapshot snapshot, long sequence,
-            int ownerThreadId)
+            StickyUiFinalSnapshot[] finalSnapshots, int ownerThreadId)
         {
             Status = status;
             Error = error ?? String.Empty;
             Snapshot = snapshot;
             Sequence = sequence;
+            FinalSnapshots = finalSnapshots;
             OwnerThreadId = ownerThreadId;
         }
 
@@ -161,38 +184,46 @@ namespace PennyPet
         internal string Error { get; private set; }
         internal StickyNoteUiSnapshot Snapshot { get; private set; }
         internal long Sequence { get; private set; }
+        internal StickyUiFinalSnapshot[] FinalSnapshots { get; private set; }
         internal int OwnerThreadId { get; private set; }
 
         internal static StickyUiCommandResult Handled()
         {
             return new StickyUiCommandResult(StickyUiCommandStatus.Handled,
-                String.Empty, null, 0, ThreadingThreadId());
+                String.Empty, null, 0, null, ThreadingThreadId());
         }
 
         internal static StickyUiCommandResult Handled(
             StickyNoteUiSnapshot snapshot, long sequence)
         {
             return new StickyUiCommandResult(StickyUiCommandStatus.Handled,
-                String.Empty, snapshot, sequence, ThreadingThreadId());
+                String.Empty, snapshot, sequence, null, ThreadingThreadId());
+        }
+
+        internal static StickyUiCommandResult Handled(
+            StickyUiFinalSnapshot[] finalSnapshots)
+        {
+            return new StickyUiCommandResult(StickyUiCommandStatus.Handled,
+                String.Empty, null, 0, finalSnapshots, ThreadingThreadId());
         }
 
         internal static StickyUiCommandResult NotHandled()
         {
             return new StickyUiCommandResult(StickyUiCommandStatus.NotHandled,
-                String.Empty, null, 0, ThreadingThreadId());
+                String.Empty, null, 0, null, ThreadingThreadId());
         }
 
         internal static StickyUiCommandResult NotAccepted()
         {
             return new StickyUiCommandResult(StickyUiCommandStatus.NotAccepted,
-                String.Empty, null, 0, ThreadingThreadId());
+                String.Empty, null, 0, null, ThreadingThreadId());
         }
 
         internal static StickyUiCommandResult Failed(Exception error)
         {
             return new StickyUiCommandResult(StickyUiCommandStatus.Failed,
                 error == null ? String.Empty : error.Message, null, 0,
-                ThreadingThreadId());
+                null, ThreadingThreadId());
         }
 
         private static int ThreadingThreadId()

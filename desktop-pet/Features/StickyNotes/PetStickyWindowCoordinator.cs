@@ -18,7 +18,7 @@ namespace PennyPet
             {
                 note = CreateStickyNoteData(text);
                 if (note == null) return;
-                if (TryStartStickyCanary(note))
+                if (TryStartHostedSticky(note, true))
                 {
                     RefreshMenuText();
                     return;
@@ -96,7 +96,7 @@ namespace PennyPet
         private void EnsureCreatedStickyWindowVisible(StickyNoteData note)
         {
             if (note == null) throw new ArgumentNullException("note");
-            if (IsStickyCanary(note)) return;
+            if (IsHostedSticky(note)) return;
             StickyNoteWindow form;
             if (!_noteWindows.TryGetValue(note.Id, out form) || form == null ||
                 form.IsDisposed)
@@ -133,7 +133,7 @@ namespace PennyPet
 
         private void PlaceNewStickyWindowOnPetScreen(StickyNoteData note)
         {
-            if (IsStickyCanary(note)) return;
+            if (IsHostedSticky(note)) return;
             StickyNoteWindow form;
             if (note == null || !_noteWindows.TryGetValue(note.Id, out form) ||
                 form == null || form.IsDisposed) return;
@@ -179,7 +179,7 @@ namespace PennyPet
                 {
                     if (seed == null || !seed.Visible || visited.Contains(seed.Id))
                         continue;
-                    if (IsStickyCanary(seed))
+                    if (IsHostedSticky(seed))
                     {
                         visited.Add(seed.Id);
                         continue;
@@ -481,33 +481,36 @@ namespace PennyPet
             return form;
         }
 
-        private bool TryStartStickyCanary(StickyNoteData note)
+        private bool TryStartHostedSticky(StickyNoteData note,
+            bool focusEditor)
         {
-            if (_canaryDisabled || !String.IsNullOrEmpty(_canaryNoteId) ||
-                !IsStickyCanaryEligible(note)) return false;
+            if (!IsHostedStickyEligible(note)) return false;
+            StickyNoteWindow legacy;
+            if (_noteWindows.TryGetValue(note.Id, out legacy) &&
+                legacy != null && !legacy.IsDisposed) return false;
             string noteId = note.Id;
-            _canaryNoteId = noteId;
-            _canaryAppliedSequence = 0;
+            if (!_hostedNoteIds.Add(noteId)) return true;
+            _hostedAppliedSequences[noteId] = 0;
             StickyUiCommand command = new StickyUiCommand(
-                StickyUiCommandKind.Create, noteId, true,
+                StickyUiCommandKind.Create, noteId, focusEditor,
                 StickyNoteUiSnapshot.FromData(note));
-            PostStickyCanaryCommand(command,
+            PostHostedStickyCommand(command,
                 delegate(StickyUiCommandResult result)
                 {
                     if (result != null &&
                         result.Status == StickyUiCommandStatus.Handled)
                     {
-                        ApplyStickyCanarySnapshot(result.Snapshot,
+                        ApplyHostedStickySnapshot(result.Snapshot,
                             result.Sequence);
                         return;
                     }
-                    FallBackStickyCanaryToLegacy(noteId, true,
-                        "sticky-canary-create", result);
+                    FallBackHostedStickyToLegacy(noteId, focusEditor,
+                        "sticky-hosted-create", result);
                 });
             return true;
         }
 
-        private static bool IsStickyCanaryEligible(StickyNoteData note)
+        private static bool IsHostedStickyEligible(StickyNoteData note)
         {
             return note != null && !note.IsTodoList && !note.IsSchedule &&
                 note.ReminderUtcTicks <= 0 &&
@@ -515,67 +518,64 @@ namespace PennyPet
                 String.IsNullOrEmpty(note.DockGroupId);
         }
 
-        private bool IsStickyCanary(StickyNoteData note)
+        private bool IsHostedSticky(StickyNoteData note)
         {
-            return note != null && !String.IsNullOrEmpty(_canaryNoteId) &&
-                String.Equals(note.Id, _canaryNoteId,
-                    StringComparison.OrdinalIgnoreCase);
+            return note != null && _hostedNoteIds.Contains(note.Id);
         }
 
-        private bool PostStickyCanaryShow(StickyNoteData note,
+        private bool PostHostedStickyShow(StickyNoteData note,
             bool focusEditor)
         {
-            if (!IsStickyCanary(note)) return false;
+            if (!IsHostedSticky(note)) return false;
             string noteId = note.Id;
-            PostStickyCanaryCommand(new StickyUiCommand(
+            PostHostedStickyCommand(new StickyUiCommand(
                 StickyUiCommandKind.Show, noteId, focusEditor),
                 delegate(StickyUiCommandResult result)
                 {
                     if (result != null &&
                         result.Status == StickyUiCommandStatus.Handled)
                     {
-                        ApplyStickyCanarySnapshot(result.Snapshot,
+                        ApplyHostedStickySnapshot(result.Snapshot,
                             result.Sequence);
                         return;
                     }
-                    FallBackStickyCanaryToLegacy(noteId, focusEditor,
-                        "sticky-canary-show", result);
+                    FallBackHostedStickyToLegacy(noteId, focusEditor,
+                        "sticky-hosted-show", result);
                 });
             return true;
         }
 
-        private bool PostStickyCanaryHide(StickyNoteData note)
+        private bool PostHostedStickyHide(StickyNoteData note)
         {
-            if (!IsStickyCanary(note)) return false;
+            if (!IsHostedSticky(note)) return false;
             string noteId = note.Id;
-            PostStickyCanaryCommand(new StickyUiCommand(
+            PostHostedStickyCommand(new StickyUiCommand(
                 StickyUiCommandKind.Hide, noteId, false),
                 delegate(StickyUiCommandResult result)
                 {
                     if (result != null &&
                         result.Status == StickyUiCommandStatus.Handled)
                     {
-                        ApplyStickyCanarySnapshot(result.Snapshot,
+                        ApplyHostedStickySnapshot(result.Snapshot,
                             result.Sequence);
                         return;
                     }
-                    ReportStickyCanaryCommandFailure(
-                        "sticky-canary-hide", result);
+                    ReportHostedStickyCommandFailure(
+                        "sticky-hosted-hide", result);
                 });
             return true;
         }
 
-        private void PostStickyCanaryCommand(StickyUiCommand command,
+        private void PostHostedStickyCommand(StickyUiCommand command,
             Action<StickyUiCommandResult> completed)
         {
             _stickyUiHost.PostCommand(command, completed, _petUiContext);
         }
 
-        private void StickyCanaryEventReceived(StickyUiEvent value)
+        private void HostedStickyEventReceived(StickyUiEvent value)
         {
             if (value == null || IsDisposed || Disposing ||
-                !String.Equals(value.NoteId, _canaryNoteId,
-                    StringComparison.OrdinalIgnoreCase)) return;
+                !_hostedNoteIds.Contains(value.NoteId)) return;
             if (value.Kind == StickyUiEventKind.TypingActivity)
             {
                 if (!_exiting) TriggerTypingAnimation();
@@ -583,53 +583,83 @@ namespace PennyPet
             }
             if (value.Kind == StickyUiEventKind.InputFocusChanged)
             {
-                _canaryInputFocused = value.Flag;
+                if (value.Flag) _hostedInputFocused.Add(value.NoteId);
+                else _hostedInputFocused.Remove(value.NoteId);
                 return;
             }
             if (value.Kind == StickyUiEventKind.ImeCompositionChanged)
             {
-                _canaryImeComposing = value.Flag;
+                if (value.Flag) _hostedImeComposing.Add(value.NoteId);
+                else
+                {
+                    _hostedImeComposing.Remove(value.NoteId);
+                    if (_hostedExitRequested &&
+                        _hostedImeComposing.Count == 0)
+                        TryCloseAllHostedStickies();
+                }
                 return;
             }
-            ApplyStickyCanarySnapshot(value.Snapshot, value.Sequence);
+            if (value.Kind == StickyUiEventKind.DeleteRequested)
+            {
+                ConfirmHostedStickyDelete(value.NoteId);
+                return;
+            }
+            if (value.Kind == StickyUiEventKind.NewNoteRequested)
+            {
+                QueueStickyWindowAction(delegate
+                {
+                    CreateStickyNote(String.Empty);
+                }, "sticky-hosted-create-note");
+                return;
+            }
+            if (value.Kind == StickyUiEventKind.NewTodoRequested)
+            {
+                QueueStickyWindowAction(CreateTodoStickyNote,
+                    "sticky-hosted-create-todo");
+                return;
+            }
+            if (value.Kind == StickyUiEventKind.NewScheduleRequested)
+            {
+                QueueStickyWindowAction(CreateScheduleStickyNote,
+                    "sticky-hosted-create-schedule");
+                return;
+            }
+            ApplyHostedStickySnapshot(value.Snapshot, value.Sequence);
         }
 
-        private void ApplyStickyCanarySnapshot(StickyNoteUiSnapshot snapshot,
-            long sequence)
+        private void ApplyHostedStickySnapshot(StickyNoteUiSnapshot snapshot,
+            long sequence, bool persist = true)
         {
-            if (snapshot == null || sequence <= _canaryAppliedSequence ||
-                !String.Equals(snapshot.NoteId, _canaryNoteId,
-                    StringComparison.OrdinalIgnoreCase)) return;
+            long applied;
+            _hostedAppliedSequences.TryGetValue(
+                snapshot == null ? String.Empty : snapshot.NoteId, out applied);
+            if (snapshot == null || sequence <= applied ||
+                !_hostedNoteIds.Contains(snapshot.NoteId)) return;
             StickyNoteData canonical = _notes.Find(snapshot.NoteId);
             if (canonical == null) return;
             bool visibilityChanged = canonical.Visible != snapshot.Visible;
             string oldHiddenTitle = canonical.Visible
                 ? String.Empty : canonical.DisplayTitle;
             snapshot.ApplyTo(canonical);
-            _canaryAppliedSequence = sequence;
-            _notes.SaveAsync();
+            _hostedAppliedSequences[snapshot.NoteId] = sequence;
+            if (persist) _notes.SaveAsync();
             RefreshMenuText();
             if (visibilityChanged || (!canonical.Visible &&
                 !String.Equals(oldHiddenTitle, canonical.DisplayTitle,
                     StringComparison.Ordinal))) RefreshNoteTabs();
         }
 
-        private void FallBackStickyCanaryToLegacy(string noteId,
+        private void FallBackHostedStickyToLegacy(string noteId,
             bool focusEditor, string context, StickyUiCommandResult result)
         {
-            if (!String.Equals(noteId, _canaryNoteId,
-                StringComparison.OrdinalIgnoreCase)) return;
-            ReportStickyCanaryCommandFailure(context, result);
-            _canaryDisabled = true;
-            _canaryNoteId = String.Empty;
-            _canaryImeComposing = false;
-            _canaryInputFocused = false;
-            _stickyUiHost.BeginShutdown();
+            if (!_hostedNoteIds.Remove(noteId)) return;
+            ReportHostedStickyCommandFailure(context, result);
+            ForgetHostedStickyState(noteId);
             StickyNoteData note = _notes.Find(noteId);
             if (note == null) return;
             try
             {
-                ShowStickyNote(note, focusEditor);
+                ShowStickyNote(note, focusEditor, true, false);
                 EnsureCreatedStickyWindowVisible(note);
             }
             catch (Exception error)
@@ -638,7 +668,7 @@ namespace PennyPet
             }
         }
 
-        private static void ReportStickyCanaryCommandFailure(string context,
+        private static void ReportHostedStickyCommandFailure(string context,
             StickyUiCommandResult result)
         {
             string detail = result == null ? "No command result." :
@@ -647,35 +677,67 @@ namespace PennyPet
                 new InvalidOperationException(detail));
         }
 
-        private bool BeginStickyCanaryExitIfNeeded()
+        private bool BeginHostedStickyExitIfNeeded()
         {
-            if (String.IsNullOrEmpty(_canaryNoteId) || _canaryExitPrepared)
+            if (_hostedNoteIds.Count == 0 || _hostedExitPrepared)
                 return false;
-            if (_canaryExitRequested) return true;
-            _canaryExitRequested = true;
-            string noteId = _canaryNoteId;
-            PostStickyCanaryCommand(new StickyUiCommand(
-                StickyUiCommandKind.Close, noteId, false),
+            _hostedExitRequested = true;
+            TryCloseAllHostedStickies();
+            return true;
+        }
+
+        private void TryCloseAllHostedStickies()
+        {
+            if (!_hostedExitRequested || _hostedCloseAllInFlight ||
+                _hostedImeComposing.Count > 0) return;
+            _hostedCloseAllInFlight = true;
+            PostHostedStickyCommand(new StickyUiCommand(
+                StickyUiCommandKind.CloseAll, String.Empty, false),
                 delegate(StickyUiCommandResult result)
                 {
-                    _canaryExitRequested = false;
+                    _hostedCloseAllInFlight = false;
+                    if (result != null &&
+                        result.Status == StickyUiCommandStatus.NotAccepted)
+                        return;
                     if (result == null ||
                         result.Status != StickyUiCommandStatus.Handled)
                     {
-                        ReportStickyCanaryCommandFailure(
-                            "sticky-canary-exit", result);
+                        _hostedExitRequested = false;
+                        ReportHostedStickyCommandFailure(
+                            "sticky-hosted-exit", result);
                         ShowBriefBubble("便利贴仍在收尾，退出已取消，请稍后重试。");
                         return;
                     }
-                    ApplyStickyCanarySnapshot(result.Snapshot,
-                        result.Sequence);
-                    _canaryImeComposing = false;
-                    _canaryInputFocused = false;
-                    _canaryExitPrepared = true;
+                    if (result.FinalSnapshots != null)
+                        foreach (StickyUiFinalSnapshot finalSnapshot in
+                            result.FinalSnapshots)
+                            ApplyHostedStickySnapshot(
+                                finalSnapshot.Snapshot,
+                                finalSnapshot.Sequence, false);
+                    _hostedImeComposing.Clear();
+                    _hostedInputFocused.Clear();
+                    _hostedExitPrepared = true;
                     _stickyUiHost.BeginShutdown();
                     BeginExitSequence();
                 });
-            return true;
+        }
+
+        private void ForgetHostedStickyState(string noteId)
+        {
+            _hostedAppliedSequences.Remove(noteId);
+            _hostedImeComposing.Remove(noteId);
+            _hostedInputFocused.Remove(noteId);
+            _hostedDeletePending.Remove(noteId);
+        }
+
+        private void ConfirmHostedStickyDelete(string noteId)
+        {
+            StickyNoteData note = _notes.Find(noteId);
+            if (note == null || !IsHostedSticky(note)) return;
+            if (MessageBox.Show(this,
+                "确定删除这张便利贴吗？此操作无法撤销。", "删除便利贴",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Warning) ==
+                DialogResult.Yes) DeleteStickyNote(note);
         }
 
         private void RecoverFailedLegacyStickyWindow(StickyNoteData note)
@@ -705,8 +767,16 @@ namespace PennyPet
         private void ShowStickyNote(StickyNoteData note, bool focusEditor,
             bool persistVisibility)
         {
+            ShowStickyNote(note, focusEditor, persistVisibility, true);
+        }
+
+        private void ShowStickyNote(StickyNoteData note, bool focusEditor,
+            bool persistVisibility, bool allowHosted)
+        {
             if (note == null) return;
-            if (PostStickyCanaryShow(note, focusEditor)) return;
+            if (PostHostedStickyShow(note, focusEditor)) return;
+            if (allowHosted && persistVisibility &&
+                TryStartHostedSticky(note, focusEditor)) return;
             List<StickyNoteData> storedDockOrder =
                 BuildDockChainOrderIncludingHidden(note);
             bool anyHiddenDockMember = storedDockOrder.Exists(
@@ -752,7 +822,7 @@ namespace PennyPet
                 foreach (StickyNoteData member in group)
                 {
                     handled.Add(member.Id);
-                    if (PostStickyCanaryHide(member)) continue;
+                    if (PostHostedStickyHide(member)) continue;
                     StickyNoteWindow form;
                     if (_noteWindows.TryGetValue(member.Id, out form) &&
                         form != null && !form.IsDisposed)

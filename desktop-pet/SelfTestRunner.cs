@@ -2141,6 +2141,8 @@ namespace PennyPet
             int petThread = Thread.CurrentThread.ManagedThreadId;
             int eventThread = 0;
             StickyUiEvent lastEvent = null;
+            HashSet<string> eventNoteIds = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
             SynchronizationContext petContext =
                 new WindowsFormsSynchronizationContext();
             StickyNoteData canonical = new StickyNoteData();
@@ -2152,6 +2154,12 @@ namespace PennyPet
             StickyNoteUiSnapshot detached =
                 StickyNoteUiSnapshot.FromData(canonical);
             canonical.Text = "pet-owned-after-post";
+            StickyNoteData second = new StickyNoteData();
+            second.Text = "second-detached";
+            second.X = -2000;
+            second.Y = -2000;
+            second.Width = 320;
+            second.Height = 300;
 
             using (StickyUiHost host = new StickyUiHost())
             {
@@ -2160,6 +2168,7 @@ namespace PennyPet
                 {
                     eventThread = Thread.CurrentThread.ManagedThreadId;
                     lastEvent = value;
+                    if (value != null) eventNoteIds.Add(value.NoteId);
                 }, petContext);
                 StickyUiCommandResult created = PostStickyCommandAndWait(host,
                     new StickyUiCommand(StickyUiCommandKind.Create,
@@ -2170,6 +2179,11 @@ namespace PennyPet
                     created.Snapshot.Text == "detached-before-post" &&
                     canonical.Text == "pet-owned-after-post" &&
                     created.OwnerThreadId != petThread;
+                StickyUiCommandResult secondCreated =
+                    PostStickyCommandAndWait(host,
+                        new StickyUiCommand(StickyUiCommandKind.Create,
+                            second.Id, false,
+                            StickyNoteUiSnapshot.FromData(second)), petContext);
 
                 StickyUiCommandResult hidden = PostStickyCommandAndWait(host,
                     new StickyUiCommand(StickyUiCommandKind.Hide,
@@ -2178,21 +2192,27 @@ namespace PennyPet
                     new StickyUiCommand(StickyUiCommandKind.Show,
                         canonical.Id, false), petContext);
                 StickyUiCommandResult closed = PostStickyCommandAndWait(host,
-                    new StickyUiCommand(StickyUiCommandKind.Close,
-                        canonical.Id, false), petContext);
+                    new StickyUiCommand(StickyUiCommandKind.CloseAll,
+                        String.Empty, false), petContext);
                 host.BeginShutdown();
                 bool exited = host.WaitForExit(5000);
+                bool closedBoth = closed != null &&
+                    closed.Status == StickyUiCommandStatus.Handled &&
+                    closed.FinalSnapshots != null &&
+                    closed.FinalSnapshots.Length == 2;
                 return detachedOwnership && hidden != null &&
                     hidden.Status == StickyUiCommandStatus.Handled &&
                     hidden.Snapshot != null && !hidden.Snapshot.Visible &&
                     shown != null &&
                     shown.Status == StickyUiCommandStatus.Handled &&
                     shown.Snapshot != null && shown.Snapshot.Visible &&
-                    closed != null &&
-                    closed.Status == StickyUiCommandStatus.Handled &&
-                    closed.Snapshot != null && exited &&
+                    secondCreated != null &&
+                    secondCreated.Status == StickyUiCommandStatus.Handled &&
+                    secondCreated.OwnerThreadId == created.OwnerThreadId &&
+                    closedBoth && exited &&
                     eventThread == petThread && lastEvent != null &&
-                    lastEvent.NoteId == canonical.Id;
+                    eventNoteIds.Contains(canonical.Id) &&
+                    eventNoteIds.Contains(second.Id);
             }
         }
 

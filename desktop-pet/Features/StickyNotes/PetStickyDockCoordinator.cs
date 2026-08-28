@@ -1050,7 +1050,7 @@ namespace PennyPet
         private void HideStickyNote(StickyNoteData note)
         {
             if (note == null) return;
-            if (PostStickyCanaryHide(note)) return;
+            if (PostHostedStickyHide(note)) return;
             List<StickyNoteData> snapshot =
                 BuildDockChainOrderIncludingHidden(note);
             StickyNoteWindow root = null;
@@ -1083,10 +1083,43 @@ namespace PennyPet
         private void DeleteStickyNote(StickyNoteData note)
         {
             if (note == null) return;
-            bool wasCanary = IsStickyCanary(note);
-            if (wasCanary)
-                PostStickyCanaryCommand(new StickyUiCommand(
-                    StickyUiCommandKind.Close, note.Id, false), null);
+            if (IsHostedSticky(note))
+            {
+                BeginHostedStickyDelete(note);
+                return;
+            }
+            DeleteStickyNoteAfterWindowClosed(note);
+        }
+
+        private void BeginHostedStickyDelete(StickyNoteData note)
+        {
+            string noteId = note.Id;
+            if (!_hostedDeletePending.Add(noteId)) return;
+            PostHostedStickyCommand(new StickyUiCommand(
+                StickyUiCommandKind.Close, noteId, false),
+                delegate(StickyUiCommandResult result)
+                {
+                    _hostedDeletePending.Remove(noteId);
+                    if (result == null ||
+                        result.Status != StickyUiCommandStatus.Handled)
+                    {
+                        ReportHostedStickyCommandFailure(
+                            "sticky-hosted-delete", result);
+                        ShowBriefBubble("便利贴仍在编辑，删除已取消。");
+                        return;
+                    }
+                    ApplyHostedStickySnapshot(result.Snapshot,
+                        result.Sequence, false);
+                    _hostedNoteIds.Remove(noteId);
+                    ForgetHostedStickyState(noteId);
+                    StickyNoteData canonical = _notes.Find(noteId);
+                    if (canonical != null)
+                        DeleteStickyNoteAfterWindowClosed(canonical);
+                });
+        }
+
+        private void DeleteStickyNoteAfterWindowClosed(StickyNoteData note)
+        {
             DetachDockRelations(note);
             CancelReminderForNote(note, false);
             StickyNoteWindow form;
@@ -1094,13 +1127,6 @@ namespace PennyPet
                 form.CloseForApplicationExit();
             _noteWindows.Remove(note.Id);
             _notes.Remove(note);
-            if (wasCanary)
-            {
-                _canaryDisabled = true;
-                _canaryNoteId = String.Empty;
-                _canaryImeComposing = false;
-                _canaryInputFocused = false;
-            }
             RefreshDockResizeRoles();
             RefreshMenuText();
             RefreshNoteTabs();

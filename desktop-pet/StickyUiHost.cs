@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Windows.Forms;
 using System.Windows.Threading;
@@ -10,6 +11,14 @@ namespace PennyPet
     // incrementally; this host is the stable execution boundary first.
     internal sealed class StickyUiHost : IDisposable
     {
+        private sealed class StickyWindowEntry
+        {
+            internal StickyNoteWindow Window;
+            internal StickyNoteUiSnapshot LastSnapshot;
+            internal long Sequence;
+            internal bool HideAfterImeComposition;
+        }
+
         private readonly object _gate = new object();
         private Thread _thread;
         private Dispatcher _dispatcher;
@@ -17,12 +26,12 @@ namespace PennyPet
         private Func<StickyUiCommand, StickyUiCommandResult> _commandHandler;
         private Action<StickyUiEvent> _eventHandler;
         private SynchronizationContext _eventContext;
-        // This is the only reference to a Canary WPF window outside that
-        // window itself. It is read and written only by the sticky STA.
-        private StickyNoteWindow _canaryWindow;
-        private StickyNoteUiSnapshot _lastCanarySnapshot;
-        private long _snapshotSequence;
-        private bool _hideAfterImeComposition;
+        // This registry is the only owner of hosted WPF window references.
+        // It is read and written only by the sticky STA.
+        private readonly Dictionary<string, StickyWindowEntry> _windows =
+            new Dictionary<string, StickyWindowEntry>(
+                StringComparer.OrdinalIgnoreCase);
+        private bool _batchClosing;
         private bool _acceptingCommands = true;
 
         internal void Start()
@@ -144,6 +153,7 @@ namespace PennyPet
         private StickyUiCommandResult HandleCanaryCommand(
             StickyUiCommand command)
         {
+            StickyWindowEntry entry = null;
             try
             {
                 switch (command.Kind)
@@ -151,47 +161,50 @@ namespace PennyPet
                     case StickyUiCommandKind.Create:
                         return CreateCanaryWindow(command);
                     case StickyUiCommandKind.Show:
-                        if (!OwnsCanary(command.NoteId))
+                        if (!TryGetEntry(command.NoteId, out entry))
                             return StickyUiCommandResult.NotHandled();
-                        if (command.Flag) _canaryWindow.ShowAndEdit();
+                        if (command.Flag) entry.Window.ShowAndEdit();
                         else
                         {
-                            _canaryWindow.ShowRestored();
-                            EmitSnapshot(StickyUiEventKind.SnapshotChanged);
+                            entry.Window.ShowRestored();
+                            EmitSnapshot(entry,
+                                StickyUiEventKind.SnapshotChanged);
                         }
-                        return CurrentCanaryResult();
+                        return CurrentResult(entry);
                     case StickyUiCommandKind.Hide:
-                        if (!OwnsCanary(command.NoteId))
+                        if (!TryGetEntry(command.NoteId, out entry))
                             return StickyUiCommandResult.NotHandled();
-                        if (_canaryWindow.IsImeCompositionActiveForHost)
-                            _hideAfterImeComposition = true;
-                        else _canaryWindow.HideNote();
-                        return CurrentCanaryResult();
+                        if (entry.Window.IsImeCompositionActiveForHost)
+                            entry.HideAfterImeComposition = true;
+                        else entry.Window.HideNote();
+                        return CurrentResult(entry);
                     case StickyUiCommandKind.FocusPrimaryInput:
-                        if (!OwnsCanary(command.NoteId))
+                        if (!TryGetEntry(command.NoteId, out entry))
                             return StickyUiCommandResult.NotHandled();
-                        _canaryWindow.FocusPrimaryInputForTest();
-                        return CurrentCanaryResult();
+                        entry.Window.FocusPrimaryInputForTest();
+                        return CurrentResult(entry);
                     case StickyUiCommandKind.SetTopMost:
-                        if (!OwnsCanary(command.NoteId))
+                        if (!TryGetEntry(command.NoteId, out entry))
                             return StickyUiCommandResult.NotHandled();
-                        _canaryWindow.ApplyTopMostWindowState(command.Flag);
-                        return CurrentCanaryResult();
+                        entry.Window.ApplyTopMostWindowState(command.Flag);
+                        return CurrentResult(entry);
                     case StickyUiCommandKind.Close:
                         return CloseCanaryWindow(command.NoteId);
+                    case StickyUiCommandKind.CloseAll:
+                        return CloseAllWindows();
                     default:
                         return StickyUiCommandResult.NotHandled();
                 }
             }
             catch
             {
-                if (_canaryWindow != null && !_canaryWindow.IsDisposed)
+                if (entry != null && entry.Window != null &&
+                    !entry.Window.IsDisposed)
                 {
-                    StickyNoteWindow failed = _canaryWindow;
-                    DetachCanaryWindowHandlers(failed);
-                    try { failed.CloseForApplicationExit(); }
+                    DetachWindowHandlers(entry.Window);
+                    try { entry.Window.CloseForApplicationExit(); }
                     catch { }
-                    _canaryWindow = null;
+                    _windows.Remove(command.NoteId);
                 }
                 throw;
             }
@@ -204,20 +217,25 @@ namespace PennyPet
                 !String.Equals(command.NoteId, command.Snapshot.NoteId,
                     StringComparison.OrdinalIgnoreCase))
                 return StickyUiCommandResult.NotHandled();
-            if (_canaryWindow != null && !_canaryWindow.IsDisposed)
-                return OwnsCanary(command.NoteId)
-                    ? CurrentCanaryResult()
-                    : StickyUiCommandResult.NotHandled();
+            StickyWindowEntry existing;
+            if (TryGetEntry(command.NoteId, out existing))
+                return CurrentResult(existing);
 
             StickyNoteData workingCopy = command.Snapshot.CreateWorkingCopy();
             StickyNoteWindow window = new StickyNoteWindow(workingCopy);
-            _canaryWindow = window;
-            _lastCanarySnapshot = command.Snapshot;
+            StickyWindowEntry entry = new StickyWindowEntry();
+            entry.Window = window;
+            entry.LastSnapshot = command.Snapshot;
+            _windows[command.NoteId] = entry;
             window.NoteChanged += CanaryNoteChanged;
             window.TypingActivity += CanaryTypingActivity;
             window.InputFocusChanged += CanaryInputFocusChanged;
             window.ImeCompositionChanged += CanaryImeCompositionChanged;
             window.CloseRequested += CanaryCloseRequested;
+            window.DeleteRequested += CanaryDeleteRequested;
+            window.NewNoteRequested += CanaryNewNoteRequested;
+            window.NewTodoRequested += CanaryNewTodoRequested;
+            window.NewScheduleRequested += CanaryNewScheduleRequested;
             window.FormClosed += CanaryWindowClosed;
             try
             {
@@ -225,22 +243,21 @@ namespace PennyPet
                 else
                 {
                     window.ShowRestored();
-                    EmitSnapshot(StickyUiEventKind.SnapshotChanged);
+                    EmitSnapshot(entry, StickyUiEventKind.SnapshotChanged);
                 }
-                return CurrentCanaryResult();
+                return CurrentResult(entry);
             }
             catch
             {
-                DetachCanaryWindowHandlers(window);
+                DetachWindowHandlers(window);
                 try { window.CloseForApplicationExit(); }
                 catch { }
-                _canaryWindow = null;
-                _lastCanarySnapshot = null;
+                _windows.Remove(command.NoteId);
                 throw;
             }
         }
 
-        private void DetachCanaryWindowHandlers(StickyNoteWindow window)
+        private void DetachWindowHandlers(StickyNoteWindow window)
         {
             if (window == null) return;
             window.NoteChanged -= CanaryNoteChanged;
@@ -248,57 +265,106 @@ namespace PennyPet
             window.InputFocusChanged -= CanaryInputFocusChanged;
             window.ImeCompositionChanged -= CanaryImeCompositionChanged;
             window.CloseRequested -= CanaryCloseRequested;
+            window.DeleteRequested -= CanaryDeleteRequested;
+            window.NewNoteRequested -= CanaryNewNoteRequested;
+            window.NewTodoRequested -= CanaryNewTodoRequested;
+            window.NewScheduleRequested -= CanaryNewScheduleRequested;
             window.FormClosed -= CanaryWindowClosed;
         }
 
-        private bool OwnsCanary(string noteId)
+        private bool TryGetEntry(string noteId, out StickyWindowEntry entry)
         {
-            return _canaryWindow != null && !_canaryWindow.IsDisposed &&
-                String.Equals(_canaryWindow.Data.Id, noteId,
-                    StringComparison.OrdinalIgnoreCase);
+            return _windows.TryGetValue(noteId ?? String.Empty, out entry) &&
+                entry != null && entry.Window != null &&
+                !entry.Window.IsDisposed;
+        }
+
+        private bool TryGetEntry(StickyNoteWindow window,
+            out StickyWindowEntry entry)
+        {
+            entry = null;
+            if (window == null || window.Data == null ||
+                !TryGetEntry(window.Data.Id, out entry)) return false;
+            return Object.ReferenceEquals(entry.Window, window);
         }
 
         private void CanaryNoteChanged(object sender, EventArgs e)
         {
-            EmitSnapshot(StickyUiEventKind.SnapshotChanged);
+            if (_batchClosing) return;
+            StickyWindowEntry entry;
+            if (TryGetEntry(sender as StickyNoteWindow, out entry))
+                EmitSnapshot(entry, StickyUiEventKind.SnapshotChanged);
         }
 
         private void CanaryTypingActivity(object sender, EventArgs e)
         {
+            StickyWindowEntry entry;
+            if (!TryGetEntry(sender as StickyNoteWindow, out entry)) return;
             PostEvent(new StickyUiEvent(StickyUiEventKind.TypingActivity,
-                CurrentCanaryId(), null, true, _snapshotSequence));
+                entry.Window.Data.Id, null, true, entry.Sequence));
         }
 
         private void CanaryInputFocusChanged(object sender, EventArgs e)
         {
-            StickyNoteWindow window = sender as StickyNoteWindow;
-            if (window == null || window.IsDisposed) return;
+            StickyWindowEntry entry;
+            if (!TryGetEntry(sender as StickyNoteWindow, out entry)) return;
             PostEvent(new StickyUiEvent(StickyUiEventKind.InputFocusChanged,
-                window.Data.Id, null, window.HasFocusedTextInput,
-                _snapshotSequence));
+                entry.Window.Data.Id, null,
+                entry.Window.HasFocusedTextInput, entry.Sequence));
         }
 
         private void CanaryImeCompositionChanged(object sender,
             ImeCompositionEventArgs e)
         {
+            StickyWindowEntry entry;
+            if (!TryGetEntry(sender as StickyNoteWindow, out entry)) return;
             PostEvent(new StickyUiEvent(
                 StickyUiEventKind.ImeCompositionChanged,
-                CurrentCanaryId(), null, e != null && e.Active,
-                _snapshotSequence));
-            if (e != null && !e.Active && _hideAfterImeComposition &&
-                _canaryWindow != null && !_canaryWindow.IsDisposed)
+                entry.Window.Data.Id, null, e != null && e.Active,
+                entry.Sequence));
+            if (e != null && !e.Active && entry.HideAfterImeComposition &&
+                !entry.Window.IsDisposed)
             {
-                _hideAfterImeComposition = false;
-                _canaryWindow.HideNote();
+                entry.HideAfterImeComposition = false;
+                entry.Window.HideNote();
             }
         }
 
         private void CanaryCloseRequested(object sender, EventArgs e)
         {
-            if (_canaryWindow == null || _canaryWindow.IsDisposed) return;
-            if (_canaryWindow.IsImeCompositionActiveForHost)
-                _hideAfterImeComposition = true;
-            else _canaryWindow.HideNote();
+            StickyWindowEntry entry;
+            if (!TryGetEntry(sender as StickyNoteWindow, out entry)) return;
+            if (entry.Window.IsImeCompositionActiveForHost)
+                entry.HideAfterImeComposition = true;
+            else entry.Window.HideNote();
+        }
+
+        private void CanaryDeleteRequested(object sender, EventArgs e)
+        {
+            PostWindowRequest(sender, StickyUiEventKind.DeleteRequested);
+        }
+
+        private void CanaryNewNoteRequested(object sender, EventArgs e)
+        {
+            PostWindowRequest(sender, StickyUiEventKind.NewNoteRequested);
+        }
+
+        private void CanaryNewTodoRequested(object sender, EventArgs e)
+        {
+            PostWindowRequest(sender, StickyUiEventKind.NewTodoRequested);
+        }
+
+        private void CanaryNewScheduleRequested(object sender, EventArgs e)
+        {
+            PostWindowRequest(sender, StickyUiEventKind.NewScheduleRequested);
+        }
+
+        private void PostWindowRequest(object sender, StickyUiEventKind kind)
+        {
+            StickyWindowEntry entry;
+            if (!TryGetEntry(sender as StickyNoteWindow, out entry)) return;
+            PostEvent(new StickyUiEvent(kind, entry.Window.Data.Id, null,
+                false, entry.Sequence));
         }
 
         private void CanaryWindowClosed(object sender, FormClosedEventArgs e)
@@ -307,62 +373,101 @@ namespace PennyPet
             if (closed == null) return;
             StickyNoteUiSnapshot snapshot =
                 StickyNoteUiSnapshot.FromData(closed.Data);
-            _lastCanarySnapshot = snapshot;
-            _snapshotSequence++;
-            DetachCanaryWindowHandlers(closed);
-            _canaryWindow = null;
+            StickyWindowEntry entry;
+            if (!TryGetEntry(closed, out entry) || _batchClosing) return;
+            entry.LastSnapshot = snapshot;
+            entry.Sequence++;
+            DetachWindowHandlers(closed);
+            _windows.Remove(snapshot.NoteId);
             PostEvent(new StickyUiEvent(StickyUiEventKind.InputFocusChanged,
-                snapshot.NoteId, null, false, _snapshotSequence));
+                snapshot.NoteId, null, false, entry.Sequence));
             PostEvent(new StickyUiEvent(StickyUiEventKind.Closed,
-                snapshot.NoteId, snapshot, false, _snapshotSequence));
+                snapshot.NoteId, snapshot, false, entry.Sequence));
         }
 
-        private void EmitSnapshot(StickyUiEventKind kind)
+        private void EmitSnapshot(StickyWindowEntry entry,
+            StickyUiEventKind kind)
         {
-            if (_canaryWindow == null || _canaryWindow.IsDisposed) return;
+            if (entry == null || entry.Window == null ||
+                entry.Window.IsDisposed) return;
             StickyNoteUiSnapshot snapshot =
-                StickyNoteUiSnapshot.FromData(_canaryWindow.Data);
-            _lastCanarySnapshot = snapshot;
-            _snapshotSequence++;
+                StickyNoteUiSnapshot.FromData(entry.Window.Data);
+            entry.LastSnapshot = snapshot;
+            entry.Sequence++;
             PostEvent(new StickyUiEvent(kind, snapshot.NoteId, snapshot,
-                snapshot.Visible, _snapshotSequence));
+                snapshot.Visible, entry.Sequence));
         }
 
-        private string CurrentCanaryId()
+        private StickyUiCommandResult CurrentResult(StickyWindowEntry entry)
         {
-            if (_canaryWindow != null && !_canaryWindow.IsDisposed)
-                return _canaryWindow.Data.Id ?? String.Empty;
-            return _lastCanarySnapshot == null
-                ? String.Empty : _lastCanarySnapshot.NoteId;
-        }
-
-        private StickyUiCommandResult CurrentCanaryResult()
-        {
-            if (_canaryWindow != null && !_canaryWindow.IsDisposed)
-                _lastCanarySnapshot =
-                    StickyNoteUiSnapshot.FromData(_canaryWindow.Data);
-            return StickyUiCommandResult.Handled(_lastCanarySnapshot,
-                _snapshotSequence);
+            if (entry.Window != null && !entry.Window.IsDisposed)
+                entry.LastSnapshot =
+                    StickyNoteUiSnapshot.FromData(entry.Window.Data);
+            return StickyUiCommandResult.Handled(entry.LastSnapshot,
+                entry.Sequence);
         }
 
         private StickyUiCommandResult CloseCanaryWindow(string noteId)
         {
-            if (_canaryWindow == null || _canaryWindow.IsDisposed)
-                return _lastCanarySnapshot != null &&
-                    String.Equals(_lastCanarySnapshot.NoteId, noteId,
-                        StringComparison.OrdinalIgnoreCase)
-                    ? StickyUiCommandResult.Handled(_lastCanarySnapshot,
-                        _snapshotSequence)
-                    : StickyUiCommandResult.NotHandled();
-            if (!OwnsCanary(noteId)) return StickyUiCommandResult.NotHandled();
-            if (_canaryWindow.IsImeCompositionActiveForHost)
+            StickyWindowEntry entry;
+            if (!TryGetEntry(noteId, out entry))
+                return StickyUiCommandResult.NotHandled();
+            if (entry.Window.IsImeCompositionActiveForHost)
                 return StickyUiCommandResult.NotAccepted();
-            _canaryWindow.FlushPendingChanges();
+            entry.Window.FlushPendingChanges();
             StickyNoteUiSnapshot snapshot =
-                StickyNoteUiSnapshot.FromData(_canaryWindow.Data);
-            long sequence = _snapshotSequence;
-            _canaryWindow.CloseForApplicationExit();
+                StickyNoteUiSnapshot.FromData(entry.Window.Data);
+            entry.LastSnapshot = snapshot;
+            entry.Sequence++;
+            long sequence = entry.Sequence;
+            entry.Window.CloseForApplicationExit();
             return StickyUiCommandResult.Handled(snapshot, sequence);
+        }
+
+        private StickyUiCommandResult CloseAllWindows()
+        {
+            List<StickyWindowEntry> entries =
+                new List<StickyWindowEntry>(_windows.Values);
+            bool imeActive = false;
+            foreach (StickyWindowEntry entry in entries)
+            {
+                if (entry.Window == null || entry.Window.IsDisposed) continue;
+                if (!entry.Window.IsImeCompositionActiveForHost) continue;
+                imeActive = true;
+                PostEvent(new StickyUiEvent(
+                    StickyUiEventKind.ImeCompositionChanged,
+                    entry.Window.Data.Id, null, true, entry.Sequence));
+            }
+            if (imeActive) return StickyUiCommandResult.NotAccepted();
+
+            _batchClosing = true;
+            try
+            {
+                List<StickyUiFinalSnapshot> finalSnapshots =
+                    new List<StickyUiFinalSnapshot>();
+                foreach (StickyWindowEntry entry in entries)
+                {
+                    if (entry.Window == null || entry.Window.IsDisposed)
+                        continue;
+                    entry.Window.FlushPendingChanges();
+                    entry.LastSnapshot = StickyNoteUiSnapshot.FromData(
+                        entry.Window.Data);
+                    entry.Sequence++;
+                    finalSnapshots.Add(new StickyUiFinalSnapshot(
+                        entry.LastSnapshot, entry.Sequence));
+                }
+                foreach (StickyWindowEntry entry in entries)
+                {
+                    if (entry.Window == null || entry.Window.IsDisposed)
+                        continue;
+                    DetachWindowHandlers(entry.Window);
+                    entry.Window.CloseForApplicationExit();
+                }
+                _windows.Clear();
+                return StickyUiCommandResult.Handled(
+                    finalSnapshots.ToArray());
+            }
+            finally { _batchClosing = false; }
         }
 
         private void PostEvent(StickyUiEvent value)
@@ -411,15 +516,17 @@ namespace PennyPet
                 dispatcher.BeginInvoke(DispatcherPriority.Send,
                     new Action(delegate
                     {
-                        if (_canaryWindow != null && !_canaryWindow.IsDisposed)
+                        foreach (StickyWindowEntry entry in
+                            new List<StickyWindowEntry>(_windows.Values))
                         {
-                            StickyNoteWindow closing = _canaryWindow;
+                            StickyNoteWindow closing = entry.Window;
+                            if (closing == null || closing.IsDisposed) continue;
                             if (closing.IsImeCompositionActiveForHost)
-                                DetachCanaryWindowHandlers(closing);
+                                DetachWindowHandlers(closing);
                             else closing.FlushPendingChanges();
                             closing.CloseForApplicationExit();
-                            _canaryWindow = null;
                         }
+                        _windows.Clear();
                         dispatcher.BeginInvokeShutdown(DispatcherPriority.Send);
                     }));
         }
