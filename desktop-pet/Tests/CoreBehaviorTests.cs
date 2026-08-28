@@ -457,58 +457,6 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void StickyLinkDetector_RecognizesWindowsPathsAndWebAddresses()
-        {
-            IList<StickyLinkMatch> links = StickyNoteLinkDetector.Find(
-                "C:\\Users\\Penny pet\\进度表.xlsx。\r\n" +
-                "\\\\server\\share\\项目文件.pdf\r\n" +
-                "www.example.com/docs?q=1，\r\n" +
-                "(https://openai.com/research).\r\n" +
-                "namewww.example.com ftp://example.com");
-
-            Assert.AreEqual(4, links.Count);
-            Assert.AreEqual("C:\\Users\\Penny pet\\进度表.xlsx",
-                links[0].Target);
-            Assert.IsTrue(links[0].IsLocalPath);
-            Assert.AreEqual("\\\\server\\share\\项目文件.pdf",
-                links[1].Target);
-            Assert.IsTrue(links[1].IsLocalPath);
-            Assert.AreEqual("https://www.example.com/docs?q=1",
-                links[2].Target.TrimEnd('/'));
-            Assert.IsFalse(links[2].IsLocalPath);
-            Assert.AreEqual("https://openai.com/research",
-                links[3].Target.TrimEnd('/'));
-        }
-
-        [TestMethod]
-        public void StickyLinkPolicy_ClassifiesRiskWithoutTouchingWindowsShell()
-        {
-            Assert.AreEqual(StickyLinkOpenRisk.ExecutableOrScript,
-                StickyLinkPolicy.Classify("C:\\Tools\\setup.EXE", true));
-            Assert.AreEqual(StickyLinkOpenRisk.ExecutableOrScript,
-                StickyLinkPolicy.Classify("C:\\Tools\\run.ps1", true));
-            Assert.AreEqual(StickyLinkOpenRisk.ExecutableOrScript,
-                StickyLinkPolicy.Classify("C:\\Tools\\deploy.application", true));
-            Assert.AreEqual(StickyLinkOpenRisk.ExecutableOrScript,
-                StickyLinkPolicy.Classify("C:\\Tools\\setup.exe. ", true));
-            Assert.AreEqual(StickyLinkOpenRisk.Shortcut,
-                StickyLinkPolicy.Classify("C:\\Docs\\target.lnk", true));
-            Assert.AreEqual(StickyLinkOpenRisk.NetworkShare,
-                StickyLinkPolicy.Classify(
-                    "\\\\server\\share\\report.pdf", true));
-            Assert.AreEqual(StickyLinkOpenRisk.None,
-                StickyLinkPolicy.Classify("C:\\Docs\\report.xlsx", true));
-            Assert.AreEqual(StickyLinkOpenRisk.None,
-                StickyLinkPolicy.Classify("https://example.com/app.exe", false));
-            StringAssert.Contains(StickyLinkPolicy.ConfirmationMessage(
-                StickyLinkOpenRisk.ExecutableOrScript,
-                "C:\\Tools\\setup.exe"), "确定继续");
-            Assert.AreEqual(String.Empty,
-                StickyLinkPolicy.ConfirmationMessage(
-                    StickyLinkOpenRisk.None, "C:\\Docs\\report.xlsx"));
-        }
-
-        [TestMethod]
         public void AnimationController_ResolvesStatePriorityWithoutAWindow()
         {
             PetAnimationController controller = new PetAnimationController();

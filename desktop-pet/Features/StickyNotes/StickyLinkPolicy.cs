@@ -11,8 +11,7 @@ namespace PennyPet
         NetworkShare
     }
 
-    // Side-effect-free Windows target policy. Keeping this in Core makes the
-    // security rules testable without starting a shell or touching a path.
+    // Windows-only target policy. It has no place in shared Core.
     internal static class StickyLinkPolicy
     {
         private static readonly HashSet<string> ExecutableOrScriptExtensions =
