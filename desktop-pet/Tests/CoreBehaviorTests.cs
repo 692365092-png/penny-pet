@@ -94,6 +94,74 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyDockGeometry_UnifiedLayoutMatchesWindowsResults()
+        {
+            List<DockSize> sizes = new List<DockSize>
+            {
+                new DockSize { Width = 320, Height = 300 },
+                new DockSize { Width = 500, Height = 240 },
+                new DockSize { Width = 380, Height = 260 }
+            };
+            List<DockRect> layout =
+                StickyDockGeometry.CalculateUnifiedDockLayout(sizes,
+                    120, 80, 460, 1F);
+
+            Assert.AreEqual(3, layout.Count);
+            Assert.AreEqual(120, layout[0].Left);
+            Assert.AreEqual(80, layout[0].Top);
+            Assert.AreEqual(460, layout[0].Width);
+            Assert.AreEqual(300, layout[0].Height);
+            Assert.AreEqual(380, layout[1].Top);
+            Assert.AreEqual(620, layout[2].Top);
+        }
+
+        [TestMethod]
+        public void StickyDockGeometry_DividerRulesMatchWindowsResults()
+        {
+            DockSize middle =
+                StickyDockGeometry.CalculateDockDividerHeights(300, 250, 300);
+            DockSize minimum =
+                StickyDockGeometry.CalculateDockDividerHeights(300, 430, 300);
+            DockSize range =
+                StickyDockGeometry.CalculateDockDividerRange(300, 300);
+            DockSize tallRange =
+                StickyDockGeometry.CalculateDockDividerRange(500, 500);
+
+            Assert.AreEqual(250, middle.Width);
+            Assert.AreEqual(350, middle.Height);
+            Assert.AreEqual(380, minimum.Width);
+            Assert.AreEqual(220, minimum.Height);
+            Assert.AreEqual(220, range.Width);
+            Assert.AreEqual(380, range.Height);
+            Assert.AreEqual(300, tallRange.Width);
+            Assert.AreEqual(700, tallRange.Height);
+        }
+
+        [TestMethod]
+        public void StickyDockGeometry_HeaderTranslationMatchesWindowsResults()
+        {
+            DockPoint delta = StickyDockGeometry
+                .CalculateHeaderReachableTranslation(
+                    new DockRect
+                    {
+                        Left = 100,
+                        Top = -200,
+                        Width = 400,
+                        Height = 32
+                    },
+                    new DockRect
+                    {
+                        Left = 0,
+                        Top = 0,
+                        Width = 1200,
+                        Height = 900
+                    });
+
+            Assert.AreEqual(0, delta.X);
+            Assert.AreEqual(200, delta.Y);
+        }
+
+        [TestMethod]
         public void ShortItemText_UsesOneSharedDisplayBudget()
         {
             Assert.IsTrue(ShortItemText.Fits(new string('中', 50)));

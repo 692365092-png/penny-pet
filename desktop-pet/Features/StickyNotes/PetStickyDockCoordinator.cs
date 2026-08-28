@@ -478,24 +478,23 @@ namespace PennyPet
         private static List<Rectangle> CalculateUnifiedDockLayout(
             IList<Size> sizes, int left, int top, int width, float scale)
         {
-            List<Rectangle> result = new List<Rectangle>();
-            int minimumWidth = Math.Max(1, (int)Math.Round(280 * scale));
-            int maximumWidth = Math.Max(minimumWidth,
-                (int)Math.Round(900 * scale));
-            int minimumHeight = Math.Max(1, (int)Math.Round(220 * scale));
-            int maximumHeight = Math.Max(minimumHeight,
-                (int)Math.Round(700 * scale));
-            int normalizedWidth = Math.Max(minimumWidth,
-                Math.Min(maximumWidth, width));
-            int y = top;
-            if (sizes == null) return result;
-            foreach (Size size in sizes)
+            List<DockSize> dockSizes = new List<DockSize>();
+            if (sizes != null)
             {
-                int height = Math.Max(minimumHeight,
-                    Math.Min(maximumHeight, size.Height));
-                result.Add(new Rectangle(left, y, normalizedWidth, height));
-                y += height;
+                foreach (Size size in sizes)
+                    dockSizes.Add(new DockSize
+                    {
+                        Width = size.Width,
+                        Height = size.Height
+                    });
             }
+            List<DockRect> dockLayout =
+                StickyDockGeometry.CalculateUnifiedDockLayout(dockSizes,
+                    left, top, width, scale);
+            List<Rectangle> result = new List<Rectangle>();
+            foreach (DockRect item in dockLayout)
+                result.Add(new Rectangle(item.Left, item.Top,
+                    item.Width, item.Height));
             return result;
         }
 
@@ -751,30 +750,18 @@ namespace PennyPet
             int previousUpperHeight, int requestedUpperHeight,
             int currentLowerHeight)
         {
-            const int minimum = 220;
-            const int maximum = 700;
-            int oldUpper = Math.Max(minimum, Math.Min(maximum,
-                previousUpperHeight));
-            int lower = Math.Max(minimum, Math.Min(maximum,
-                currentLowerHeight));
-            int total = oldUpper + lower;
-            int minimumUpper = Math.Max(minimum, total - maximum);
-            int maximumUpper = Math.Min(maximum, total - minimum);
-            int upper = Math.Max(minimumUpper, Math.Min(maximumUpper,
-                requestedUpperHeight));
-            return new Size(upper, total - upper);
+            DockSize adjusted = StickyDockGeometry.CalculateDockDividerHeights(
+                previousUpperHeight, requestedUpperHeight,
+                currentLowerHeight);
+            return new Size(adjusted.Width, adjusted.Height);
         }
 
         internal static Size CalculateDockDividerRange(int upperHeight,
             int lowerHeight)
         {
-            const int minimum = 220;
-            const int maximum = 700;
-            int upper = Math.Max(minimum, Math.Min(maximum, upperHeight));
-            int lower = Math.Max(minimum, Math.Min(maximum, lowerHeight));
-            int total = upper + lower;
-            return new Size(Math.Max(minimum, total - maximum),
-                Math.Min(maximum, total - minimum));
+            DockSize range = StickyDockGeometry.CalculateDockDividerRange(
+                upperHeight, lowerHeight);
+            return new Size(range.Width, range.Height);
         }
 
         private StickyNoteData FindDockRoot(StickyNoteData seed)
@@ -834,17 +821,23 @@ namespace PennyPet
         internal static Point CalculateHeaderReachableTranslation(
             Rectangle header, Rectangle work)
         {
-            int dx = 0;
-            int dy = 0;
-            const int minimumVisibleWidth = 64;
-            if (header.Right < work.Left + minimumVisibleWidth)
-                dx = work.Left + minimumVisibleWidth - header.Right;
-            else if (header.Left > work.Right - minimumVisibleWidth)
-                dx = work.Right - minimumVisibleWidth - header.Left;
-            if (header.Top < work.Top) dy = work.Top - header.Top;
-            else if (header.Bottom > work.Bottom)
-                dy = work.Bottom - header.Bottom;
-            return new Point(dx, dy);
+            DockPoint delta = StickyDockGeometry
+                .CalculateHeaderReachableTranslation(
+                    new DockRect
+                    {
+                        Left = header.Left,
+                        Top = header.Top,
+                        Width = header.Width,
+                        Height = header.Height
+                    },
+                    new DockRect
+                    {
+                        Left = work.Left,
+                        Top = work.Top,
+                        Width = work.Width,
+                        Height = work.Height
+                    });
+            return new Point(delta.X, delta.Y);
         }
 
         private List<StickyNoteData> BuildDockComponent(StickyNoteData seed)

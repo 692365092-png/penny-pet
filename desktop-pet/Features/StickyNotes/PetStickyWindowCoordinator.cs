@@ -378,18 +378,28 @@ namespace PennyPet
         internal static Point CalculateStickyRecoveryAnchor(Rectangle work,
             Rectangle pet, Size window, int componentIndex)
         {
-            int preferredLeft = pet.Left - window.Width - 12;
-            if (preferredLeft < work.Left) preferredLeft = pet.Right + 12;
-            int targetLeft = Math.Max(work.Left,
-                Math.Min(preferredLeft, work.Right - window.Width));
-            int availableTop = Math.Max(1, work.Height - 36);
-            int relativeTop = pet.Top - work.Top +
-                Math.Max(0, componentIndex) * 34;
-            relativeTop %= availableTop;
-            if (relativeTop < 0) relativeTop += availableTop;
-            int targetTop = Math.Max(work.Top,
-                Math.Min(work.Top + relativeTop, work.Bottom - 32));
-            return new Point(targetLeft, targetTop);
+            DockPoint anchor = StickyDockGeometry.CalculateStickyRecoveryAnchor(
+                new DockRect
+                {
+                    Left = work.Left,
+                    Top = work.Top,
+                    Width = work.Width,
+                    Height = work.Height
+                },
+                new DockRect
+                {
+                    Left = pet.Left,
+                    Top = pet.Top,
+                    Width = pet.Width,
+                    Height = pet.Height
+                },
+                new DockSize
+                {
+                    Width = window.Width,
+                    Height = window.Height
+                },
+                componentIndex);
+            return new Point(anchor.X, anchor.Y);
         }
 
         private void RollBackFailedStickyCreation(StickyNoteData note)
