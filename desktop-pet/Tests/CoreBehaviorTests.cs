@@ -39,13 +39,13 @@ namespace PennyPet.Tests
         {
             Assert.IsTrue(
                 StickyDockOperations.IsDockCoordinateRangeSafe(100,
-                    new[] { 700, 700, 700 }));
+                    new[] { 700, 700, 700 }, 30000));
             Assert.IsFalse(
                 StickyDockOperations.IsDockCoordinateRangeSafe(29000,
-                    new[] { 700, 700 }));
+                    new[] { 700, 700 }, 30000));
             Assert.IsFalse(
                 StickyDockOperations.IsDockCoordinateRangeSafe(-31000,
-                    null));
+                    null, 30000));
         }
 
         [TestMethod]

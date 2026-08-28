@@ -527,7 +527,7 @@ namespace PennyPet
                     form.Visible) heights.Add(form.Height);
             }
             return StickyDockOperations.IsDockCoordinateRangeSafe(root.Top,
-                heights);
+                heights, DockCoordinateSafetyLimit);
         }
 
         private void NormalizeDockComponent(StickyNoteData seed)

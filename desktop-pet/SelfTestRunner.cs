@@ -1035,9 +1035,9 @@ namespace PennyPet
                     new Rectangle(80, 100, 900, 300), 20);
             result.LongCoordinateGuardOk =
                 StickyDockOperations.IsDockCoordinateRangeSafe(100,
-                    new int[] { 700, 700, 700 }) &&
+                    new int[] { 700, 700, 700 }, 30000) &&
                 !StickyDockOperations.IsDockCoordinateRangeSafe(29000,
-                    new int[] { 700, 700 });
+                    new int[] { 700, 700 }, 30000);
             Rectangle recoveredDrag = StickyNoteWindow
                 .CalculateRecoveredHeaderDragBounds(
                     new Rectangle(100, 100, 320, 300),
