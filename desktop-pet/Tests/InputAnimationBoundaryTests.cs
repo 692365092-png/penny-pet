@@ -83,6 +83,52 @@ namespace PennyPet.Tests
                 "Typing animation rows must be preloaded during startup.");
         }
 
+        [TestMethod]
+        public void StickyPersistence_AllWritersShareGenerationCheckedIoGate()
+        {
+            string source = ReadSource(
+                "Features/StickyNotes/StickyNoteRepository.cs");
+            string synchronous = Between(source,
+                "internal PersistenceResult SaveToFile",
+                "internal PersistenceResult ExportSnapshot");
+            string asynchronous = Between(source, "private void AsyncWriterLoop",
+                "internal PersistenceResult SaveToFile");
+            string physicalWrite = Between(source,
+                "private PersistenceResult WriteSnapshot",
+                "internal static bool RepairForDisplay");
+
+            Assert.IsFalse(synchronous.Contains("WaitForPendingSaves();"),
+                "Synchronous saves must not rely on a race-prone wait-before-write.");
+            Assert.IsTrue(synchronous.Contains("WriteSnapshot(filePath, snapshot,"),
+                "Synchronous saves must use the shared physical writer.");
+            Assert.IsTrue(asynchronous.Contains("WriteSnapshot(_filePath, snapshot,"),
+                "Asynchronous saves must use the shared physical writer.");
+            int ioGate = physicalWrite.IndexOf("lock (_ioGate)",
+                StringComparison.Ordinal);
+            int generationCheck = physicalWrite.IndexOf(
+                "generation < _lastWrittenGeneration", StringComparison.Ordinal);
+            int diskWrite = physicalWrite.IndexOf("AtomicTextFile.WriteAllLines",
+                StringComparison.Ordinal);
+            Assert.IsTrue(ioGate >= 0 && generationCheck > ioGate &&
+                diskWrite > generationCheck,
+                "Generation must be checked after winning the IO gate and before disk write.");
+        }
+
+        [TestMethod]
+        public void StickyUiHost_CommandBoundaryIsAsynchronous()
+        {
+            string source = ReadSource("StickyUiHost.cs");
+
+            Assert.IsTrue(source.Contains("PostCommand("),
+                "Sticky UI commands must use the asynchronous post boundary.");
+            Assert.IsTrue(source.Contains("dispatcher.BeginInvoke("),
+                "Sticky UI commands must be dispatched asynchronously.");
+            Assert.IsFalse(source.Contains("dispatcher.Invoke("),
+                "Pet UI must never synchronously invoke the sticky STA.");
+            Assert.IsFalse(source.Contains("SendCommand("),
+                "The old synchronous command API must not remain available.");
+        }
+
         private static string ReadSource(string relativePath)
         {
             string root = FindDesktopPetDirectory();

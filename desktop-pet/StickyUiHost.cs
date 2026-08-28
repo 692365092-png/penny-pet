@@ -59,31 +59,70 @@ namespace PennyPet
             lock (_gate) _commandHandler = handler;
         }
 
-        internal StickyUiCommandResult SendCommand(StickyUiCommand command)
+        internal void PostCommand(StickyUiCommand command,
+            Action<StickyUiCommandResult> completed)
         {
             if (command == null) throw new ArgumentNullException(nameof(command));
             Func<StickyUiCommand, StickyUiCommandResult> handler;
             Dispatcher dispatcher;
+            SynchronizationContext replyContext = SynchronizationContext.Current;
+            bool acceptingCommands;
             lock (_gate)
             {
-                if (!_acceptingCommands) return StickyUiCommandResult.NotAccepted();
+                acceptingCommands = _acceptingCommands;
                 handler = _commandHandler;
                 dispatcher = _dispatcher;
+            }
+            if (!acceptingCommands)
+            {
+                PostCompletion(replyContext, completed,
+                    StickyUiCommandResult.NotAccepted());
+                return;
             }
             if (handler == null || dispatcher == null ||
                 dispatcher.HasShutdownStarted ||
                 dispatcher.HasShutdownFinished)
-                return StickyUiCommandResult.NotHandled();
+            {
+                PostCompletion(replyContext, completed,
+                    StickyUiCommandResult.NotHandled());
+                return;
+            }
             try
             {
-                return dispatcher.Invoke(
-                    new Func<StickyUiCommandResult>(
-                        delegate { return handler(command); }));
+                dispatcher.BeginInvoke(DispatcherPriority.Normal,
+                    new Action(delegate
+                    {
+                        StickyUiCommandResult result;
+                        try
+                        {
+                            result = handler(command) ??
+                                StickyUiCommandResult.NotHandled();
+                        }
+                        catch (Exception error)
+                        {
+                            result = StickyUiCommandResult.Failed(error);
+                        }
+                        PostCompletion(replyContext, completed, result);
+                    }));
             }
             catch (Exception error)
             {
-                return StickyUiCommandResult.Failed(error);
+                PostCompletion(replyContext, completed,
+                    StickyUiCommandResult.Failed(error));
             }
+        }
+
+        private static void PostCompletion(SynchronizationContext context,
+            Action<StickyUiCommandResult> completed,
+            StickyUiCommandResult result)
+        {
+            if (completed == null) return;
+            if (context != null)
+            {
+                context.Post(delegate { completed(result); }, null);
+                return;
+            }
+            ThreadPool.QueueUserWorkItem(delegate { completed(result); });
         }
 
         internal void StopAcceptingCommands()

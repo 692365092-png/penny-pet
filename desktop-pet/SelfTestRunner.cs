@@ -263,6 +263,7 @@ namespace PennyPet
             internal StickyNoteData RestoredNote;
             internal bool PersistenceOk;
             internal bool FailureDirtyRetryOk;
+            internal bool GenerationMonotonicOk;
             internal bool MultilingualOk;
             internal bool RichTextOk;
             internal bool RichTextNoSilentTruncationOk;
@@ -328,6 +329,32 @@ namespace PennyPet
                 File.Delete(persistenceStatePath);
             if (File.Exists(persistenceStatePath + ".bak"))
                 File.Delete(persistenceStatePath + ".bak");
+
+            string generationPath = outputPath + ".generation-test.dat";
+            StickyNoteRepository generationRepository =
+                StickyNoteRepository.LoadFromFile(generationPath);
+            MethodInfo physicalWriter = typeof(StickyNoteRepository).GetMethod(
+                "WriteSnapshot", BindingFlags.Instance | BindingFlags.NonPublic);
+            StickyNoteData newerNote = new StickyNoteData();
+            newerNote.Text = "newer-generation";
+            StickyNoteData staleNote = new StickyNoteData();
+            staleNote.Text = "stale-generation";
+            PersistenceResult newerWrite = (PersistenceResult)physicalWriter.Invoke(
+                generationRepository, new object[] { generationPath,
+                    new List<StickyNoteData> { newerNote }, 20L,
+                    "sticky-generation-test" });
+            PersistenceResult staleWrite = (PersistenceResult)physicalWriter.Invoke(
+                generationRepository, new object[] { generationPath,
+                    new List<StickyNoteData> { staleNote }, 19L,
+                    "sticky-generation-test" });
+            List<StickyNoteData> generationRestored = StickyNoteRepository
+                .LoadFromFile(generationPath).GetAll();
+            result.GenerationMonotonicOk = newerWrite.Succeeded &&
+                staleWrite.Succeeded && generationRestored.Count == 1 &&
+                generationRestored[0].Text == "newer-generation";
+            if (File.Exists(generationPath)) File.Delete(generationPath);
+            if (File.Exists(generationPath + ".bak"))
+                File.Delete(generationPath + ".bak");
 
             result.PersistenceOk = restoredNotes.Count == 1 &&
                 restoredNotes[0].Text == multilingualSample &&
@@ -2024,24 +2051,55 @@ namespace PennyPet
                 !PetStartupRules.CanReleaseStartupLoading(false, true) &&
                 PetStartupRules.CanReleaseStartupLoading(true, true);
             using (StickyUiHost host = new StickyUiHost())
+            using (ManualResetEventSlim handlerStarted =
+                new ManualResetEventSlim(false))
+            using (ManualResetEventSlim releaseHandler =
+                new ManualResetEventSlim(false))
+            using (ManualResetEventSlim commandCompleted =
+                new ManualResetEventSlim(false))
+            using (ManualResetEventSlim shutdownCommandCompleted =
+                new ManualResetEventSlim(false))
             {
                 host.Start();
                 int stickyThread = 0;
                 host.SetCommandHandler(delegate(StickyUiCommand command)
                 {
                     stickyThread = Thread.CurrentThread.ManagedThreadId;
+                    handlerStarted.Set();
+                    releaseHandler.Wait(5000);
                     return StickyUiCommandResult.Handled();
                 });
                 StickyUiCommand posted = new StickyUiCommand(
                     StickyUiCommandKind.Show, "note-1", true);
-                StickyUiCommandResult commandResult = host.SendCommand(posted);
+                StickyUiCommandResult commandResult = null;
+                Stopwatch postTimer = Stopwatch.StartNew();
+                host.PostCommand(posted, delegate(StickyUiCommandResult value)
+                {
+                    commandResult = value;
+                    commandCompleted.Set();
+                });
+                postTimer.Stop();
+                bool handlerRan = handlerStarted.Wait(5000);
+                bool returnedBeforeCompletion = postTimer.ElapsedMilliseconds < 1000 &&
+                    !commandCompleted.IsSet;
+                releaseHandler.Set();
+                bool completed = WaitForSignalWithUiPump(commandCompleted, 5000);
                 host.BeginShutdown();
                 host.WaitForExit(5000);
-                StickyUiCommandResult afterShutdown =
-                    host.SendCommand(posted);
+                StickyUiCommandResult afterShutdown = null;
+                host.PostCommand(posted, delegate(StickyUiCommandResult value)
+                {
+                    afterShutdown = value;
+                    shutdownCommandCompleted.Set();
+                });
+                bool shutdownCompleted = WaitForSignalWithUiPump(
+                    shutdownCommandCompleted, 5000);
                 result.StickyUiHostOk =
+                    handlerRan && returnedBeforeCompletion && completed &&
+                    commandResult != null &&
                     commandResult.Status == StickyUiCommandStatus.Handled &&
                     stickyThread != Thread.CurrentThread.ManagedThreadId &&
+                    shutdownCompleted && afterShutdown != null &&
                     afterShutdown.Status == StickyUiCommandStatus.NotAccepted;
             }
             result.ScaleRangeOk =
@@ -2074,6 +2132,18 @@ namespace PennyPet
                 result.StickyResizePaintingOk = note.UsesBufferedResizePainting;
             }
             return result;
+        }
+
+        private static bool WaitForSignalWithUiPump(
+            ManualResetEventSlim signal, int timeoutMilliseconds)
+        {
+            Stopwatch timer = Stopwatch.StartNew();
+            while (!signal.IsSet && timer.ElapsedMilliseconds < timeoutMilliseconds)
+            {
+                Application.DoEvents();
+                Thread.Sleep(10);
+            }
+            return signal.IsSet;
         }
 
         private static bool RunStickyBackupCleanupCheck(
@@ -2447,6 +2517,8 @@ namespace PennyPet
                 "  \"automatic_note_backup_ok\": " + Bool(automaticNoteBackupOk) + ",\n" +
                 "  \"persistence_failure_dirty_state_ok\": " + Bool(
                     stickyChecks.FailureDirtyRetryOk) + ",\n" +
+                "  \"sticky_generation_monotonic_ok\": " + Bool(
+                    stickyChecks.GenerationMonotonicOk) + ",\n" +
                 "  \"failed_load_never_overwrites_ok\": " + Bool(
                     compatibilityChecks.FailedLoadNeverOverwritesOk) + ",\n" +
                 "  \"sticky_backup_recovery_allows_create_ok\": " + Bool(

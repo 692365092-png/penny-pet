@@ -20,6 +20,7 @@ namespace PennyPet
         private Exception _lastSaveError;
         private int _consecutiveSaveFailures;
         private readonly object _saveGate = new object();
+        private readonly object _ioGate = new object();
         private readonly SynchronizationContext _uiContext;
         private long _requestedGeneration;
         private long _completedGeneration = -1;
@@ -357,12 +358,11 @@ namespace PennyPet
                     snapshot = _latestSnapshot;
                     generation = _latestGeneration;
                 }
-                PersistenceResult result = WriteSnapshot(snapshot);
+                PersistenceResult result = WriteSnapshot(_filePath, snapshot,
+                    generation, "sticky-notes-save-async");
                 int consecutiveFailures = 0;
                 lock (_saveGate)
                 {
-                    _lastWrittenGeneration = Math.Max(_lastWrittenGeneration,
-                        generation);
                     if (result.Succeeded)
                     {
                         _completedGeneration = Math.Max(_completedGeneration,
@@ -396,32 +396,29 @@ namespace PennyPet
 
         internal PersistenceResult SaveToFile(string filePath)
         {
-            WaitForPendingSaves();
             long generation;
+            List<StickyNoteData> snapshot;
             lock (_saveGate)
             {
                 generation = ++_requestedGeneration;
                 _latestSnapshot = null;
                 _latestGeneration = generation;
                 _hasUnsavedChanges = true;
+                StickyDockGroups.NormalizeAll(_notes);
+                snapshot = CloneNotes(_notes);
             }
             // A temporary read/parse failure must never turn an existing note file
             // into an empty one. The next clean launch can read it again.
             if (!_loadSucceeded)
                 return RecordSaveFailure(new InvalidOperationException(
                     "Sticky-note data was not loaded safely; refusing to overwrite it."));
-            try
+            PersistenceResult result = WriteSnapshot(filePath, snapshot,
+                generation, "sticky-notes-save");
+            if (result.Succeeded)
             {
-                StickyDockGroups.NormalizeAll(_notes);
-                List<string> lines = new List<string>();
-                foreach (StickyNoteData note in _notes)
-                    lines.Add(StickyNoteCodec.SerializeLine(note));
-                AtomicTextFile.WriteAllLines(filePath, lines, true);
                 lock (_saveGate)
                 {
                     _completedGeneration = Math.Max(_completedGeneration,
-                        generation);
-                    _lastWrittenGeneration = Math.Max(_lastWrittenGeneration,
                         generation);
                     if (generation == _requestedGeneration)
                     {
@@ -430,14 +427,9 @@ namespace PennyPet
                         _consecutiveSaveFailures = 0;
                     }
                 }
-                return PersistenceResult.Success();
+                return result;
             }
-            catch (Exception error)
-            {
-                // Notes remain usable in memory if the disk is temporarily unavailable.
-                ApplicationDiagnostics.ReportNonFatal("sticky-notes-save", error);
-                return RecordSaveFailure(error);
-            }
+            return RecordSaveFailure(result.Error);
         }
 
         internal PersistenceResult ExportSnapshot(string filePath)
@@ -493,22 +485,36 @@ namespace PennyPet
             return result;
         }
 
-        private PersistenceResult WriteSnapshot(List<StickyNoteData> snapshot)
+        private PersistenceResult WriteSnapshot(string filePath,
+            List<StickyNoteData> snapshot, long generation,
+            string diagnosticContext)
         {
-            try
+            lock (_ioGate)
             {
-                StickyDockGroups.NormalizeAll(snapshot);
-                List<string> lines = new List<string>();
-                foreach (StickyNoteData note in snapshot)
-                    lines.Add(StickyNoteCodec.SerializeLine(note));
-                AtomicTextFile.WriteAllLines(_filePath, lines, true);
-                return PersistenceResult.Success();
-            }
-            catch (Exception error)
-            {
-                ApplicationDiagnostics.ReportNonFatal(
-                    "sticky-notes-save-async", error);
-                return PersistenceResult.Failure(error);
+                // A newer writer may have won the IO gate after this snapshot
+                // was captured. Never let an older generation move disk state
+                // backwards.
+                lock (_saveGate)
+                    if (generation < _lastWrittenGeneration)
+                        return PersistenceResult.Success();
+                try
+                {
+                    StickyDockGroups.NormalizeAll(snapshot);
+                    List<string> lines = new List<string>();
+                    foreach (StickyNoteData note in snapshot)
+                        lines.Add(StickyNoteCodec.SerializeLine(note));
+                    AtomicTextFile.WriteAllLines(filePath, lines, true);
+                    lock (_saveGate)
+                        _lastWrittenGeneration = Math.Max(
+                            _lastWrittenGeneration, generation);
+                    return PersistenceResult.Success();
+                }
+                catch (Exception error)
+                {
+                    ApplicationDiagnostics.ReportNonFatal(
+                        diagnosticContext, error);
+                    return PersistenceResult.Failure(error);
+                }
             }
         }
 
