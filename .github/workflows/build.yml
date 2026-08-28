@@ -31,7 +31,7 @@ jobs:
           [xml]$props = Get-Content -LiteralPath `
             "$env:GITHUB_WORKSPACE\desktop-pet\ProductVersion.props" -Raw
           $version = [string]$props.Project.PropertyGroup.PennyVersionPrefix
-          if ($version -notmatch '^\d+\.\d+$') {
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
             throw "ProductVersion.props contains an invalid product version."
           }
           [IO.File]::AppendAllText($env:GITHUB_ENV,
@@ -77,7 +77,7 @@ jobs:
           $report = Join-Path $env:RUNNER_TEMP "penny-selftest.json"
           $releaseExe = Join-Path "$env:GITHUB_WORKSPACE\release" `
             "Penny-pet-Windows.exe"
-          $expectedAssemblyVersion = $env:PENNY_PRODUCT_VERSION + ".0.0"
+          $expectedAssemblyVersion = $env:PENNY_PRODUCT_VERSION + ".0"
           $builtVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo(
             $releaseExe)
           if ($builtVersion.FileVersion -ne $expectedAssemblyVersion -or

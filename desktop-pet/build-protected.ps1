@@ -15,11 +15,11 @@ $VersionPrefixNode = $VersionProperties.SelectSingleNode(
 $PennyVersionPrefix = if ($null -eq $VersionPrefixNode) {
     ""
 } else { $VersionPrefixNode.InnerText.Trim() }
-if ($PennyVersionPrefix -notmatch '^\d+\.\d+$') {
+if ($PennyVersionPrefix -notmatch '^\d+\.\d+\.\d+$') {
     throw "ProductVersion.props contains an invalid version prefix."
 }
 $PennyProductVersion = $PennyVersionPrefix
-$PennyAssemblyVersion = $PennyVersionPrefix + ".0.0"
+$PennyAssemblyVersion = $PennyVersionPrefix + ".0"
 $ProtectedFileName = "Penny-" + $PennyProductVersion + ".exe"
 $FinalOutput = if ([String]::IsNullOrWhiteSpace($OutputFile)) {
     Join-Path $WorkspaceRoot $ProtectedFileName
