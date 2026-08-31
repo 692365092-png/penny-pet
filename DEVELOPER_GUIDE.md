@@ -143,6 +143,8 @@ Dock 修改必须同时检查：组关系、组内顺序、持久化快照、统
 
 自动测试不能替代真实 IME、窗口消息、透明窗口、多屏 Dock、Keyboard Hook 和系统权限行为。
 
+`InputAnimationBoundaryTests` 属于 `ArchitectureSourceBoundary`：它检查 source structure 和 architectural boundaries，不是 runtime behavior proof。真正 runtime 证据由 `PennyPet.SelfTests` / 单文件 EXE SelfTests 提供。
+
 ## 7. 后续维护原则
 
 - 保持 WinForms + WPF 技术栈，除非有明确迁移任务。

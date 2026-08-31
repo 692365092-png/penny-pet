@@ -41,3 +41,13 @@
 未来新增业务功能应先判断哪些规则能保持平台无关，避免把网络、业务状态和持久化决策直接塞入 Windows 窗口类。具体 Feature/Application 结构由届时负责的程序员依据真实需求设计，本仓库不预设类名、目录、DI、Repository interface 或空工程。
 
 每次只迁移一组可在无窗口环境验证的规则；Windows Coordinator 继续负责平台事实、类型转换和副作用。完整 Windows SelfTest 与发布验证留给 CI/发布阶段。
+
+## 当前 hosted / legacy 双路径
+
+- `PetForm` 在 WinForms STA 持有 canonical `StickyNoteData`、`StickyHostedRuntime` 和 Side Tabs。
+- `StickyUiThreadHost` 只管理 STA Thread / Dispatcher / async Post / Shutdown，不拥有 WPF Window。
+- `StickyUiHost` 是 hosted session facade，管理 session registry、命令路由和 CloseAll。
+- `StickyWindowSession` 是唯一持有 `StickyNoteWindow` 的 hosted 会话对象。
+- hosted ordinary notes 已完成主要 Dock parity，但 persisted docked notes 重启后仍可能回 legacy executor。
+- Hosted Dock 的视觉 preview、吸附动画和 split animation 尚未迁移。
+- Side Tabs 本轮不迁移；`SideTabSnapshot.ToDisplayData()` 保留为 compatibility adapter。

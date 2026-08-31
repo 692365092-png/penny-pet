@@ -125,3 +125,47 @@ Windows Coordinator 把 `Point`、`Size`、`Rectangle` 等平台对象转换为 
 只有出现真实需求和调用者时才建立相应边界，并用最小可运行测试保护。跨平台拆分定义的是技术边界，不替未来接手程序员决定产品流程。
 
 UI ownership 按 framework / message-loop 划分，而不是要求同一 feature 的所有窗口必须位于同一个线程。WPF `StickyNoteWindow` 可以继续由 `StickyUiHost` 的 WPF Dispatcher STA 承载；WinForms Side Tabs 可以留在 Pet/WinForms UI thread，只要它们只消费 typed snapshot，并只产生 typed user-action，不直接访问 hosted WPF 窗口。
+
+## 7. 当前 Windows UI ownership
+
+```text
+Pet / WinForms STA
+├─ PetForm
+├─ canonical StickyNoteData
+├─ StickyHostedRuntime
+└─ Side Tabs
+
+        typed commands/events/snapshots
+                   ↓ ↑
+
+Sticky WPF STA
+├─ StickyUiThreadHost
+│   └─ Thread / Dispatcher / async Post / Shutdown
+│
+├─ StickyUiHost
+│   └─ session registry / routing / CloseAll
+│
+└─ StickyWindowSession
+    └─ one StickyNoteWindow
+       sequence
+       LastSnapshot
+       IME deferred close
+       ApplyingBounds
+       event wiring
+```
+
+数据 ownership：
+
+- `StickyNoteData`：canonical persistent truth。
+- `StickyNoteUiSnapshot`：detached hosted editing/window snapshot。
+- `StickyHostedRuntime`：Pet-thread-only transient hosted protocol state。
+- `DockWindowFacts`：detached geometry/runtime facts。
+- `DockLayoutTarget`：pure desired effect target。
+- `SideTabSnapshot`：read-only side-tab projection。
+
+当前 hosted/legacy 双路径：
+
+- hosted ordinary notes 已覆盖主要 Dock merge / group move / TopMost / horizontal resize / vertical divider / collapse-reopen / split / 3-note insertion。
+- persisted docked notes 在重启恢复时仍可能走 legacy path，因为当前 hosted eligibility 排除已有 `DockGroupId / DockParentId` 的 note；这不是数据丢失。
+- Hosted Dock preview / 吸附视觉反馈 / split animation 尚未迁移，不声称完整视觉 parity。
+- Side Tabs 仍在 WinForms Pet STA；`SideTabSnapshot.ToDisplayData()` compatibility adapter 当前仍存在，direct snapshot consumption 是已知债务。
