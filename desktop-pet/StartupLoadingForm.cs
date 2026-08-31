@@ -10,6 +10,8 @@ namespace PennyPet
     internal sealed class StartupLoadingForm : Form
     {
         private const string ResourceName = "PennyPet.Startup.Loading";
+        private const int NativePetWidth = 192;
+        private const int NativePetHeight = 208;
         private readonly Bitmap _frame;
 
         internal StartupLoadingForm(PetSettings settings)
@@ -19,9 +21,8 @@ namespace PennyPet
             TopMost = true;
             StartPosition = FormStartPosition.Manual;
             AutoScaleMode = AutoScaleMode.None;
-            int percent = PetForm.NormalizeScalePercent(settings == null
+            ClientSize = ScaledPetSize(settings == null
                 ? 100 : settings.ScalePercent);
-            ClientSize = PetForm.ScaledPetSize(percent);
             Location = ResolveLocation(settings, ClientSize);
             _frame = LoadScaledFrame(ClientSize);
         }
@@ -54,50 +55,51 @@ namespace PennyPet
 
         internal bool UsesPetScaleForTest(int scalePercent)
         {
-            Size expected = PetForm.ScaledPetSize(scalePercent);
+            Size expected = ScaledPetSize(scalePercent);
             return ClientSize == expected && _frame != null &&
                 _frame.Size == expected;
         }
 
-        internal bool UsesNormalizedIdleFrameForTest()
+        internal bool UsesEmbeddedLoadingFrameForTest()
         {
             if (_frame == null) return false;
-            Size canvas = PetForm.ScaledPetSize(100);
-            if (_frame.Size != canvas) return false;
-            using (PetArtPackage art = PetArtPackage.Load(canvas.Width,
-                canvas.Height))
-            using (Bitmap expected = art.GetFrame(0, 0))
+            using (Stream stream = typeof(StartupLoadingForm).Assembly
+                .GetManifestResourceStream(ResourceName))
             {
-                if (expected == null || expected.Size != _frame.Size)
-                    return false;
-                for (int y = 0; y < _frame.Height; y++)
-                    for (int x = 0; x < _frame.Width; x++)
-                        if (_frame.GetPixel(x, y).ToArgb() !=
-                            expected.GetPixel(x, y).ToArgb())
-                            return false;
+                if (stream == null) return false;
+                using (Bitmap source = new Bitmap(stream))
+                {
+                    Rectangle bounds = CalculateImageBounds(source.Size,
+                        ClientSize);
+                    bool transparentPadding = bounds.Left > 0
+                        ? _frame.GetPixel(bounds.Left - 1,
+                            ClientSize.Height / 2).A == 0
+                        : bounds.Top > 0 && _frame.GetPixel(
+                            ClientSize.Width / 2, bounds.Top - 1).A == 0;
+                    return transparentPadding &&
+                        bounds.Width > 0 && bounds.Height > 0 &&
+                        bounds.Left >= 0 && bounds.Top >= 0 &&
+                        bounds.Right <= ClientSize.Width &&
+                        bounds.Bottom <= ClientSize.Height;
+                }
             }
-            return true;
         }
 
         private static Bitmap LoadScaledFrame(Size size)
         {
-            // The loading window must show the exact same normalized idle frame
-            // as PetForm.  Using the generated startup cache instead of the
-            // legacy loading.png avoids the old stretch/aspect mismatch.
-            Size canvas = PetForm.ScaledPetSize(100);
-            using (PetArtPackage art = PetArtPackage.Load(canvas.Width,
-                canvas.Height))
+            using (Stream stream = typeof(StartupLoadingForm).Assembly
+                .GetManifestResourceStream(ResourceName))
             {
-                Bitmap source = art.GetFrame(0, 0);
-                return ResizeStartupFrame(source, size);
+                if (stream == null)
+                    throw new InvalidOperationException(
+                        "Embedded startup loading image is missing.");
+                using (Bitmap source = new Bitmap(stream))
+                    return RenderStartupFrame(source, size);
             }
         }
 
-        private static Bitmap ResizeStartupFrame(Bitmap source, Size size)
+        private static Bitmap RenderStartupFrame(Bitmap source, Size size)
         {
-            if (source.Width == size.Width && source.Height == size.Height)
-                return new Bitmap(source);
-
             Bitmap output = new Bitmap(size.Width, size.Height,
                 System.Drawing.Imaging.PixelFormat.Format32bppArgb);
             using (Graphics graphics = Graphics.FromImage(output))
@@ -108,11 +110,30 @@ namespace PennyPet
                     InterpolationMode.HighQualityBicubic;
                 graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
                 graphics.DrawImage(source,
-                    new Rectangle(Point.Empty, size),
+                    CalculateImageBounds(source.Size, size),
                     new Rectangle(Point.Empty, source.Size),
                     GraphicsUnit.Pixel);
             }
             return output;
+        }
+
+        private static Rectangle CalculateImageBounds(Size source,
+            Size canvas)
+        {
+            double scale = Math.Min((double)canvas.Width / source.Width,
+                (double)canvas.Height / source.Height);
+            int width = Math.Max(1, (int)Math.Round(source.Width * scale));
+            int height = Math.Max(1, (int)Math.Round(source.Height * scale));
+            return new Rectangle((canvas.Width - width) / 2,
+                (canvas.Height - height) / 2, width, height);
+        }
+
+        private static Size ScaledPetSize(int scalePercent)
+        {
+            int normalized = PetSettingRules.NormalizePetScalePercent(
+                scalePercent);
+            return new Size(NativePetWidth * normalized / 100,
+                NativePetHeight * normalized / 100);
         }
 
         private static Point ResolveLocation(PetSettings settings, Size size)

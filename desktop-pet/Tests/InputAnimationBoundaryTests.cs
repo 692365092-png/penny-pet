@@ -11,6 +11,45 @@ namespace PennyPet.Tests
     public sealed class InputAnimationBoundaryTests
     {
         [TestMethod]
+        public void StartupLoading_UsesBootstrapOnlyEmbeddedVisual()
+        {
+            string loading = ReadSource("StartupLoadingForm.cs");
+            string host = ReadSource("PennyApplicationHost.cs");
+            string animation = ReadSource("PetAnimationRuntime.cs");
+            string startup = ReadSource("PetStartupCoordinator.cs");
+
+            Assert.IsTrue(loading.Contains("PennyPet.Startup.Loading") &&
+                loading.Contains("GetManifestResourceStream(ResourceName)") &&
+                loading.Contains("PetSettingRules.NormalizePetScalePercent") &&
+                loading.Contains("CalculateImageBounds(source.Size, size)") &&
+                loading.Contains("graphics.Clear(Color.Transparent)"),
+                "Loading must use its embedded asset on a proportional Pet canvas.");
+            Assert.IsFalse(loading.Contains("PetArtPackage") ||
+                loading.Contains("StickyUiHost") ||
+                loading.Contains("StickyUiThreadHost") ||
+                loading.Contains("StickyNoteRepository") ||
+                loading.Contains("StickyHostedRuntime") ||
+                loading.Contains("WpfApplicationHost") ||
+                loading.Contains("PetForm."),
+                "Bootstrap loading must not depend on runtime art or sticky state.");
+            int showLoading = host.IndexOf("loading.Show();",
+                StringComparison.Ordinal);
+            int constructPet = host.IndexOf("new PetForm(preloadedSettings)",
+                StringComparison.Ordinal);
+            Assert.IsTrue(showLoading >= 0 && constructPet > showLoading,
+                "The loading form must be shown before PetForm construction.");
+            int releaseFrame = startup.IndexOf(
+                "_startupDisplaySuppressed = false;", StringComparison.Ordinal);
+            int renderFrame = startup.IndexOf("RenderCurrentFrame();",
+                StringComparison.Ordinal);
+            Assert.IsTrue(animation.Contains(
+                    "if (_startupDisplaySuppressed || !IsHandleCreated") &&
+                startup.Contains("_startupUiReady, _startupArtReady") &&
+                releaseFrame >= 0 && renderFrame > releaseFrame,
+                "Normal Pet frames must remain suppressed until startup readiness.");
+        }
+
+        [TestMethod]
         public void Autosave_DoesNotRefreshSideTabs()
         {
             string source = ReadSource("Features/StickyNotes/PetStickyWindowCoordinator.cs");
