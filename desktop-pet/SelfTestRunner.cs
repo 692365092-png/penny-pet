@@ -1100,6 +1100,7 @@ namespace PennyPet
             internal bool DetachedGroupReturnsOnScreenOk;
             internal bool ScreenRecoveryAnchorOk;
             internal bool DetachedGroupTranslationOk;
+            internal bool ExecutorNeutralDockVisualSeamOk;
         }
 
         private static DockGeometryCheckResult RunDockGeometryChecks()
@@ -1192,6 +1193,11 @@ namespace PennyPet
                 recoveredSecondary.X <= -320 &&
                 recoveredSecondary.Y >= 0 &&
                 recoveredSecondary.Y <= 1008;
+            result.ExecutorNeutralDockVisualSeamOk =
+                PetForm.CalculateDockVisualSeam(new DockWindowFacts(
+                    "hosted-or-legacy", -860, 140, 420, 310, true, true)) ==
+                    new Rectangle(-860, 447, 420, 6) &&
+                PetForm.CalculateDockVisualSeam(null).IsEmpty;
             return result;
         }
 
@@ -2980,6 +2986,9 @@ namespace PennyPet
                     dockChecks.Geometry.DetachedGroupReturnsOnScreenOk) + ",\n" +
                 "  \"sticky_screen_recovery_anchor_ok\": " + Bool(
                     dockChecks.Geometry.ScreenRecoveryAnchorOk) + ",\n" +
+                "  \"dock_visual_seam_uses_detached_facts_ok\": " + Bool(
+                    dockChecks.Geometry.ExecutorNeutralDockVisualSeamOk) +
+                    ",\n" +
                 "  \"ordinary_drag_cannot_accidentally_split_ok\": " + Bool(
                     dockChecks.Lifecycle.SplitGestureOk) + ",\n" +
                 "  \"root_drag_always_moves_whole_group_ok\": " + Bool(

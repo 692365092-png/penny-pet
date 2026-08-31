@@ -236,8 +236,8 @@ namespace PennyPet
             _activeNoteSplitEligible = StickyDockOperations
                 .IsDockSplitEligible(seed.DockParentId,
                     _activeDockGroupIds.Count);
-            if (_activeNoteSplitEligible && !_activeNoteDragHosted)
-                ShowSplitGuide(seed);
+            if (_activeNoteSplitEligible)
+                ShowSplitGuide(seed, groupFacts);
         }
 
         private void StickyNoteHeaderDragMoved(object sender, EventArgs e)
@@ -324,12 +324,12 @@ namespace PennyPet
             finally { _movingDockGroup = false; }
             RememberActiveDockFacts(moveTargets);
             _activeNoteDragLastFacts = facts;
-            if (!_activeNoteDragHosted && !_activeNoteDetached &&
-                _activeNoteSplitEligible)
-                UpdateSplitGuide(seed);
-            if (!_activeNoteDragHosted)
-                UpdateDockPreview(seed,
-                    CaptureLegacyDockWindowFacts(_notes.GetAll()));
+            if (!_activeNoteDetached && _activeNoteSplitEligible)
+                UpdateSplitGuide(seed, _activeDockCurrentFacts);
+            Dictionary<string, DockWindowFacts> previewFacts =
+                CaptureLegacyDockWindowFacts(_notes.GetAll());
+            previewFacts[facts.NoteId] = facts;
+            UpdateDockPreview(seed, previewFacts);
         }
 
         private void StickyNoteHeaderDragCompleted(object sender, EventArgs e)
@@ -389,18 +389,15 @@ namespace PennyPet
                     ApplyDockComponentTopMost(parent, groupTopMost, null);
                 }
                 finally { _synchronizingDockLayout = false; }
-                if (!_activeNoteDragHosted)
-                {
-                    StickyNoteData existingChild =
-                        _notes.Find(target.ExistingChildNoteId);
-                    if (existingChild != null)
-                        ShowTransientDockPulse(new Rectangle(tailData.X,
-                            tailData.Y + tailData.Height - 3,
-                            tailData.Width, 6), Color.FromArgb(32, 160, 255));
-                    ShowTransientDockPulse(new Rectangle(parent.X,
-                        parent.Y + parent.Height - 3, parent.Width, 6),
+                StickyNoteData existingChild =
+                    _notes.Find(target.ExistingChildNoteId);
+                if (existingChild != null)
+                    ShowTransientDockPulse(CalculateDockVisualSeam(
+                        DockWindowFacts.FromData(tailData)),
                         Color.FromArgb(32, 160, 255));
-                }
+                ShowTransientDockPulse(CalculateDockVisualSeam(
+                    DockWindowFacts.FromData(parent)),
+                    Color.FromArgb(32, 160, 255));
             }
             else if (!_activeNoteDragHosted)
             {
@@ -1184,38 +1181,30 @@ namespace PennyPet
                 activeNotes, seed);
         }
 
-        private void ShowSplitGuide(StickyNoteData source)
+        private void ShowSplitGuide(StickyNoteData source,
+            IDictionary<string, DockWindowFacts> factsById)
         {
             ClearSplitGuide();
             if (source == null) return;
-            Rectangle seam = Rectangle.Empty;
-            if (!String.IsNullOrEmpty(source.DockParentId))
-            {
-                StickyNoteWindow parent;
-                if (_noteWindows.TryGetValue(source.DockParentId,
-                    out parent) && parent != null && !parent.IsDisposed)
-                    seam = new Rectangle(parent.Left,
-                        parent.Bounds.Bottom - 3, parent.Width, 6);
-            }
+            DockWindowFacts parentFacts;
+            Rectangle seam = factsById != null &&
+                factsById.TryGetValue(source.DockParentId, out parentFacts)
+                ? CalculateDockVisualSeam(parentFacts) : Rectangle.Empty;
             if (seam.IsEmpty) return;
             _splitGuideIndicator = new DockPulseIndicatorForm(
                 Color.FromArgb(255, 151, 62), 0);
             _splitGuideIndicator.ShowSeam(seam);
         }
 
-        private void UpdateSplitGuide(StickyNoteData source)
+        private void UpdateSplitGuide(StickyNoteData source,
+            IDictionary<string, DockWindowFacts> factsById)
         {
             if (_splitGuideIndicator == null ||
                 _splitGuideIndicator.IsDisposed || source == null) return;
-            Rectangle seam = Rectangle.Empty;
-            if (!String.IsNullOrEmpty(source.DockParentId))
-            {
-                StickyNoteWindow parent;
-                if (_noteWindows.TryGetValue(source.DockParentId,
-                    out parent) && parent != null && !parent.IsDisposed)
-                    seam = new Rectangle(parent.Left,
-                        parent.Bounds.Bottom - 3, parent.Width, 6);
-            }
+            DockWindowFacts parentFacts;
+            Rectangle seam = factsById != null &&
+                factsById.TryGetValue(source.DockParentId, out parentFacts)
+                ? CalculateDockVisualSeam(parentFacts) : Rectangle.Empty;
             if (!seam.IsEmpty) _splitGuideIndicator.UpdateSeam(seam);
         }
 
@@ -1236,17 +1225,17 @@ namespace PennyPet
             StickyNoteData child = target == null ? null :
                 _notes.Find(target.ExistingChildNoteId);
             if (String.Equals(parent == null ? String.Empty : parent.Id,
-                _dockPreviewParent == null ? String.Empty :
-                    _dockPreviewParent.Data.Id,
+                _dockPreviewParentNoteId ?? String.Empty,
                 StringComparison.OrdinalIgnoreCase) &&
                 String.Equals(child == null ? String.Empty : child.Id,
-                _dockPreviewChild == null ? String.Empty :
-                    _dockPreviewChild.Data.Id,
+                _dockPreviewChildNoteId ?? String.Empty,
                 StringComparison.OrdinalIgnoreCase)) return;
             ClearDockPreview();
-            _dockPreviewParent = GetLegacyWindow(parent);
-            _dockPreviewChild = GetLegacyWindow(child);
             if (parent == null) return;
+            _dockPreviewParentNoteId = parent.Id;
+            _dockPreviewChildNoteId = child == null ? String.Empty : child.Id;
+            // Optional legacy edge decoration. The shared seam overlay below
+            // is fully detached and does not require either Window executor.
             GetLegacyWindow(source)?.SetDockPreview(true, false);
             GetLegacyWindow(parent)?.SetDockPreview(true, true);
             if (child != null) GetLegacyWindow(child)?.SetDockPreview(true, true);
@@ -1255,9 +1244,15 @@ namespace PennyPet
             DockWindowFacts parentFacts;
             if (factsById != null && factsById.TryGetValue(parent.Id,
                 out parentFacts))
-                _dockPreviewIndicator.ShowSeam(new Rectangle(parentFacts.X,
-                    parentFacts.Y + parentFacts.Height - 3,
-                    parentFacts.Width, 6));
+                _dockPreviewIndicator.ShowSeam(
+                    CalculateDockVisualSeam(parentFacts));
+        }
+
+        internal static Rectangle CalculateDockVisualSeam(
+            DockWindowFacts facts)
+        {
+            return facts == null ? Rectangle.Empty : new Rectangle(facts.X,
+                facts.Y + facts.Height - 3, facts.Width, 6);
         }
 
         private DockTarget FindDockTarget(StickyNoteData source,
@@ -1354,15 +1349,17 @@ namespace PennyPet
         {
             StickyNoteWindow active = GetLegacyWindow(_activeNoteDragId);
             if (active != null) active.SetDockPreview(false, false);
-            if (_dockPreviewParent != null && !_dockPreviewParent.IsDisposed)
-                _dockPreviewParent.SetDockPreview(false, false);
-            if (_dockPreviewChild != null && !_dockPreviewChild.IsDisposed)
-                _dockPreviewChild.SetDockPreview(false, false);
+            StickyNoteWindow parent = GetLegacyWindow(
+                _dockPreviewParentNoteId);
+            if (parent != null) parent.SetDockPreview(false, false);
+            StickyNoteWindow child = GetLegacyWindow(
+                _dockPreviewChildNoteId);
+            if (child != null) child.SetDockPreview(false, false);
             if (_dockPreviewIndicator != null &&
                 !_dockPreviewIndicator.IsDisposed)
                 _dockPreviewIndicator.Close();
-            _dockPreviewParent = null;
-            _dockPreviewChild = null;
+            _dockPreviewParentNoteId = null;
+            _dockPreviewChildNoteId = null;
             _dockPreviewIndicator = null;
         }
 

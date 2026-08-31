@@ -183,8 +183,8 @@ namespace PennyPet
         private DockWindowFacts _activeNoteDragStartFacts;
         private DockWindowFacts _activeNoteDragLastFacts;
         private DateTime _activeNoteDragStartedUtc;
-        private StickyNoteWindow _dockPreviewParent;
-        private StickyNoteWindow _dockPreviewChild;
+        private string _dockPreviewParentNoteId;
+        private string _dockPreviewChildNoteId;
         private DockPulseIndicatorForm _dockPreviewIndicator;
         private DockPulseIndicatorForm _splitGuideIndicator;
         private string _splitRemainderNoteId;

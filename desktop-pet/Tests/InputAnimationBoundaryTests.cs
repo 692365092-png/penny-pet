@@ -523,6 +523,51 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void DockVisualFeedback_UsesDetachedFactsForEveryExecutor()
+        {
+            string form = ReadSource("PetForm.cs");
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string begin = Between(coordinator,
+                "private void BeginStickyDockDrag",
+                "private void StickyNoteHeaderDragMoved");
+            string moveVisuals = Between(coordinator,
+                "RememberActiveDockFacts(moveTargets);",
+                "private void StickyNoteHeaderDragCompleted");
+            string mergeVisuals = Between(coordinator,
+                "List<StickyNoteData> mergedSnapshot",
+                "else if (!_activeNoteDragHosted)");
+            string helpers = Between(coordinator,
+                "private void ShowSplitGuide",
+                "private DockTarget FindDockTarget");
+
+            Assert.IsTrue(begin.Contains("ShowSplitGuide(seed, groupFacts)") &&
+                !begin.Contains("_activeNoteSplitEligible && " +
+                    "!_activeNoteDragHosted"),
+                "Hosted split candidates must receive the same guide.");
+            Assert.IsTrue(moveVisuals.Contains(
+                    "UpdateSplitGuide(seed, _activeDockCurrentFacts)") &&
+                moveVisuals.Contains("UpdateDockPreview(seed, previewFacts)") &&
+                !moveVisuals.Contains("_activeNoteDragHosted"),
+                "Hosted drag must not be gated out of preview updates.");
+            Assert.IsTrue(mergeVisuals.Contains("ShowTransientDockPulse") &&
+                !mergeVisuals.Contains("if (!_activeNoteDragHosted)"),
+                "Merge pulse must be independent of the source executor.");
+            Assert.IsTrue(helpers.Contains(
+                    "CalculateDockVisualSeam(parentFacts)") &&
+                helpers.Contains("IDictionary<string, DockWindowFacts>") &&
+                !helpers.Contains("parent.Bounds") &&
+                !helpers.Contains("StickyDockOperations"),
+                "Visual helpers must use detached geometry without changing Dock rules.");
+            Assert.IsTrue(form.Contains(
+                    "private string _dockPreviewParentNoteId") &&
+                form.Contains("private string _dockPreviewChildNoteId") &&
+                !form.Contains("StickyNoteWindow _dockPreviewParent") &&
+                !form.Contains("StickyNoteWindow _dockPreviewChild"),
+                "Preview identity must be note-id based, not Window based.");
+        }
+
+        [TestMethod]
         public void StickyRecovery_ExpandsAllThroughOwnedEffectBoundaries()
         {
             string form = ReadSource("PetForm.cs");
