@@ -32,6 +32,7 @@ namespace PennyPet
             internal bool StartupFrameUsesEmbeddedLoadingOk;
             internal bool StartupUsesSavedScaleOk;
             internal bool StartupLocationOk;
+            internal bool StartupLoadingThreadHostOk;
             internal bool ContactAuthorFeatureOk;
             internal int[] AnimationCycleDurations;
         }
@@ -135,6 +136,14 @@ namespace PennyPet
                 result.StartupLocationOk =
                     savedLoadingForm.Location == savedLoadingLocation &&
                     fallbackLoadingForm.Location == expectedFallback;
+            }
+            using (StartupLoadingThreadHost loadingHost =
+                new StartupLoadingThreadHost())
+            {
+                loadingHost.Start(new PetSettings());
+                loadingHost.BringToFront();
+                result.StartupLoadingThreadHostOk = true;
+                loadingHost.Close();
             }
             bool contactArtworkEmbedded;
             using (Stream contactArtwork = typeof(ContactAuthorForm).Assembly
@@ -3195,6 +3204,8 @@ namespace PennyPet
                     artChecks.StartupUsesSavedScaleOk) + ",\n" +
                 "  \"startup_loading_uses_saved_or_fallback_location_ok\": " +
                     Bool(artChecks.StartupLocationOk) + ",\n" +
+                "  \"startup_loading_dedicated_sta_ok\": " + Bool(
+                    artChecks.StartupLoadingThreadHostOk) + ",\n" +
                 "  \"contact_author_feature_ok\": " + Bool(
                     artChecks.ContactAuthorFeatureOk) + ",\n" +
                 "  \"contact_author_xiaohongshu_only_ok\": " + Bool(

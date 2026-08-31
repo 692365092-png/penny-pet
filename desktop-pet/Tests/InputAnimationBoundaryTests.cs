@@ -14,6 +14,8 @@ namespace PennyPet.Tests
         public void StartupLoading_UsesBootstrapOnlyEmbeddedVisual()
         {
             string loading = ReadSource("StartupLoadingForm.cs");
+            string loadingThread = ReadSource(
+                "StartupLoadingThreadHost.cs");
             string host = ReadSource("PennyApplicationHost.cs");
             string animation = ReadSource("PetAnimationRuntime.cs");
             string startup = ReadSource("PetStartupCoordinator.cs");
@@ -33,12 +35,38 @@ namespace PennyPet.Tests
                 loading.Contains("WpfApplicationHost") ||
                 loading.Contains("PetForm."),
                 "Bootstrap loading must not depend on runtime art or sticky state.");
-            int showLoading = host.IndexOf("loading.Show();",
+            int showLoading = host.IndexOf("loading.Start(preloadedSettings);",
                 StringComparison.Ordinal);
             int constructPet = host.IndexOf("new PetForm(preloadedSettings)",
                 StringComparison.Ordinal);
             Assert.IsTrue(showLoading >= 0 && constructPet > showLoading,
                 "The loading form must be shown before PetForm construction.");
+            Assert.IsTrue(loadingThread.Contains("new Thread(") &&
+                loadingThread.Contains(
+                    "SetApartmentState(ApartmentState.STA)") &&
+                loadingThread.Contains("IsBackground = true") &&
+                loadingThread.Contains("Application.Run(form)") &&
+                loadingThread.Contains("form.BeginInvoke(") &&
+                loadingThread.Contains("_ready.Set()"),
+                "Loading must own a responsive message loop on a dedicated STA.");
+            Assert.IsFalse(loadingThread.Contains("new PetForm") ||
+                loadingThread.Contains("PetArtPackage") ||
+                loadingThread.Contains("StickyUiHost") ||
+                loadingThread.Contains("StickyNoteRepository"),
+                "The loading thread must own only bootstrap presentation.");
+            string closeLoading = Between(loadingThread,
+                "internal void Close()", "internal void BringToFront()");
+            string postLoading = Between(loadingThread,
+                "private void Post(", "public void Dispose()");
+            Assert.IsTrue(closeLoading.Contains("Post(") &&
+                postLoading.Contains("form.BeginInvoke(") &&
+                loadingThread.Contains("_exited.WaitOne()"),
+                "Close must marshal to loading STA and disposal must await exit.");
+            Assert.IsTrue(host.Contains("pet.StartupReady += delegate") &&
+                host.Contains("loading.Close();") &&
+                host.Contains("loading.BringToFront();") &&
+                !host.Contains("Application.DoEvents()"),
+                "StartupReady must close loading without DoEvents workarounds.");
             int releaseFrame = startup.IndexOf(
                 "_startupDisplaySuppressed = false;", StringComparison.Ordinal);
             int renderFrame = startup.IndexOf("RenderCurrentFrame();",

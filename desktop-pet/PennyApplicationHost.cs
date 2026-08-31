@@ -28,22 +28,20 @@ namespace PennyPet
             try
             {
                 PetSettings preloadedSettings = PetSettings.Load();
-                using (StartupLoadingForm loading = new StartupLoadingForm(
-                    preloadedSettings))
+                using (StartupLoadingThreadHost loading =
+                    new StartupLoadingThreadHost())
                 {
-                    loading.Show();
-                    Application.DoEvents();
+                    loading.Start(preloadedSettings);
                     PetForm pet = new PetForm(preloadedSettings);
                     pet.StartupReady += delegate
                     {
-                        if (!loading.IsDisposed) loading.Close();
+                        loading.Close();
                     };
                     pet.FormClosed += delegate
                     {
-                        if (!loading.IsDisposed) loading.Close();
+                        loading.Close();
                     };
                     pet.Show();
-                    Application.DoEvents();
                     loading.BringToFront();
                     Application.Run(pet);
                 }
