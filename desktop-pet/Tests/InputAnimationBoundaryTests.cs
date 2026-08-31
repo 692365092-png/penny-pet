@@ -22,8 +22,9 @@ namespace PennyPet.Tests
                 loading.Contains("GetManifestResourceStream(ResourceName)") &&
                 loading.Contains("PetSettingRules.NormalizePetScalePercent") &&
                 loading.Contains("CalculateImageBounds(source.Size, size)") &&
+                loading.Contains("canvas.Height - height") &&
                 loading.Contains("graphics.Clear(Color.Transparent)"),
-                "Loading must use its embedded asset on a proportional Pet canvas.");
+                "Loading must use its embedded asset on a bottom-aligned proportional Pet canvas.");
             Assert.IsFalse(loading.Contains("PetArtPackage") ||
                 loading.Contains("StickyUiHost") ||
                 loading.Contains("StickyUiThreadHost") ||

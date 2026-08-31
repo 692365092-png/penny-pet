@@ -71,12 +71,18 @@ namespace PennyPet
                 {
                     Rectangle bounds = CalculateImageBounds(source.Size,
                         ClientSize);
+                    double sourceAspect = (double)source.Width / source.Height;
+                    double renderedAspect = (double)bounds.Width /
+                        bounds.Height;
                     bool transparentPadding = bounds.Left > 0
                         ? _frame.GetPixel(bounds.Left - 1,
                             ClientSize.Height / 2).A == 0
                         : bounds.Top > 0 && _frame.GetPixel(
                             ClientSize.Width / 2, bounds.Top - 1).A == 0;
                     return transparentPadding &&
+                        Math.Abs(sourceAspect - renderedAspect) < 0.01D &&
+                        bounds.Left == (ClientSize.Width - bounds.Width) / 2 &&
+                        bounds.Bottom == ClientSize.Height &&
                         bounds.Width > 0 && bounds.Height > 0 &&
                         bounds.Left >= 0 && bounds.Top >= 0 &&
                         bounds.Right <= ClientSize.Width &&
@@ -125,7 +131,7 @@ namespace PennyPet
             int width = Math.Max(1, (int)Math.Round(source.Width * scale));
             int height = Math.Max(1, (int)Math.Round(source.Height * scale));
             return new Rectangle((canvas.Width - width) / 2,
-                (canvas.Height - height) / 2, width, height);
+                canvas.Height - height, width, height);
         }
 
         private static Size ScaledPetSize(int scalePercent)
