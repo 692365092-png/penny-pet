@@ -1285,7 +1285,7 @@ namespace PennyPet
                     continue;
                 if (_activeNoteDragHosted)
                 {
-                    if (!CanUseHostedOrdinaryDockComponents(
+                    if (!CanUseHostedDockComponents(
                         source, candidate))
                         continue;
                 }
@@ -1314,24 +1314,23 @@ namespace PennyPet
             return best;
         }
 
-        private bool CanUseHostedOrdinaryDockComponents(StickyNoteData source,
+        private bool CanUseHostedDockComponents(StickyNoteData source,
             StickyNoteData target)
         {
-            if (!IsHostedOrdinaryDockNote(source) ||
-                !IsHostedOrdinaryDockNote(target)) return false;
+            if (!IsHostedDockNote(source) ||
+                !IsHostedDockNote(target)) return false;
             foreach (string noteId in _activeDockGroupIds)
-                if (!IsHostedOrdinaryDockNote(_notes.Find(noteId)))
+                if (!IsHostedDockNote(_notes.Find(noteId)))
                     return false;
             foreach (StickyNoteData note in
                 BuildDockChainOrderIncludingHidden(target))
-                if (!IsHostedOrdinaryDockNote(note)) return false;
+                if (!IsHostedDockNote(note)) return false;
             return true;
         }
 
-        private bool IsHostedOrdinaryDockNote(StickyNoteData note)
+        private bool IsHostedDockNote(StickyNoteData note)
         {
-            return IsHostedSticky(note) && !note.IsTodoList &&
-                !note.IsSchedule && note.ReminderUtcTicks <= 0;
+            return IsHostedSticky(note) && note.ReminderUtcTicks <= 0;
         }
 
         private string FindDockChild(string parentId,

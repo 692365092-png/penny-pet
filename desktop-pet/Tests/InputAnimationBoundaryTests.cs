@@ -522,6 +522,25 @@ namespace PennyPet.Tests
                 "The minimum E2E must not add a second Dock protocol.");
         }
 
+        [TestMethod]
+        public void HostedDockGate_AllowsOrdinaryTodoAndSchedule()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string gate = Between(coordinator,
+                "private bool IsHostedDockNote",
+                "private string FindDockChild");
+
+            Assert.IsTrue(coordinator.Contains(
+                "CanUseHostedDockComponents("),
+                "Hosted dock gate must be used for hosted drag targets.");
+            Assert.IsTrue(gate.Contains("ReminderUtcTicks <= 0"),
+                "Reminder notes must remain excluded until separately approved.");
+            Assert.IsFalse(gate.Contains("!note.IsTodoList") ||
+                gate.Contains("!note.IsSchedule"),
+                "Todo and Schedule must be allowed to dock with ordinary notes.");
+        }
+
         private static string ReadSource(string relativePath)
         {
             string root = FindDesktopPetDirectory();
