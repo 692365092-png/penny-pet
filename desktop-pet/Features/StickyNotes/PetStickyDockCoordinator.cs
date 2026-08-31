@@ -1283,13 +1283,7 @@ namespace PennyPet
                         StringComparison.OrdinalIgnoreCase) ||
                     activeIds.Contains(candidate.Id))
                     continue;
-                if (_activeNoteDragHosted)
-                {
-                    if (!CanUseHostedDockComponents(
-                        source, candidate))
-                        continue;
-                }
-                else if (IsHostedSticky(candidate)) continue;
+                if (!CanUseDockComponents(source, candidate)) continue;
                 DockWindowFacts candidateFacts;
                 if (!factsById.TryGetValue(candidate.Id,
                     out candidateFacts) || !candidateFacts.Visible) continue;
@@ -1314,23 +1308,23 @@ namespace PennyPet
             return best;
         }
 
-        private bool CanUseHostedDockComponents(StickyNoteData source,
+        private bool CanUseDockComponents(StickyNoteData source,
             StickyNoteData target)
         {
-            if (!IsHostedDockNote(source) ||
-                !IsHostedDockNote(target)) return false;
+            if (!IsDockParticipant(source) ||
+                !IsDockParticipant(target)) return false;
             foreach (string noteId in _activeDockGroupIds)
-                if (!IsHostedDockNote(_notes.Find(noteId)))
+                if (!IsDockParticipant(_notes.Find(noteId)))
                     return false;
             foreach (StickyNoteData note in
                 BuildDockChainOrderIncludingHidden(target))
-                if (!IsHostedDockNote(note)) return false;
+                if (!IsDockParticipant(note)) return false;
             return true;
         }
 
-        private bool IsHostedDockNote(StickyNoteData note)
+        private bool IsDockParticipant(StickyNoteData note)
         {
-            return IsHostedSticky(note) && note.ReminderUtcTicks <= 0;
+            return note != null && note.ReminderUtcTicks <= 0;
         }
 
         private string FindDockChild(string parentId,
