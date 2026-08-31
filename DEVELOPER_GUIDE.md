@@ -1,4 +1,4 @@
-# Penny pet 1.0.1 开发交接说明
+# Penny pet 1.0.2 开发交接说明
 
 本文是当前 Windows 版本的日常维护地图。跨平台边界与 macOS 迁移结论见 `ARCHITECTURE.md`；软件与美术的许可边界分别见 `LICENSE` 和 `ASSET_LICENSE.md`。
 
