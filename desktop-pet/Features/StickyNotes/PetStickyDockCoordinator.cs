@@ -840,8 +840,7 @@ namespace PennyPet
             StickyNoteData seed = _notes.Find(snapshot.NoteId);
             if (seed == null) return;
             if (e.HeightChanged && IsDockDividerResizeActive(source) &&
-                ResizeStickyDockDivider(snapshot,
-                    (int)Math.Round(e.PreviousSize.Height))) return;
+                ResizeStickyDockDivider(snapshot)) return;
             ApplyDockTarget(snapshot.ToTarget(snapshot.X, snapshot.Y),
                 snapshot.NoteId);
             List<StickyNoteData> ordered = BuildDockChainOrder(seed);
@@ -874,8 +873,7 @@ namespace PennyPet
             RefreshDockResizeRoles();
         }
 
-        private bool ResizeStickyDockDivider(DockWindowFacts snapshot,
-            int previousUpperHeight)
+        private bool ResizeStickyDockDivider(DockWindowFacts snapshot)
         {
             if (_synchronizingDockLayout || _movingDockGroup ||
                 _activeNoteDragId != null || snapshot == null) return false;
@@ -896,7 +894,7 @@ namespace PennyPet
             if (!facts.TryGetValue(ordered[sourceIndex + 1].Id, out lower))
                 return false;
             List<DockLayoutTarget> adjusted = CalculateDockDividerTargets(
-                snapshot, lower, previousUpperHeight);
+                snapshot, lower);
             facts[snapshot.NoteId] = DockWindowFacts.FromTarget(adjusted[0]);
             facts[lower.NoteId] = DockWindowFacts.FromTarget(adjusted[1]);
             DockWindowFacts root;
@@ -913,17 +911,16 @@ namespace PennyPet
         }
 
         internal static List<DockLayoutTarget> CalculateDockDividerTargets(
-            DockWindowFacts upper, DockWindowFacts lower,
-            int previousUpperHeight)
+            DockWindowFacts upper, DockWindowFacts lower)
         {
             List<DockLayoutTarget> targets = new List<DockLayoutTarget>();
             if (upper == null || lower == null) return targets;
-            Size adjusted = CalculateDockDividerHeights(previousUpperHeight,
-                upper.Height, lower.Height);
+            int upperHeight = CalculateDockDividerHeight(upper.Height);
             targets.Add(new DockLayoutTarget(upper.NoteId, upper.X, upper.Y,
-                upper.Width, adjusted.Width, upper.Visible, upper.TopMost));
-            targets.Add(new DockLayoutTarget(lower.NoteId, lower.X, lower.Y,
-                lower.Width, adjusted.Height, lower.Visible, lower.TopMost));
+                upper.Width, upperHeight, upper.Visible, upper.TopMost));
+            targets.Add(new DockLayoutTarget(lower.NoteId, lower.X,
+                upper.Y + upperHeight, lower.Width, lower.Height,
+                lower.Visible, lower.TopMost));
             return targets;
         }
 
@@ -1019,30 +1016,12 @@ namespace PennyPet
                 if (!note.Visible || handled.Contains(note.Id)) continue;
                 List<StickyNoteData> ordered = BuildDockChainOrder(note);
                 if (ordered.Count <= 1) continue;
-                Dictionary<string, DockWindowFacts> facts =
-                    CaptureLegacyDockWindowFacts(ordered);
                 for (int index = 0; index < ordered.Count; index++)
                 {
                     bool internalDivider = index < ordered.Count - 1;
-                    int dividerMinimum = 220;
-                    int dividerMaximum = 700;
-                    if (internalDivider)
-                    {
-                        DockWindowFacts upper;
-                        DockWindowFacts lower;
-                        if (facts.TryGetValue(ordered[index].Id, out upper) &&
-                            facts.TryGetValue(ordered[index + 1].Id,
-                                out lower))
-                        {
-                            Size range = CalculateDockDividerRange(
-                                upper.Height, lower.Height);
-                            dividerMinimum = range.Width;
-                            dividerMaximum = range.Height;
-                        }
-                    }
                     ApplyDockResizeRole(ordered[index], true,
                         index == 0, true, internalDivider,
-                        dividerMinimum, dividerMaximum);
+                        220, 700);
                     handled.Add(ordered[index].Id);
                 }
             }
@@ -1078,22 +1057,11 @@ namespace PennyPet
                     dividerMaximumHeight);
         }
 
-        internal static Size CalculateDockDividerHeights(
-            int previousUpperHeight, int requestedUpperHeight,
-            int currentLowerHeight)
+        internal static int CalculateDockDividerHeight(
+            int requestedUpperHeight)
         {
-            DockSize adjusted = StickyDockGeometry.CalculateDockDividerHeights(
-                previousUpperHeight, requestedUpperHeight,
-                currentLowerHeight);
-            return new Size(adjusted.Width, adjusted.Height);
-        }
-
-        internal static Size CalculateDockDividerRange(int upperHeight,
-            int lowerHeight)
-        {
-            DockSize range = StickyDockGeometry.CalculateDockDividerRange(
-                upperHeight, lowerHeight);
-            return new Size(range.Width, range.Height);
+            return StickyDockGeometry.CalculateDockDividerHeight(
+                requestedUpperHeight);
         }
 
         private StickyNoteData FindDockRoot(StickyNoteData seed)

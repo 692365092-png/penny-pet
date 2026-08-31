@@ -78,37 +78,13 @@ namespace PennyPet
             return result;
         }
 
-        internal static DockSize CalculateDockDividerHeights(
-            int previousUpperHeight, int requestedUpperHeight,
-            int currentLowerHeight)
+        internal static int CalculateDockDividerHeight(
+            int requestedUpperHeight)
         {
             const int minimum = 220;
             const int maximum = 700;
-            int oldUpper = Math.Max(minimum, Math.Min(maximum,
-                previousUpperHeight));
-            int lower = Math.Max(minimum, Math.Min(maximum,
-                currentLowerHeight));
-            int total = oldUpper + lower;
-            int minimumUpper = Math.Max(minimum, total - maximum);
-            int maximumUpper = Math.Min(maximum, total - minimum);
-            int upper = Math.Max(minimumUpper, Math.Min(maximumUpper,
+            return Math.Max(minimum, Math.Min(maximum,
                 requestedUpperHeight));
-            return new DockSize { Width = upper, Height = total - upper };
-        }
-
-        internal static DockSize CalculateDockDividerRange(int upperHeight,
-            int lowerHeight)
-        {
-            const int minimum = 220;
-            const int maximum = 700;
-            int upper = Math.Max(minimum, Math.Min(maximum, upperHeight));
-            int lower = Math.Max(minimum, Math.Min(maximum, lowerHeight));
-            int total = upper + lower;
-            return new DockSize
-            {
-                Width = Math.Max(minimum, total - maximum),
-                Height = Math.Min(maximum, total - minimum)
-            };
         }
 
         internal static DockPoint CalculateHeaderReachableTranslation(

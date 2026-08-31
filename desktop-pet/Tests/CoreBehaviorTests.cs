@@ -202,25 +202,14 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void StickyDockGeometry_DividerRulesMatchWindowsResults()
+        public void StickyDockGeometry_DividerHeightUsesIndependentNoteRange()
         {
-            DockSize middle =
-                StickyDockGeometry.CalculateDockDividerHeights(300, 250, 300);
-            DockSize minimum =
-                StickyDockGeometry.CalculateDockDividerHeights(300, 430, 300);
-            DockSize range =
-                StickyDockGeometry.CalculateDockDividerRange(300, 300);
-            DockSize tallRange =
-                StickyDockGeometry.CalculateDockDividerRange(500, 500);
-
-            Assert.AreEqual(250, middle.Width);
-            Assert.AreEqual(350, middle.Height);
-            Assert.AreEqual(380, minimum.Width);
-            Assert.AreEqual(220, minimum.Height);
-            Assert.AreEqual(220, range.Width);
-            Assert.AreEqual(380, range.Height);
-            Assert.AreEqual(300, tallRange.Width);
-            Assert.AreEqual(700, tallRange.Height);
+            Assert.AreEqual(220,
+                StickyDockGeometry.CalculateDockDividerHeight(50));
+            Assert.AreEqual(500,
+                StickyDockGeometry.CalculateDockDividerHeight(500));
+            Assert.AreEqual(700,
+                StickyDockGeometry.CalculateDockDividerHeight(900));
         }
 
         [TestMethod]
