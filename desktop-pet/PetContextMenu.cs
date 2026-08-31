@@ -38,7 +38,7 @@ namespace PennyPet
             ExpandTabsItem = new ToolStripMenuItem("展开全部侧边页签");
             ExpandTabsItem.Click += delegate { _commands.ExpandTabs(); };
             RecoverWindowsItem = new ToolStripMenuItem(
-                "将已展开的便利贴集中到此屏幕");
+                "展开全部并平铺到此屏幕");
             RecoverWindowsItem.Click += delegate { _commands.RecoverWindows(); };
             ScaleItem = new ToolStripMenuItem("调整桌宠大小…");
             ScaleItem.Click += delegate { _commands.ShowScale(); };

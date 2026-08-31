@@ -332,8 +332,8 @@ namespace PennyPet
             menuCommands.ExpandTabs = ExpandAllStickyNoteTabs;
             menuCommands.RecoverWindows = delegate
             {
-                QueueStickyWindowAction(MoveVisibleStickyNotesToPetScreen,
-                    "sticky-window-screen-recovery");
+                QueueStickyWindowAction(ExpandAndTileAllStickyNotesToPetScreen,
+                    "sticky-window-expand-and-tile");
             };
             menuCommands.ShowScale = ShowScaleDialog;
             menuCommands.StartupClick = StartupItemClick;

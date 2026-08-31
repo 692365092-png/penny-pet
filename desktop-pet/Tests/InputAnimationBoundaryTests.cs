@@ -523,6 +523,38 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyRecovery_ExpandsAllThroughOwnedEffectBoundaries()
+        {
+            string form = ReadSource("PetForm.cs");
+            string menu = ReadSource("PetContextMenu.cs");
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string action = Between(coordinator,
+                "private void ExpandAndTileAllStickyNotesToPetScreen",
+                "internal static List<DockLayoutTarget>");
+            string preparation = Between(coordinator,
+                "PrepareStickyExpandAndTileTargets(IList<StickyNoteData> notes,",
+                "internal static List<Rectangle> CalculateStickyRecoveryLayout");
+
+            Assert.IsTrue(menu.Contains("展开全部并平铺到此屏幕") &&
+                form.Contains("ExpandAndTileAllStickyNotesToPetScreen"),
+                "The menu must expose the new expand-and-tile product action.");
+            Assert.IsTrue(action.Contains("IsHostedSticky(note)") &&
+                action.Contains("StickyUiCommand.Show(note.Id, false)") &&
+                action.Contains("ApplyDockTarget(target, null)") &&
+                action.Contains("ShowStickyNote(note, false, false, false)"),
+                "Hosted and legacy notes must use their owned effect edges.");
+            Assert.IsFalse(action.Contains("GetOrCreateStickyNoteWindow") ||
+                action.Contains("seed.Visible"),
+                "Recovery must neither skip hidden notes nor use a universal legacy route.");
+            Assert.IsTrue(preparation.Contains(
+                "StickyDockGroups.ClearMembership(note)") &&
+                preparation.Contains("note.Visible = true") &&
+                preparation.Contains("CalculateStickyRecoveryLayout"),
+                "Preparation must detach, expand, and independently tile every note.");
+        }
+
+        [TestMethod]
         public void DockParticipantEligibility_DoesNotDependOnStickySubtypeOrExecutor()
         {
             string coordinator = ReadSource(

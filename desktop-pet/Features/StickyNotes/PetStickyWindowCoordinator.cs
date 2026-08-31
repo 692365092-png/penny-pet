@@ -159,127 +159,113 @@ namespace PennyPet
             _notes.Save();
         }
 
-        private void MoveVisibleStickyNotesToPetScreen()
+        private void ExpandAndTileAllStickyNotesToPetScreen()
         {
             Rectangle work = Screen.FromRectangle(Bounds).WorkingArea;
-            float targetScale = PetScreenScale();
-            HashSet<string> visited = new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase);
-            List<List<StickyNoteData>> components =
-                new List<List<StickyNoteData>>();
-            List<List<StickyNoteWindow>> componentForms =
-                new List<List<StickyNoteWindow>>();
-            List<Size> componentSizes = new List<Size>();
-            int attemptedWindows = 0;
-            int verifiedWindows = 0;
+            List<DockLayoutTarget> targets =
+                PrepareStickyExpandAndTileTargets(_notes.GetAll(), work);
+            if (targets.Count == 0)
+            {
+                ShowBriefBubble("当前没有便利贴。");
+                return;
+            }
+
+            // Persist the complete canonical transition before asynchronous
+            // hosted effects can report their detached snapshots back.
+            _notes.Save();
             _movingDockGroup = true;
             try
             {
-                foreach (StickyNoteData seed in _notes.GetAll())
+                foreach (DockLayoutTarget target in targets)
                 {
-                    if (seed == null || !seed.Visible || visited.Contains(seed.Id))
-                        continue;
-                    if (IsHostedSticky(seed))
+                    StickyNoteData note = _notes.Find(target.NoteId);
+                    if (note == null) continue;
+                    if (IsHostedSticky(note))
                     {
-                        visited.Add(seed.Id);
+                        PostHostedStickyCommand(
+                            StickyUiCommand.Show(note.Id, false),
+                            delegate(StickyUiCommandResult result)
+                            {
+                                if (result != null && result.Status ==
+                                    StickyUiCommandStatus.Handled)
+                                {
+                                    ApplyHostedStickySnapshot(result.Snapshot,
+                                        result.Sequence, false);
+                                    ApplyDockTarget(target, null);
+                                }
+                                else ReportHostedStickyCommandFailure(
+                                    "sticky-hosted-expand-and-tile", result);
+                            });
                         continue;
                     }
-                    List<StickyNoteData> component = BuildDockChainOrder(seed);
-                    if (component.Count == 0) component.Add(seed);
-                    foreach (StickyNoteData note in component)
-                        if (note != null) visited.Add(note.Id);
-
-                    List<StickyNoteData> activeNotes =
-                        new List<StickyNoteData>();
-                    List<StickyNoteWindow> activeForms =
-                        new List<StickyNoteWindow>();
-                    int componentWidth = 280;
-                    int componentHeight = 0;
-                    foreach (StickyNoteData note in component)
+                    try
                     {
-                        if (note == null || !note.Visible) continue;
+                        ShowStickyNote(note, false, false, false);
+                        ApplyDockTarget(target, null);
                         StickyNoteWindow form;
-                        try
+                        if (_noteWindows.TryGetValue(note.Id, out form) &&
+                            form != null && !form.IsDisposed)
                         {
-                            form = GetOrCreateStickyNoteWindow(note);
-                            if (!form.Visible) form.ShowRestored();
-                            form.EnableWinFormsKeyboardInterop();
-                        }
-                        catch (Exception error)
-                        {
-                            ApplicationDiagnostics.ReportNonFatal(
-                                "compat-sticky-recover-create", error);
-                            continue;
-                        }
-                        if (form == null || form.IsDisposed) continue;
-                        activeNotes.Add(note);
-                        activeForms.Add(form);
-                        Size physical = StickyPhysicalSize(form, targetScale);
-                        componentWidth = Math.Max(componentWidth,
-                            physical.Width);
-                        componentHeight += Math.Max(
-                            (int)Math.Round(220 * targetScale),
-                            physical.Height);
-                    }
-                    if (activeForms.Count == 0) continue;
-                    components.Add(activeNotes);
-                    componentForms.Add(activeForms);
-                    componentSizes.Add(new Size(componentWidth,
-                        Math.Max(220, componentHeight)));
-                }
-
-                List<Rectangle> roots = CalculateStickyRecoveryLayout(work,
-                    componentSizes, targetScale);
-                for (int componentIndex = 0;
-                    componentIndex < componentForms.Count; componentIndex++)
-                {
-                    List<StickyNoteWindow> forms = componentForms[componentIndex];
-                    List<StickyNoteData> notes = components[componentIndex];
-                    Rectangle root = roots[componentIndex];
-                    List<Size> memberSizes = new List<Size>();
-                    foreach (StickyNoteWindow form in forms)
-                        memberSizes.Add(StickyPhysicalSize(form, targetScale));
-                    List<Rectangle> layout = CalculateUnifiedDockLayout(
-                        memberSizes, root.Left, root.Top, root.Width,
-                        targetScale);
-                    for (int memberIndex = 0;
-                        memberIndex < forms.Count; memberIndex++)
-                    {
-                        StickyNoteWindow form = forms[memberIndex];
-                        StickyNoteData note = notes[memberIndex];
-                        attemptedWindows++;
-                        try
-                        {
-                            form.ShowRestoredAtPhysicalBounds(
-                                layout[memberIndex]);
                             form.EnableWinFormsKeyboardInterop();
                             form.BringToFront();
-                            Rectangle visiblePart = Rectangle.Intersect(
-                                form.PhysicalBounds, work);
-                            if (form.Visible &&
-                                form.WindowState == FormWindowState.Normal &&
-                                visiblePart.Width > 0 && visiblePart.Height > 0)
-                                verifiedWindows++;
-                            note.X = form.Left;
-                            note.Y = form.Top;
                         }
-                        catch (Exception error)
-                        {
-                            ApplicationDiagnostics.ReportNonFatal(
-                                "compat-sticky-recover-show", error);
-                        }
+                    }
+                    catch (Exception error)
+                    {
+                        ApplicationDiagnostics.ReportNonFatal(
+                            "sticky-legacy-expand-and-tile", error);
                     }
                 }
             }
             finally { _movingDockGroup = false; }
-            if (attemptedWindows > 0)
+            RefreshDockResizeRoles();
+            RefreshNoteTabs();
+            RefreshMenuText();
+            ShowBriefBubble("已展开并平铺 " + targets.Count +
+                " 张便利贴到当前屏幕。");
+        }
+
+        internal static List<DockLayoutTarget>
+            PrepareStickyExpandAndTileTargets(IList<StickyNoteData> notes,
+                Rectangle work)
+        {
+            List<StickyNoteData> active = new List<StickyNoteData>();
+            List<Size> sizes = new List<Size>();
+            if (notes != null)
             {
-                _notes.Save();
-                ShowBriefBubble("已尝试将 " + attemptedWindows +
-                    " 张已展开的便利贴集中到此屏幕；系统确认 " +
-                    verifiedWindows + " 张处于可见范围。");
+                foreach (StickyNoteData note in notes)
+                {
+                    if (note == null) continue;
+                    active.Add(note);
+                    sizes.Add(new Size(
+                        Math.Min(Math.Max(1, work.Width),
+                            Math.Max(280, Math.Min(900, note.Width))),
+                        Math.Min(Math.Max(1, work.Height),
+                            Math.Max(220, Math.Min(700, note.Height)))));
+                }
             }
-            else ShowBriefBubble("当前没有已展开的便利贴。");
+            List<Rectangle> layout = CalculateStickyRecoveryLayout(work,
+                sizes);
+            List<DockLayoutTarget> targets = new List<DockLayoutTarget>();
+            for (int index = 0; index < active.Count; index++)
+            {
+                StickyNoteData note = active[index];
+                Rectangle bounds = layout[index];
+                bounds.Size = sizes[index];
+                Point delta = CalculateHeaderReachableTranslation(
+                    new Rectangle(bounds.Left, bounds.Top, bounds.Width, 32),
+                    work);
+                bounds.Offset(delta);
+                StickyDockGroups.ClearMembership(note);
+                note.Visible = true;
+                note.X = bounds.X;
+                note.Y = bounds.Y;
+                note.Width = bounds.Width;
+                note.Height = bounds.Height;
+                targets.Add(new DockLayoutTarget(note.Id, bounds.X, bounds.Y,
+                    bounds.Width, bounds.Height, true, note.AlwaysOnTop));
+            }
+            return targets;
         }
 
         internal static List<Rectangle> CalculateStickyRecoveryLayout(

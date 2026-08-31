@@ -631,6 +631,7 @@ namespace PennyPet
             internal bool GroupSnapshotRoundTripOk;
             internal bool HiddenSlotRestartOk;
             internal bool LowerCloseRewiresNeighborsOk;
+            internal bool ExpandAndTileRoundTripOk;
         }
 
         private static DockPersistenceCheckResult
@@ -778,6 +779,81 @@ namespace PennyPet
             if (File.Exists(hiddenSlotPath)) File.Delete(hiddenSlotPath);
             if (File.Exists(hiddenSlotPath + ".bak"))
                 File.Delete(hiddenSlotPath + ".bak");
+
+            string expandPath = outputPath + ".expand-and-tile-test.dat";
+            StickyNoteRepository expandRepository =
+                StickyNoteRepository.LoadFromFile(expandPath);
+            StickyNoteData expandA = expandRepository.Create("普通",
+                new Point(-5000, -5000));
+            StickyNoteData expandB = expandRepository.Create("待办",
+                new Point(-5000, -5000));
+            expandB.IsTodoList = true;
+            StickyNoteData expandC = expandRepository.Create("日程",
+                new Point(-5000, -5000));
+            expandC.IsSchedule = true;
+            expandA.Width = 320;
+            expandA.Height = 230;
+            expandB.Width = 420;
+            expandB.Height = 310;
+            expandC.Width = 360;
+            expandC.Height = 260;
+            expandB.Visible = false;
+            expandC.Visible = false;
+            StickyDockGroups.ApplyOrderedGroup(new StickyNoteData[] {
+                expandA, expandB, expandC });
+            StickyHostedRuntime expandRuntime = new StickyHostedRuntime();
+            expandRuntime.AddNote(expandA.Id);
+            List<DockLayoutTarget> expandTargets = PetForm
+                .PrepareStickyExpandAndTileTargets(expandRepository.GetAll(),
+                    new Rectangle(0, 0, 1920, 1040));
+            List<DockLayoutTarget> secondaryTargets = PetForm
+                .PrepareStickyExpandAndTileTargets(new StickyNoteData[] {
+                    new StickyNoteData(), new StickyNoteData() },
+                    new Rectangle(-1920, 0, 1920, 1040));
+            expandRepository.SaveToFile(expandPath);
+            StickyNoteRepository restoredExpandRepository =
+                StickyNoteRepository.LoadFromFile(expandPath);
+            List<StickyNoteData> restoredExpanded =
+                restoredExpandRepository.GetAll();
+            result.ExpandAndTileRoundTripOk =
+                expandRuntime.ContainsNote(expandA.Id) &&
+                expandTargets.Count == 3 &&
+                expandTargets.Exists(delegate(DockLayoutTarget target)
+                {
+                    return target.NoteId == expandA.Id;
+                }) &&
+                expandTargets.Exists(delegate(DockLayoutTarget target)
+                {
+                    return target.NoteId == expandB.Id;
+                }) &&
+                expandTargets.Exists(delegate(DockLayoutTarget target)
+                {
+                    return target.NoteId == expandC.Id;
+                }) &&
+                expandTargets[0].X != expandTargets[1].X &&
+                expandTargets[0].X != expandTargets[2].X &&
+                expandTargets[1].X != expandTargets[2].X &&
+                secondaryTargets.TrueForAll(delegate(DockLayoutTarget target)
+                {
+                    return target.X >= -1920 && target.X < 0 &&
+                        target.Y >= 0 && target.Y < 1040;
+                }) &&
+                restoredExpanded.Count == 3 &&
+                restoredExpanded.TrueForAll(delegate(StickyNoteData note)
+                {
+                    return note.Visible &&
+                        String.IsNullOrEmpty(note.DockParentId) &&
+                        String.IsNullOrEmpty(note.DockGroupId) &&
+                        note.DockGroupOrder == -1 &&
+                        note.X >= 0 && note.Y >= 0 &&
+                        note.X < 1920 && note.Y < 1040;
+                }) &&
+                restoredExpandRepository.Find(expandA.Id).Width == 320 &&
+                restoredExpandRepository.Find(expandB.Id).Width == 420 &&
+                restoredExpandRepository.Find(expandC.Id).Height == 260;
+            if (File.Exists(expandPath)) File.Delete(expandPath);
+            if (File.Exists(expandPath + ".bak"))
+                File.Delete(expandPath + ".bak");
             return result;
         }
 
@@ -2859,6 +2935,8 @@ namespace PennyPet
                     ",\n" +
                 "  \"sticky_group_snapshot_round_trip_ok\": " + Bool(
                     dockChecks.Persistence.GroupSnapshotRoundTripOk) + ",\n" +
+                "  \"sticky_expand_and_tile_all_round_trip_ok\": " + Bool(
+                    dockChecks.Persistence.ExpandAndTileRoundTripOk) + ",\n" +
                 "  \"sticky_group_requests_restore_atomically_ok\": " + Bool(
                     dockChecks.Lifecycle.GroupRestoreAtomicOk) + ",\n" +
                 "  \"sticky_middle_member_extraction_keeps_neighbors_joined_ok\": " +
