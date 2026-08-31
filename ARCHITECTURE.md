@@ -76,6 +76,8 @@ PennyPet.Tools -> 美术发布包和启动缓存生成
 
 Windows Coordinator 把 `Point`、`Size`、`Rectangle` 等平台对象转换为 Core 的 `DockPoint`、`DockSize`、`DockRect`，调用纯规则后再执行 WPF/Win32 窗口副作用。`DockCoordinateSafetyLimit = 30000` 是 Win32 安全范围，由 Windows 层作为参数提供给 Core 计算；它不是 Penny 业务规则，也不能成为 macOS 常量。
 
+当前 Dock participant eligibility 与窗口 executor 解耦：Ordinary、Todo、Schedule 可以任意 mixed Dock，Reminder 不参与 Dock eligibility；hosted 与 legacy executor 可以进入同一 Dock component。两条输入路径共用 `DockWindowFacts`、同一 Dock session/Core rules 和 `DockLayoutTarget`，只在最终 owned effect edge 分别落到 legacy Window 或 `StickyUiHost`。Hosted/mixed preview、merge pulse 和 split guide 已接入这条共享流程。
+
 ### 提醒、设置、启动与键盘隐私
 
 | 文件/目录 | 当前职责 | 边界 |
@@ -87,8 +89,10 @@ Windows Coordinator 把 `Point`、`Size`、`Rectangle` 等平台对象转换为 
 | `Core/Keyboard` | 首次确认、偏好和 fail-closed 隐私判定 | 平台无关标准化输入 |
 | `Features/KeyboardOverlay` | Hook、虚拟键、UIA/Win32 敏感输入证据和覆盖窗口 | Windows-only |
 | `PetStartupCoordinator.cs` | Timer、Registry、窗口创建、首帧等待和事件触发 | Windows-only 启动协调 |
+| `StartupLoadingForm.cs` | 直接读取 embedded loading asset、按 Pet canvas 等比贴底呈现 | Windows-only bootstrap visual；不依赖 `PetArtPackage` 或 Sticky runtime |
+| `StartupLoadingThreadHost.cs` | 临时 WinForms STA、独立 message loop、异步置前/关闭和线程退出 | Windows-only bootstrap host；不创建 `PetForm`、Art 或 Sticky state |
 
-启动方面目前只有 `PetStartupRules` 中的小范围 readiness 判定可复用。文档不得把它描述成完整的跨平台启动状态机。
+`PennyApplicationHost` 先启动临时 loading STA，确认 loading 已呈现后才在主 Pet STA 构造 `PetForm`。同步 bootstrap 工作不会阻塞 loading message loop；既有 UI + art readiness 满足并触发 `StartupReady` 后，loading host 异步关闭窗口并退出。启动方面目前只有 `PetStartupRules` 中的小范围 readiness 纯门禁可复用；它不是完整的跨平台 startup framework 或状态机。
 
 ## 4. Windows / macOS 迁移地图
 
@@ -125,6 +129,8 @@ Windows Coordinator 把 `Point`、`Size`、`Rectangle` 等平台对象转换为 
 只有出现真实需求和调用者时才建立相应边界，并用最小可运行测试保护。跨平台拆分定义的是技术边界，不替未来接手程序员决定产品流程。
 
 UI ownership 按 framework / message-loop 划分，而不是要求同一 feature 的所有窗口必须位于同一个线程。WPF `StickyNoteWindow` 可以继续由 `StickyUiHost` 的 WPF Dispatcher STA 承载；WinForms Side Tabs 可以留在 Pet/WinForms UI thread，只要它们只消费 typed snapshot，并只产生 typed user-action，不直接访问 hosted WPF 窗口。
+
+Side Tabs 是附着于 Pet chrome 的 no-activate TopMost UI；存在 tab controls 时不因普通或 hosted note 可见而降出 TopMost band。Pet monitor、working area 或 scale 改变时会重新验证 desired left/right split；分配不变时只 reposition，分配改变时才 rebuild controls。
 
 ## 7. 当前 Windows UI ownership
 
@@ -165,7 +171,17 @@ Sticky WPF STA
 
 当前 hosted/legacy 双路径：
 
-- hosted ordinary notes 已覆盖主要 Dock merge / group move / TopMost / horizontal resize / vertical divider / collapse-reopen / split / 3-note insertion。
+- Ordinary、Todo、Schedule 可任意 mixed Dock；Reminder 不属于 Dock participant。
+- hosted 与 legacy executor 可混合进入同一 Dock group，并共享 Dock session、Core merge/split/layout rules、typed targets 和 visual feedback。
+- hosted/mixed Dock 已覆盖 merge、group move、TopMost、horizontal resize、vertical divider、collapse-reopen、split、3-note insertion、preview、merge pulse 和 split guide。
 - persisted docked notes 在重启恢复时仍可能走 legacy path，因为当前 hosted eligibility 排除已有 `DockGroupId / DockParentId` 的 note；这不是数据丢失。
-- Hosted Dock preview / 吸附视觉反馈 / split animation 尚未迁移，不声称完整视觉 parity。
+- “展开全部并平铺到此屏幕”会展开所有 note、清除 canonical Dock membership，并通过各自 owned effect path 将 hosted/legacy 窗口平铺到 Pet 当前屏幕。
+- Side Tabs 始终保持 no-activate TopMost chrome，并在 monitor/work-area/scale 改变时按需重新验证左右布局。
 - Side Tabs 仍在 WinForms Pet STA；`SideTabSnapshot.ToDisplayData()` compatibility adapter 当前仍存在，direct snapshot consumption 是已知债务。
+
+启动 loading ownership：
+
+- `StartupLoadingForm` 只负责 embedded bootstrap visual、Pet scale 和保存位置/fallback；不依赖 `PetArtPackage`、Sticky repository 或 hosted runtime。
+- `StartupLoadingThreadHost` 是短生命周期 WinForms STA host，拥有独立 message loop、loading form、ready/exit signal，以及异步 `BringToFront` / `Close`。
+- `PetForm` 仍由主 Pet STA 创建；Art decode、Sticky restore 和 `StickyUiThreadHost.Start` 没有迁到 loading thread。
+- `_startupUiReady + _startupArtReady` 仍通过 `PetStartupRules` 纯门禁释放 normal Pet frame，并由 `StartupReady` 关闭 loading。

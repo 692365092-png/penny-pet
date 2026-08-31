@@ -34,7 +34,8 @@ dotnet test '.\desktop-pet\PennyPet.Tests.csproj' --configuration Release
 - `desktop-pet/PetForm.cs`：Windows 桌宠窗口构造、关闭和位置生命周期。
 - `PetStartupCoordinator.cs`、`PetAnimationRuntime.cs`、`PetBubbleCoordinator.cs`、`PetMenuActions.cs`：`PetForm` 的职责 partial。
 - `desktop-pet/PetContextMenu.cs`：右键菜单构造与命令绑定。
-- `desktop-pet/StartupLoadingForm.cs`：启动 loading；等待 UI 与美术 readiness。
+- `desktop-pet/StartupLoadingForm.cs`：直接读取 embedded bootstrap image，并按 Pet canvas、scale 和保存位置显示；不依赖 runtime art 或 Sticky。
+- `desktop-pet/StartupLoadingThreadHost.cs`：临时 WinForms STA、独立 loading message loop、异步置前/关闭和线程退出。
 
 这些 partial 文件是代码定位边界，仍共享同一个窗口状态。不要把它们包装成大量单实现接口或仅为缩短文件继续切碎。
 
@@ -77,6 +78,13 @@ dotnet test '.\desktop-pet\PennyPet.Tests.csproj' --configuration Release
 
 Dock 修改必须同时检查：组关系、组内顺序、持久化快照、统一宽度、相邻高度、隐藏/恢复、插入/抽离、置顶和屏幕安全边界。不要把 Dock 简化成“坐标相邻”。
 
+当前 Dock 行为边界：
+
+- Ordinary、Todo、Schedule 可以任意 mixed Dock；Reminder 不参与 participant eligibility。
+- hosted 与 legacy executor 可以位于同一 group，共用 `DockWindowFacts`、同一 session/Core rules、`DockLayoutTarget`、preview、merge pulse 和 split guide；executor 差异只留在 owned effect edge。
+- “展开全部并平铺到此屏幕”会展开全部 note、清除 canonical Dock relation，再分别通过 hosted/legacy effect path 平铺；不要把它退化成只移动可见窗口。
+- Side Tabs 始终保持 no-activate TopMost chrome。monitor、working area 或 Pet scale 改变时会重新验证 desired left/right split；split 不变只 reposition，改变才 rebuild controls。
+
 ### 链接边界
 
 - `Features/StickyNotes/StickyNoteLinks.cs`：HTTP(S) 与 Windows 本地路径的链接匹配。
@@ -94,8 +102,10 @@ Dock 修改必须同时检查：组关系、组内顺序、持久化快照、统
 - `PetSettings.cs`：Windows 数据目录、备份、原子保存、dirty 和失败通知。
 - `StartupRegistration.cs`：Windows Registry 开机启动。
 - `PetStartupCoordinator.cs`：Windows Timer、窗口创建、首帧等待、注册表和事件协调。
+- `StartupLoadingForm.cs`：bootstrap-only embedded visual；不读取 `PetArtPackage`、repository 或 Sticky runtime。
+- `StartupLoadingThreadHost.cs`：短生命周期 loading STA。主线程确认 loading 已呈现后继续同步构造 `PetForm`；`StartupReady` 时异步关闭 loading，fatal/exit path 也会收拢并等待临时线程退出。
 
-当前 Core 只有 `PetStartupRules` 的 readiness 小规则，不得将其描述为完整跨平台启动框架。
+现有 `_startupUiReady + _startupArtReady`、`_startupDisplaySuppressed` 和 warm-row preload 语义保持在 Windows 启动流程。当前 Core 只有 `PetStartupRules` 的 readiness 纯门禁，不得将其描述为完整跨平台 startup framework。
 
 ### 键盘显示与隐私
 

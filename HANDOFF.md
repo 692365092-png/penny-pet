@@ -48,6 +48,17 @@
 - `StickyUiThreadHost` 只管理 STA Thread / Dispatcher / async Post / Shutdown，不拥有 WPF Window。
 - `StickyUiHost` 是 hosted session facade，管理 session registry、命令路由和 CloseAll。
 - `StickyWindowSession` 是唯一持有 `StickyNoteWindow` 的 hosted 会话对象。
-- hosted ordinary notes 已完成主要 Dock parity，但 persisted docked notes 重启后仍可能回 legacy executor。
-- Hosted Dock 的视觉 preview、吸附动画和 split animation 尚未迁移。
-- Side Tabs 本轮不迁移；`SideTabSnapshot.ToDisplayData()` 保留为 compatibility adapter。
+- Ordinary、Todo、Schedule 可以任意 mixed Dock；Reminder 不参与 Dock participant eligibility。
+- hosted 与 legacy executor 可以混合进入同一 Dock group；两者共用 detached facts、Dock session/Core rules、`DockLayoutTarget` 和 visual feedback，只在最终 effect edge 执行各自窗口副作用。
+- hosted/mixed preview、merge pulse、split guide，以及 group move、TopMost、horizontal/divider resize、collapse-reopen、middle split 和多成员 insertion 已完成。
+- persisted docked notes 重启后仍可能由 legacy executor 恢复；canonical Dock relation/order/geometry 不因此改变。
+- “展开全部并平铺到此屏幕”会展开全部 note、真正清除 Dock relation，并通过 hosted/legacy owned effect path 平铺。
+- Side Tabs 是不激活的 TopMost Pet chrome；monitor、work area 或 Pet scale 改变时会重新验证左右 split，仅在分配变化时 rebuild。
+- Side Tabs 继续由 WinForms Pet STA 承载；`SideTabSnapshot.ToDisplayData()` 保留为 compatibility adapter。
+
+## Startup loading ownership
+
+- `StartupLoadingForm` 直接读取 embedded `PennyPet.Startup.Loading`，在 Pet-size transparent canvas 内等比、水平居中、底部对齐；它不依赖 `PetArtPackage` 或 Sticky runtime。
+- `StartupLoadingThreadHost` 是临时 WinForms STA，独立运行 loading message loop；`BringToFront` / `Close` marshal 回该线程，关闭后线程退出。
+- `PennyApplicationHost` 确认 loading 已呈现后，仍在主 Pet STA 构造 `PetForm`。Art decode、Sticky 初始化与恢复不属于 loading thread。
+- `_startupUiReady + _startupArtReady`、normal frame suppression 和 `StartupReady` 语义保持不变。`PetStartupRules` 只是这两个 readiness 输入的纯 gate，不是完整 startup framework。
