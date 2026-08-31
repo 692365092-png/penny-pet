@@ -1324,7 +1324,7 @@ namespace PennyPet
 
         private bool IsDockParticipant(StickyNoteData note)
         {
-            return note != null && note.ReminderUtcTicks <= 0;
+            return note != null;
         }
 
         private string FindDockChild(string parentId,

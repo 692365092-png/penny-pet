@@ -523,7 +523,7 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void HostedDockGate_AllowsOrdinaryTodoAndSchedule()
+        public void DockParticipantEligibility_DoesNotDependOnStickySubtypeOrExecutor()
         {
             string coordinator = ReadSource(
                 "Features/StickyNotes/PetStickyDockCoordinator.cs");
@@ -534,13 +534,13 @@ namespace PennyPet.Tests
             Assert.IsTrue(coordinator.Contains(
                 "CanUseDockComponents("),
                 "Hosted dock gate must be used for hosted drag targets.");
-            Assert.IsTrue(gate.Contains("ReminderUtcTicks <= 0"),
-                "Reminder notes must remain excluded until separately approved.");
             Assert.IsFalse(gate.Contains("!note.IsTodoList") ||
                 gate.Contains("!note.IsSchedule"),
                 "Todo and Schedule must be allowed to dock with ordinary notes.");
             Assert.IsFalse(gate.Contains("IsHostedSticky"),
                 "Dock participant eligibility must not depend on hosted/legacy ownership.");
+            Assert.IsFalse(gate.Contains("ReminderUtcTicks"),
+                "Reminder is not a sticky subtype and must not affect Dock eligibility.");
         }
 
         private static string ReadSource(string relativePath)
