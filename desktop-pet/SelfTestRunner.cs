@@ -1023,6 +1023,7 @@ namespace PennyPet
             internal bool FirstDragRecoveryOk;
             internal bool DetachedGroupReturnsOnScreenOk;
             internal bool ScreenRecoveryAnchorOk;
+            internal bool DetachedGroupTranslationOk;
         }
 
         private static DockGeometryCheckResult RunDockGeometryChecks()
@@ -1066,6 +1067,25 @@ namespace PennyPet
                     new int[] { 700, 700, 700 }, 30000) &&
                 !StickyDockOperations.IsDockCoordinateRangeSafe(29000,
                     new int[] { 700, 700 }, 30000);
+            Dictionary<string, DockWindowFacts> dragFacts =
+                new Dictionary<string, DockWindowFacts>(
+                    StringComparer.OrdinalIgnoreCase)
+                {
+                    { "root", new DockWindowFacts("root", 100, 200,
+                        320, 300, true, false) },
+                    { "child", new DockWindowFacts("child", 100, 500,
+                        320, 240, true, false) }
+                };
+            List<DockLayoutTarget> translated =
+                PetForm.CalculateDockTranslationTargets(
+                    new string[] { "root", "child" }, dragFacts,
+                    new DockWindowFacts("root", 115, 190, 320, 300,
+                        true, false), 15, -10);
+            result.DetachedGroupTranslationOk = translated.Count == 2 &&
+                translated[0].NoteId == "root" &&
+                translated[0].X == 115 && translated[0].Y == 190 &&
+                translated[1].NoteId == "child" &&
+                translated[1].X == 115 && translated[1].Y == 490;
             Rectangle recoveredDrag = StickyNoteWindow
                 .CalculateRecoveredHeaderDragBounds(
                     new Rectangle(100, 100, 320, 300),
@@ -2392,6 +2412,8 @@ namespace PennyPet
                     dockChecks.Geometry.UnifiedGroupResizeOk) + ",\n" +
                 "  \"sticky_group_root_anchor_preserved_ok\": " + Bool(
                     dockChecks.Geometry.RootAnchorPreservedOk) + ",\n" +
+                "  \"sticky_detached_group_translation_ok\": " + Bool(
+                    dockChecks.Geometry.DetachedGroupTranslationOk) + ",\n" +
                 "  \"sticky_internal_divider_preserves_total_height_ok\": " + Bool(
                     dockChecks.Geometry.DividerPreservesTotalHeightOk) + ",\n" +
                 "  \"sticky_internal_divider_cannot_cross_neighbors_ok\": " + Bool(

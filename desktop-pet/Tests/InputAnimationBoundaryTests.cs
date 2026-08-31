@@ -276,6 +276,23 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void LegacyDock_UsesDetachedFactsAndTypedTargetEffectBoundary()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string form = ReadSource("PetForm.cs");
+
+            Assert.IsTrue(form.Contains("_activeDockGroupIds") &&
+                form.Contains("_activeDockCurrentFacts") &&
+                coordinator.Contains("CalculateDockTranslationTargets") &&
+                coordinator.Contains("ApplyDockTargets"),
+                "Dock session geometry must be note-id/facts based.");
+            Assert.IsFalse(coordinator.Contains("Object.ReferenceEquals") ||
+                coordinator.Contains("member.Location ="),
+                "Dock decisions and group motion must not use Window/model identity.");
+        }
+
+        [TestMethod]
         public void StartupRestore_TracksExpectedAndRenderedNoteIds()
         {
             string startup = ReadSource("PetStartupCoordinator.cs");

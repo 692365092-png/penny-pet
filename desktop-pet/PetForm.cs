@@ -176,22 +176,28 @@ namespace PennyPet
         private bool _positioningNoteTabs;
         private string _noteTabsSignature = String.Empty;
         private string _activeNoteDragId;
-        private readonly List<StickyNoteData> _activeDockGroup =
-            new List<StickyNoteData>();
-        private readonly Dictionary<string, Point> _activeDockOriginalLocations =
-            new Dictionary<string, Point>(StringComparer.OrdinalIgnoreCase);
+        private readonly List<string> _activeDockGroupIds =
+            new List<string>();
+        private readonly Dictionary<string, DockWindowFacts>
+            _activeDockOriginalFacts =
+                new Dictionary<string, DockWindowFacts>(
+                    StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, DockWindowFacts>
+            _activeDockCurrentFacts =
+                new Dictionary<string, DockWindowFacts>(
+                    StringComparer.OrdinalIgnoreCase);
         // Keep every member inside a coordinate range that Win32 mouse
         // messages can address reliably. This is a Windows platform limit, not
         // a Penny business rule, so Core receives it as a parameter.
         private const int DockCoordinateSafetyLimit = 30000;
-        private Point _activeNoteDragStartLocation;
-        private Point _activeNoteDragLastLocation;
+        private DockWindowFacts _activeNoteDragStartFacts;
+        private DockWindowFacts _activeNoteDragLastFacts;
         private DateTime _activeNoteDragStartedUtc;
         private StickyNoteWindow _dockPreviewParent;
         private StickyNoteWindow _dockPreviewChild;
         private DockPulseIndicatorForm _dockPreviewIndicator;
         private DockPulseIndicatorForm _splitGuideIndicator;
-        private StickyNoteData _splitRemainderSeed;
+        private string _splitRemainderNoteId;
         private bool _movingDockGroup;
         private bool _activeNoteDetached;
         private bool _activeNoteSplitEligible;

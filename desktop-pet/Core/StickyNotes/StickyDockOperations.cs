@@ -100,14 +100,20 @@ namespace PennyPet
             IList<StickyNoteData> ordered, StickyNoteData extracted)
         {
             List<StickyNoteData> remaining = new List<StickyNoteData>();
+            StickyNoteData matched = null;
             if (ordered != null)
             {
                 foreach (StickyNoteData note in ordered)
-                    if (note != null && !Object.ReferenceEquals(note,
-                        extracted)) remaining.Add(note);
+                {
+                    if (note == null) continue;
+                    if (extracted != null && String.Equals(note.Id,
+                        extracted.Id, StringComparison.OrdinalIgnoreCase))
+                        matched = note;
+                    else remaining.Add(note);
+                }
             }
             StickyDockGroups.ApplyOrderedGroup(remaining);
-            StickyDockGroups.ClearMembership(extracted);
+            StickyDockGroups.ClearMembership(matched ?? extracted);
             return remaining;
         }
 

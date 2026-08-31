@@ -424,6 +424,28 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyDockOperations_ExtractsByNoteIdNotObjectIdentity()
+        {
+            StickyNoteData first = new StickyNoteData { Id = "first" };
+            StickyNoteData canonical = new StickyNoteData { Id = "middle" };
+            StickyNoteData last = new StickyNoteData { Id = "last" };
+            List<StickyNoteData> ordered = new List<StickyNoteData>
+            {
+                first, canonical, last
+            };
+            StickyDockGroups.ApplyOrderedGroup(ordered);
+
+            List<StickyNoteData> remaining =
+                StickyDockOperations.ExtractSingleDockMember(ordered,
+                    new StickyNoteData { Id = "MIDDLE" });
+
+            CollectionAssert.AreEqual(new StickyNoteData[] { first, last },
+                remaining);
+            Assert.AreEqual(String.Empty, canonical.DockGroupId);
+            Assert.AreEqual(-1, canonical.DockGroupOrder);
+        }
+
+        [TestMethod]
         public void StickyTabDropSession_DefersCommitAndUsesOpaqueSourceIdentity()
         {
             StickyTabDropSession session = new StickyTabDropSession();
