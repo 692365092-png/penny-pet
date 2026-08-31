@@ -121,8 +121,9 @@ namespace PennyPet
 
         internal void ReportImeCompositionActive()
         {
-            Raise(new StickyUiEvent(StickyUiEventKind.ImeCompositionChanged,
-                _noteId, null, true, _sequence));
+            Raise(StickyUiEvent.Signal(
+                StickyUiEventKind.ImeCompositionChanged, _noteId, true,
+                _sequence));
         }
 
         internal void SetEventsSuppressed(bool suppressed)
@@ -215,21 +216,22 @@ namespace PennyPet
 
         private void TypingActivity(object sender, EventArgs e)
         {
-            Raise(new StickyUiEvent(StickyUiEventKind.TypingActivity,
-                _noteId, null, true, _sequence));
+            Raise(StickyUiEvent.Signal(StickyUiEventKind.TypingActivity,
+                _noteId, true, _sequence));
         }
 
         private void InputFocusChanged(object sender, EventArgs e)
         {
-            Raise(new StickyUiEvent(StickyUiEventKind.InputFocusChanged,
-                _noteId, null, _window.HasFocusedTextInput, _sequence));
+            Raise(StickyUiEvent.Signal(StickyUiEventKind.InputFocusChanged,
+                _noteId, _window.HasFocusedTextInput, _sequence));
         }
 
         private void ImeCompositionChanged(object sender,
             ImeCompositionEventArgs e)
         {
-            Raise(new StickyUiEvent(StickyUiEventKind.ImeCompositionChanged,
-                _noteId, null, e != null && e.Active, _sequence));
+            Raise(StickyUiEvent.Signal(
+                StickyUiEventKind.ImeCompositionChanged, _noteId,
+                e != null && e.Active, _sequence));
             if (e != null && !e.Active && _hideAfterImeComposition &&
                 IsAvailable)
             {
@@ -240,8 +242,8 @@ namespace PennyPet
 
         private void Shown(object sender, EventArgs e)
         {
-            Raise(new StickyUiEvent(StickyUiEventKind.FirstRendered,
-                _noteId, null, true, _sequence));
+            Raise(StickyUiEvent.Signal(StickyUiEventKind.FirstRendered,
+                _noteId, true, _sequence));
         }
 
         private void BoundsChanged(object sender, EventArgs e)
@@ -275,9 +277,7 @@ namespace PennyPet
             StickyNoteUiSnapshot snapshot = CaptureSnapshot();
             _lastSnapshot = snapshot;
             _sequence++;
-            Raise(new StickyUiEvent(
-                StickyUiEventKind.DockHorizontalResizing,
-                _noteId, snapshot, false, _sequence, null,
+            Raise(StickyUiEvent.HorizontalResize(snapshot, _sequence,
                 e == null ? 0 : e.Left, e == null ? 0 : e.Width));
         }
 
@@ -334,22 +334,22 @@ namespace PennyPet
             _lastSnapshot = snapshot;
             _sequence++;
             UnwireEvents();
-            Raise(new StickyUiEvent(StickyUiEventKind.InputFocusChanged,
-                _noteId, null, false, _sequence));
-            Raise(new StickyUiEvent(StickyUiEventKind.Closed,
-                _noteId, snapshot, false, _sequence));
+            Raise(StickyUiEvent.Signal(StickyUiEventKind.InputFocusChanged,
+                _noteId, false, _sequence));
+            Raise(StickyUiEvent.FromSnapshot(StickyUiEventKind.Closed, snapshot,
+                _sequence));
         }
 
         private void RaiseRequest(StickyUiEventKind kind)
         {
-            Raise(new StickyUiEvent(kind, _noteId, null, false, _sequence));
+            Raise(StickyUiEvent.Signal(kind, _noteId, false, _sequence));
         }
 
         private void RaiseReminderRequest(StickyUiEventKind kind,
             ReminderItem reminder)
         {
-            Raise(new StickyUiEvent(kind, _noteId, null, false, _sequence,
-                reminder));
+            Raise(StickyUiEvent.ReminderRequest(kind, _noteId, reminder,
+                _sequence));
         }
 
         private void EmitSnapshot(StickyUiEventKind kind)
@@ -358,8 +358,7 @@ namespace PennyPet
             StickyNoteUiSnapshot snapshot = CaptureSnapshot();
             _lastSnapshot = snapshot;
             _sequence++;
-            Raise(new StickyUiEvent(kind, _noteId, snapshot,
-                snapshot.Visible, _sequence));
+            Raise(StickyUiEvent.FromSnapshot(kind, snapshot, _sequence));
         }
 
         private StickyNoteUiSnapshot CaptureSnapshot()

@@ -434,6 +434,31 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyTypedProtocol_ProductionUsesNamedPayloadFactories()
+        {
+            string protocol = ReadSource(
+                "Features/StickyNotes/StickyUiCommand.cs");
+            string windowCoordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string dockCoordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string session = ReadSource("StickyWindowSession.cs");
+
+            Assert.IsTrue(protocol.Contains("StickyUiCommand Create(") &&
+                protocol.Contains("StickyUiCommand SetBounds(") &&
+                protocol.Contains("StickyUiCommand SetDockResizeRole(") &&
+                protocol.Contains("StickyUiEvent FromSnapshot(") &&
+                protocol.Contains("StickyUiEvent Signal(") &&
+                protocol.Contains("StickyUiEvent HorizontalResize("),
+                "Protocol must expose factories for its payload shapes.");
+            Assert.IsFalse(windowCoordinator.Contains(
+                    "new StickyUiCommand(") ||
+                dockCoordinator.Contains("new StickyUiCommand(") ||
+                session.Contains("new StickyUiEvent("),
+                "Production call sites must not guess long protocol payloads.");
+        }
+
+        [TestMethod]
         public void DockTypedProtocol_ForwardsHeaderDragAndResizeEvents()
         {
             string commands = ReadSource(
@@ -478,8 +503,8 @@ namespace PennyPet.Tests
                 windowCoordinator.Contains("CompleteStickyDockDrag(facts)"),
                 "Hosted drag facts must enter the existing Dock session.");
             Assert.IsTrue(dockCoordinator.Contains(
-                "StickyUiCommandKind.SetBounds") &&
-                dockCoordinator.Contains("StickyUiCommandKind.SetTopMost") &&
+                "StickyUiCommand.SetBounds(") &&
+                dockCoordinator.Contains("StickyUiCommand.SetTopMost(") &&
                 dockCoordinator.Contains("ApplyDockTargets") &&
                 dockCoordinator.Contains("ResizeStickyDockGroup") &&
                 dockCoordinator.Contains("ResizeStickyDockDivider") &&

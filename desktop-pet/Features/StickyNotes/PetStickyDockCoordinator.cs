@@ -99,8 +99,8 @@ namespace PennyPet
                     StringComparison.OrdinalIgnoreCase)) continue;
                 if (IsHostedSticky(note))
                 {
-                    PostHostedStickyCommand(new StickyUiCommand(
-                        StickyUiCommandKind.SetTopMost, note.Id, alwaysOnTop),
+                    PostHostedStickyCommand(StickyUiCommand.SetTopMost(
+                        note.Id, alwaysOnTop),
                         delegate(StickyUiCommandResult result)
                         {
                             if (result != null && result.Status ==
@@ -651,10 +651,9 @@ namespace PennyPet
                 StringComparison.OrdinalIgnoreCase)) return;
             if (IsHostedSticky(note))
             {
-                PostHostedStickyCommand(new StickyUiCommand(
-                    StickyUiCommandKind.SetBounds, target.NoteId, false, null,
-                    new StickyUiBounds(target.X, target.Y, target.Width,
-                        target.Height)),
+                PostHostedStickyCommand(StickyUiCommand.SetBounds(
+                    target.NoteId, new StickyUiBounds(target.X, target.Y,
+                        target.Width, target.Height)),
                     delegate(StickyUiCommandResult result)
                     {
                         if (result != null && result.Status ==
@@ -1038,9 +1037,8 @@ namespace PennyPet
                     new StickyUiDockResizeRole(grouped,
                         resizeTop, resizeBottom, splitBottom,
                         dividerMinimumHeight, dividerMaximumHeight);
-                PostHostedStickyCommand(new StickyUiCommand(
-                    StickyUiCommandKind.SetDockResizeRole, note.Id, false,
-                    null, null, hostedRole),
+                PostHostedStickyCommand(StickyUiCommand.SetDockResizeRole(
+                    note.Id, hostedRole),
                     delegate(StickyUiCommandResult result)
                     {
                         if (result == null || result.Status !=
@@ -1454,8 +1452,7 @@ namespace PennyPet
         {
             string noteId = note.Id;
             if (!_hostedRuntime.TryBeginDelete(noteId)) return;
-            PostHostedStickyCommand(new StickyUiCommand(
-                StickyUiCommandKind.Close, noteId, false),
+            PostHostedStickyCommand(StickyUiCommand.Close(noteId),
                 delegate(StickyUiCommandResult result)
                 {
                     _hostedRuntime.EndDelete(noteId);

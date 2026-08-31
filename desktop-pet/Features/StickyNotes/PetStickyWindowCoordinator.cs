@@ -491,9 +491,8 @@ namespace PennyPet
                 legacy != null && !legacy.IsDisposed) return false;
             string noteId = note.Id;
             if (!_hostedRuntime.AddNote(noteId)) return true;
-            StickyUiCommand command = new StickyUiCommand(
-                StickyUiCommandKind.Create, noteId, focusEditor,
-                StickyNoteUiSnapshot.FromData(note));
+            StickyUiCommand command = StickyUiCommand.Create(
+                StickyNoteUiSnapshot.FromData(note), focusEditor);
             PostHostedStickyCommand(command,
                 delegate(StickyUiCommandResult result)
                 {
@@ -527,8 +526,7 @@ namespace PennyPet
         {
             if (!IsHostedSticky(note)) return false;
             string noteId = note.Id;
-            PostHostedStickyCommand(new StickyUiCommand(
-                StickyUiCommandKind.Show, noteId, focusEditor),
+            PostHostedStickyCommand(StickyUiCommand.Show(noteId, focusEditor),
                 delegate(StickyUiCommandResult result)
                 {
                     if (result != null &&
@@ -548,8 +546,7 @@ namespace PennyPet
         {
             if (!IsHostedSticky(note)) return false;
             string noteId = note.Id;
-            PostHostedStickyCommand(new StickyUiCommand(
-                StickyUiCommandKind.Hide, noteId, false),
+            PostHostedStickyCommand(StickyUiCommand.Hide(noteId),
                 delegate(StickyUiCommandResult result)
                 {
                     if (result != null &&
@@ -788,8 +785,7 @@ namespace PennyPet
         private void TryCloseAllHostedStickies()
         {
             if (!_hostedRuntime.TryBeginCloseAll()) return;
-            PostHostedStickyCommand(new StickyUiCommand(
-                StickyUiCommandKind.CloseAll, String.Empty, false),
+            PostHostedStickyCommand(StickyUiCommand.CloseAll(),
                 delegate(StickyUiCommandResult result)
                 {
                     _hostedRuntime.EndCloseAll();

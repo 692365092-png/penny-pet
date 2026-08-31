@@ -18,6 +18,7 @@ namespace PennyPet
 
     internal sealed class StickyUiCommand
     {
+        // Kept internal for focused self-tests; production uses named factories.
         internal StickyUiCommand(StickyUiCommandKind kind, string noteId,
             bool flag, StickyNoteUiSnapshot snapshot = null,
             StickyUiBounds bounds = null,
@@ -29,6 +30,67 @@ namespace PennyPet
             Snapshot = snapshot;
             Bounds = bounds;
             DockResizeRole = dockResizeRole;
+        }
+
+        internal static StickyUiCommand Create(StickyNoteUiSnapshot snapshot,
+            bool focusEditor)
+        {
+            if (snapshot == null)
+                throw new ArgumentNullException(nameof(snapshot));
+            return new StickyUiCommand(StickyUiCommandKind.Create,
+                snapshot.NoteId, focusEditor, snapshot);
+        }
+
+        internal static StickyUiCommand Show(string noteId, bool focusEditor)
+        {
+            return new StickyUiCommand(StickyUiCommandKind.Show, noteId,
+                focusEditor);
+        }
+
+        internal static StickyUiCommand Hide(string noteId)
+        {
+            return new StickyUiCommand(StickyUiCommandKind.Hide, noteId,
+                false);
+        }
+
+        internal static StickyUiCommand FocusPrimaryInput(string noteId)
+        {
+            return new StickyUiCommand(StickyUiCommandKind.FocusPrimaryInput,
+                noteId, false);
+        }
+
+        internal static StickyUiCommand SetTopMost(string noteId, bool value)
+        {
+            return new StickyUiCommand(StickyUiCommandKind.SetTopMost, noteId,
+                value);
+        }
+
+        internal static StickyUiCommand SetDockResizeRole(string noteId,
+            StickyUiDockResizeRole role)
+        {
+            if (role == null) throw new ArgumentNullException(nameof(role));
+            return new StickyUiCommand(StickyUiCommandKind.SetDockResizeRole,
+                noteId, false, null, null, role);
+        }
+
+        internal static StickyUiCommand SetBounds(string noteId,
+            StickyUiBounds bounds)
+        {
+            if (bounds == null) throw new ArgumentNullException(nameof(bounds));
+            return new StickyUiCommand(StickyUiCommandKind.SetBounds, noteId,
+                false, null, bounds);
+        }
+
+        internal static StickyUiCommand Close(string noteId)
+        {
+            return new StickyUiCommand(StickyUiCommandKind.Close, noteId,
+                false);
+        }
+
+        internal static StickyUiCommand CloseAll()
+        {
+            return new StickyUiCommand(StickyUiCommandKind.CloseAll,
+                String.Empty, false);
         }
 
         internal StickyUiCommandKind Kind { get; private set; }
@@ -246,6 +308,7 @@ namespace PennyPet
 
     internal sealed class StickyUiEvent
     {
+        // Kept internal for focused self-tests; sessions use payload factories.
         internal StickyUiEvent(StickyUiEventKind kind, string noteId,
             StickyNoteUiSnapshot snapshot, bool flag, long sequence,
             ReminderItem reminder = null, int left = 0, int width = 0)
@@ -258,6 +321,38 @@ namespace PennyPet
             Reminder = reminder;
             Left = left;
             Width = width;
+        }
+
+        internal static StickyUiEvent Signal(StickyUiEventKind kind,
+            string noteId, bool flag, long sequence)
+        {
+            return new StickyUiEvent(kind, noteId, null, flag, sequence);
+        }
+
+        internal static StickyUiEvent FromSnapshot(StickyUiEventKind kind,
+            StickyNoteUiSnapshot snapshot, long sequence)
+        {
+            if (snapshot == null)
+                throw new ArgumentNullException(nameof(snapshot));
+            return new StickyUiEvent(kind, snapshot.NoteId, snapshot,
+                snapshot.Visible, sequence);
+        }
+
+        internal static StickyUiEvent ReminderRequest(StickyUiEventKind kind,
+            string noteId, ReminderItem reminder, long sequence)
+        {
+            return new StickyUiEvent(kind, noteId, null, false, sequence,
+                reminder);
+        }
+
+        internal static StickyUiEvent HorizontalResize(
+            StickyNoteUiSnapshot snapshot, long sequence, int left, int width)
+        {
+            if (snapshot == null)
+                throw new ArgumentNullException(nameof(snapshot));
+            return new StickyUiEvent(
+                StickyUiEventKind.DockHorizontalResizing, snapshot.NoteId,
+                snapshot, false, sequence, null, left, width);
         }
 
         internal StickyUiEventKind Kind { get; private set; }
