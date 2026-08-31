@@ -2,18 +2,17 @@
 
 Penny pet 是一款 Windows 桌面宠物，包含透明角色动画、普通便利贴、待办清单、日程、提醒、侧边页签以及可选的按键显示功能。
 
-当前发布版本：`1.0.1`。
-
 ![Penny pet](art/loading.png)
 
-## 下载最新版
+## 下载 Penny pet
 
-### [点这里进入最新版下载页面](https://github.com/692365092-png/penny-pet/releases/latest)
+### [点击直接下载 Windows 版](https://github.com/692365092-png/penny-pet/releases/latest/download/Penny-pet-Windows.exe)
 
-适用于 Windows 10 和 Windows 11。打开下载页面后，在 **Assets** 区域点击
-**Penny-pet-Windows.exe**，下载完成后双击运行即可。无需安装，也不需要下载其他文件。
+适用于 Windows 10 和 Windows 11。下载完成后双击运行即可，无需安装。
 
 请只从本仓库的 Release 页面下载，以免拿到被他人修改的版本。
+
+如需查看版本历史或下载校验文件，可前往 [Releases](https://github.com/692365092-png/penny-pet/releases)。
 
 ### 如果 Windows 阻止运行
 
