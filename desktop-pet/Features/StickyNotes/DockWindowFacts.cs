@@ -32,6 +32,15 @@ namespace PennyPet
                 source.AlwaysOnTop);
         }
 
+        internal static DockWindowFacts FromSnapshot(
+            StickyNoteUiSnapshot source)
+        {
+            if (source == null) throw new ArgumentNullException(nameof(source));
+            return new DockWindowFacts(source.NoteId, source.X, source.Y,
+                source.Width, source.Height, source.Visible,
+                source.AlwaysOnTop);
+        }
+
         internal DockLayoutTarget ToTarget(int x, int y)
         {
             return new DockLayoutTarget(NoteId, x, y, Width, Height,

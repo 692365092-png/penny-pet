@@ -604,6 +604,21 @@ namespace PennyPet
                 MarkFirstRendered(value.NoteId);
                 return;
             }
+            if (value.Kind == StickyUiEventKind.HeaderDragStarted ||
+                value.Kind == StickyUiEventKind.HeaderDragMoved ||
+                value.Kind == StickyUiEventKind.HeaderDragCompleted)
+            {
+                if (!ApplyHostedStickySnapshot(value.Snapshot,
+                    value.Sequence, false)) return;
+                DockWindowFacts facts =
+                    DockWindowFacts.FromSnapshot(value.Snapshot);
+                if (value.Kind == StickyUiEventKind.HeaderDragStarted)
+                    BeginStickyDockDrag(facts, null);
+                else if (value.Kind == StickyUiEventKind.HeaderDragMoved)
+                    MoveStickyDockDrag(facts, null);
+                else CompleteStickyDockDrag(facts);
+                return;
+            }
             if (value.Kind == StickyUiEventKind.BoundsChanged)
             {
                 ApplyHostedStickySnapshot(value.Snapshot, value.Sequence, false);
@@ -661,16 +676,17 @@ namespace PennyPet
             ApplyHostedStickySnapshot(value.Snapshot, value.Sequence);
         }
 
-        private void ApplyHostedStickySnapshot(StickyNoteUiSnapshot snapshot,
+        private bool ApplyHostedStickySnapshot(StickyNoteUiSnapshot snapshot,
             long sequence, bool persist = true)
         {
             long applied;
             _hostedAppliedSequences.TryGetValue(
                 snapshot == null ? String.Empty : snapshot.NoteId, out applied);
-            if (snapshot == null || sequence <= applied ||
-                !_hostedNoteIds.Contains(snapshot.NoteId)) return;
+            if (snapshot == null ||
+                !ShouldApplyHostedSequence(sequence, applied) ||
+                !_hostedNoteIds.Contains(snapshot.NoteId)) return false;
             StickyNoteData canonical = _notes.Find(snapshot.NoteId);
-            if (canonical == null) return;
+            if (canonical == null) return false;
             bool visibilityChanged = canonical.Visible != snapshot.Visible;
             string oldHiddenTitle = canonical.Visible
                 ? String.Empty : canonical.DisplayTitle;
@@ -681,6 +697,13 @@ namespace PennyPet
             if (visibilityChanged || (!canonical.Visible &&
                 !String.Equals(oldHiddenTitle, canonical.DisplayTitle,
                     StringComparison.Ordinal))) RefreshNoteTabs();
+            return true;
+        }
+
+        internal static bool ShouldApplyHostedSequence(long sequence,
+            long appliedSequence)
+        {
+            return sequence > appliedSequence;
         }
 
         private void FallBackHostedStickyToLegacy(string noteId,

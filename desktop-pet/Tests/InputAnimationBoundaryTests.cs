@@ -403,8 +403,33 @@ namespace PennyPet.Tests
             Assert.IsTrue(host.Contains("window.HeaderDragStarted +=") &&
                 host.Contains("window.HeaderDragMoved +=") &&
                 host.Contains("window.HeaderDragCompleted +=") &&
-                host.Contains("window.DockHorizontalResizing +="),
+                host.Contains("window.DockHorizontalResizing +=") &&
+                host.Contains("EmitWindowSnapshot(sender"),
                 "StickyUiHost must forward dock drag/resize events.");
+        }
+
+        [TestMethod]
+        public void HostedDock_ReusesNeutralSessionAndTypedEffectBoundary()
+        {
+            string windowCoordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string dockCoordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+
+            Assert.IsTrue(windowCoordinator.Contains(
+                "BeginStickyDockDrag(facts, null)") &&
+                windowCoordinator.Contains("MoveStickyDockDrag(facts, null)") &&
+                windowCoordinator.Contains("CompleteStickyDockDrag(facts)"),
+                "Hosted drag facts must enter the existing Dock session.");
+            Assert.IsTrue(dockCoordinator.Contains(
+                "StickyUiCommandKind.SetBounds") &&
+                dockCoordinator.Contains("ApplyDockTargets") &&
+                dockCoordinator.Contains("_noteWindows.TryGetValue"),
+                "Hosted and legacy effects must share ApplyDockTarget(s).");
+            Assert.IsFalse(windowCoordinator.Contains("DockMergeRequested") ||
+                windowCoordinator.Contains("DockAttached") ||
+                windowCoordinator.Contains("DockCompleted"),
+                "The minimum E2E must not add a second Dock protocol.");
         }
 
         private static string ReadSource(string relativePath)

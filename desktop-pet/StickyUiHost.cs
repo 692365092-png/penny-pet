@@ -377,17 +377,17 @@ namespace PennyPet
 
         private void CanaryHeaderDragStarted(object sender, EventArgs e)
         {
-            PostWindowRequest(sender, StickyUiEventKind.HeaderDragStarted);
+            EmitWindowSnapshot(sender, StickyUiEventKind.HeaderDragStarted);
         }
 
         private void CanaryHeaderDragMoved(object sender, EventArgs e)
         {
-            PostWindowRequest(sender, StickyUiEventKind.HeaderDragMoved);
+            EmitWindowSnapshot(sender, StickyUiEventKind.HeaderDragMoved);
         }
 
         private void CanaryHeaderDragCompleted(object sender, EventArgs e)
         {
-            PostWindowRequest(sender, StickyUiEventKind.HeaderDragCompleted);
+            EmitWindowSnapshot(sender, StickyUiEventKind.HeaderDragCompleted);
         }
 
         private void CanaryDockHorizontalResizing(object sender,
@@ -462,6 +462,13 @@ namespace PennyPet
                 false, entry.Sequence));
         }
 
+        private void EmitWindowSnapshot(object sender, StickyUiEventKind kind)
+        {
+            StickyWindowEntry entry;
+            if (TryGetEntry(sender as StickyNoteWindow, out entry))
+                EmitSnapshot(entry, kind);
+        }
+
         private void PostReminderRequest(object sender,
             StickyUiEventKind kind, ReminderItem reminder)
         {
@@ -496,8 +503,7 @@ namespace PennyPet
         {
             if (entry == null || entry.Window == null ||
                 entry.Window.IsDisposed) return;
-            StickyNoteUiSnapshot snapshot =
-                StickyNoteUiSnapshot.FromData(entry.Window.Data);
+            StickyNoteUiSnapshot snapshot = CaptureSnapshot(entry);
             entry.LastSnapshot = snapshot;
             entry.Sequence++;
             PostEvent(new StickyUiEvent(kind, snapshot.NoteId, snapshot,
@@ -507,10 +513,20 @@ namespace PennyPet
         private StickyUiCommandResult CurrentResult(StickyWindowEntry entry)
         {
             if (entry.Window != null && !entry.Window.IsDisposed)
-                entry.LastSnapshot =
-                    StickyNoteUiSnapshot.FromData(entry.Window.Data);
+                entry.LastSnapshot = CaptureSnapshot(entry);
             return StickyUiCommandResult.Handled(entry.LastSnapshot,
                 entry.Sequence);
+        }
+
+        private static StickyNoteUiSnapshot CaptureSnapshot(
+            StickyWindowEntry entry)
+        {
+            StickyNoteWindow window = entry.Window;
+            window.Data.X = window.Left;
+            window.Data.Y = window.Top;
+            window.Data.Width = window.Width;
+            window.Data.Height = window.Height;
+            return StickyNoteUiSnapshot.FromData(window.Data);
         }
 
         private StickyUiCommandResult CloseCanaryWindow(string noteId)
@@ -521,8 +537,7 @@ namespace PennyPet
             if (entry.Window.IsImeCompositionActiveForHost)
                 return StickyUiCommandResult.NotAccepted();
             entry.Window.FlushPendingChanges();
-            StickyNoteUiSnapshot snapshot =
-                StickyNoteUiSnapshot.FromData(entry.Window.Data);
+            StickyNoteUiSnapshot snapshot = CaptureSnapshot(entry);
             entry.LastSnapshot = snapshot;
             entry.Sequence++;
             long sequence = entry.Sequence;
@@ -556,8 +571,7 @@ namespace PennyPet
                     if (entry.Window == null || entry.Window.IsDisposed)
                         continue;
                     entry.Window.FlushPendingChanges();
-                    entry.LastSnapshot = StickyNoteUiSnapshot.FromData(
-                        entry.Window.Data);
+                    entry.LastSnapshot = CaptureSnapshot(entry);
                     entry.Sequence++;
                     finalSnapshots.Add(new StickyUiFinalSnapshot(
                         entry.LastSnapshot, entry.Sequence));

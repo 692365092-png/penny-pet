@@ -176,6 +176,7 @@ namespace PennyPet
         private bool _positioningNoteTabs;
         private string _noteTabsSignature = String.Empty;
         private string _activeNoteDragId;
+        private bool _activeNoteDragHosted;
         private readonly List<string> _activeDockGroupIds =
             new List<string>();
         private readonly Dictionary<string, DockWindowFacts>
