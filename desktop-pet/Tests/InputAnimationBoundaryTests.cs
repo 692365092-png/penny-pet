@@ -728,7 +728,9 @@ namespace PennyPet.Tests
         {
             string root = FindDesktopPetDirectory();
             string path = Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar));
-            return File.ReadAllText(path);
+            return File.ReadAllText(path)
+                .Replace("\r\n", "\n")
+                .Replace("\r", "\n");
         }
 
         private static string Between(string text, string startMarker, string endMarker)
