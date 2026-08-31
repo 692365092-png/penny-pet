@@ -4,6 +4,9 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace PennyPet.Tests
 {
+    // These tests inspect source structure and architectural boundaries.
+    // They do not prove runtime WPF/WinForms/IME/Dock behavior.
+    [TestCategory("ArchitectureSourceBoundary")]
     [TestClass]
     public sealed class InputAnimationBoundaryTests
     {
