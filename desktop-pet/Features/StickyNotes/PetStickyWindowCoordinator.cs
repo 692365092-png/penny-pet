@@ -556,8 +556,10 @@ namespace PennyPet
                     if (result != null &&
                         result.Status == StickyUiCommandStatus.Handled)
                     {
-                        ApplyHostedStickySnapshot(result.Snapshot,
-                            result.Sequence);
+                        if (result.Snapshot != null &&
+                            !result.Snapshot.Visible)
+                            ApplyHostedStickySnapshot(result.Snapshot,
+                                result.Sequence);
                         return;
                     }
                     ReportHostedStickyCommandFailure(
@@ -622,6 +624,39 @@ namespace PennyPet
             if (value.Kind == StickyUiEventKind.BoundsChanged)
             {
                 ApplyHostedStickySnapshot(value.Snapshot, value.Sequence, false);
+                return;
+            }
+            if (value.Kind == StickyUiEventKind.DockHorizontalResizing)
+            {
+                if (!ApplyHostedStickySnapshot(value.Snapshot,
+                    value.Sequence, false)) return;
+                ResizeStickyDockGroup(
+                    DockWindowFacts.FromSnapshot(value.Snapshot),
+                    value.Left, value.Width);
+                return;
+            }
+            if (value.Kind == StickyUiEventKind.CloseRequested)
+            {
+                if (!ApplyHostedStickySnapshot(value.Snapshot,
+                    value.Sequence, false)) return;
+                CloseStickyDockNote(_notes.Find(value.NoteId),
+                    DockWindowFacts.FromSnapshot(value.Snapshot));
+                return;
+            }
+            if (value.Kind == StickyUiEventKind.SnapshotChanged)
+            {
+                StickyNoteData canonical = _notes.Find(value.NoteId);
+                bool topMostChanged = canonical != null &&
+                    value.Snapshot != null && canonical.AlwaysOnTop !=
+                    value.Snapshot.AlwaysOnTop;
+                if (!ApplyHostedStickySnapshot(value.Snapshot,
+                    value.Sequence)) return;
+                if (topMostChanged)
+                {
+                    ApplyDockComponentTopMost(canonical,
+                        value.Snapshot.AlwaysOnTop, value.NoteId);
+                    _notes.SaveAsync();
+                }
                 return;
             }
             if (value.Kind == StickyUiEventKind.Closed)
@@ -833,8 +868,6 @@ namespace PennyPet
             bool persistVisibility, bool allowHosted)
         {
             if (note == null) return;
-            if (PostHostedStickyShow(note, focusEditor)) return;
-            if (allowHosted && TryStartHostedSticky(note, focusEditor)) return;
             List<StickyNoteData> storedDockOrder =
                 BuildDockChainOrderIncludingHidden(note);
             bool anyHiddenDockMember = storedDockOrder.Exists(
@@ -849,6 +882,8 @@ namespace PennyPet
                     focusEditor, persistVisibility);
                 return;
             }
+            if (PostHostedStickyShow(note, focusEditor)) return;
+            if (allowHosted && TryStartHostedSticky(note, focusEditor)) return;
             StickyNoteWindow form = GetOrCreateStickyNoteWindow(note);
             if (focusEditor) form.ShowAndEdit();
             else form.ShowRestored();
@@ -880,6 +915,7 @@ namespace PennyPet
                 foreach (StickyNoteData member in group)
                 {
                     handled.Add(member.Id);
+                    member.Visible = false;
                     if (PostHostedStickyHide(member)) continue;
                     StickyNoteWindow form;
                     if (_noteWindows.TryGetValue(member.Id, out form) &&

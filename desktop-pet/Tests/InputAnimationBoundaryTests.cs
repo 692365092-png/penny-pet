@@ -398,13 +398,17 @@ namespace PennyPet.Tests
             Assert.IsTrue(commands.Contains("HeaderDragStarted") &&
                 commands.Contains("HeaderDragMoved") &&
                 commands.Contains("HeaderDragCompleted") &&
-                commands.Contains("DockHorizontalResizing"),
+                commands.Contains("DockHorizontalResizing") &&
+                commands.Contains("SetDockResizeRole") &&
+                commands.Contains("CloseRequested"),
                 "Dock protocol must expose header drag and resize event kinds.");
             Assert.IsTrue(host.Contains("window.HeaderDragStarted +=") &&
                 host.Contains("window.HeaderDragMoved +=") &&
                 host.Contains("window.HeaderDragCompleted +=") &&
                 host.Contains("window.DockHorizontalResizing +=") &&
-                host.Contains("EmitWindowSnapshot(sender"),
+                host.Contains("EmitWindowSnapshot(sender") &&
+                host.Contains("StickyUiCommandKind.SetDockResizeRole") &&
+                host.Contains("StickyUiEventKind.CloseRequested"),
                 "StickyUiHost must forward dock drag/resize events.");
         }
 
@@ -423,12 +427,16 @@ namespace PennyPet.Tests
                 "Hosted drag facts must enter the existing Dock session.");
             Assert.IsTrue(dockCoordinator.Contains(
                 "StickyUiCommandKind.SetBounds") &&
+                dockCoordinator.Contains("StickyUiCommandKind.SetTopMost") &&
                 dockCoordinator.Contains("ApplyDockTargets") &&
+                dockCoordinator.Contains("ResizeStickyDockGroup") &&
+                dockCoordinator.Contains("CloseStickyDockNote") &&
                 dockCoordinator.Contains("_noteWindows.TryGetValue"),
                 "Hosted and legacy effects must share ApplyDockTarget(s).");
             Assert.IsFalse(windowCoordinator.Contains("DockMergeRequested") ||
                 windowCoordinator.Contains("DockAttached") ||
-                windowCoordinator.Contains("DockCompleted"),
+                windowCoordinator.Contains("DockCompleted") ||
+                dockCoordinator.Contains("HostedDockCoordinator"),
                 "The minimum E2E must not add a second Dock protocol.");
         }
 

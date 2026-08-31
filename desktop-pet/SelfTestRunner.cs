@@ -2064,6 +2064,12 @@ namespace PennyPet
             internal bool PerNoteSequenceOk;
             internal bool CloseAllBatchOk;
             internal bool HostedDockEffectOk;
+            internal bool HostedGroupMoveOk;
+            internal bool HostedTopMostOk;
+            internal bool HostedHorizontalResizeOk;
+            internal bool HostedHideReopenOk;
+            internal bool HostedMiddleSplitOk;
+            internal bool HostedThreeNoteInsertionOk;
             internal bool DockRestoreOk;
         }
 
@@ -2192,6 +2198,12 @@ namespace PennyPet
             second.Y = -2000;
             second.Width = 320;
             second.Height = 300;
+            StickyNoteData third = new StickyNoteData();
+            third.Text = "third-detached";
+            third.X = -1800;
+            third.Y = -1800;
+            third.Width = 320;
+            third.Height = 300;
             StickyNoteData todo = new StickyNoteData();
             todo.IsTodoList = true;
             todo.Text = "todo-detached";
@@ -2244,6 +2256,11 @@ namespace PennyPet
                         new StickyUiCommand(StickyUiCommandKind.Create,
                             second.Id, false,
                             StickyNoteUiSnapshot.FromData(second)), petContext);
+                StickyUiCommandResult thirdCreated =
+                    PostStickyCommandAndWait(host,
+                        new StickyUiCommand(StickyUiCommandKind.Create,
+                            third.Id, false,
+                            StickyNoteUiSnapshot.FromData(third)), petContext);
                 StickyUiCommandResult todoCreated =
                     PostStickyCommandAndWait(host,
                         new StickyUiCommand(StickyUiCommandKind.Create,
@@ -2314,6 +2331,183 @@ namespace PennyPet
                             hostedLayout[1].X, hostedLayout[1].Y,
                             hostedLayout[1].Width, hostedLayout[1].Height)),
                     petContext);
+                Dictionary<string, DockWindowFacts> moveFacts =
+                    new Dictionary<string, DockWindowFacts>(
+                        StringComparer.OrdinalIgnoreCase)
+                    {
+                        { second.Id, DockWindowFacts.FromSnapshot(
+                            targetDocked.Snapshot) },
+                        { canonical.Id, DockWindowFacts.FromSnapshot(
+                            sourceDocked.Snapshot) }
+                    };
+                DockWindowFacts movedRoot = new DockWindowFacts(second.Id,
+                    160, 140, 320, 300, true, false);
+                List<DockLayoutTarget> moveTargets =
+                    PetForm.CalculateDockTranslationTargets(
+                        new string[] { second.Id, canonical.Id }, moveFacts,
+                        movedRoot, 60, 40);
+                StickyUiCommandResult targetMoved = PostStickyCommandAndWait(
+                    host, new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                        second.Id, false, null, new StickyUiBounds(
+                            moveTargets[0].X, moveTargets[0].Y,
+                            moveTargets[0].Width, moveTargets[0].Height)),
+                    petContext);
+                StickyUiCommandResult sourceMoved = PostStickyCommandAndWait(
+                    host, new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                        canonical.Id, false, null, new StickyUiBounds(
+                            moveTargets[1].X, moveTargets[1].Y,
+                            moveTargets[1].Width, moveTargets[1].Height)),
+                    petContext);
+                check.HostedGroupMoveOk = targetMoved.Snapshot.X == 160 &&
+                    targetMoved.Snapshot.Y == 140 &&
+                    sourceMoved.Snapshot.X == 160 &&
+                    sourceMoved.Snapshot.Y == 440;
+
+                StickyUiCommandResult targetPinned = PostStickyCommandAndWait(
+                    host, new StickyUiCommand(
+                        StickyUiCommandKind.SetTopMost,
+                        second.Id, true), petContext);
+                StickyUiCommandResult sourcePinned = PostStickyCommandAndWait(
+                    host, new StickyUiCommand(
+                        StickyUiCommandKind.SetTopMost,
+                        canonical.Id, true), petContext);
+                check.HostedTopMostOk = targetPinned.Snapshot.AlwaysOnTop &&
+                    sourcePinned.Snapshot.AlwaysOnTop;
+
+                StickyUiDockResizeRole groupedRole =
+                    new StickyUiDockResizeRole(true, true, true);
+                StickyUiCommandResult targetRole = PostStickyCommandAndWait(
+                    host, new StickyUiCommand(
+                        StickyUiCommandKind.SetDockResizeRole,
+                        second.Id, false, null, null, groupedRole), petContext);
+                StickyUiCommandResult sourceRole = PostStickyCommandAndWait(
+                    host, new StickyUiCommand(
+                        StickyUiCommandKind.SetDockResizeRole,
+                        canonical.Id, false, null, null, groupedRole),
+                    petContext);
+                List<Rectangle> resizedLayout =
+                    PetForm.CalculateUnifiedDockLayout(new Size[]
+                    {
+                        new Size(320, 300), new Size(320, 300)
+                    }, 80, 140, 420);
+                StickyUiCommandResult targetResized =
+                    PostStickyCommandAndWait(host,
+                        new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                            second.Id, false, null, new StickyUiBounds(
+                                resizedLayout[0].X, resizedLayout[0].Y,
+                                resizedLayout[0].Width,
+                                resizedLayout[0].Height)), petContext);
+                StickyUiCommandResult sourceResized =
+                    PostStickyCommandAndWait(host,
+                        new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                            canonical.Id, false, null, new StickyUiBounds(
+                                resizedLayout[1].X, resizedLayout[1].Y,
+                                resizedLayout[1].Width,
+                                resizedLayout[1].Height)), petContext);
+                check.HostedHorizontalResizeOk =
+                    targetRole.Status == StickyUiCommandStatus.Handled &&
+                    sourceRole.Status == StickyUiCommandStatus.Handled &&
+                    targetResized.Snapshot.X == 80 &&
+                    sourceResized.Snapshot.X == 80 &&
+                    targetResized.Snapshot.Width == 420 &&
+                    sourceResized.Snapshot.Width == 420;
+
+                StickyUiCommandResult targetHidden = PostStickyCommandAndWait(
+                    host, new StickyUiCommand(StickyUiCommandKind.Hide,
+                        second.Id, false), petContext);
+                StickyUiCommandResult sourceHidden = PostStickyCommandAndWait(
+                    host, new StickyUiCommand(StickyUiCommandKind.Hide,
+                        canonical.Id, false), petContext);
+                StickyUiCommandResult targetShown = PostStickyCommandAndWait(
+                    host, new StickyUiCommand(StickyUiCommandKind.Show,
+                        second.Id, false), petContext);
+                StickyUiCommandResult sourceShown = PostStickyCommandAndWait(
+                    host, new StickyUiCommand(StickyUiCommandKind.Show,
+                        canonical.Id, false), petContext);
+                check.HostedHideReopenOk =
+                    !targetHidden.Snapshot.Visible &&
+                    !sourceHidden.Snapshot.Visible &&
+                    targetShown.Snapshot.Visible && sourceShown.Snapshot.Visible &&
+                    targetShown.Snapshot.X == 80 &&
+                    sourceShown.Snapshot.Y == 440;
+
+                StickyUiCommandResult thirdPositioned =
+                    PostStickyCommandAndWait(host,
+                        new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                            third.Id, false, null,
+                            new StickyUiBounds(80, 740, 420, 300)),
+                        petContext);
+                List<StickyNoteData> threeOrder =
+                    StickyDockOperations.MergeDockSnapshotsAfterParent(
+                        dockOrder, second,
+                        new StickyNoteData[] { third });
+                List<Rectangle> threeLayout =
+                    PetForm.CalculateUnifiedDockLayout(new Size[]
+                    {
+                        new Size(420, 300), new Size(420, 300),
+                        new Size(420, 300)
+                    }, 80, 140, 420);
+                StickyUiCommandResult targetInserted =
+                    PostStickyCommandAndWait(host,
+                        new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                            second.Id, false, null, new StickyUiBounds(
+                                threeLayout[0].X, threeLayout[0].Y,
+                                threeLayout[0].Width, threeLayout[0].Height)),
+                        petContext);
+                StickyUiCommandResult thirdInserted =
+                    PostStickyCommandAndWait(host,
+                        new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                            third.Id, false, null, new StickyUiBounds(
+                                threeLayout[1].X, threeLayout[1].Y,
+                                threeLayout[1].Width, threeLayout[1].Height)),
+                        petContext);
+                StickyUiCommandResult sourceInserted =
+                    PostStickyCommandAndWait(host,
+                        new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                            canonical.Id, false, null, new StickyUiBounds(
+                                threeLayout[2].X, threeLayout[2].Y,
+                                threeLayout[2].Width, threeLayout[2].Height)),
+                        petContext);
+                check.HostedThreeNoteInsertionOk = threeOrder.Count == 3 &&
+                    threeOrder[0].Id == second.Id &&
+                    threeOrder[1].Id == third.Id &&
+                    threeOrder[2].Id == canonical.Id &&
+                    third.DockParentId == second.Id &&
+                    canonical.DockParentId == third.Id &&
+                    thirdInserted.Snapshot.Y == 440 &&
+                    sourceInserted.Snapshot.Y == 740;
+                check.DockRestoreOk = VerifyHostedDockPersistence(
+                    targetInserted.Snapshot, thirdInserted.Snapshot,
+                    sourceInserted.Snapshot);
+
+                List<StickyNoteData> splitRemainder =
+                    StickyDockOperations.ExtractSingleDockMember(
+                        threeOrder, third);
+                StickyUiCommandResult targetAfterSplit =
+                    PostStickyCommandAndWait(host,
+                        new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                            second.Id, false, null,
+                            new StickyUiBounds(80, 140, 420, 300)),
+                        petContext);
+                StickyUiCommandResult sourceAfterSplit =
+                    PostStickyCommandAndWait(host,
+                        new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                            canonical.Id, false, null,
+                            new StickyUiBounds(80, 440, 420, 300)),
+                        petContext);
+                StickyUiCommandResult thirdAfterSplit =
+                    PostStickyCommandAndWait(host,
+                        new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                            third.Id, false, null,
+                            new StickyUiBounds(600, 140, 420, 300)),
+                        petContext);
+                check.HostedMiddleSplitOk = splitRemainder.Count == 2 &&
+                    splitRemainder[0].Id == second.Id &&
+                    splitRemainder[1].Id == canonical.Id &&
+                    canonical.DockParentId == second.Id &&
+                    String.IsNullOrEmpty(third.DockGroupId) &&
+                    sourceAfterSplit.Snapshot.Y == 440 &&
+                    thirdAfterSplit.Snapshot.X == 600;
                 StickyUiCommandResult closed = PostStickyCommandAndWait(host,
                     new StickyUiCommand(StickyUiCommandKind.CloseAll,
                         String.Empty, false), petContext);
@@ -2322,7 +2516,7 @@ namespace PennyPet
                 bool closedBoth = closed != null &&
                     closed.Status == StickyUiCommandStatus.Handled &&
                     closed.FinalSnapshots != null &&
-                    closed.FinalSnapshots.Length == 5;
+                    closed.FinalSnapshots.Length == 6;
                 StickyUiFinalSnapshot finalSource = null;
                 StickyUiFinalSnapshot finalTarget = null;
                 if (closedBoth)
@@ -2336,12 +2530,12 @@ namespace PennyPet
                             finalTarget = item;
                     }
                 check.CloseAllBatchOk = finalSource != null &&
-                    finalTarget != null && sourceDocked != null &&
-                    targetDocked != null &&
-                    finalSource.Sequence > sourceDocked.Sequence &&
-                    finalTarget.Sequence > targetDocked.Sequence &&
-                    finalSource.Snapshot.Y == hostedLayout[1].Y &&
-                    finalTarget.Snapshot.Y == hostedLayout[0].Y;
+                    finalTarget != null && sourceAfterSplit != null &&
+                    targetAfterSplit != null &&
+                    finalSource.Sequence > sourceAfterSplit.Sequence &&
+                    finalTarget.Sequence > targetAfterSplit.Sequence &&
+                    finalSource.Snapshot.Y == 440 &&
+                    finalTarget.Snapshot.Y == 140;
                 StickyNoteData staleProbe = sourceDocked.Snapshot
                     .CreateWorkingCopy();
                 long appliedSequence = sourceDocked.Sequence;
@@ -2363,9 +2557,6 @@ namespace PennyPet
                     targetDocked.Snapshot.X == hostedLayout[0].X &&
                     sourceDocked.Snapshot.Y == hostedLayout[1].Y &&
                     eventKinds.Contains(StickyUiEventKind.HeaderDragMoved);
-                check.DockRestoreOk = finalSource != null &&
-                    finalTarget != null && VerifyHostedDockPersistence(
-                        finalTarget.Snapshot, finalSource.Snapshot);
                 check.LifecycleOk = detachedOwnership && hidden != null &&
                     hidden.Status == StickyUiCommandStatus.Handled &&
                     hidden.Snapshot != null && !hidden.Snapshot.Visible &&
@@ -2379,6 +2570,10 @@ namespace PennyPet
                     secondCreated != null &&
                     secondCreated.Status == StickyUiCommandStatus.Handled &&
                     secondCreated.OwnerThreadId == created.OwnerThreadId &&
+                    thirdCreated != null &&
+                    thirdCreated.Status == StickyUiCommandStatus.Handled &&
+                    thirdPositioned != null &&
+                    thirdPositioned.Status == StickyUiCommandStatus.Handled &&
                     todoCreated != null &&
                     todoCreated.Status == StickyUiCommandStatus.Handled &&
                     scheduleCreated != null &&
@@ -2389,6 +2584,7 @@ namespace PennyPet
                     eventThread == petThread && lastEvent != null &&
                     eventNoteIds.Contains(canonical.Id) &&
                     eventNoteIds.Contains(second.Id) &&
+                    eventNoteIds.Contains(third.Id) &&
                     eventNoteIds.Contains(todo.Id) &&
                     eventNoteIds.Contains(schedule.Id) &&
                     eventNoteIds.Contains(reminder.Id) &&
@@ -2400,7 +2596,7 @@ namespace PennyPet
         }
 
         private static bool VerifyHostedDockPersistence(
-            StickyNoteUiSnapshot target, StickyNoteUiSnapshot source)
+            params StickyNoteUiSnapshot[] snapshots)
         {
             string path = Path.Combine(Path.GetTempPath(),
                 "penny-hosted-dock-" + Guid.NewGuid().ToString("N") + ".dat");
@@ -2408,30 +2604,37 @@ namespace PennyPet
             {
                 StickyNoteRepository repository =
                     StickyNoteRepository.LoadFromFile(path);
-                StickyNoteData restoredTarget = repository.Create(String.Empty,
-                    new Point(target.X, target.Y));
-                StickyNoteData restoredSource = repository.Create(String.Empty,
-                    new Point(source.X, source.Y));
-                if (restoredTarget == null || restoredSource == null)
-                    return false;
-                target.ApplyTo(restoredTarget);
-                source.ApplyTo(restoredSource);
-                StickyDockGroups.ApplyOrderedGroup(new StickyNoteData[]
+                List<StickyNoteData> stored = new List<StickyNoteData>();
+                if (snapshots == null || snapshots.Length < 2) return false;
+                foreach (StickyNoteUiSnapshot snapshot in snapshots)
                 {
-                    restoredTarget, restoredSource
-                });
+                    if (snapshot == null) return false;
+                    StickyNoteData note = repository.Create(String.Empty,
+                        new Point(snapshot.X, snapshot.Y));
+                    if (note == null) return false;
+                    snapshot.ApplyTo(note);
+                    stored.Add(note);
+                }
+                StickyDockGroups.ApplyOrderedGroup(stored);
                 if (!repository.Save().Succeeded) return false;
                 StickyNoteRepository reopened =
                     StickyNoteRepository.LoadFromFile(path);
-                StickyNoteData member = reopened.Find(restoredSource.Id);
+                StickyNoteData member = reopened.Find(
+                    stored[stored.Count - 1].Id);
                 List<StickyNoteData> order = StickyDockGroups.GetOrderedGroup(
                     reopened.GetAll(), member);
-                return order.Count == 2 &&
-                    order[0].Id == restoredTarget.Id &&
-                    order[1].Id == restoredSource.Id &&
-                    order[1].DockParentId == order[0].Id &&
-                    order[0].X == target.X && order[0].Y == target.Y &&
-                    order[1].X == source.X && order[1].Y == source.Y;
+                if (order.Count != snapshots.Length) return false;
+                for (int index = 0; index < order.Count; index++)
+                {
+                    if (order[index].Id != snapshots[index].NoteId ||
+                        order[index].X != snapshots[index].X ||
+                        order[index].Y != snapshots[index].Y ||
+                        order[index].Width != snapshots[index].Width ||
+                        order[index].Height != snapshots[index].Height ||
+                        (index > 0 && order[index].DockParentId !=
+                            order[index - 1].Id)) return false;
+                }
+                return true;
             }
             finally
             {
@@ -2865,6 +3068,20 @@ namespace PennyPet
                     shellChecks.StickyCanary.CloseAllBatchOk) + ",\n" +
                 "  \"sticky_hosted_two_note_dock_effect_ok\": " + Bool(
                     shellChecks.StickyCanary.HostedDockEffectOk) + ",\n" +
+                "  \"sticky_hosted_group_move_ok\": " + Bool(
+                    shellChecks.StickyCanary.HostedGroupMoveOk) + ",\n" +
+                "  \"sticky_hosted_topmost_ok\": " + Bool(
+                    shellChecks.StickyCanary.HostedTopMostOk) + ",\n" +
+                "  \"sticky_hosted_horizontal_resize_ok\": " + Bool(
+                    shellChecks.StickyCanary.HostedHorizontalResizeOk) +
+                    ",\n" +
+                "  \"sticky_hosted_hide_reopen_ok\": " + Bool(
+                    shellChecks.StickyCanary.HostedHideReopenOk) + ",\n" +
+                "  \"sticky_hosted_middle_split_ok\": " + Bool(
+                    shellChecks.StickyCanary.HostedMiddleSplitOk) + ",\n" +
+                "  \"sticky_hosted_three_note_insertion_ok\": " + Bool(
+                    shellChecks.StickyCanary.HostedThreeNoteInsertionOk) +
+                    ",\n" +
                 "  \"sticky_hosted_dock_restore_ok\": " + Bool(
                     shellChecks.StickyCanary.DockRestoreOk) + ",\n" +
                 "  \"keyboard_hook_opt_in_and_default_off_ok\": " + Bool(

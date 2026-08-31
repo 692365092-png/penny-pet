@@ -10,6 +10,7 @@ namespace PennyPet
         Hide,
         FocusPrimaryInput,
         SetTopMost,
+        SetDockResizeRole,
         SetBounds,
         Close,
         CloseAll
@@ -19,13 +20,15 @@ namespace PennyPet
     {
         internal StickyUiCommand(StickyUiCommandKind kind, string noteId,
             bool flag, StickyNoteUiSnapshot snapshot = null,
-            StickyUiBounds bounds = null)
+            StickyUiBounds bounds = null,
+            StickyUiDockResizeRole dockResizeRole = null)
         {
             Kind = kind;
             NoteId = noteId ?? String.Empty;
             Flag = flag;
             Snapshot = snapshot;
             Bounds = bounds;
+            DockResizeRole = dockResizeRole;
         }
 
         internal StickyUiCommandKind Kind { get; private set; }
@@ -33,6 +36,7 @@ namespace PennyPet
         internal bool Flag { get; private set; }
         internal StickyNoteUiSnapshot Snapshot { get; private set; }
         internal StickyUiBounds Bounds { get; private set; }
+        internal StickyUiDockResizeRole DockResizeRole { get; private set; }
     }
 
     // Immutable cross-thread value snapshot. The WPF STA creates its own
@@ -194,6 +198,21 @@ namespace PennyPet
         internal int Height { get; private set; }
     }
 
+    internal sealed class StickyUiDockResizeRole
+    {
+        internal StickyUiDockResizeRole(bool grouped, bool resizeTop,
+            bool resizeBottom)
+        {
+            Grouped = grouped;
+            ResizeTop = resizeTop;
+            ResizeBottom = resizeBottom;
+        }
+
+        internal bool Grouped { get; private set; }
+        internal bool ResizeTop { get; private set; }
+        internal bool ResizeBottom { get; private set; }
+    }
+
     internal enum StickyUiEventKind
     {
         SnapshotChanged,
@@ -209,6 +228,7 @@ namespace PennyPet
         CancelReminderRequested,
         ModifyReminderRequested,
         DeleteReminderRequested,
+        CloseRequested,
         DeleteRequested,
         NewNoteRequested,
         NewTodoRequested,

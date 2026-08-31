@@ -188,6 +188,14 @@ namespace PennyPet
                             return StickyUiCommandResult.NotHandled();
                         entry.Window.ApplyTopMostWindowState(command.Flag);
                         return CurrentResult(entry);
+                    case StickyUiCommandKind.SetDockResizeRole:
+                        if (!TryGetEntry(command.NoteId, out entry) ||
+                            command.DockResizeRole == null)
+                            return StickyUiCommandResult.NotHandled();
+                        StickyUiDockResizeRole role = command.DockResizeRole;
+                        entry.Window.SetDockResizeRole(role.Grouped,
+                            role.ResizeTop, role.ResizeBottom);
+                        return CurrentResult(entry);
                     case StickyUiCommandKind.SetBounds:
                         if (!TryGetEntry(command.NoteId, out entry) ||
                             command.Bounds == null)
@@ -356,7 +364,7 @@ namespace PennyPet
                 !entry.Window.IsDisposed)
             {
                 entry.HideAfterImeComposition = false;
-                entry.Window.HideNote();
+                EmitSnapshot(entry, StickyUiEventKind.CloseRequested);
             }
         }
 
@@ -395,9 +403,12 @@ namespace PennyPet
         {
             StickyWindowEntry entry;
             if (!TryGetEntry(sender as StickyNoteWindow, out entry)) return;
+            StickyNoteUiSnapshot snapshot = CaptureSnapshot(entry);
+            entry.LastSnapshot = snapshot;
+            entry.Sequence++;
             PostEvent(new StickyUiEvent(
                 StickyUiEventKind.DockHorizontalResizing,
-                entry.Window.Data.Id, null, false, entry.Sequence,
+                entry.Window.Data.Id, snapshot, false, entry.Sequence,
                 null, e == null ? 0 : e.Left,
                 e == null ? 0 : e.Width));
         }
@@ -431,7 +442,7 @@ namespace PennyPet
             if (!TryGetEntry(sender as StickyNoteWindow, out entry)) return;
             if (entry.Window.IsImeCompositionActiveForHost)
                 entry.HideAfterImeComposition = true;
-            else entry.Window.HideNote();
+            else EmitSnapshot(entry, StickyUiEventKind.CloseRequested);
         }
 
         private void CanaryDeleteRequested(object sender, EventArgs e)
