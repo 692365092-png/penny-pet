@@ -117,15 +117,18 @@ namespace PennyPet.Tests
         [TestMethod]
         public void StickyUiHost_CommandBoundaryIsAsynchronous()
         {
-            string source = ReadSource("StickyUiHost.cs");
+            string host = ReadSource("StickyUiHost.cs");
+            string threadHost = ReadSource("StickyUiThreadHost.cs");
 
-            Assert.IsTrue(source.Contains("PostCommand("),
+            Assert.IsTrue(host.Contains("PostCommand(") &&
+                host.Contains("_threadHost.Post("),
                 "Sticky UI commands must use the asynchronous post boundary.");
-            Assert.IsTrue(source.Contains("dispatcher.BeginInvoke("),
+            Assert.IsTrue(threadHost.Contains("dispatcher.BeginInvoke("),
                 "Sticky UI commands must be dispatched asynchronously.");
-            Assert.IsFalse(source.Contains("dispatcher.Invoke("),
+            Assert.IsFalse(threadHost.Contains("dispatcher.Invoke("),
                 "Pet UI must never synchronously invoke the sticky STA.");
-            Assert.IsFalse(source.Contains("SendCommand("),
+            Assert.IsFalse(host.Contains("SendCommand(") ||
+                threadHost.Contains("SendCommand("),
                 "The old synchronous command API must not remain available.");
         }
 
@@ -135,6 +138,7 @@ namespace PennyPet.Tests
             string commands = ReadSource(
                 "Features/StickyNotes/StickyUiCommand.cs");
             string host = ReadSource("StickyUiHost.cs");
+            string session = ReadSource("StickyWindowSession.cs");
             string coordinator = ReadSource(
                 "Features/StickyNotes/PetStickyWindowCoordinator.cs");
             string pet = ReadSource("PetForm.cs");
@@ -144,10 +148,11 @@ namespace PennyPet.Tests
                 commands.Contains("StickyUiEventKind"),
                 "Hosted notes must exchange typed values and detached copies.");
             Assert.IsTrue(host.Contains(
-                "Dictionary<string, StickyWindowEntry> _windows") &&
-                host.Contains("internal long Sequence;") &&
-                host.Contains("new StickyNoteWindow(workingCopy)"),
-                "Only StickyUiHost may own hosted WPF window references.");
+                "Dictionary<string, StickyWindowSession> _sessions") &&
+                session.Contains("private readonly StickyNoteWindow _window") &&
+                session.Contains("private long _sequence") &&
+                session.Contains("snapshot.CreateWorkingCopy()"),
+                "Only sticky STA sessions may own hosted WPF windows.");
             Assert.IsTrue(coordinator.Contains(
                 "StickyNoteUiSnapshot.FromData(note)") &&
                 coordinator.Contains("snapshot.ApplyTo(canonical)") &&
@@ -158,9 +163,9 @@ namespace PennyPet.Tests
         [TestMethod]
         public void StickyUiCanary_DoesNotSynchronouslyWaitAcrossUiThreads()
         {
-            string host = ReadSource("StickyUiHost.cs");
-            string posted = Between(host, "internal void PostCommand(",
-                "private StickyUiCommandResult HandleCanaryCommand");
+            string threadHost = ReadSource("StickyUiThreadHost.cs");
+            string posted = Between(threadHost, "internal void Post(",
+                "internal void StopAcceptingCommands");
             string coordinator = ReadSource(
                 "Features/StickyNotes/PetStickyWindowCoordinator.cs");
 
@@ -179,14 +184,14 @@ namespace PennyPet.Tests
         {
             string commands = ReadSource(
                 "Features/StickyNotes/StickyUiCommand.cs");
-            string host = ReadSource("StickyUiHost.cs");
+            string session = ReadSource("StickyWindowSession.cs");
             string coordinator = ReadSource(
                 "Features/StickyNotes/PetStickyWindowCoordinator.cs");
             string overlay = ReadSource(
                 "Features/KeyboardOverlay/PetKeyboardOverlayCoordinator.cs");
 
             Assert.IsTrue(commands.Contains("InputFocusChanged") &&
-                host.Contains("entry.Window.HasFocusedTextInput") &&
+                session.Contains("_window.HasFocusedTextInput") &&
                 coordinator.Contains("_hostedInputFocused.Add(value.NoteId)"),
                 "Sticky STA must asynchronously report a plain focus flag.");
             Assert.IsTrue(overlay.Contains(
@@ -223,13 +228,13 @@ namespace PennyPet.Tests
         {
             string host = ReadSource("StickyUiHost.cs");
             int preflight = host.IndexOf(
-                "entry.Window.IsImeCompositionActiveForHost",
+                "session.IsImeCompositionActive",
                 StringComparison.Ordinal);
-            int batch = host.IndexOf("_batchClosing = true",
+            int batch = host.IndexOf("session.SetEventsSuppressed(true)",
                 StringComparison.Ordinal);
 
             Assert.IsTrue(preflight >= 0 && batch > preflight &&
-                host.Contains("if (_batchClosing) return;") &&
+                host.Contains("session.FlushAndCaptureFinal()") &&
                 host.Contains("StickyUiFinalSnapshot"),
                 "CloseAll must preflight every IME before a quiet final batch.");
         }
@@ -239,7 +244,7 @@ namespace PennyPet.Tests
         {
             string commands = ReadSource(
                 "Features/StickyNotes/StickyUiCommand.cs");
-            string host = ReadSource("StickyUiHost.cs");
+            string session = ReadSource("StickyWindowSession.cs");
             string dock = ReadSource(
                 "Features/StickyNotes/PetStickyDockCoordinator.cs");
             int handled = dock.IndexOf(
@@ -252,8 +257,8 @@ namespace PennyPet.Tests
                 commands.Contains("NewNoteRequested") &&
                 commands.Contains("NewTodoRequested") &&
                 commands.Contains("NewScheduleRequested") &&
-                host.Contains("window.DeleteRequested +=") &&
-                host.Contains("PostWindowRequest("),
+                session.Contains("_window.DeleteRequested +=") &&
+                session.Contains("RaiseRequest("),
                 "Window-level application requests must cross as typed events.");
             Assert.IsTrue(handled >= 0 && remove > handled,
                 "Canonical deletion must happen only after handled close.");
@@ -318,7 +323,7 @@ namespace PennyPet.Tests
         [TestMethod]
         public void HostedFirstRendered_UpdatesPetReadiness()
         {
-            string host = ReadSource("StickyUiHost.cs");
+            string session = ReadSource("StickyWindowSession.cs");
             string coordinator =
                 ReadSource("Features/StickyNotes/PetStickyWindowCoordinator.cs");
             string command = ReadSource(
@@ -326,7 +331,7 @@ namespace PennyPet.Tests
 
             Assert.IsTrue(command.Contains("FirstRendered"),
                 "StickyUiEventKind must include FirstRendered.");
-            Assert.IsTrue(host.Contains(
+            Assert.IsTrue(session.Contains(
                 "StickyUiEventKind.FirstRendered"),
                 "StickyUiHost must emit FirstRendered.");
             Assert.IsTrue(coordinator.Contains(
@@ -378,13 +383,14 @@ namespace PennyPet.Tests
             string commands = ReadSource(
                 "Features/StickyNotes/StickyUiCommand.cs");
             string host = ReadSource("StickyUiHost.cs");
+            string session = ReadSource("StickyWindowSession.cs");
 
             Assert.IsTrue(commands.Contains("SetBounds") &&
                 commands.Contains("StickyUiBounds") &&
                 commands.Contains("BoundsChanged"),
                 "Dock protocol must expose typed bounds command/event data.");
             Assert.IsTrue(host.Contains("StickyUiCommandKind.SetBounds") &&
-                host.Contains("StickyUiEventKind.BoundsChanged"),
+                session.Contains("StickyUiEventKind.BoundsChanged"),
                 "StickyUiHost must execute and report typed bounds changes.");
         }
 
@@ -394,6 +400,7 @@ namespace PennyPet.Tests
             string commands = ReadSource(
                 "Features/StickyNotes/StickyUiCommand.cs");
             string host = ReadSource("StickyUiHost.cs");
+            string session = ReadSource("StickyWindowSession.cs");
 
             Assert.IsTrue(commands.Contains("HeaderDragStarted") &&
                 commands.Contains("HeaderDragMoved") &&
@@ -403,18 +410,18 @@ namespace PennyPet.Tests
                 commands.Contains("SetDockResizeRole") &&
                 commands.Contains("CloseRequested"),
                 "Dock protocol must expose header drag and resize event kinds.");
-            Assert.IsTrue(host.Contains("window.HeaderDragStarted +=") &&
-                host.Contains("window.HeaderDragMoved +=") &&
-                host.Contains("window.HeaderDragCompleted +=") &&
-                host.Contains("window.DockHorizontalResizing +=") &&
-                host.Contains("EmitWindowSnapshot(sender") &&
+            Assert.IsTrue(session.Contains("_window.HeaderDragStarted +=") &&
+                session.Contains("_window.HeaderDragMoved +=") &&
+                session.Contains("_window.HeaderDragCompleted +=") &&
+                session.Contains("_window.DockHorizontalResizing +=") &&
+                session.Contains("EmitSnapshot(") &&
                 host.Contains("StickyUiCommandKind.SetDockResizeRole") &&
-                host.Contains("role.SplitBottom") &&
-                host.Contains("role.DividerMinimumHeight") &&
-                host.Contains("role.DividerMaximumHeight") &&
-                host.Contains("entry.Window.DockDividerResizeActive") &&
-                host.Contains("!entry.ApplyingBounds") &&
-                host.Contains("StickyUiEventKind.CloseRequested"),
+                session.Contains("role.SplitBottom") &&
+                session.Contains("role.DividerMinimumHeight") &&
+                session.Contains("role.DividerMaximumHeight") &&
+                session.Contains("_window.DockDividerResizeActive") &&
+                session.Contains("!_applyingBounds") &&
+                session.Contains("StickyUiEventKind.CloseRequested"),
                 "StickyUiHost must forward dock drag/resize events.");
         }
 
