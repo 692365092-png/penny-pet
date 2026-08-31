@@ -593,7 +593,8 @@ namespace PennyPet
 
         private void LayoutDockChain(List<StickyNoteData> ordered,
             IDictionary<string, DockWindowFacts> factsById,
-            int left, int top, int width)
+            int left, int top, int width,
+            string alreadyAppliedNoteId = null)
         {
             List<DockWindowFacts> visibleFacts =
                 new List<DockWindowFacts>();
@@ -619,7 +620,7 @@ namespace PennyPet
                     layout[index].Width, layout[index].Height,
                     true, facts.TopMost));
             }
-            ApplyDockTargets(targets, null);
+            ApplyDockTargets(targets, alreadyAppliedNoteId);
         }
 
         // Legacy effect edge: canonical data is updated first; only this
@@ -838,6 +839,9 @@ namespace PennyPet
             DockWindowFacts snapshot = CaptureLegacyDockWindowFacts(source);
             StickyNoteData seed = _notes.Find(snapshot.NoteId);
             if (seed == null) return;
+            if (e.HeightChanged && IsDockDividerResizeActive(source) &&
+                ResizeStickyDockDivider(snapshot,
+                    (int)Math.Round(e.PreviousSize.Height))) return;
             ApplyDockTarget(snapshot.ToTarget(snapshot.X, snapshot.Y),
                 snapshot.NoteId);
             List<StickyNoteData> ordered = BuildDockChainOrder(seed);
@@ -864,42 +868,63 @@ namespace PennyPet
             _synchronizingDockLayout = true;
             try
             {
-                int sourceIndex = ordered.FindIndex(
-                    delegate(StickyNoteData note)
-                    {
-                        return String.Equals(note.Id, snapshot.NoteId,
-                            StringComparison.OrdinalIgnoreCase);
-                    });
-                if (e.HeightChanged && IsDockDividerResizeActive(source) &&
-                    sourceIndex >= 0 && sourceIndex < ordered.Count - 1)
-                {
-                    DockWindowFacts lower;
-                    if (facts.TryGetValue(ordered[sourceIndex + 1].Id,
-                        out lower))
-                    {
-                        Size adjusted = CalculateDockDividerHeights(
-                            (int)Math.Round(e.PreviousSize.Height),
-                            snapshot.Height, lower.Height);
-                        DockLayoutTarget upperTarget =
-                            new DockLayoutTarget(snapshot.NoteId,
-                                snapshot.X, snapshot.Y, snapshot.Width,
-                                adjusted.Width, true, snapshot.TopMost);
-                        DockLayoutTarget lowerTarget =
-                            new DockLayoutTarget(lower.NoteId,
-                                lower.X, lower.Y, lower.Width,
-                                adjusted.Height, true, lower.TopMost);
-                        ApplyDockTarget(upperTarget, snapshot.NoteId);
-                        ApplyDockTarget(lowerTarget, null);
-                        facts[snapshot.NoteId] =
-                            DockWindowFacts.FromTarget(upperTarget);
-                        facts[lower.NoteId] =
-                            DockWindowFacts.FromTarget(lowerTarget);
-                    }
-                }
                 LayoutDockChain(ordered, facts, left, top, snapshot.Width);
             }
             finally { _synchronizingDockLayout = false; }
             RefreshDockResizeRoles();
+        }
+
+        private bool ResizeStickyDockDivider(DockWindowFacts snapshot,
+            int previousUpperHeight)
+        {
+            if (_synchronizingDockLayout || _movingDockGroup ||
+                _activeNoteDragId != null || snapshot == null) return false;
+            StickyNoteData seed = _notes.Find(snapshot.NoteId);
+            if (seed == null) return false;
+            List<StickyNoteData> ordered = BuildDockChainOrder(seed);
+            int sourceIndex = ordered.FindIndex(
+                delegate(StickyNoteData note)
+                {
+                    return String.Equals(note.Id, snapshot.NoteId,
+                        StringComparison.OrdinalIgnoreCase);
+                });
+            if (sourceIndex < 0 || sourceIndex >= ordered.Count - 1)
+                return false;
+            Dictionary<string, DockWindowFacts> facts =
+                CaptureLegacyDockWindowFacts(ordered);
+            DockWindowFacts lower;
+            if (!facts.TryGetValue(ordered[sourceIndex + 1].Id, out lower))
+                return false;
+            List<DockLayoutTarget> adjusted = CalculateDockDividerTargets(
+                snapshot, lower, previousUpperHeight);
+            facts[snapshot.NoteId] = DockWindowFacts.FromTarget(adjusted[0]);
+            facts[lower.NoteId] = DockWindowFacts.FromTarget(adjusted[1]);
+            DockWindowFacts root;
+            if (!facts.TryGetValue(ordered[0].Id, out root)) return false;
+            _synchronizingDockLayout = true;
+            try
+            {
+                LayoutDockChain(ordered, facts, root.X, root.Y,
+                    root.Width, snapshot.NoteId);
+            }
+            finally { _synchronizingDockLayout = false; }
+            RefreshDockResizeRoles();
+            return true;
+        }
+
+        internal static List<DockLayoutTarget> CalculateDockDividerTargets(
+            DockWindowFacts upper, DockWindowFacts lower,
+            int previousUpperHeight)
+        {
+            List<DockLayoutTarget> targets = new List<DockLayoutTarget>();
+            if (upper == null || lower == null) return targets;
+            Size adjusted = CalculateDockDividerHeights(previousUpperHeight,
+                upper.Height, lower.Height);
+            targets.Add(new DockLayoutTarget(upper.NoteId, upper.X, upper.Y,
+                upper.Width, adjusted.Width, upper.Visible, upper.TopMost));
+            targets.Add(new DockLayoutTarget(lower.NoteId, lower.X, lower.Y,
+                lower.Width, adjusted.Height, lower.Visible, lower.TopMost));
+            return targets;
         }
 
         private void StickyNoteLocationChanged(object sender, EventArgs e)
@@ -1032,7 +1057,8 @@ namespace PennyPet
             {
                 StickyUiDockResizeRole hostedRole =
                     new StickyUiDockResizeRole(grouped,
-                        resizeTop, resizeBottom);
+                        resizeTop, resizeBottom, splitBottom,
+                        dividerMinimumHeight, dividerMaximumHeight);
                 PostHostedStickyCommand(new StickyUiCommand(
                     StickyUiCommandKind.SetDockResizeRole, note.Id, false,
                     null, null, hostedRole),

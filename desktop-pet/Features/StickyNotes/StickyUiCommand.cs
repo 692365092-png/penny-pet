@@ -201,16 +201,23 @@ namespace PennyPet
     internal sealed class StickyUiDockResizeRole
     {
         internal StickyUiDockResizeRole(bool grouped, bool resizeTop,
-            bool resizeBottom)
+            bool resizeBottom, bool splitBottom, int dividerMinimumHeight,
+            int dividerMaximumHeight)
         {
             Grouped = grouped;
             ResizeTop = resizeTop;
             ResizeBottom = resizeBottom;
+            SplitBottom = splitBottom;
+            DividerMinimumHeight = dividerMinimumHeight;
+            DividerMaximumHeight = dividerMaximumHeight;
         }
 
         internal bool Grouped { get; private set; }
         internal bool ResizeTop { get; private set; }
         internal bool ResizeBottom { get; private set; }
+        internal bool SplitBottom { get; private set; }
+        internal int DividerMinimumHeight { get; private set; }
+        internal int DividerMaximumHeight { get; private set; }
     }
 
     internal enum StickyUiEventKind
@@ -225,6 +232,7 @@ namespace PennyPet
         HeaderDragMoved,
         HeaderDragCompleted,
         DockHorizontalResizing,
+        DockDividerResizing,
         CancelReminderRequested,
         ModifyReminderRequested,
         DeleteReminderRequested,

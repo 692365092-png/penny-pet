@@ -626,6 +626,21 @@ namespace PennyPet
                 ApplyHostedStickySnapshot(value.Snapshot, value.Sequence, false);
                 return;
             }
+            if (value.Kind == StickyUiEventKind.DockDividerResizing)
+            {
+                StickyNoteData canonical = _notes.Find(value.NoteId);
+                int previousUpperHeight = canonical == null
+                    ? 0 : canonical.Height;
+                if (!ApplyHostedStickySnapshot(value.Snapshot,
+                    value.Sequence, false)) return;
+                if (ResizeStickyDockDivider(
+                    DockWindowFacts.FromSnapshot(value.Snapshot),
+                    previousUpperHeight))
+                {
+                    _notes.SaveAsync();
+                }
+                return;
+            }
             if (value.Kind == StickyUiEventKind.DockHorizontalResizing)
             {
                 if (!ApplyHostedStickySnapshot(value.Snapshot,

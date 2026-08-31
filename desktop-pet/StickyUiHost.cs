@@ -17,6 +17,7 @@ namespace PennyPet
             internal StickyNoteUiSnapshot LastSnapshot;
             internal long Sequence;
             internal bool HideAfterImeComposition;
+            internal bool ApplyingBounds;
         }
 
         private readonly object _gate = new object();
@@ -194,17 +195,24 @@ namespace PennyPet
                             return StickyUiCommandResult.NotHandled();
                         StickyUiDockResizeRole role = command.DockResizeRole;
                         entry.Window.SetDockResizeRole(role.Grouped,
-                            role.ResizeTop, role.ResizeBottom);
+                            role.ResizeTop, role.ResizeBottom,
+                            role.SplitBottom, role.DividerMinimumHeight,
+                            role.DividerMaximumHeight);
                         return CurrentResult(entry);
                     case StickyUiCommandKind.SetBounds:
                         if (!TryGetEntry(command.NoteId, out entry) ||
                             command.Bounds == null)
                             return StickyUiCommandResult.NotHandled();
-                        entry.Window.Left = command.Bounds.X;
-                        entry.Window.Top = command.Bounds.Y;
-                        entry.Window.Width = command.Bounds.Width;
-                        entry.Window.Height = command.Bounds.Height;
-                        entry.Window.UpdateLayout();
+                        entry.ApplyingBounds = true;
+                        try
+                        {
+                            entry.Window.Left = command.Bounds.X;
+                            entry.Window.Top = command.Bounds.Y;
+                            entry.Window.Width = command.Bounds.Width;
+                            entry.Window.Height = command.Bounds.Height;
+                            entry.Window.UpdateLayout();
+                        }
+                        finally { entry.ApplyingBounds = false; }
                         return CurrentResult(entry);
                     case StickyUiCommandKind.Close:
                         return CloseCanaryWindow(command.NoteId);
@@ -380,7 +388,12 @@ namespace PennyPet
         {
             StickyWindowEntry entry;
             if (!TryGetEntry(sender as StickyNoteWindow, out entry)) return;
-            EmitSnapshot(entry, StickyUiEventKind.BoundsChanged);
+            bool dividerInput = !entry.ApplyingBounds &&
+                e is System.Windows.SizeChangedEventArgs &&
+                entry.Window.DockDividerResizeActive;
+            EmitSnapshot(entry, dividerInput
+                ? StickyUiEventKind.DockDividerResizing
+                : StickyUiEventKind.BoundsChanged);
         }
 
         private void CanaryHeaderDragStarted(object sender, EventArgs e)

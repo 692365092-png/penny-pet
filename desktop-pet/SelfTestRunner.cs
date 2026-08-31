@@ -2067,6 +2067,7 @@ namespace PennyPet
             internal bool HostedGroupMoveOk;
             internal bool HostedTopMostOk;
             internal bool HostedHorizontalResizeOk;
+            internal bool HostedDividerResizeOk;
             internal bool HostedHideReopenOk;
             internal bool HostedMiddleSplitOk;
             internal bool HostedThreeNoteInsertionOk;
@@ -2375,7 +2376,11 @@ namespace PennyPet
                     sourcePinned.Snapshot.AlwaysOnTop;
 
                 StickyUiDockResizeRole groupedRole =
-                    new StickyUiDockResizeRole(true, true, true);
+                    new StickyUiDockResizeRole(true, true, true,
+                        true, 220, 380);
+                StickyUiDockResizeRole groupBottomRole =
+                    new StickyUiDockResizeRole(true, false, true,
+                        false, 220, 700);
                 StickyUiCommandResult targetRole = PostStickyCommandAndWait(
                     host, new StickyUiCommand(
                         StickyUiCommandKind.SetDockResizeRole,
@@ -2383,7 +2388,7 @@ namespace PennyPet
                 StickyUiCommandResult sourceRole = PostStickyCommandAndWait(
                     host, new StickyUiCommand(
                         StickyUiCommandKind.SetDockResizeRole,
-                        canonical.Id, false, null, null, groupedRole),
+                        canonical.Id, false, null, null, groupBottomRole),
                     petContext);
                 List<Rectangle> resizedLayout =
                     PetForm.CalculateUnifiedDockLayout(new Size[]
@@ -2412,6 +2417,34 @@ namespace PennyPet
                     targetResized.Snapshot.Width == 420 &&
                     sourceResized.Snapshot.Width == 420;
 
+                DockWindowFacts twoUpperRequested = new DockWindowFacts(
+                    second.Id, 80, 140, 420, 250, true, true);
+                List<DockLayoutTarget> twoDividerTargets =
+                    PetForm.CalculateDockDividerTargets(twoUpperRequested,
+                        DockWindowFacts.FromSnapshot(sourceResized.Snapshot),
+                        300);
+                StickyUiCommandResult targetDividerResized =
+                    PostStickyCommandAndWait(host,
+                        new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                            second.Id, false, null, new StickyUiBounds(
+                                twoDividerTargets[0].X,
+                                twoDividerTargets[0].Y,
+                                twoDividerTargets[0].Width,
+                                twoDividerTargets[0].Height)), petContext);
+                StickyUiCommandResult sourceDividerResized =
+                    PostStickyCommandAndWait(host,
+                        new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                            canonical.Id, false, null, new StickyUiBounds(
+                                twoDividerTargets[1].X, 390,
+                                twoDividerTargets[1].Width,
+                                twoDividerTargets[1].Height)), petContext);
+                bool twoDividerOk =
+                    targetDividerResized.Snapshot.Height == 250 &&
+                    sourceDividerResized.Snapshot.Height == 350 &&
+                    targetDividerResized.Snapshot.Y +
+                        targetDividerResized.Snapshot.Height ==
+                        sourceDividerResized.Snapshot.Y;
+
                 StickyUiCommandResult targetHidden = PostStickyCommandAndWait(
                     host, new StickyUiCommand(StickyUiCommandKind.Hide,
                         second.Id, false), petContext);
@@ -2429,7 +2462,7 @@ namespace PennyPet
                     !sourceHidden.Snapshot.Visible &&
                     targetShown.Snapshot.Visible && sourceShown.Snapshot.Visible &&
                     targetShown.Snapshot.X == 80 &&
-                    sourceShown.Snapshot.Y == 440;
+                    sourceShown.Snapshot.Y == 390;
 
                 StickyUiCommandResult thirdPositioned =
                     PostStickyCommandAndWait(host,
@@ -2476,9 +2509,85 @@ namespace PennyPet
                     canonical.DockParentId == third.Id &&
                     thirdInserted.Snapshot.Y == 440 &&
                     sourceInserted.Snapshot.Y == 740;
+                StickyUiCommandResult targetThreeRole =
+                    PostStickyCommandAndWait(host,
+                        new StickyUiCommand(
+                            StickyUiCommandKind.SetDockResizeRole,
+                            second.Id, false, null, null, groupedRole),
+                        petContext);
+                StickyUiCommandResult thirdThreeRole =
+                    PostStickyCommandAndWait(host,
+                        new StickyUiCommand(
+                            StickyUiCommandKind.SetDockResizeRole,
+                            third.Id, false, null, null, groupedRole),
+                        petContext);
+                StickyUiCommandResult sourceThreeRole =
+                    PostStickyCommandAndWait(host,
+                        new StickyUiCommand(
+                            StickyUiCommandKind.SetDockResizeRole,
+                            canonical.Id, false, null, null,
+                            groupBottomRole), petContext);
+                List<DockLayoutTarget> firstDivider =
+                    PetForm.CalculateDockDividerTargets(
+                        new DockWindowFacts(second.Id, 80, 140, 420, 240,
+                            true, true),
+                        DockWindowFacts.FromSnapshot(thirdInserted.Snapshot),
+                        300);
+                StickyUiCommandResult firstUpper = PostStickyCommandAndWait(
+                    host, new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                        second.Id, false, null, new StickyUiBounds(80, 140,
+                            420, firstDivider[0].Height)), petContext);
+                StickyUiCommandResult firstLower = PostStickyCommandAndWait(
+                    host, new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                        third.Id, false, null, new StickyUiBounds(80, 380,
+                            420, firstDivider[1].Height)), petContext);
+                List<DockLayoutTarget> secondDivider =
+                    PetForm.CalculateDockDividerTargets(
+                        new DockWindowFacts(third.Id, 80, 380, 420, 400,
+                            true, true),
+                        DockWindowFacts.FromSnapshot(sourceInserted.Snapshot),
+                        firstLower.Snapshot.Height);
+                StickyUiCommandResult secondUpper = PostStickyCommandAndWait(
+                    host, new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                        third.Id, false, null, new StickyUiBounds(80, 380,
+                            420, secondDivider[0].Height)), petContext);
+                StickyUiCommandResult secondLower = PostStickyCommandAndWait(
+                    host, new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                        canonical.Id, false, null, new StickyUiBounds(80, 780,
+                            420, secondDivider[1].Height)), petContext);
+                List<DockLayoutTarget> dividerMinimum =
+                    PetForm.CalculateDockDividerTargets(
+                        new DockWindowFacts(second.Id, 80, 140, 420, 50,
+                            true, true),
+                        DockWindowFacts.FromSnapshot(firstLower.Snapshot),
+                        firstUpper.Snapshot.Height);
+                List<DockLayoutTarget> dividerMaximum =
+                    PetForm.CalculateDockDividerTargets(
+                        new DockWindowFacts(second.Id, 80, 140, 420, 900,
+                            true, true),
+                        DockWindowFacts.FromSnapshot(firstLower.Snapshot),
+                        firstUpper.Snapshot.Height);
+                check.HostedDividerResizeOk = twoDividerOk &&
+                    targetThreeRole.Status == StickyUiCommandStatus.Handled &&
+                    thirdThreeRole.Status == StickyUiCommandStatus.Handled &&
+                    sourceThreeRole.Status == StickyUiCommandStatus.Handled &&
+                    firstUpper.Snapshot.Height == 240 &&
+                    firstLower.Snapshot.Height == 360 &&
+                    firstUpper.Snapshot.Y + firstUpper.Snapshot.Height ==
+                        firstLower.Snapshot.Y &&
+                    secondUpper.Snapshot.Height == 400 &&
+                    secondLower.Snapshot.Height == 260 &&
+                    secondUpper.Snapshot.Y + secondUpper.Snapshot.Height ==
+                        secondLower.Snapshot.Y &&
+                    dividerMinimum[0].Height == 220 &&
+                    dividerMinimum[1].Height == 380 &&
+                    dividerMaximum[0].Height == 380 &&
+                    dividerMaximum[1].Height == 220 &&
+                    !eventKinds.Contains(
+                        StickyUiEventKind.DockDividerResizing);
                 check.DockRestoreOk = VerifyHostedDockPersistence(
-                    targetInserted.Snapshot, thirdInserted.Snapshot,
-                    sourceInserted.Snapshot);
+                    firstUpper.Snapshot, secondUpper.Snapshot,
+                    secondLower.Snapshot);
 
                 List<StickyNoteData> splitRemainder =
                     StickyDockOperations.ExtractSingleDockMember(
@@ -3074,6 +3183,9 @@ namespace PennyPet
                     shellChecks.StickyCanary.HostedTopMostOk) + ",\n" +
                 "  \"sticky_hosted_horizontal_resize_ok\": " + Bool(
                     shellChecks.StickyCanary.HostedHorizontalResizeOk) +
+                    ",\n" +
+                "  \"sticky_hosted_divider_resize_ok\": " + Bool(
+                    shellChecks.StickyCanary.HostedDividerResizeOk) +
                     ",\n" +
                 "  \"sticky_hosted_hide_reopen_ok\": " + Bool(
                     shellChecks.StickyCanary.HostedHideReopenOk) + ",\n" +

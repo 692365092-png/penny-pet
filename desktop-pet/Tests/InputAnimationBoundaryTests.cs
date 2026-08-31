@@ -399,6 +399,7 @@ namespace PennyPet.Tests
                 commands.Contains("HeaderDragMoved") &&
                 commands.Contains("HeaderDragCompleted") &&
                 commands.Contains("DockHorizontalResizing") &&
+                commands.Contains("DockDividerResizing") &&
                 commands.Contains("SetDockResizeRole") &&
                 commands.Contains("CloseRequested"),
                 "Dock protocol must expose header drag and resize event kinds.");
@@ -408,6 +409,11 @@ namespace PennyPet.Tests
                 host.Contains("window.DockHorizontalResizing +=") &&
                 host.Contains("EmitWindowSnapshot(sender") &&
                 host.Contains("StickyUiCommandKind.SetDockResizeRole") &&
+                host.Contains("role.SplitBottom") &&
+                host.Contains("role.DividerMinimumHeight") &&
+                host.Contains("role.DividerMaximumHeight") &&
+                host.Contains("entry.Window.DockDividerResizeActive") &&
+                host.Contains("!entry.ApplyingBounds") &&
                 host.Contains("StickyUiEventKind.CloseRequested"),
                 "StickyUiHost must forward dock drag/resize events.");
         }
@@ -430,6 +436,8 @@ namespace PennyPet.Tests
                 dockCoordinator.Contains("StickyUiCommandKind.SetTopMost") &&
                 dockCoordinator.Contains("ApplyDockTargets") &&
                 dockCoordinator.Contains("ResizeStickyDockGroup") &&
+                dockCoordinator.Contains("ResizeStickyDockDivider") &&
+                dockCoordinator.Contains("CalculateDockDividerTargets") &&
                 dockCoordinator.Contains("CloseStickyDockNote") &&
                 dockCoordinator.Contains("_noteWindows.TryGetValue"),
                 "Hosted and legacy effects must share ApplyDockTarget(s).");
