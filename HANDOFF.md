@@ -48,7 +48,7 @@
 - `StickyUiThreadHost` 只管理 STA Thread / Dispatcher / async Post / Shutdown，不拥有 WPF Window。
 - `StickyUiHost` 是 hosted session facade，管理 session registry、命令路由和 CloseAll。
 - `StickyWindowSession` 是唯一持有 `StickyNoteWindow` 的 hosted 会话对象。
-- Ordinary、Todo、Schedule 可以任意 mixed Dock；Reminder 不参与 Dock participant eligibility。
+- Reminder 是所有便利贴共享的 capability/UI，不是独立 Sticky subtype 或第四种 Dock participant；设置或未设置提醒的 ordinary / Todo / Schedule 均可正常参与 mixed Dock。
 - hosted 与 legacy executor 可以混合进入同一 Dock group；两者共用 detached facts、Dock session/Core rules、`DockLayoutTarget` 和 visual feedback，只在最终 effect edge 执行各自窗口副作用。
 - hosted/mixed preview、merge pulse、split guide，以及 group move、TopMost、horizontal/divider resize、collapse-reopen、middle split 和多成员 insertion 已完成。
 - persisted docked notes 重启后仍可能由 legacy executor 恢复；canonical Dock relation/order/geometry 不因此改变。

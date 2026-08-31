@@ -80,7 +80,7 @@ Dock 修改必须同时检查：组关系、组内顺序、持久化快照、统
 
 当前 Dock 行为边界：
 
-- Ordinary、Todo、Schedule 可以任意 mixed Dock；Reminder 不参与 participant eligibility。
+- Reminder 是所有便利贴共享的 capability/UI，不是独立 Sticky subtype 或第四种 Dock participant；设置或未设置提醒的 ordinary / Todo / Schedule 均可正常参与 mixed Dock。eligibility 不依赖 `IsTodoList / IsSchedule / IsHostedSticky / ReminderUtcTicks`。
 - hosted 与 legacy executor 可以位于同一 group，共用 `DockWindowFacts`、同一 session/Core rules、`DockLayoutTarget`、preview、merge pulse 和 split guide；executor 差异只留在 owned effect edge。
 - “展开全部并平铺到此屏幕”会展开全部 note、清除 canonical Dock relation，再分别通过 hosted/legacy effect path 平铺；不要把它退化成只移动可见窗口。
 - Side Tabs 始终保持 no-activate TopMost chrome。monitor、working area 或 Pet scale 改变时会重新验证 desired left/right split；split 不变只 reposition，改变才 rebuild controls。

@@ -76,7 +76,7 @@ PennyPet.Tools -> 美术发布包和启动缓存生成
 
 Windows Coordinator 把 `Point`、`Size`、`Rectangle` 等平台对象转换为 Core 的 `DockPoint`、`DockSize`、`DockRect`，调用纯规则后再执行 WPF/Win32 窗口副作用。`DockCoordinateSafetyLimit = 30000` 是 Win32 安全范围，由 Windows 层作为参数提供给 Core 计算；它不是 Penny 业务规则，也不能成为 macOS 常量。
 
-当前 Dock participant eligibility 与窗口 executor 解耦：Ordinary、Todo、Schedule 可以任意 mixed Dock，Reminder 不参与 Dock eligibility；hosted 与 legacy executor 可以进入同一 Dock component。两条输入路径共用 `DockWindowFacts`、同一 Dock session/Core rules 和 `DockLayoutTarget`，只在最终 owned effect edge 分别落到 legacy Window 或 `StickyUiHost`。Hosted/mixed preview、merge pulse 和 split guide 已接入这条共享流程。
+当前 Dock participant eligibility 与窗口 executor 解耦：Ordinary、Todo、Schedule 可以任意 mixed Dock；Reminder 是所有便利贴共享的 capability/UI，不是独立 Sticky subtype 或第四种 Dock participant。eligibility 不依赖 `IsTodoList / IsSchedule / IsHostedSticky / ReminderUtcTicks`。hosted 与 legacy executor 可以进入同一 Dock component。两条输入路径共用 `DockWindowFacts`、同一 Dock session/Core rules 和 `DockLayoutTarget`，只在最终 owned effect edge 分别落到 legacy Window 或 `StickyUiHost`。Hosted/mixed preview、merge pulse 和 split guide 已接入这条共享流程。
 
 ### 提醒、设置、启动与键盘隐私
 
@@ -171,7 +171,7 @@ Sticky WPF STA
 
 当前 hosted/legacy 双路径：
 
-- Ordinary、Todo、Schedule 可任意 mixed Dock；Reminder 不属于 Dock participant。
+- Ordinary、Todo、Schedule 可任意 mixed Dock；设置或未设置提醒的 ordinary / Todo / Schedule 均可正常参与 mixed Dock，eligibility 不依赖 Reminder 状态。
 - hosted 与 legacy executor 可混合进入同一 Dock group，并共享 Dock session、Core merge/split/layout rules、typed targets 和 visual feedback。
 - hosted/mixed Dock 已覆盖 merge、group move、TopMost、horizontal resize、vertical divider、collapse-reopen、split、3-note insertion、preview、merge pulse 和 split guide。
 - persisted docked notes 在重启恢复时仍可能走 legacy path，因为当前 hosted eligibility 排除已有 `DockGroupId / DockParentId` 的 note；这不是数据丢失。
