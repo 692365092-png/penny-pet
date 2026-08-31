@@ -186,7 +186,9 @@ namespace PennyPet
             if (_sourceHorizontallyOffset)
                 _sourceNormalLeft = _side == StickyTabSide.Right
                     ? location.X + DragSourceVisualOffset : location.X;
+            TopMost = true;
             if (!Visible) Show();
+            BringToFront();
         }
 
         internal static int PetOverlapForWidth(int petWidth)
@@ -215,6 +217,16 @@ namespace PennyPet
         {
             return StickyDockGeometry.CalculateLeftSideTabCount(totalCount,
                 petHeight, workArea.Height, TabHeight, TabGap);
+        }
+
+        internal static bool IsLayoutSplitCurrent(int leftCount,
+            int rightCount, int petHeight, Rectangle workArea)
+        {
+            int totalCount = Math.Max(0, leftCount) + Math.Max(0, rightCount);
+            int desiredLeftCount = CalculateLeftCount(totalCount, petHeight,
+                workArea);
+            return leftCount == desiredLeftCount &&
+                rightCount == totalCount - desiredLeftCount;
         }
 
         private IEnumerable<Control> ControlsAsList()

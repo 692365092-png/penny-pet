@@ -428,6 +428,17 @@ namespace PennyPet
             }
         }
 
+        protected override void WndProc(ref Message message)
+        {
+            const int WmSettingChange = 0x001A;
+            const int WmDisplayChange = 0x007E;
+            base.WndProc(ref message);
+            if ((message.Msg == WmSettingChange ||
+                message.Msg == WmDisplayChange) && IsHandleCreated &&
+                !IsDisposed && !Disposing)
+                BeginInvoke(new Action(PositionNoteTabs));
+        }
+
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             base.OnFormClosing(e);

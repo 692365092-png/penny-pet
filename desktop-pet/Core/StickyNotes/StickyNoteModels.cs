@@ -32,7 +32,7 @@ namespace PennyPet
     {
         internal static bool ShouldKeepSideTabsTopMost(bool hasVisibleNotes)
         {
-            return !hasVisibleNotes;
+            return true;
         }
     }
 

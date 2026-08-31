@@ -26,11 +26,11 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void StickyNoteWindowRules_KeepTabsTopMostOnlyWithoutVisibleNotes()
+        public void StickyNoteWindowRules_KeepTabsTopMostWithOrWithoutVisibleNotes()
         {
             Assert.IsTrue(
                 StickyNoteWindowRules.ShouldKeepSideTabsTopMost(false));
-            Assert.IsFalse(
+            Assert.IsTrue(
                 StickyNoteWindowRules.ShouldKeepSideTabsTopMost(true));
         }
 

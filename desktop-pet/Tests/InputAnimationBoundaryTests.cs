@@ -26,6 +26,42 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void SideTabs_KeepTopMostAndOnlyRebuildForSplitChanges()
+        {
+            string source = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string zOrder = Between(source, "private void ApplyNoteTabZOrder",
+                "private void PositionNoteTabs");
+            string position = Between(source, "private void PositionNoteTabs",
+                "private void ShowStickyNotesManager");
+            string tabs = ReadSource(
+                "Features/StickyNotes/StickyNoteTabs.cs");
+            string form = ReadSource("PetForm.cs");
+
+            Assert.IsTrue(zOrder.Contains(".TopMost =") &&
+                zOrder.Contains("BringToFront()") &&
+                !zOrder.Contains("RaiseVisibleNotesAboveTabs") &&
+                !zOrder.Contains("_noteWindows") &&
+                !zOrder.Contains("_notes.GetAll"),
+                "Side-tab chrome must own its TopMost policy without legacy Window routing.");
+            Assert.IsTrue(tabs.Contains("ShowWithoutActivation") &&
+                tabs.Contains("WS_EX_NOACTIVATE"),
+                "Stable TopMost tabs must remain non-activating.");
+            Assert.IsTrue(position.Contains("IsLayoutSplitCurrent") &&
+                position.Contains("_noteTabsSignature = String.Empty") &&
+                position.Contains("RefreshNoteTabs();") &&
+                position.Contains("ShowNear(Bounds, work)"),
+                "Positioning must rebuild only an invalid split and otherwise reposition.");
+            Assert.IsTrue(form.Contains("WmSettingChange") &&
+                form.Contains("WmDisplayChange") &&
+                form.Contains("BeginInvoke(new Action(PositionNoteTabs))") &&
+                tabs.Contains("TopMost = true") &&
+                tabs.Contains("BringToFront()") &&
+                !tabs.Contains("Activate()"),
+                "Display/work-area changes must revalidate non-activating tab chrome.");
+        }
+
+        [TestMethod]
         public void OwnNoteTyping_StillTriggersAnimation()
         {
             string source = ReadSource("Features/StickyNotes/PetStickyWindowCoordinator.cs");

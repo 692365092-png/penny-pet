@@ -976,41 +976,30 @@ namespace PennyPet
                 "structural");
             if (_leftNoteTabs == null || _rightNoteTabs == null || IsDisposed)
                 return;
-            bool hasVisibleNotes = _notes.GetAll().Exists(
-                delegate(StickyNoteData note) { return note.Visible; });
             _leftNoteTabs.TopMost =
-                StickyNoteWindowRules.ShouldKeepSideTabsTopMost(hasVisibleNotes);
+                StickyNoteWindowRules.ShouldKeepSideTabsTopMost(true);
             _rightNoteTabs.TopMost =
-                StickyNoteWindowRules.ShouldKeepSideTabsTopMost(hasVisibleNotes);
-            if (!hasVisibleNotes)
-            {
-                if (_leftNoteTabs.Visible) _leftNoteTabs.BringToFront();
-                if (_rightNoteTabs.Visible) _rightNoteTabs.BringToFront();
-                return;
-            }
-            RaiseVisibleNotesAboveTabs();
-        }
-
-        private void RaiseVisibleNotesAboveTabs()
-        {
-            ApplicationDiagnostics.WriteWindowLayerEvent(
-                "RaiseVisibleNotesAboveTabs", "structural");
-            foreach (StickyNoteWindow form in
-                new List<StickyNoteWindow>(_noteWindows.Values))
-            {
-                if (form == null || form.IsDisposed || !form.Visible) continue;
-                form.RaiseForDockDragWithoutActivation();
-            }
+                StickyNoteWindowRules.ShouldKeepSideTabsTopMost(true);
+            if (_leftNoteTabs.Visible) _leftNoteTabs.BringToFront();
+            if (_rightNoteTabs.Visible) _rightNoteTabs.BringToFront();
         }
 
         private void PositionNoteTabs()
         {
             if (_leftNoteTabs == null || _rightNoteTabs == null ||
                 !IsHandleCreated || IsDisposed || _positioningNoteTabs) return;
+            Rectangle work = Screen.FromRectangle(Bounds).WorkingArea;
+            if (!StickyNoteTabsForm.IsLayoutSplitCurrent(
+                _leftNoteTabs.Controls.Count, _rightNoteTabs.Controls.Count,
+                Height, work))
+            {
+                _noteTabsSignature = String.Empty;
+                RefreshNoteTabs();
+                return;
+            }
             _positioningNoteTabs = true;
             try
             {
-                Rectangle work = Screen.FromRectangle(Bounds).WorkingArea;
                 int reserveLeft = _leftNoteTabs.Controls.Count > 0
                     ? StickyNoteTabsForm.TabWidth -
                         StickyNoteTabsForm.PetOverlapForWidth(Width) + 2 : 0;

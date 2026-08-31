@@ -1549,6 +1549,7 @@ namespace PennyPet
             internal bool VectorIconColorOk;
             internal bool DeleteCommandOk;
             internal bool ZOrderPolicyOk;
+            internal bool LayoutInvalidationOk;
         }
 
         private static StickySideTabCheckResult RunStickySideTabChecks(
@@ -1690,7 +1691,21 @@ namespace PennyPet
                 result.DeleteCommandOk = tab.HasDeleteCommand;
             result.ZOrderPolicyOk =
                 StickyNoteWindowRules.ShouldKeepSideTabsTopMost(false) &&
-                !StickyNoteWindowRules.ShouldKeepSideTabsTopMost(true);
+                StickyNoteWindowRules.ShouldKeepSideTabsTopMost(true);
+            const int layoutNoteCount = 14;
+            int layoutLeftCount = StickyNoteTabsForm.CalculateLeftCount(
+                layoutNoteCount, 208, workArea);
+            Rectangle shortWorkArea = new Rectangle(0, 0, 1920, 280);
+            int shortLeftCount = StickyNoteTabsForm.CalculateLeftCount(
+                layoutNoteCount, 208,
+                shortWorkArea);
+            result.LayoutInvalidationOk =
+                StickyNoteTabsForm.IsLayoutSplitCurrent(layoutLeftCount,
+                    layoutNoteCount - layoutLeftCount, 208, workArea) &&
+                !StickyNoteTabsForm.IsLayoutSplitCurrent(layoutLeftCount,
+                    layoutNoteCount - layoutLeftCount, 208, shortWorkArea) &&
+                StickyNoteTabsForm.IsLayoutSplitCurrent(shortLeftCount,
+                    layoutNoteCount - shortLeftCount, 208, shortWorkArea);
             return result;
         }
 
@@ -3232,7 +3247,9 @@ namespace PennyPet
                 "  \"side_tab_vector_icon_uses_darker_tab_color_ok\": " + Bool(
                     sideTabChecks.VectorIconColorOk) + ",\n" +
                 "  \"side_tab_z_order_policy_ok\": " + Bool(
-                    sideTabChecks.ZOrderPolicyOk) + ",\n";
+                    sideTabChecks.ZOrderPolicyOk) + ",\n" +
+                "  \"side_tab_layout_invalidation_ok\": " + Bool(
+                    sideTabChecks.LayoutInvalidationOk) + ",\n";
         }
 
         private static string BuildPolicyKeyboardReminderReportFields(
