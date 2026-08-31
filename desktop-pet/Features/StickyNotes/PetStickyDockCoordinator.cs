@@ -1453,12 +1453,12 @@ namespace PennyPet
         private void BeginHostedStickyDelete(StickyNoteData note)
         {
             string noteId = note.Id;
-            if (!_hostedDeletePending.Add(noteId)) return;
+            if (!_hostedRuntime.TryBeginDelete(noteId)) return;
             PostHostedStickyCommand(new StickyUiCommand(
                 StickyUiCommandKind.Close, noteId, false),
                 delegate(StickyUiCommandResult result)
                 {
-                    _hostedDeletePending.Remove(noteId);
+                    _hostedRuntime.EndDelete(noteId);
                     if (result == null ||
                         result.Status != StickyUiCommandStatus.Handled)
                     {
@@ -1469,8 +1469,7 @@ namespace PennyPet
                     }
                     ApplyHostedStickySnapshot(result.Snapshot,
                         result.Sequence, false);
-                    _hostedNoteIds.Remove(noteId);
-                    ForgetHostedStickyState(noteId);
+                    _hostedRuntime.RemoveNote(noteId);
                     StickyNoteData canonical = _notes.Find(noteId);
                     if (canonical != null)
                         DeleteStickyNoteAfterWindowClosed(canonical);

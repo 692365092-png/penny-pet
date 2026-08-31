@@ -142,6 +142,8 @@ namespace PennyPet.Tests
             string coordinator = ReadSource(
                 "Features/StickyNotes/PetStickyWindowCoordinator.cs");
             string pet = ReadSource("PetForm.cs");
+            string runtime = ReadSource(
+                "Features/StickyNotes/StickyHostedRuntime.cs");
 
             Assert.IsTrue(commands.Contains("StickyNoteUiSnapshot") &&
                 commands.Contains("CreateWorkingCopy()") &&
@@ -156,7 +158,8 @@ namespace PennyPet.Tests
             Assert.IsTrue(coordinator.Contains(
                 "StickyNoteUiSnapshot.FromData(note)") &&
                 coordinator.Contains("snapshot.ApplyTo(canonical)") &&
-                pet.Contains("Dictionary<string, long>"),
+                pet.Contains("StickyHostedRuntime _hostedRuntime") &&
+                runtime.Contains("Dictionary<string, long> _appliedSequences"),
                 "Pet must apply each note using an independent sequence.");
         }
 
@@ -192,7 +195,8 @@ namespace PennyPet.Tests
 
             Assert.IsTrue(commands.Contains("InputFocusChanged") &&
                 session.Contains("_window.HasFocusedTextInput") &&
-                coordinator.Contains("_hostedInputFocused.Add(value.NoteId)"),
+                coordinator.Contains(
+                    "_hostedRuntime.SetInputFocus(value.NoteId, value.Flag)"),
                 "Sticky STA must asynchronously report a plain focus flag.");
             Assert.IsTrue(overlay.Contains(
                 "HasFocusedOwnNoteTextInput() ||") &&
@@ -218,7 +222,7 @@ namespace PennyPet.Tests
                 "                                finalSnapshot.Snapshot",
                 StringComparison.Ordinal);
             int prepared = coordinator.IndexOf(
-                "_hostedExitPrepared = true", StringComparison.Ordinal);
+                "_hostedRuntime.PrepareExit()", StringComparison.Ordinal);
             Assert.IsTrue(apply >= 0 && prepared > apply,
                 "Final snapshot must reach the canonical owner before close resumes.");
         }
@@ -318,6 +322,41 @@ namespace PennyPet.Tests
             Assert.IsTrue(form.Contains("_expectedFirstRenderNoteIds") &&
                 form.Contains("_renderedFirstRenderNoteIds"),
                 "PetForm must own the startup readiness id sets.");
+        }
+
+        [TestMethod]
+        public void HostedRuntime_ConsolidatesOnlyPetThreadProtocolState()
+        {
+            string form = ReadSource("PetForm.cs");
+            string runtime = ReadSource(
+                "Features/StickyNotes/StickyHostedRuntime.cs");
+
+            Assert.IsTrue(form.Contains(
+                "StickyHostedRuntime _hostedRuntime") &&
+                form.Contains("_expectedFirstRenderNoteIds") &&
+                form.Contains("_renderedFirstRenderNoteIds"),
+                "Hosted runtime must not absorb shared startup readiness state.");
+            Assert.IsFalse(form.Contains("_hostedNoteIds") ||
+                form.Contains("_hostedAppliedSequences") ||
+                form.Contains("_hostedImeComposing") ||
+                form.Contains("_hostedInputFocused") ||
+                form.Contains("_hostedDeletePending") ||
+                form.Contains("_hostedExitRequested") ||
+                form.Contains("_hostedCloseAllInFlight") ||
+                form.Contains("_hostedExitPrepared"),
+                "PetForm must not scatter hosted protocol state.");
+            Assert.IsTrue(runtime.Contains("_noteIds") &&
+                runtime.Contains("_appliedSequences") &&
+                runtime.Contains("_imeComposing") &&
+                runtime.Contains("_inputFocused") &&
+                runtime.Contains("_deletePending") &&
+                runtime.Contains("ExitRequested") &&
+                runtime.Contains("CloseAllInFlight") &&
+                runtime.Contains("ExitPrepared"),
+                "Runtime must own hosted membership, sequence, input and exit state.");
+            Assert.IsFalse(runtime.Contains("StickyNoteWindow") ||
+                runtime.Contains("StickyNoteRepository"),
+                "Hosted runtime must not own WPF windows or persistence.");
         }
 
         [TestMethod]

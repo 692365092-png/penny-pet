@@ -490,8 +490,7 @@ namespace PennyPet
             if (_noteWindows.TryGetValue(note.Id, out legacy) &&
                 legacy != null && !legacy.IsDisposed) return false;
             string noteId = note.Id;
-            if (!_hostedNoteIds.Add(noteId)) return true;
-            _hostedAppliedSequences[noteId] = 0;
+            if (!_hostedRuntime.AddNote(noteId)) return true;
             StickyUiCommand command = new StickyUiCommand(
                 StickyUiCommandKind.Create, noteId, focusEditor,
                 StickyNoteUiSnapshot.FromData(note));
@@ -520,7 +519,7 @@ namespace PennyPet
 
         private bool IsHostedSticky(StickyNoteData note)
         {
-            return note != null && _hostedNoteIds.Contains(note.Id);
+            return note != null && _hostedRuntime.ContainsNote(note.Id);
         }
 
         private bool PostHostedStickyShow(StickyNoteData note,
@@ -577,7 +576,7 @@ namespace PennyPet
         private void HostedStickyEventReceived(StickyUiEvent value)
         {
             if (value == null || IsDisposed || Disposing ||
-                !_hostedNoteIds.Contains(value.NoteId)) return;
+                !_hostedRuntime.ContainsNote(value.NoteId)) return;
             if (value.Kind == StickyUiEventKind.TypingActivity)
             {
                 if (!_exiting) TriggerTypingAnimation();
@@ -585,18 +584,16 @@ namespace PennyPet
             }
             if (value.Kind == StickyUiEventKind.InputFocusChanged)
             {
-                if (value.Flag) _hostedInputFocused.Add(value.NoteId);
-                else _hostedInputFocused.Remove(value.NoteId);
+                _hostedRuntime.SetInputFocus(value.NoteId, value.Flag);
                 return;
             }
             if (value.Kind == StickyUiEventKind.ImeCompositionChanged)
             {
-                if (value.Flag) _hostedImeComposing.Add(value.NoteId);
-                else
+                _hostedRuntime.SetImeComposition(value.NoteId, value.Flag);
+                if (!value.Flag)
                 {
-                    _hostedImeComposing.Remove(value.NoteId);
-                    if (_hostedExitRequested &&
-                        _hostedImeComposing.Count == 0)
+                    if (_hostedRuntime.ExitRequested &&
+                        !_hostedRuntime.HasImeComposition)
                         TryCloseAllHostedStickies();
                 }
                 return;
@@ -673,8 +670,7 @@ namespace PennyPet
             if (value.Kind == StickyUiEventKind.Closed)
             {
                 ApplyHostedStickySnapshot(value.Snapshot, value.Sequence);
-                _hostedNoteIds.Remove(value.NoteId);
-                ForgetHostedStickyState(value.NoteId);
+                _hostedRuntime.RemoveNote(value.NoteId);
                 _renderedFirstRenderNoteIds.Remove(value.NoteId);
                 return;
             }
@@ -725,19 +721,16 @@ namespace PennyPet
         private bool ApplyHostedStickySnapshot(StickyNoteUiSnapshot snapshot,
             long sequence, bool persist = true)
         {
-            long applied;
-            _hostedAppliedSequences.TryGetValue(
-                snapshot == null ? String.Empty : snapshot.NoteId, out applied);
             if (snapshot == null ||
-                !ShouldApplyHostedSequence(sequence, applied) ||
-                !_hostedNoteIds.Contains(snapshot.NoteId)) return false;
+                !_hostedRuntime.CanApplySequence(snapshot.NoteId, sequence))
+                return false;
             StickyNoteData canonical = _notes.Find(snapshot.NoteId);
             if (canonical == null) return false;
             bool visibilityChanged = canonical.Visible != snapshot.Visible;
             string oldHiddenTitle = canonical.Visible
                 ? String.Empty : canonical.DisplayTitle;
             snapshot.ApplyTo(canonical);
-            _hostedAppliedSequences[snapshot.NoteId] = sequence;
+            _hostedRuntime.RecordSequence(snapshot.NoteId, sequence);
             if (persist) _notes.SaveAsync();
             RefreshMenuText();
             if (visibilityChanged || (!canonical.Visible &&
@@ -755,9 +748,9 @@ namespace PennyPet
         private void FallBackHostedStickyToLegacy(string noteId,
             bool focusEditor, string context, StickyUiCommandResult result)
         {
-            if (!_hostedNoteIds.Remove(noteId)) return;
+            if (!_hostedRuntime.ContainsNote(noteId)) return;
+            _hostedRuntime.RemoveNote(noteId);
             ReportHostedStickyCommandFailure(context, result);
-            ForgetHostedStickyState(noteId);
             _renderedFirstRenderNoteIds.Remove(noteId);
             _expectedFirstRenderNoteIds.Add(noteId);
             StickyNoteData note = _notes.Find(noteId);
@@ -784,30 +777,29 @@ namespace PennyPet
 
         private bool BeginHostedStickyExitIfNeeded()
         {
-            if (_hostedNoteIds.Count == 0 || _hostedExitPrepared)
+            if (_hostedRuntime.NoteCount == 0 ||
+                _hostedRuntime.ExitPrepared)
                 return false;
-            _hostedExitRequested = true;
+            _hostedRuntime.RequestExit();
             TryCloseAllHostedStickies();
             return true;
         }
 
         private void TryCloseAllHostedStickies()
         {
-            if (!_hostedExitRequested || _hostedCloseAllInFlight ||
-                _hostedImeComposing.Count > 0) return;
-            _hostedCloseAllInFlight = true;
+            if (!_hostedRuntime.TryBeginCloseAll()) return;
             PostHostedStickyCommand(new StickyUiCommand(
                 StickyUiCommandKind.CloseAll, String.Empty, false),
                 delegate(StickyUiCommandResult result)
                 {
-                    _hostedCloseAllInFlight = false;
+                    _hostedRuntime.EndCloseAll();
                     if (result != null &&
                         result.Status == StickyUiCommandStatus.NotAccepted)
                         return;
                     if (result == null ||
                         result.Status != StickyUiCommandStatus.Handled)
                     {
-                        _hostedExitRequested = false;
+                        _hostedRuntime.CancelExit();
                         ReportHostedStickyCommandFailure(
                             "sticky-hosted-exit", result);
                         ShowBriefBubble("便利贴仍在收尾，退出已取消，请稍后重试。");
@@ -819,20 +811,10 @@ namespace PennyPet
                             ApplyHostedStickySnapshot(
                                 finalSnapshot.Snapshot,
                                 finalSnapshot.Sequence, false);
-                    _hostedImeComposing.Clear();
-                    _hostedInputFocused.Clear();
-                    _hostedExitPrepared = true;
+                    _hostedRuntime.PrepareExit();
                     _stickyUiHost.BeginShutdown();
                     BeginExitSequence();
                 });
-        }
-
-        private void ForgetHostedStickyState(string noteId)
-        {
-            _hostedAppliedSequences.Remove(noteId);
-            _hostedImeComposing.Remove(noteId);
-            _hostedInputFocused.Remove(noteId);
-            _hostedDeletePending.Remove(noteId);
         }
 
         private void ConfirmHostedStickyDelete(string noteId)

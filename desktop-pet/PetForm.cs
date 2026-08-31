@@ -101,23 +101,12 @@ namespace PennyPet
             new PetAnimationController();
         private readonly StickyUiHost _stickyUiHost = new StickyUiHost();
         private SynchronizationContext _petUiContext;
-        private readonly HashSet<string> _hostedNoteIds =
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        private readonly Dictionary<string, long> _hostedAppliedSequences =
-            new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
-        private readonly HashSet<string> _hostedImeComposing =
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        private readonly HashSet<string> _hostedInputFocused =
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        private readonly HashSet<string> _hostedDeletePending =
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly StickyHostedRuntime _hostedRuntime =
+            new StickyHostedRuntime();
         private readonly HashSet<string> _expectedFirstRenderNoteIds =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _renderedFirstRenderNoteIds =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        private bool _hostedExitRequested;
-        private bool _hostedCloseAllInFlight;
-        private bool _hostedExitPrepared;
 
         private PetArtPackage _art;
         private Bitmap[][] _renderedFrames;
@@ -442,8 +431,8 @@ namespace PennyPet
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             base.OnFormClosing(e);
-            if (e.Cancel || _hostedExitPrepared ||
-                _hostedNoteIds.Count == 0) return;
+            if (e.Cancel || _hostedRuntime.ExitPrepared ||
+                _hostedRuntime.NoteCount == 0) return;
             e.Cancel = true;
             BeginHostedStickyExitIfNeeded();
         }

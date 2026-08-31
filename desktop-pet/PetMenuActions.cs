@@ -228,7 +228,7 @@ namespace PennyPet
 
         private bool HasFocusedOwnNoteTextInput()
         {
-            if (_hostedInputFocused.Count > 0) return true;
+            if (_hostedRuntime.HasInputFocus) return true;
             foreach (StickyNoteWindow form in _noteWindows.Values)
             {
                 if (form != null && !form.IsDisposed &&
