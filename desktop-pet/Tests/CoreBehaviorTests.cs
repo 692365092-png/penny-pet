@@ -435,6 +435,54 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyDockOperations_MixedTypesMergeKeepsOrderAndMembership()
+        {
+            StickyNoteData ordinary = new StickyNoteData { Id = "ordinary" };
+            StickyNoteData todo = new StickyNoteData
+            {
+                Id = "todo",
+                IsTodoList = true
+            };
+            StickyNoteData schedule = new StickyNoteData
+            {
+                Id = "schedule",
+                IsSchedule = true
+            };
+            StickyNoteData ordinaryTwo = new StickyNoteData { Id = "ordinary-two" };
+            StickyNoteData scheduleTwo = new StickyNoteData
+            {
+                Id = "schedule-two",
+                IsSchedule = true
+            };
+
+            List<StickyNoteData> target = new List<StickyNoteData>
+            {
+                ordinary, todo, schedule
+            };
+            StickyDockGroups.ApplyOrderedGroup(target);
+            List<StickyNoteData> merged =
+                StickyDockOperations.MergeDockSnapshotsAfterParent(
+                    target, todo, new StickyNoteData[]
+                    {
+                        ordinaryTwo, scheduleTwo
+                    });
+
+            Assert.AreEqual(5, merged.Count);
+            Assert.AreEqual(5, new HashSet<string>(new[]
+            {
+                ordinary.Id, todo.Id, schedule.Id,
+                ordinaryTwo.Id, scheduleTwo.Id
+            }).Count);
+            for (int index = 0; index < merged.Count; index++)
+            {
+                Assert.AreEqual(ordinary.Id, merged[index].DockGroupId);
+                Assert.AreEqual(index, merged[index].DockGroupOrder);
+            }
+            Assert.AreEqual(ordinary.Id, ordinary.DockGroupId);
+            Assert.AreEqual(String.Empty, ordinary.DockParentId);
+        }
+
+        [TestMethod]
         public void StickyTabDropSession_DefersCommitAndUsesOpaqueSourceIdentity()
         {
             StickyTabDropSession session = new StickyTabDropSession();
