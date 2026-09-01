@@ -906,13 +906,21 @@ namespace PennyPet
             List<Rectangle> layout = CalculateUnifiedDockLayout(sizes,
                 rootLeft, rootTop, rootWidth);
 
+            List<string> createdHostedIds = new List<string>();
             foreach (StickyNoteData member in ordered)
             {
                 if (member == null || _hostedRuntime.ContainsNote(member.Id) ||
                     !_hostedRuntime.AddNote(member.Id))
+                {
+                    foreach (string createdId in createdHostedIds)
+                        _hostedRuntime.RemoveNote(createdId);
                     return false;
+                }
+                createdHostedIds.Add(member.Id);
             }
 
+            int pending = ordered.Count;
+            bool createFailed = false;
             for (int index = 0; index < ordered.Count; index++)
             {
                 StickyNoteData member = ordered[index];
@@ -927,26 +935,42 @@ namespace PennyPet
                         if (result == null ||
                             result.Status != StickyUiCommandStatus.Handled)
                         {
+                            createFailed = true;
                             ReportHostedStickyCommandFailure(
                                 "sticky-hosted-dock-create", result);
-                            return;
                         }
-                        ApplyHostedStickySnapshot(result.Snapshot,
-                            result.Sequence);
-                        PostHostedStickyCommand(
-                            StickyUiCommand.SetBounds(member.Id,
-                                new StickyUiBounds(bounds.Left, bounds.Top,
-                                    bounds.Width, bounds.Height)),
-                            delegate(StickyUiCommandResult boundsResult) { });
-                        PostHostedStickyCommand(
-                            StickyUiCommand.SetDockResizeRole(member.Id,
-                                new StickyUiDockResizeRole(true,
-                                    index == 0, true, index < ordered.Count - 1,
-                                    dividerMinimum, dividerMaximum)),
-                            delegate(StickyUiCommandResult roleResult) { });
-                        PostHostedStickyCommand(
-                            StickyUiCommand.Show(member.Id, false),
-                            delegate(StickyUiCommandResult showResult) { });
+                        else
+                        {
+                            ApplyHostedStickySnapshot(result.Snapshot,
+                                result.Sequence);
+                            PostHostedStickyCommand(
+                                StickyUiCommand.SetBounds(member.Id,
+                                    new StickyUiBounds(bounds.Left, bounds.Top,
+                                        bounds.Width, bounds.Height)),
+                                delegate(StickyUiCommandResult boundsResult) { });
+                            PostHostedStickyCommand(
+                                StickyUiCommand.SetDockResizeRole(member.Id,
+                                    new StickyUiDockResizeRole(true,
+                                        index == 0, true, index < ordered.Count - 1,
+                                        dividerMinimum, dividerMaximum)),
+                                delegate(StickyUiCommandResult roleResult) { });
+                            PostHostedStickyCommand(
+                                StickyUiCommand.Show(member.Id, false),
+                                delegate(StickyUiCommandResult showResult) { });
+                        }
+                        if (Interlocked.Decrement(ref pending) == 0 &&
+                            createFailed)
+                        {
+                            foreach (string createdId in createdHostedIds)
+                            {
+                                _hostedRuntime.RemoveNote(createdId);
+                                PostHostedStickyCommand(
+                                    StickyUiCommand.Close(createdId),
+                                    delegate(StickyUiCommandResult closeResult) { });
+                            }
+                            RestoreStickyDockComponent(ordered, focus,
+                                focusEditor, persistVisibility);
+                        }
                     });
             }
 
