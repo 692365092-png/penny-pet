@@ -19,6 +19,13 @@ namespace PennyPet
         public bool SilentMode;
         public bool DailyContentEnabled = true;
         public bool SolarTermEnabled = true;
+        public bool WeatherEnabled;
+        public string WeatherLocationName = String.Empty;
+        public string WeatherLocationAdmin1 = String.Empty;
+        public string WeatherLocationCountry = String.Empty;
+        public double WeatherLatitude;
+        public double WeatherLongitude;
+        public string WeatherTimezone = String.Empty;
         public ZodiacSign ZodiacSign = ZodiacSign.None;
         public string LastDailyBriefingDate = String.Empty;
         public readonly List<ReminderItem> Reminders =
@@ -59,6 +66,13 @@ namespace PennyPet
             SilentMode = source.SilentMode;
             DailyContentEnabled = source.DailyContentEnabled;
             SolarTermEnabled = source.SolarTermEnabled;
+            WeatherEnabled = source.WeatherEnabled;
+            WeatherLocationName = source.WeatherLocationName;
+            WeatherLocationAdmin1 = source.WeatherLocationAdmin1;
+            WeatherLocationCountry = source.WeatherLocationCountry;
+            WeatherLatitude = source.WeatherLatitude;
+            WeatherLongitude = source.WeatherLongitude;
+            WeatherTimezone = source.WeatherTimezone;
             ZodiacSign = PetSettingRules.NormalizeZodiacSign(
                 source.ZodiacSign);
             LastDailyBriefingDate = source.LastDailyBriefingDate;

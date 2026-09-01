@@ -4,9 +4,11 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Net.Http;
 using System.Reflection;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace PennyPet
@@ -177,6 +179,7 @@ namespace PennyPet
             internal bool DailyBriefingDatePersistenceOk;
             internal bool DailyContentPreferencesPersistenceOk;
             internal bool ZodiacPreferencePersistenceOk;
+            internal bool WeatherPreferencePersistenceOk;
             internal bool FailureDirtyRetryOk;
             internal bool BackupRecoveryOk;
         }
@@ -232,6 +235,13 @@ namespace PennyPet
             memorySettings.SilentMode = true;
             memorySettings.DailyContentEnabled = false;
             memorySettings.SolarTermEnabled = false;
+            memorySettings.WeatherEnabled = true;
+            memorySettings.WeatherLocationName = "武汉";
+            memorySettings.WeatherLocationAdmin1 = "湖北";
+            memorySettings.WeatherLocationCountry = "中国";
+            memorySettings.WeatherLatitude = 30.5928;
+            memorySettings.WeatherLongitude = 114.3055;
+            memorySettings.WeatherTimezone = "Asia/Shanghai";
             memorySettings.ZodiacSign = ZodiacSign.Scorpio;
             memorySettings.LastDailyBriefingDate = "20350908";
             memorySettings.SaveToFile(persistenceTestPath);
@@ -267,6 +277,16 @@ namespace PennyPet
                 diskSettings.ZodiacSign == ZodiacSign.Scorpio &&
                 legacyDailySettings.ZodiacSign == ZodiacSign.None &&
                 new PetSettings().ZodiacSign == ZodiacSign.None;
+            result.WeatherPreferencePersistenceOk =
+                diskSettings.WeatherEnabled &&
+                diskSettings.WeatherLocationName == "武汉" &&
+                diskSettings.WeatherLocationAdmin1 == "湖北" &&
+                diskSettings.WeatherLocationCountry == "中国" &&
+                Math.Abs(diskSettings.WeatherLatitude - 30.5928) < 0.000001 &&
+                Math.Abs(diskSettings.WeatherLongitude - 114.3055) < 0.000001 &&
+                diskSettings.WeatherTimezone == "Asia/Shanghai" &&
+                !legacyDailySettings.WeatherEnabled &&
+                !new PetSettings().WeatherEnabled;
 
             string settingsRetryPath = outputPath +
                 ".settings-retry-test.ini";
@@ -2238,6 +2258,182 @@ namespace PennyPet
             internal bool AlmanacWordingOk;
         }
 
+        private sealed class WeatherCheckResult
+        {
+            internal bool ForecastFixtureParsingOk;
+            internal bool ForecastRequestShapeOk;
+            internal bool GeocodingRequestAndSelectionOk;
+            internal bool NoStartupRequestOk;
+            internal bool SameDayCacheAndInFlightOk;
+            internal bool BoundedCacheInvalidationOk;
+            internal bool FailureCooldownOk;
+        }
+
+        private sealed class WeatherFixtureHandler : HttpMessageHandler
+        {
+            private readonly string _forecastJson;
+            private readonly bool _failForecast;
+
+            internal WeatherFixtureHandler(string forecastJson,
+                bool failForecast)
+            {
+                _forecastJson = forecastJson;
+                _failForecast = failForecast;
+            }
+
+            internal int RequestCount;
+            internal int ForecastCount;
+            internal int GeocodingCount;
+
+            protected override Task<HttpResponseMessage> SendAsync(
+                HttpRequestMessage request,
+                CancellationToken cancellationToken)
+            {
+                Interlocked.Increment(ref RequestCount);
+                if (request.RequestUri.Host.StartsWith("geocoding-api.",
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    Interlocked.Increment(ref GeocodingCount);
+                    return Task.FromResult(JsonResponse(
+                        "{\"results\":[{\"name\":\"武汉\"," +
+                        "\"admin1\":\"湖北\",\"country\":\"中国\"," +
+                        "\"latitude\":30.5928,\"longitude\":114.3055," +
+                        "\"timezone\":\"Asia/Shanghai\"}]}"));
+                }
+                Interlocked.Increment(ref ForecastCount);
+                if (_failForecast)
+                    return Task.FromResult(new HttpResponseMessage(
+                        System.Net.HttpStatusCode.ServiceUnavailable));
+                return Task.FromResult(JsonResponse(_forecastJson));
+            }
+
+            private static HttpResponseMessage JsonResponse(string json)
+            {
+                HttpResponseMessage response = new HttpResponseMessage(
+                    System.Net.HttpStatusCode.OK);
+                response.Content = new StringContent(json, Encoding.UTF8,
+                    "application/json");
+                return response;
+            }
+        }
+
+        private static WeatherCheckResult RunWeatherChecks()
+        {
+            WeatherCheckResult result = new WeatherCheckResult();
+            const string resourceName =
+                "PennyPet.Tests.Fixtures.weather-rain-later.json";
+            string fixture;
+            using (Stream stream = Assembly.GetExecutingAssembly()
+                .GetManifestResourceStream(resourceName))
+            {
+                if (stream == null)
+                    throw new InvalidOperationException(
+                        "Missing weather fixture: " + resourceName);
+                using (StreamReader reader = new StreamReader(stream,
+                    Encoding.UTF8)) fixture = reader.ReadToEnd();
+            }
+
+            DateTime date = new DateTime(2026, 9, 1);
+            WeatherForecastWindow parsed = new OpenMeteoForecastParser()
+                .Parse(fixture, date);
+            result.ForecastFixtureParsingOk = parsed.Yesterday != null &&
+                parsed.Today != null && parsed.Tomorrow != null &&
+                parsed.Today.MinimumTemperatureC == 22D &&
+                parsed.Today.MaximumTemperatureC == 27D &&
+                Math.Abs(parsed.Today.TotalPrecipitationMm - 4.2D) < 0.001D &&
+                parsed.Today.MaximumPrecipitationProbability == 85D &&
+                parsed.Today.FirstLikelyPrecipitationHour == 16 &&
+                parsed.Today.LastLikelyPrecipitationHour == 16 &&
+                parsed.Today.LikelyPrecipitationHours == 1;
+
+            WeatherLocation location;
+            WeatherLocation.TryCreate("武汉", "湖北", "中国", 30.5928,
+                114.3055, "Asia/Shanghai", out location);
+            string forecastUrl = Uri.UnescapeDataString(
+                OpenMeteoForecastClient.BuildUri(location).AbsoluteUri);
+            result.ForecastRequestShapeOk = forecastUrl.StartsWith(
+                    OpenMeteoForecastClient.Endpoint,
+                    StringComparison.Ordinal) &&
+                forecastUrl.Contains("hourly=" + String.Join(",",
+                    OpenMeteoForecastClient.HourlyVariables)) &&
+                OpenMeteoForecastClient.HourlyVariables.Length == 8 &&
+                forecastUrl.Contains("past_days=1") &&
+                forecastUrl.Contains("forecast_days=2") &&
+                forecastUrl.Contains("timezone=Asia/Shanghai") &&
+                forecastUrl.Contains("temperature_unit=celsius") &&
+                forecastUrl.Contains("wind_speed_unit=kmh") &&
+                forecastUrl.Contains("precipitation_unit=mm") &&
+                forecastUrl.IndexOf("apikey", StringComparison.OrdinalIgnoreCase)
+                    < 0;
+
+            WeatherFixtureHandler handler = new WeatherFixtureHandler(
+                fixture, false);
+            using (PetWeatherSource source = new PetWeatherSource(
+                new HttpClient(handler), delegate
+                {
+                    return new DateTimeOffset(2026, 9, 1, 0, 0, 0,
+                        TimeSpan.Zero);
+                }))
+            {
+                result.NoStartupRequestOk = handler.RequestCount == 0;
+                IReadOnlyList<WeatherLocation> locations = source
+                    .SearchLocationsAsync("武汉").GetAwaiter().GetResult();
+                result.GeocodingRequestAndSelectionOk =
+                    handler.GeocodingCount == 1 && locations.Count == 1 &&
+                    locations[0].DisplayName == "武汉 · 湖北 · 中国" &&
+                    locations[0].Timezone == "Asia/Shanghai" &&
+                    OpenMeteoGeocodingClient.BuildUri("武汉").Query.Contains(
+                        "count=5") &&
+                    OpenMeteoGeocodingClient.BuildUri("武汉").Query.Contains(
+                        "language=zh") &&
+                    OpenMeteoGeocodingClient.BuildUri("武汉").Query.Contains(
+                        "format=json") &&
+                    OpenMeteoGeocodingClient.BuildUri("武汉").Query.IndexOf(
+                        "apikey", StringComparison.OrdinalIgnoreCase) < 0;
+                Task<WeatherForecastWindow> first = source.GetForecastAsync(
+                    location, date);
+                Task<WeatherForecastWindow> concurrent =
+                    source.GetForecastAsync(location, date);
+                WeatherForecastWindow firstValue = first.GetAwaiter()
+                    .GetResult();
+                WeatherForecastWindow cached = source.GetForecastAsync(
+                    location, date).GetAwaiter().GetResult();
+                result.SameDayCacheAndInFlightOk =
+                    Object.ReferenceEquals(first, concurrent) &&
+                    Object.ReferenceEquals(firstValue, cached) &&
+                    handler.ForecastCount == 1 &&
+                    source.ForecastRequestCountForTest == 1;
+                source.GetForecastAsync(location, date.AddDays(1))
+                    .GetAwaiter().GetResult();
+                source.GetForecastAsync(location, date).GetAwaiter()
+                    .GetResult();
+                bool retainedRecentDays = handler.ForecastCount == 2;
+                source.InvalidateCache();
+                source.GetForecastAsync(location, date).GetAwaiter()
+                    .GetResult();
+                result.BoundedCacheInvalidationOk = retainedRecentDays &&
+                    handler.ForecastCount == 3;
+            }
+
+            WeatherFixtureHandler failing = new WeatherFixtureHandler(
+                fixture, true);
+            using (PetWeatherSource source = new PetWeatherSource(
+                new HttpClient(failing), delegate
+                {
+                    return new DateTimeOffset(2026, 9, 1, 0, 0, 0,
+                        TimeSpan.Zero);
+                }))
+            {
+                WeatherForecastWindow failed = source.GetForecastAsync(
+                    location, date).GetAwaiter().GetResult();
+                WeatherForecastWindow cooledDown = source.GetForecastAsync(
+                    location, date).GetAwaiter().GetResult();
+                result.FailureCooldownOk = failed == null &&
+                    cooledDown == null && failing.ForecastCount == 1;
+            }
+            return result;
+        }
+
         private static BubbleCheckResult RunBubbleChecks()
         {
             BubbleCheckResult result = new BubbleCheckResult();
@@ -3075,23 +3271,36 @@ namespace PennyPet
                 PetForm.NormalizeScalePercent(207) == 200 &&
                 PetForm.ScaledPetSize(50) == new Size(96, 104) &&
                 PetForm.ScaledPetSize(200) == new Size(384, 416);
+            WeatherLocation testWeatherLocation;
+            WeatherLocation.TryCreate("武汉", "湖北", "中国", 30.5928,
+                114.3055, "Asia/Shanghai", out testWeatherLocation);
+            using (PetWeatherSource weatherSource = new PetWeatherSource())
             using (DailyContentSettingsForm dailySettings =
-                new DailyContentSettingsForm(false, true,
-                    ZodiacSign.Scorpio))
+                new DailyContentSettingsForm(false, true, true,
+                    testWeatherLocation, ZodiacSign.Scorpio, weatherSource))
             using (DailyContentSettingsForm unsetDailySettings =
-                new DailyContentSettingsForm(true, true,
-                    ZodiacSign.None))
+                new DailyContentSettingsForm(true, true, false, null,
+                    ZodiacSign.None, weatherSource))
             {
                 PetSettingsData stored = new PetSettingsData
                 {
                     DailyContentEnabled = false,
                     SolarTermEnabled = true,
+                    WeatherEnabled = true,
+                    WeatherLocationName = "武汉",
+                    WeatherLocationAdmin1 = "湖北",
+                    WeatherLocationCountry = "中国",
+                    WeatherLatitude = 30.5928,
+                    WeatherLongitude = 114.3055,
+                    WeatherTimezone = "Asia/Shanghai",
                     ZodiacSign = ZodiacSign.Scorpio
                 };
                 result.DailyContentSettingsUiOk =
                     !dailySettings.DailyContentEnabled &&
                     dailySettings.SolarTermEnabled &&
-                    !dailySettings.SolarTermControlEnabledForTest;
+                    !dailySettings.SolarTermControlEnabledForTest &&
+                    !dailySettings.WeatherControlEnabledForTest &&
+                    !dailySettings.WeatherLocationButtonEnabledForTest;
                 result.ZodiacPreferenceSettingsUiOk =
                     !dailySettings.ZodiacControlEnabledForTest &&
                     dailySettings.SelectedZodiacSign == ZodiacSign.Scorpio &&
@@ -3106,11 +3315,20 @@ namespace PennyPet
                 dailySettings.SetDailyContentEnabledForTest(true);
                 bool accepted = dailySettings.ApplyIfAccepted(stored,
                     DialogResult.OK);
+                unsetDailySettings.SetWeatherEnabledForTest(true);
+                bool missingCityRejected = !unsetDailySettings
+                    .ApplyIfAccepted(new PetSettingsData(), DialogResult.OK);
                 result.DailyContentSettingsUiOk =
                     result.DailyContentSettingsUiOk &&
                     dailySettings.DailyContentEnabled &&
                     dailySettings.SolarTermEnabled &&
-                    dailySettings.SolarTermControlEnabledForTest;
+                    dailySettings.SolarTermControlEnabledForTest &&
+                    dailySettings.WeatherControlEnabledForTest &&
+                    dailySettings.WeatherLocationButtonEnabledForTest &&
+                    stored.WeatherEnabled &&
+                    stored.WeatherLocationName == "武汉" &&
+                    stored.WeatherTimezone == "Asia/Shanghai" &&
+                    missingCityRejected;
                 result.ZodiacPreferenceSettingsUiOk =
                     result.ZodiacPreferenceSettingsUiOk &&
                     cancelKeepsStored && accepted &&
@@ -4078,6 +4296,9 @@ namespace PennyPet
                         .DailyContentPreferencesPersistenceOk) + ",\n" +
                 "  \"zodiac_preference_persistence_and_legacy_default_ok\": " +
                     Bool(settingsChecks.ZodiacPreferencePersistenceOk) +
+                    ",\n" +
+                "  \"weather_preference_persistence_and_legacy_default_ok\": " +
+                    Bool(settingsChecks.WeatherPreferencePersistenceOk) +
                     ",\n";
         }
 
@@ -4305,7 +4526,8 @@ namespace PennyPet
             SettingsPersistenceCheckResult settingsChecks,
             AnimationCheckResult animationChecks,
             WindowShellCheckResult shellChecks,
-            KeyboardOverlayCheckResult keyboardOverlayChecks)
+            KeyboardOverlayCheckResult keyboardOverlayChecks,
+            WeatherCheckResult weatherChecks)
         {
             return
                 "  \"hover_bubble_copy_ok\": " + Bool(
@@ -4409,6 +4631,20 @@ namespace PennyPet
                     bubbleChecks.AlmanacWordingOk) + ",\n" +
                 "  \"daily_content_settings_ui_and_menu_ok\": " + Bool(
                     shellChecks.DailyContentSettingsUiOk) + ",\n" +
+                "  \"weather_fixture_parser_ok\": " + Bool(
+                    weatherChecks.ForecastFixtureParsingOk) + ",\n" +
+                "  \"weather_forecast_request_shape_ok\": " + Bool(
+                    weatherChecks.ForecastRequestShapeOk) + ",\n" +
+                "  \"weather_geocoding_explicit_search_ok\": " + Bool(
+                    weatherChecks.GeocodingRequestAndSelectionOk) + ",\n" +
+                "  \"weather_zero_startup_requests_ok\": " + Bool(
+                    weatherChecks.NoStartupRequestOk) + ",\n" +
+                "  \"weather_same_day_cache_and_inflight_ok\": " + Bool(
+                    weatherChecks.SameDayCacheAndInFlightOk) + ",\n" +
+                "  \"weather_bounded_cache_invalidation_ok\": " + Bool(
+                    weatherChecks.BoundedCacheInvalidationOk) + ",\n" +
+                "  \"weather_failure_cooldown_ok\": " + Bool(
+                    weatherChecks.FailureCooldownOk) + ",\n" +
                 "  \"zodiac_preference_settings_ui_ok\": " + Bool(
                     shellChecks.ZodiacPreferenceSettingsUiOk) + ",\n" +
                 "  \"scale_50_to_200_step_10_ok\": " + Bool(
@@ -4453,6 +4689,7 @@ namespace PennyPet
                 AnimationCheckResult animationChecks =
                     RunAnimationChecks(artChecks.AnimationCycleDurations);
                 BubbleCheckResult bubbleChecks = RunBubbleChecks();
+                WeatherCheckResult weatherChecks = RunWeatherChecks();
                 StickyEditorCheckResult editorChecks = RunStickyEditorChecks();
                 StickyPersistenceCheckResult stickyChecks =
                     RunStickyPersistenceChecks(outputPath);
@@ -4498,7 +4735,8 @@ namespace PennyPet
                         reminderCoordinatorChecks) +
                     BuildBubbleManualKeyboardReportFields(bubbleChecks,
                         reminderCoordinatorChecks, settingsChecks,
-                        animationChecks, shellChecks, keyboardOverlayChecks) +
+                        animationChecks, shellChecks, keyboardOverlayChecks,
+                        weatherChecks) +
                     BuildStaticReportTail();
                 bool ok = EndCheckCollection();
                 string json = "{\n" +

@@ -40,6 +40,7 @@ namespace PennyPet
             new PetReminderCoordinator();
         private readonly PetBubbleCoordinator _bubbleCoordinator;
         private readonly PetDailyContentCoordinator _dailyContentCoordinator;
+        private readonly PetWeatherSource _weatherSource;
         private readonly PetSmallTalkCoordinator _smallTalkCoordinator;
         private readonly PetPokeBurstTracker _pokeBurstTracker =
             new PetPokeBurstTracker();
@@ -199,6 +200,7 @@ namespace PennyPet
                 RestoreAmbientBubble);
 
             _settings = preloadedSettings ?? PetSettings.Load();
+            _weatherSource = new PetWeatherSource();
             _smallTalkCoordinator = new PetSmallTalkCoordinator(
                 delegate { return _settings.SilentMode; },
                 delegate(string text)
@@ -474,6 +476,7 @@ namespace PennyPet
             _keyOverlay.Dispose();
             _mouseInside = false;
             _bubbleCoordinator.Dispose();
+            _weatherSource.Dispose();
             if (_contactAuthorForm != null && !_contactAuthorForm.IsDisposed)
                 _contactAuthorForm.Close();
             _trayIcon.Visible = false;

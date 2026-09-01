@@ -1385,6 +1385,13 @@ namespace PennyPet.Tests
                 SilentMode = true,
                 DailyContentEnabled = false,
                 SolarTermEnabled = false,
+                WeatherEnabled = true,
+                WeatherLocationName = "武汉",
+                WeatherLocationAdmin1 = "湖北",
+                WeatherLocationCountry = "中国",
+                WeatherLatitude = 30.5928,
+                WeatherLongitude = 114.3055,
+                WeatherTimezone = "Asia/Shanghai",
                 ZodiacSign = ZodiacSign.Scorpio,
                 LastDailyBriefingDate = "20350405"
             };
@@ -1415,6 +1422,13 @@ namespace PennyPet.Tests
             Assert.IsTrue(restored.SilentMode);
             Assert.IsFalse(restored.DailyContentEnabled);
             Assert.IsFalse(restored.SolarTermEnabled);
+            Assert.IsTrue(restored.WeatherEnabled);
+            Assert.AreEqual("武汉", restored.WeatherLocationName);
+            Assert.AreEqual("湖北", restored.WeatherLocationAdmin1);
+            Assert.AreEqual("中国", restored.WeatherLocationCountry);
+            Assert.AreEqual(30.5928, restored.WeatherLatitude, 0.000001);
+            Assert.AreEqual(114.3055, restored.WeatherLongitude, 0.000001);
+            Assert.AreEqual("Asia/Shanghai", restored.WeatherTimezone);
             Assert.AreEqual(ZodiacSign.Scorpio, restored.ZodiacSign);
             Assert.AreEqual("20350405", restored.LastDailyBriefingDate);
             Assert.AreEqual(1, dailyDateLines);
@@ -1448,6 +1462,7 @@ namespace PennyPet.Tests
             Assert.AreEqual(150, restored.KeyOverlayScalePercent);
             Assert.IsTrue(restored.DailyContentEnabled);
             Assert.IsTrue(restored.SolarTermEnabled);
+            Assert.IsFalse(restored.WeatherEnabled);
             Assert.AreEqual(ZodiacSign.None, restored.ZodiacSign);
             Assert.AreEqual(1, restored.Reminders.Count);
             Assert.AreEqual("旧提醒", restored.Reminders[0].Text);
@@ -1470,6 +1485,7 @@ namespace PennyPet.Tests
             Assert.IsFalse(new PetSettingsData().StartAtLogin);
             Assert.IsTrue(new PetSettingsData().DailyContentEnabled);
             Assert.IsTrue(new PetSettingsData().SolarTermEnabled);
+            Assert.IsFalse(new PetSettingsData().WeatherEnabled);
             Assert.AreEqual(ZodiacSign.None,
                 new PetSettingsData().ZodiacSign);
         }
@@ -1481,6 +1497,13 @@ namespace PennyPet.Tests
             {
                 DailyContentEnabled = false,
                 SolarTermEnabled = false,
+                WeatherEnabled = true,
+                WeatherLocationName = "香港",
+                WeatherLocationAdmin1 = "香港",
+                WeatherLocationCountry = "中国",
+                WeatherLatitude = 22.3193,
+                WeatherLongitude = 114.1694,
+                WeatherTimezone = "Asia/Hong_Kong",
                 ZodiacSign = ZodiacSign.Taurus,
                 LastDailyBriefingDate = "20350908"
             };
@@ -1490,6 +1513,10 @@ namespace PennyPet.Tests
 
             Assert.IsFalse(target.DailyContentEnabled);
             Assert.IsFalse(target.SolarTermEnabled);
+            Assert.IsTrue(target.WeatherEnabled);
+            Assert.AreEqual("香港", target.WeatherLocationName);
+            Assert.AreEqual(22.3193, target.WeatherLatitude, 0.000001);
+            Assert.AreEqual("Asia/Hong_Kong", target.WeatherTimezone);
             Assert.AreEqual(ZodiacSign.Taurus, target.ZodiacSign);
             Assert.AreEqual("20350908", target.LastDailyBriefingDate);
         }
@@ -1509,6 +1536,43 @@ namespace PennyPet.Tests
                 new string[] { "ZodiacSign=Scorpio" }).ZodiacSign);
             Assert.AreEqual(ZodiacSign.None,
                 PetSettingRules.NormalizeZodiacSign((ZodiacSign)(-1)));
+        }
+
+        [TestMethod]
+        public void WeatherLocation_ValidatesCoordinatesAndBuildsStableDisplay()
+        {
+            WeatherLocation location;
+            Assert.IsTrue(WeatherLocation.TryCreate("武汉", "湖北", "中国",
+                30.5928, 114.3055, "Asia/Shanghai", out location));
+            Assert.AreEqual("武汉 · 湖北 · 中国", location.DisplayName);
+            Assert.IsTrue(location.StableKey.Contains("Asia/Shanghai"));
+
+            WeatherLocation invalid;
+            Assert.IsFalse(WeatherLocation.TryCreate("武汉", "湖北", "中国",
+                91D, 114D, "Asia/Shanghai", out invalid));
+            Assert.IsFalse(WeatherLocation.TryCreate("武汉", "湖北", "中国",
+                30D, -181D, "Asia/Shanghai", out invalid));
+            Assert.IsFalse(WeatherLocation.TryCreate("武汉", "湖北", "中国",
+                30D, 114D, "", out invalid));
+        }
+
+        [TestMethod]
+        public void SettingsCodec_InvalidWeatherLocationFailsClosed()
+        {
+            string encodedName = Convert.ToBase64String(
+                Encoding.UTF8.GetBytes("武汉"));
+            string encodedTimezone = Convert.ToBase64String(
+                Encoding.UTF8.GetBytes("Asia/Shanghai"));
+            PetSettingsData restored = PetSettingsCodec.Parse(new[]
+            {
+                "WeatherEnabled=1",
+                "WeatherLocationNameBase64=" + encodedName,
+                "WeatherLatitude=200",
+                "WeatherLongitude=114.3055",
+                "WeatherTimezoneBase64=" + encodedTimezone
+            });
+
+            Assert.IsFalse(restored.WeatherEnabled);
         }
     }
 }

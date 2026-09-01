@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Globalization;
 using System.Reflection;
 using System.Text;
 using System.Windows.Forms;
@@ -12,6 +13,94 @@ namespace PennyPet
 {
     internal static partial class SelfTest
     {
+        public static void RunWeatherApiProbe(string outputPath)
+        {
+            Stopwatch timer = Stopwatch.StartNew();
+            WeatherLocation location;
+            WeatherLocation.TryCreate("武汉", "湖北", "中国", 30.5928,
+                114.3055, "Asia/Shanghai", out location);
+            WeatherForecastWindow forecast = null;
+            int requestCount = 0;
+            string failure = null;
+            try
+            {
+                using (PetWeatherSource source = new PetWeatherSource())
+                {
+                    forecast = source.GetForecastAsync(location,
+                        DateTime.Now.Date).GetAwaiter().GetResult();
+                    requestCount = source.ForecastRequestCountForTest;
+                }
+                if (forecast == null) failure = "Forecast unavailable.";
+            }
+            catch (Exception error)
+            {
+                failure = error.GetType().Name + ": " + error.Message;
+            }
+            timer.Stop();
+            string json = "{\n" +
+                "  \"ok\": " + Bool(failure == null &&
+                    requestCount == 1) + ",\n" +
+                "  \"endpoint\": \"" + JsonText(
+                    OpenMeteoForecastClient.Endpoint) + "\",\n" +
+                "  \"location\": \"" + JsonText(location.DisplayName) +
+                    "\",\n" +
+                "  \"timezone\": \"" + JsonText(location.Timezone) +
+                    "\",\n" +
+                "  \"hourly_variables\": [\"" + String.Join("\", \"",
+                    OpenMeteoForecastClient.HourlyVariables) + "\"],\n" +
+                "  \"forecast_request_count\": " + requestCount + ",\n" +
+                "  \"elapsed_ms\": " + timer.ElapsedMilliseconds + ",\n" +
+                "  \"yesterday\": " + WeatherDayJson(
+                    forecast == null ? null : forecast.Yesterday) + ",\n" +
+                "  \"today\": " + WeatherDayJson(
+                    forecast == null ? null : forecast.Today) + ",\n" +
+                "  \"tomorrow\": " + WeatherDayJson(
+                    forecast == null ? null : forecast.Tomorrow) + ",\n" +
+                "  \"failure\": " + (failure == null ? "null" :
+                    "\"" + JsonText(failure) + "\"") + "\n" +
+                "}\n";
+            string parent = Path.GetDirectoryName(Path.GetFullPath(outputPath));
+            if (!String.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
+            File.WriteAllText(outputPath, json, new UTF8Encoding(false));
+        }
+
+        private static string WeatherDayJson(WeatherDaySummary day)
+        {
+            if (day == null) return "null";
+            return "{\"date\":\"" + day.Date.ToString("yyyy-MM-dd",
+                    CultureInfo.InvariantCulture) + "\"," +
+                "\"temperature_min_c\":" + Number(day.MinimumTemperatureC) +
+                ",\"temperature_max_c\":" + Number(day.MaximumTemperatureC) +
+                ",\"apparent_min_c\":" +
+                    Number(day.MinimumApparentTemperatureC) +
+                ",\"apparent_max_c\":" +
+                    Number(day.MaximumApparentTemperatureC) +
+                ",\"precipitation_probability_max\":" +
+                    Number(day.MaximumPrecipitationProbability) +
+                ",\"precipitation_total_mm\":" +
+                    Number(day.TotalPrecipitationMm) +
+                ",\"snowfall_total_cm\":" + Number(day.TotalSnowfallCm) +
+                ",\"wind_speed_max_kmh\":" +
+                    Number(day.MaximumWindSpeedKmh) +
+                ",\"wind_gust_max_kmh\":" +
+                    Number(day.MaximumWindGustKmh) +
+                ",\"likely_precipitation_hours\":" +
+                    day.LikelyPrecipitationHours +
+                ",\"has_snow_code\":" + Bool(day.HasSnowCode) + "}";
+        }
+
+        private static string Number(double value)
+        {
+            return value.ToString("0.###", CultureInfo.InvariantCulture);
+        }
+
+        private static string JsonText(string value)
+        {
+            return (value ?? String.Empty).Replace("\\", "\\\\")
+                .Replace("\"", "\\\"").Replace("\r", "\\r")
+                .Replace("\n", "\\n");
+        }
+
         public static void RunStickyInputProbe(string outputPath)
         {
             Stopwatch timer = Stopwatch.StartNew();

@@ -80,14 +80,29 @@ namespace PennyPet
 
         private void ShowDailyContentSettingsDialog()
         {
+            WeatherLocation currentLocation;
+            WeatherLocation.TryCreate(_settings.WeatherLocationName,
+                _settings.WeatherLocationAdmin1,
+                _settings.WeatherLocationCountry, _settings.WeatherLatitude,
+                _settings.WeatherLongitude, _settings.WeatherTimezone,
+                out currentLocation);
+            string previousLocationKey = currentLocation == null
+                ? String.Empty : currentLocation.StableKey;
             using (DailyContentSettingsForm dialog =
                 new DailyContentSettingsForm(
                     _settings.DailyContentEnabled,
                     _settings.SolarTermEnabled,
-                    _settings.ZodiacSign))
+                    _settings.WeatherEnabled, currentLocation,
+                    _settings.ZodiacSign, _weatherSource))
             {
                 DialogResult result = dialog.ShowDialog(this);
                 if (!dialog.ApplyIfAccepted(_settings, result)) return;
+                WeatherLocation selected = dialog.SelectedWeatherLocation;
+                string nextLocationKey = selected == null
+                    ? String.Empty : selected.StableKey;
+                if (!String.Equals(previousLocationKey, nextLocationKey,
+                    StringComparison.Ordinal))
+                    _weatherSource.InvalidateCache();
                 _settings.Save();
             }
         }

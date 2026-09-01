@@ -19,7 +19,10 @@ namespace PennyPet.Tests
             "Microsoft.Win32.Registry",
             "System.Drawing.Bitmap",
             "System.Windows.Forms.",
-            "System.Windows.Automation."
+            "System.Windows.Automation.",
+            "System.Net.Http",
+            "HttpClient",
+            "https://"
         };
 
         [TestMethod]

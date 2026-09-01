@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Globalization;
 using System.Text;
 
 namespace PennyPet
@@ -32,6 +33,7 @@ namespace PennyPet
                 string value = line.Substring(separator + 1);
                 int intValue;
                 long longValue;
+                double doubleValue;
                 bool recognized = false;
                 if (key == "HasLocation")
                 {
@@ -90,6 +92,45 @@ namespace PennyPet
                 else if (key == "SolarTermEnabled")
                 {
                     settings.SolarTermEnabled = value != "0";
+                    recognized = true;
+                }
+                else if (key == "WeatherEnabled")
+                {
+                    settings.WeatherEnabled = value == "1";
+                    recognized = true;
+                }
+                else if (key == "WeatherLocationNameBase64")
+                {
+                    settings.WeatherLocationName = DecodeText(value);
+                    recognized = true;
+                }
+                else if (key == "WeatherLocationAdmin1Base64")
+                {
+                    settings.WeatherLocationAdmin1 = DecodeText(value);
+                    recognized = true;
+                }
+                else if (key == "WeatherLocationCountryBase64")
+                {
+                    settings.WeatherLocationCountry = DecodeText(value);
+                    recognized = true;
+                }
+                else if (key == "WeatherLatitude" && Double.TryParse(value,
+                    NumberStyles.Float, CultureInfo.InvariantCulture,
+                    out doubleValue))
+                {
+                    settings.WeatherLatitude = doubleValue;
+                    recognized = true;
+                }
+                else if (key == "WeatherLongitude" && Double.TryParse(value,
+                    NumberStyles.Float, CultureInfo.InvariantCulture,
+                    out doubleValue))
+                {
+                    settings.WeatherLongitude = doubleValue;
+                    recognized = true;
+                }
+                else if (key == "WeatherTimezoneBase64")
+                {
+                    settings.WeatherTimezone = DecodeText(value);
                     recognized = true;
                 }
                 else if (key == "ZodiacSign")
@@ -170,6 +211,13 @@ namespace PennyPet
             if (settings.Reminders.Count == 0)
                 AddLoadedReminder(settings, legacyTicks, legacyText, null,
                     0, false);
+            WeatherLocation ignoredLocation;
+            if (!WeatherLocation.TryCreate(settings.WeatherLocationName,
+                settings.WeatherLocationAdmin1,
+                settings.WeatherLocationCountry, settings.WeatherLatitude,
+                settings.WeatherLongitude, settings.WeatherTimezone,
+                out ignoredLocation))
+                settings.WeatherEnabled = false;
             return settings;
         }
 
@@ -195,6 +243,20 @@ namespace PennyPet
                 (settings.DailyContentEnabled ? "1" : "0"));
             lines.Add("SolarTermEnabled=" +
                 (settings.SolarTermEnabled ? "1" : "0"));
+            lines.Add("WeatherEnabled=" +
+                (settings.WeatherEnabled ? "1" : "0"));
+            lines.Add("WeatherLocationNameBase64=" +
+                EncodeText(settings.WeatherLocationName));
+            lines.Add("WeatherLocationAdmin1Base64=" +
+                EncodeText(settings.WeatherLocationAdmin1));
+            lines.Add("WeatherLocationCountryBase64=" +
+                EncodeText(settings.WeatherLocationCountry));
+            lines.Add("WeatherLatitude=" + settings.WeatherLatitude
+                .ToString("R", CultureInfo.InvariantCulture));
+            lines.Add("WeatherLongitude=" + settings.WeatherLongitude
+                .ToString("R", CultureInfo.InvariantCulture));
+            lines.Add("WeatherTimezoneBase64=" +
+                EncodeText(settings.WeatherTimezone));
             lines.Add("ZodiacSign=" + (int)PetSettingRules
                 .NormalizeZodiacSign(settings.ZodiacSign));
             lines.Add("LastDailyBriefingDate=" + DailyContentRules

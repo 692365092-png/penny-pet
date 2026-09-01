@@ -8,11 +8,20 @@ namespace PennyPet
     {
         private readonly CheckBox _dailyContent;
         private readonly CheckBox _solarTerm;
+        private readonly CheckBox _weather;
+        private readonly Label _weatherLocationLabel;
+        private readonly Button _weatherLocationButton;
         private readonly ComboBox _zodiac;
+        private readonly PetWeatherSource _weatherSource;
+        private WeatherLocation _weatherLocation;
 
         internal DailyContentSettingsForm(bool dailyContentEnabled,
-            bool solarTermEnabled, ZodiacSign zodiacSign)
+            bool solarTermEnabled, bool weatherEnabled,
+            WeatherLocation weatherLocation, ZodiacSign zodiacSign,
+            PetWeatherSource weatherSource)
         {
+            _weatherSource = weatherSource;
+            _weatherLocation = weatherLocation;
             Text = "每日内容";
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
@@ -20,7 +29,7 @@ namespace PennyPet
             MinimizeBox = false;
             ShowInTaskbar = false;
             TopMost = true;
-            ClientSize = new Size(410, 220);
+            ClientSize = new Size(450, 325);
             Font = SystemFonts.MessageBoxFont;
 
             Label title = new Label();
@@ -42,15 +51,38 @@ namespace PennyPet
             _solarTerm.Location = new Point(54, 84);
             _solarTerm.Checked = solarTermEnabled;
 
+            _weather = new CheckBox();
+            _weather.Text = "本地天气";
+            _weather.AutoSize = true;
+            _weather.Location = new Point(54, 114);
+            _weather.Checked = weatherEnabled;
+
+            _weatherLocationLabel = new Label();
+            _weatherLocationLabel.AutoEllipsis = true;
+            _weatherLocationLabel.Location = new Point(75, 144);
+            _weatherLocationLabel.Size = new Size(252, 24);
+
+            _weatherLocationButton = new Button();
+            _weatherLocationButton.Text = "设置城市…";
+            _weatherLocationButton.Location = new Point(334, 138);
+            _weatherLocationButton.Size = new Size(94, 30);
+            _weatherLocationButton.Click += SetWeatherLocation;
+
+            Label attribution = new Label();
+            attribution.Text = "天气数据：Open-Meteo";
+            attribution.AutoSize = true;
+            attribution.ForeColor = SystemColors.GrayText;
+            attribution.Location = new Point(75, 171);
+
             Label zodiacLabel = new Label();
             zodiacLabel.Text = "我的星座：";
             zodiacLabel.AutoSize = true;
-            zodiacLabel.Location = new Point(54, 122);
+            zodiacLabel.Location = new Point(54, 207);
 
             _zodiac = new ComboBox();
             _zodiac.DropDownStyle = ComboBoxStyle.DropDownList;
             _zodiac.FormattingEnabled = true;
-            _zodiac.Location = new Point(136, 117);
+            _zodiac.Location = new Point(136, 202);
             _zodiac.Size = new Size(180, 28);
             _zodiac.Format += delegate(object sender,
                 ListControlConvertEventArgs e)
@@ -65,25 +97,40 @@ namespace PennyPet
 
             Button ok = new Button();
             ok.Text = "确定";
-            ok.DialogResult = DialogResult.OK;
-            ok.Location = new Point(239, 172);
+            ok.Location = new Point(279, 277);
             ok.Size = new Size(72, 30);
+            ok.Click += delegate
+            {
+                if (_dailyContent.Checked && _weather.Checked &&
+                    _weatherLocation == null)
+                {
+                    MessageBox.Show(this, "请先设置天气城市。", "每日内容",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                DialogResult = DialogResult.OK;
+            };
 
             Button cancel = new Button();
             cancel.Text = "取消";
             cancel.DialogResult = DialogResult.Cancel;
-            cancel.Location = new Point(319, 172);
+            cancel.Location = new Point(359, 277);
             cancel.Size = new Size(72, 30);
 
             Controls.Add(title);
             Controls.Add(_dailyContent);
             Controls.Add(_solarTerm);
+            Controls.Add(_weather);
+            Controls.Add(_weatherLocationLabel);
+            Controls.Add(_weatherLocationButton);
+            Controls.Add(attribution);
             Controls.Add(zodiacLabel);
             Controls.Add(_zodiac);
             Controls.Add(ok);
             Controls.Add(cancel);
             AcceptButton = ok;
             CancelButton = cancel;
+            RefreshWeatherLocationText();
             RefreshChildState();
         }
 
@@ -95,6 +142,16 @@ namespace PennyPet
         internal bool SolarTermEnabled
         {
             get { return _solarTerm.Checked; }
+        }
+
+        internal bool WeatherEnabled
+        {
+            get { return _weather.Checked; }
+        }
+
+        internal WeatherLocation SelectedWeatherLocation
+        {
+            get { return _weatherLocation; }
         }
 
         internal ZodiacSign SelectedZodiacSign
@@ -110,12 +167,26 @@ namespace PennyPet
             DialogResult result)
         {
             if (settings == null || result != DialogResult.OK) return false;
+            if (DailyContentEnabled && WeatherEnabled &&
+                _weatherLocation == null) return false;
             bool changed = settings.DailyContentEnabled !=
                     DailyContentEnabled ||
                 settings.SolarTermEnabled != SolarTermEnabled ||
+                settings.WeatherEnabled != WeatherEnabled ||
+                !HasSameWeatherLocation(settings, _weatherLocation) ||
                 settings.ZodiacSign != SelectedZodiacSign;
             settings.DailyContentEnabled = DailyContentEnabled;
             settings.SolarTermEnabled = SolarTermEnabled;
+            settings.WeatherEnabled = WeatherEnabled;
+            if (_weatherLocation != null)
+            {
+                settings.WeatherLocationName = _weatherLocation.Name;
+                settings.WeatherLocationAdmin1 = _weatherLocation.Admin1;
+                settings.WeatherLocationCountry = _weatherLocation.Country;
+                settings.WeatherLatitude = _weatherLocation.Latitude;
+                settings.WeatherLongitude = _weatherLocation.Longitude;
+                settings.WeatherTimezone = _weatherLocation.Timezone;
+            }
             settings.ZodiacSign = SelectedZodiacSign;
             return changed;
         }
@@ -128,6 +199,16 @@ namespace PennyPet
         internal bool ZodiacControlEnabledForTest
         {
             get { return _zodiac.Enabled; }
+        }
+
+        internal bool WeatherControlEnabledForTest
+        {
+            get { return _weather.Enabled; }
+        }
+
+        internal bool WeatherLocationButtonEnabledForTest
+        {
+            get { return _weatherLocationButton.Enabled; }
         }
 
         internal string ZodiacDisplayNameForTest
@@ -145,10 +226,58 @@ namespace PennyPet
             _zodiac.SelectedItem = PetSettingRules.NormalizeZodiacSign(sign);
         }
 
+        internal void SetWeatherEnabledForTest(bool enabled)
+        {
+            _weather.Checked = enabled;
+        }
+
+        internal void SetWeatherLocationForTest(WeatherLocation location)
+        {
+            _weatherLocation = location;
+            RefreshWeatherLocationText();
+        }
+
         private void RefreshChildState()
         {
             _solarTerm.Enabled = _dailyContent.Checked;
+            _weather.Enabled = _dailyContent.Checked;
+            _weatherLocationButton.Enabled = _dailyContent.Checked &&
+                _weatherSource != null;
             _zodiac.Enabled = _dailyContent.Checked;
+        }
+
+        private void SetWeatherLocation(object sender, EventArgs e)
+        {
+            if (_weatherSource == null) return;
+            using (WeatherLocationDialog dialog =
+                new WeatherLocationDialog(_weatherSource))
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK ||
+                    dialog.SelectedLocation == null) return;
+                _weatherLocation = dialog.SelectedLocation;
+                RefreshWeatherLocationText();
+            }
+        }
+
+        private void RefreshWeatherLocationText()
+        {
+            _weatherLocationLabel.Text = _weatherLocation == null
+                ? "尚未设置城市" : _weatherLocation.DisplayName;
+        }
+
+        private static bool HasSameWeatherLocation(PetSettingsData settings,
+            WeatherLocation location)
+        {
+            if (location == null)
+                return String.IsNullOrEmpty(settings.WeatherLocationName) &&
+                    String.IsNullOrEmpty(settings.WeatherTimezone);
+            WeatherLocation saved;
+            return WeatherLocation.TryCreate(settings.WeatherLocationName,
+                settings.WeatherLocationAdmin1,
+                settings.WeatherLocationCountry, settings.WeatherLatitude,
+                settings.WeatherLongitude, settings.WeatherTimezone,
+                out saved) && saved.StableKey == location.StableKey &&
+                saved.DisplayName == location.DisplayName;
         }
 
         private static string ZodiacDisplayName(ZodiacSign sign)
