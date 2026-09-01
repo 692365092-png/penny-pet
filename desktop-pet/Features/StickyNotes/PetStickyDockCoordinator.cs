@@ -911,11 +911,18 @@ namespace PennyPet
         {
             List<DockLayoutTarget> targets = new List<DockLayoutTarget>();
             if (upper == null || lower == null) return targets;
-            int upperHeight = CalculateDockDividerHeight(upper.Height);
+            int requestedUpper = CalculateDockDividerHeight(upper.Height);
+            int originalLower = CalculateDockDividerHeight(lower.Height);
+            int total = requestedUpper + originalLower;
+            int minimumUpper = Math.Max(220, total - 700);
+            int maximumUpper = Math.Min(700, total - 220);
+            int upperHeight = Math.Max(minimumUpper,
+                Math.Min(maximumUpper, requestedUpper));
+            int lowerHeight = total - upperHeight;
             targets.Add(new DockLayoutTarget(upper.NoteId, upper.X, upper.Y,
                 upper.Width, upperHeight, upper.Visible, upper.TopMost));
             targets.Add(new DockLayoutTarget(lower.NoteId, lower.X,
-                upper.Y + upperHeight, lower.Width, lower.Height,
+                upper.Y + upperHeight, lower.Width, lowerHeight,
                 lower.Visible, lower.TopMost));
             return targets;
         }
