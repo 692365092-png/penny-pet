@@ -9,6 +9,9 @@ namespace PennyPet
         private const string AstronomyAssemblyName = "astronomy";
         private const string AstronomyResourceName =
             "PennyPet.Dependencies.astronomy.dll";
+        private const string LunarAssemblyName = "lunar";
+        private const string LunarResourceName =
+            "PennyPet.Dependencies.lunar.dll";
 
         internal static void Register()
         {
@@ -17,12 +20,19 @@ namespace PennyPet
 
         private static Assembly Resolve(object sender, ResolveEventArgs args)
         {
-            if (!String.Equals(new AssemblyName(args.Name).Name,
-                AstronomyAssemblyName, StringComparison.OrdinalIgnoreCase))
+            string requested = new AssemblyName(args.Name).Name;
+            string resourceName;
+            if (String.Equals(requested, AstronomyAssemblyName,
+                StringComparison.OrdinalIgnoreCase))
+                resourceName = AstronomyResourceName;
+            else if (String.Equals(requested, LunarAssemblyName,
+                StringComparison.OrdinalIgnoreCase))
+                resourceName = LunarResourceName;
+            else
                 return null;
             Assembly owner = typeof(EmbeddedAssemblyResolver).Assembly;
             using (Stream stream = owner.GetManifestResourceStream(
-                AstronomyResourceName))
+                resourceName))
             {
                 if (stream == null) return null;
                 using (MemoryStream bytes = new MemoryStream())

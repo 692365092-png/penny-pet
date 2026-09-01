@@ -380,52 +380,77 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void DailyBriefingFoundation_StaysPureAndUsesExistingFlow()
+        public void AlmanacDailyContent_IsNarrowDeterministicAndIntegrated()
         {
-            string zodiacCatalog = ReadSource(
-                "Core/DailyContent/ZodiacDailyCatalog.cs");
-            string curatedCatalog = ReadSource(
-                "Core/DailyContent/CuratedDailyLineCatalog.cs");
-            string curatedSelector = ReadSource(
-                "Core/DailyContent/CuratedDailyLineSelector.cs");
-            string zodiacSelector = ReadSource(
-                "Core/DailyContent/ZodiacDailySelector.cs");
+            string calculator = ReadSource(
+                "Core/Calendar/Almanac/AlmanacCalculator.cs");
+            string semantic = ReadSource(
+                "Core/DailyContent/Almanac/AlmanacSemanticCatalog.cs");
+            string selector = ReadSource(
+                "Core/DailyContent/Almanac/AlmanacDailySelector.cs");
+            string wording = ReadSource(
+                "Core/DailyContent/Almanac/AlmanacWordingCatalog.cs");
             string content = ReadSource(
                 "Core/DailyContent/DailyBriefingContent.cs");
             string composer = ReadSource(
                 "Core/DailyContent/DailyBriefingComposer.cs");
             string coordinator = ReadSource("PetDailyContentCoordinator.cs");
             string form = ReadSource("PetForm.cs");
+            string settings = ReadSource(
+                "Core/Settings/PetSettingsData.cs");
             string commands = ReadSource(
                 "Infrastructure/SelfTestCommandRouter.cs");
+            string resolver = ReadSource(
+                "Infrastructure/EmbeddedAssemblyResolver.cs");
+            string coreProject = ReadSource("PennyPet.Core.csproj");
+            string windowsProject = ReadSource("PennyPet.Windows.csproj");
+            string notices = ReadSource("../THIRD_PARTY_NOTICES.md");
 
-            Assert.IsTrue(zodiacCatalog.Contains("EntriesBySign") &&
-                curatedCatalog.Contains("Line(\"C096\"") &&
-                curatedSelector.Contains("localNow.Year * 372") &&
-                zodiacSelector.Contains("EligibilityPercent = 15") &&
-                zodiacSelector.Contains(
-                    "PetSettingRules.NormalizeZodiacSign") &&
-                composer.Contains("content.SolarTerm.HasValue") &&
-                composer.Contains("content.ZodiacLine ??") &&
-                composer.Contains("content.CuratedLine"),
-                "Candidate selection and the two-item budget stay explicit.");
-            Assert.IsFalse(curatedSelector.Contains("ZodiacSign") ||
-                zodiacSelector.Contains("Random") ||
-                zodiacSelector.Contains("GetHashCode") ||
-                zodiacSelector.Contains("Http") ||
-                zodiacSelector.Contains("Cache"),
-                "Selection must be deterministic, local and independent.");
-            Assert.IsTrue(coordinator.Contains("Func<ZodiacSign>") &&
-                coordinator.Contains("CuratedDailyLineSelector.Select") &&
-                coordinator.Contains("ZodiacDailySelector.Select") &&
-                form.Contains("delegate { return _settings.ZodiacSign; }") &&
+            Assert.IsTrue(calculator.Contains("Solar.FromYmdHms(") &&
+                calculator.Contains("localNow.Year") &&
+                calculator.Contains("localNow.Month") &&
+                calculator.Contains("localNow.Day") &&
+                calculator.Contains("GetDayYi(1)") &&
+                calculator.Contains("GetDayJi(1)"),
+                "The adapter must use local civil date and explicit sect 1.");
+            Assert.IsFalse(calculator.Contains(".DayYi") ||
+                calculator.Contains(".DayJi") ||
+                calculator.Contains("UtcDateTime"),
+                "The adapter must not use implicit sect or UTC date.");
+            Assert.IsTrue(semantic.Contains("TryGetValue") &&
+                selector.Contains("YiJiConflict") &&
+                selector.Contains("StringComparer.Ordinal") &&
+                content.Contains("AlmanacLine") &&
+                composer.Contains("content.AlmanacLine") &&
+                coordinator.Contains("AlmanacCalculator.Calculate") &&
+                coordinator.Contains("AlmanacDailySelector.Select"),
+                "Raw terms must cross the whitelist before the shared budget.");
+            Assert.IsFalse(semantic.Contains("Contains(\"") ||
+                selector.Contains("Random") ||
+                selector.Contains("GetHashCode") ||
+                selector.Contains("PetSettings") ||
+                selector.Contains("System.Windows.Forms") ||
+                semantic.Contains("Lunar.") || selector.Contains("Lunar.") ||
+                wording.Contains("Lunar."),
+                "Selection must use exact mapping and remain platform neutral.");
+            Assert.IsTrue(coreProject.Contains(
+                    "Include=\"lunar-csharp\" Version=\"1.6.8\"") &&
+                windowsProject.Contains(
+                    "Include=\"lunar-csharp\" Version=\"1.6.8\"") &&
+                windowsProject.Contains("PennyPet.Dependencies.lunar.dll") &&
+                resolver.Contains("LunarAssemblyName = \"lunar\"") &&
+                resolver.Contains("LunarResourceName") &&
+                notices.Contains("## lunar-csharp") &&
+                notices.Contains("Version: `1.6.8`"),
+                "Package, notice and single-file allowlist must be exact.");
+            Assert.IsTrue(commands.Contains("--almanac-probe=") &&
                 commands.Contains("--daily-briefing-probe="),
-                "The existing Daily coordinator owns candidates and the probe.");
+                "Both pure diagnostic seams must remain available.");
             Assert.IsFalse(content.Contains("Weather") ||
-                content.Contains("Almanac") ||
-                content.Contains("Provider") || content.Contains("Manager") ||
-                content.Contains("Context") || form.Contains("ZodiacEnabled"),
-                "Foundation must not pre-build future modules or settings.");
+                form.Contains("Almanac") || settings.Contains("Almanac") ||
+                semantic.Contains("Provider") ||
+                selector.Contains("Manager") || selector.Contains("Engine"),
+                "No setting, Weather field or speculative framework is allowed.");
         }
 
         [TestMethod]

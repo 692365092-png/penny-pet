@@ -926,8 +926,11 @@ namespace PennyPet
                 localDate);
             DailyLineEntry zodiac = ZodiacDailySelector.Select(sign,
                 localDate);
+            AlmanacDayInfo almanacDay = AlmanacCalculator.Calculate(localDate);
+            AlmanacDailySelection almanac = almanacDay == null ? null :
+                AlmanacDailySelector.Select(almanacDay, localDate);
             DailyBriefingContent content = new DailyBriefingContent(solar,
-                curated, zodiac);
+                almanac == null ? null : almanac.Text, curated, zodiac);
             string[] selected = DailyBriefingComposer.SelectSupplementary(
                 content);
             string finalText = DailyBriefingComposer.Compose(dayPart,
@@ -942,8 +945,13 @@ namespace PennyPet
                 .Select(localDate).Id && ((zodiac == null &&
                     ZodiacDailySelector.Select(sign, localDate) == null) ||
                     (zodiac != null && zodiac.Id == ZodiacDailySelector
-                        .Select(sign, localDate).Id));
-            bool ok = deterministic && curated != null &&
+                        .Select(sign, localDate).Id)) &&
+                ((almanac == null && (almanacDay == null ||
+                    AlmanacDailySelector.Select(almanacDay, localDate) ==
+                        null)) || (almanac != null && almanac.VariantId ==
+                    AlmanacDailySelector.Select(almanacDay,
+                        localDate).VariantId));
+            bool ok = deterministic && curated != null && almanacDay != null &&
                 selected.Length <= 2;
             string json = "{\n" +
                 "  \"ok\": " + Bool(ok) + ",\n" +
@@ -953,6 +961,8 @@ namespace PennyPet
                     ",\n" +
                 "  \"solarCandidate\": " + JsonString(solar.HasValue
                     ? solar.Value.ChineseName : null) + ",\n" +
+                "  \"almanacCandidate\": " +
+                    AlmanacSelectionJson(almanac) + ",\n" +
                 "  \"curatedId\": " + JsonString(curated.Id) + ",\n" +
                 "  \"curatedText\": " + JsonString(curated.Text) + ",\n" +
                 "  \"zodiacEligible\": " + Bool(zodiac != null) + ",\n" +
@@ -975,6 +985,348 @@ namespace PennyPet
             return "\"" + value.Replace("\\", "\\\\")
                 .Replace("\"", "\\\"").Replace("\r", "\\r")
                 .Replace("\n", "\\n").Replace("\t", "\\t") + "\"";
+        }
+
+        private static string AlmanacSelectionJson(
+            AlmanacDailySelection selection)
+        {
+            if (selection == null) return "null";
+            return "{ \"topic\": " + JsonString(selection.Topic.ToString()) +
+                ", \"sourceTerm\": " + JsonString(selection.SourceTerm) +
+                ", \"polarity\": " + JsonString(selection.IsYi ? "Yi" :
+                    "Ji") +
+                ", \"variantId\": " + JsonString(selection.VariantId) +
+                ", \"framingId\": " + JsonString(selection.FramingId) +
+                ", \"wordingId\": " + JsonString(selection.WordingId) +
+                ", \"endingId\": " + JsonString(selection.EndingId) +
+                ", \"text\": " + JsonString(selection.Text) + " }";
+        }
+
+        public static void RunAlmanacProbe(string outputPath)
+        {
+            DateTimeOffset sampleDate = new DateTimeOffset(2026, 9, 3,
+                12, 0, 0, TimeSpan.FromHours(8));
+            AlmanacDayInfo sample = AlmanacCalculator.Calculate(sampleDate);
+            AlmanacDailySelection sampleSelection = sample == null ? null :
+                AlmanacDailySelector.Select(sample, sampleDate);
+            string[] recognized;
+            string[] suppressed;
+            AlmanacDailySelector.DescribeTopics(sample, out recognized,
+                out suppressed);
+
+            Dictionary<string, int> unmapped =
+                new Dictionary<string, int>(StringComparer.Ordinal);
+            Dictionary<string, int> prefixes =
+                new Dictionary<string, int>(StringComparer.Ordinal);
+            Dictionary<AlmanacTopic, HashSet<string>> variants =
+                new Dictionary<AlmanacTopic, HashSet<string>>();
+            List<AlmanacCoverageProbeYear> years =
+                new List<AlmanacCoverageProbeYear>();
+            Dictionary<string, string> recommended =
+                new Dictionary<string, string>(StringComparer.Ordinal);
+            bool calculatorOk = sample != null;
+            int selectedTextCount = 0;
+            int legacyAlmanacTermCount = 0;
+            int startsWithToday = 0;
+            for (int year = 2026; year <= 2028; year++)
+            {
+                AlmanacCoverageProbeYear stats =
+                    new AlmanacCoverageProbeYear(year);
+                DateTimeOffset date = new DateTimeOffset(year, 1, 1,
+                    12, 0, 0, TimeSpan.FromHours(8));
+                DateTimeOffset end = date.AddYears(1);
+                while (date < end)
+                {
+                    stats.Days++;
+                    AlmanacDayInfo day = AlmanacCalculator.Calculate(date);
+                    calculatorOk &= day != null;
+                    AlmanacDailySelection selection = day == null ? null :
+                        AlmanacDailySelector.Select(day, date);
+                    if (selection == null)
+                    {
+                        stats.NoSelection++;
+                        RememberDate(recommended, "noSelection", date);
+                    }
+                    else
+                    {
+                        stats.Selected++;
+                        if (selection.Topic == AlmanacTopic.ConservativeDay)
+                        {
+                            stats.Conservative++;
+                            RememberDate(recommended, "conservative", date);
+                        }
+                        else if (AlmanacSemanticCatalog.IsEverydayYi(
+                            selection.Topic) && selection.IsYi)
+                        {
+                            stats.Everyday++;
+                            RememberDate(recommended, "everyday", date);
+                        }
+                        else
+                        {
+                            stats.Cultural++;
+                        }
+                        if (selection.Topic == AlmanacTopic.Outing)
+                            RememberDate(recommended, selection.IsYi
+                                ? "outingYi" : "outingJi", date);
+                        if (SolarTermCalculator.FindForLocalDate(date)
+                            .HasValue)
+                            RememberDate(recommended, "solarAlmanac", date);
+                        HashSet<string> topicVariants;
+                        if (!variants.TryGetValue(selection.Topic,
+                            out topicVariants))
+                        {
+                            topicVariants = new HashSet<string>(
+                                StringComparer.Ordinal);
+                            variants.Add(selection.Topic, topicVariants);
+                        }
+                        topicVariants.Add(selection.VariantId);
+                        string compact = selection.Text.Replace("\n", "");
+                        string prefix = compact.Substring(0,
+                            Math.Min(6, compact.Length));
+                        Increment(prefixes, prefix);
+                        selectedTextCount++;
+                        if (compact.Contains("老黄历"))
+                            legacyAlmanacTermCount++;
+                        if (compact.StartsWith("今天",
+                            StringComparison.Ordinal)) startsWithToday++;
+                    }
+                    if (day != null)
+                    {
+                        HashSet<string> dailyUnmapped =
+                            new HashSet<string>(StringComparer.Ordinal);
+                        CollectUnmapped(day.Yi, dailyUnmapped);
+                        CollectUnmapped(day.Ji, dailyUnmapped);
+                        foreach (string term in dailyUnmapped)
+                            Increment(unmapped, term);
+                        if (ContainsRestricted(day))
+                            RememberDate(recommended, "restrictedRaw", date);
+                    }
+                    date = date.AddDays(1);
+                }
+                years.Add(stats);
+            }
+
+            int totalDays = 0;
+            int totalSelected = 0;
+            int totalEveryday = 0;
+            int totalCultural = 0;
+            int totalConservative = 0;
+            int totalNone = 0;
+            StringBuilder coverageJson = new StringBuilder();
+            for (int i = 0; i < years.Count; i++)
+            {
+                AlmanacCoverageProbeYear item = years[i];
+                totalDays += item.Days;
+                totalSelected += item.Selected;
+                totalEveryday += item.Everyday;
+                totalCultural += item.Cultural;
+                totalConservative += item.Conservative;
+                totalNone += item.NoSelection;
+                coverageJson.Append("    ");
+                coverageJson.Append(CoverageJson(item));
+                if (i < years.Count - 1) coverageJson.Append(",");
+                coverageJson.Append("\n");
+            }
+
+            StringBuilder variantJson = new StringBuilder();
+            Array topicValues = Enum.GetValues(typeof(AlmanacTopic));
+            for (int i = 0; i < topicValues.Length; i++)
+            {
+                AlmanacTopic topic = (AlmanacTopic)topicValues.GetValue(i);
+                HashSet<string> topicVariants;
+                int count = variants.TryGetValue(topic, out topicVariants)
+                    ? topicVariants.Count : 0;
+                variantJson.Append("    { \"topic\": ");
+                variantJson.Append(JsonString(topic.ToString()));
+                variantJson.Append(", \"variantCount\": ");
+                variantJson.Append(count);
+                variantJson.Append(" }");
+                if (i < topicValues.Length - 1) variantJson.Append(",");
+                variantJson.Append("\n");
+            }
+            string json = "{\n" +
+                "  \"ok\": " + Bool(calculatorOk && sample != null) +
+                    ",\n" +
+                "  \"packageVersion\": \"1.6.8\",\n" +
+                "  \"assemblyName\": \"lunar\",\n" +
+                "  \"date\": \"2026-09-03\",\n" +
+                "  \"sect\": 1,\n" +
+                "  \"rawYi\": " + JsonArray(sample == null ? null :
+                    sample.Yi) + ",\n" +
+                "  \"rawJi\": " + JsonArray(sample == null ? null :
+                    sample.Ji) + ",\n" +
+                "  \"recognizedTopics\": " + JsonArray(recognized) +
+                    ",\n" +
+                "  \"suppressedTopics\": " + JsonArray(suppressed) +
+                    ",\n" +
+                "  \"selection\": " +
+                    AlmanacSelectionJson(sampleSelection) + ",\n" +
+                "  \"coverage\": [\n" + coverageJson + "  ],\n" +
+                "  \"aggregate\": { \"days\": " + totalDays +
+                    ", \"selected\": " + totalSelected +
+                    ", \"selectedPercent\": " + Percent(totalSelected,
+                        totalDays) +
+                    ", \"everyday\": " + totalEveryday +
+                    ", \"everydayPercent\": " + Percent(totalEveryday,
+                        totalDays) +
+                    ", \"cultural\": " + totalCultural +
+                    ", \"culturalPercent\": " + Percent(totalCultural,
+                        totalDays) +
+                    ", \"conservative\": " + totalConservative +
+                    ", \"conservativePercent\": " + Percent(
+                        totalConservative, totalDays) +
+                    ", \"noSelection\": " + totalNone +
+                    ", \"noSelectionPercent\": " + Percent(totalNone,
+                        totalDays) + " },\n" +
+                "  \"wordingCoverage\": [\n" + variantJson + "  ],\n" +
+                "  \"topPrefixes\": " + CountListJson(prefixes, 10) +
+                    ",\n" +
+                "  \"legacyAlmanacTermPercent\": " + Percent(
+                    legacyAlmanacTermCount, selectedTextCount) + ",\n" +
+                "  \"todayPrefixPercent\": " + Percent(startsWithToday,
+                    selectedTextCount) + ",\n" +
+                "  \"topUnmapped\": " + CountListJson(unmapped, 20) +
+                    ",\n" +
+                "  \"recommendedDates\": " +
+                    StringDictionaryJson(recommended) + "\n" +
+                "}\n";
+            string parent = Path.GetDirectoryName(Path.GetFullPath(outputPath));
+            if (!String.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
+            File.WriteAllText(outputPath, json, new UTF8Encoding(false));
+        }
+
+        private static string CoverageJson(AlmanacCoverageProbeYear item)
+        {
+            return "{ \"year\": " + item.Year + ", \"days\": " +
+                item.Days + ", \"selected\": " + item.Selected +
+                ", \"selectedPercent\": " + Percent(item.Selected,
+                    item.Days) + ", \"everyday\": " + item.Everyday +
+                ", \"cultural\": " + item.Cultural +
+                ", \"conservative\": " + item.Conservative +
+                ", \"noSelection\": " + item.NoSelection + " }";
+        }
+
+        private static string Percent(int count, int total)
+        {
+            double percent = total == 0 ? 0D : count * 100D / total;
+            return percent.ToString("0.00",
+                System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        private static string JsonArray(IEnumerable<string> values)
+        {
+            if (values == null) return "[]";
+            StringBuilder json = new StringBuilder("[");
+            bool first = true;
+            foreach (string value in values)
+            {
+                if (!first) json.Append(", ");
+                json.Append(JsonString(value));
+                first = false;
+            }
+            json.Append("]");
+            return json.ToString();
+        }
+
+        private static string CountListJson(Dictionary<string, int> counts,
+            int limit)
+        {
+            List<KeyValuePair<string, int>> ordered =
+                new List<KeyValuePair<string, int>>(counts);
+            ordered.Sort(delegate(KeyValuePair<string, int> left,
+                KeyValuePair<string, int> right)
+            {
+                int byCount = right.Value.CompareTo(left.Value);
+                return byCount != 0 ? byCount :
+                    StringComparer.Ordinal.Compare(left.Key, right.Key);
+            });
+            StringBuilder json = new StringBuilder("[");
+            int take = Math.Min(limit, ordered.Count);
+            for (int i = 0; i < take; i++)
+            {
+                if (i > 0) json.Append(", ");
+                json.Append("{ \"value\": ");
+                json.Append(JsonString(ordered[i].Key));
+                json.Append(", \"days\": ");
+                json.Append(ordered[i].Value);
+                json.Append(" }");
+            }
+            json.Append("]");
+            return json.ToString();
+        }
+
+        private static string StringDictionaryJson(
+            Dictionary<string, string> values)
+        {
+            List<string> keys = new List<string>(values.Keys);
+            keys.Sort(StringComparer.Ordinal);
+            StringBuilder json = new StringBuilder("{");
+            for (int i = 0; i < keys.Count; i++)
+            {
+                if (i > 0) json.Append(", ");
+                json.Append(JsonString(keys[i]));
+                json.Append(": ");
+                json.Append(JsonString(values[keys[i]]));
+            }
+            json.Append("}");
+            return json.ToString();
+        }
+
+        private static void CollectUnmapped(IReadOnlyList<string> terms,
+            HashSet<string> destination)
+        {
+            foreach (string term in terms)
+            {
+                AlmanacTopic ignored;
+                if (!AlmanacSemanticCatalog.TryMap(term, out ignored))
+                    destination.Add(term);
+            }
+        }
+
+        private static bool ContainsRestricted(AlmanacDayInfo day)
+        {
+            string[] restricted = { "求医", "治病", "针灸", "纳财",
+                "求财", "置产", "词讼", "立券", "交易", "安葬",
+                "入殓", "祭祀", "祈福", "动土", "修造" };
+            foreach (string expected in restricted)
+                foreach (string term in day.Yi)
+                    if (term == expected) return true;
+            foreach (string expected in restricted)
+                foreach (string term in day.Ji)
+                    if (term == expected) return true;
+            return false;
+        }
+
+        private static void Increment(Dictionary<string, int> counts,
+            string key)
+        {
+            int count;
+            counts.TryGetValue(key, out count);
+            counts[key] = count + 1;
+        }
+
+        private static void RememberDate(Dictionary<string, string> dates,
+            string key, DateTimeOffset date)
+        {
+            if (!dates.ContainsKey(key))
+                dates.Add(key, date.ToString("yyyy-MM-dd",
+                    System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        private sealed class AlmanacCoverageProbeYear
+        {
+            internal AlmanacCoverageProbeYear(int year)
+            {
+                Year = year;
+            }
+
+            internal int Year;
+            internal int Days;
+            internal int Selected;
+            internal int Everyday;
+            internal int Cultural;
+            internal int Conservative;
+            internal int NoSelection;
         }
 
         public static void RunSolarTermProbe(string outputPath)

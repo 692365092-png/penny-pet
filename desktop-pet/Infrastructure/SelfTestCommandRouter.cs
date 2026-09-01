@@ -35,6 +35,9 @@ namespace PennyPet
                     SelfTest.RunDailyBriefingProbe(value);
                 },
                 out exitCode)) return true;
+            if (TryCommand(args, "--almanac-probe=", false,
+                delegate(string value) { SelfTest.RunAlmanacProbe(value); },
+                out exitCode)) return true;
             if (TryCommand(args, "--render-sticky-preview=", true,
                 delegate(string value) { SelfTest.RenderStickyPreview(value); },
                 out exitCode)) return true;

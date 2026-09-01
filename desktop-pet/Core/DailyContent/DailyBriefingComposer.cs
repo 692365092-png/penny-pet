@@ -26,17 +26,19 @@ namespace PennyPet
             {
                 selected.Add("今天是" +
                     content.SolarTerm.Value.ChineseName + "哦。");
-                DailyLineEntry second = content.ZodiacLine ??
-                    content.CuratedLine;
-                if (second != null) selected.Add(second.Text);
+                if (!String.IsNullOrWhiteSpace(content.AlmanacLine))
+                    selected.Add(content.AlmanacLine);
+                return selected.ToArray();
             }
-            else
+            if (!String.IsNullOrWhiteSpace(content.AlmanacLine))
             {
-                if (content.CuratedLine != null)
-                    selected.Add(content.CuratedLine.Text);
-                if (content.ZodiacLine != null)
-                    selected.Add(content.ZodiacLine.Text);
+                selected.Add(content.AlmanacLine);
+                return selected.ToArray();
             }
+            if (content.CuratedLine != null)
+                selected.Add(content.CuratedLine.Text);
+            if (content.ZodiacLine != null)
+                selected.Add(content.ZodiacLine.Text);
             return selected.ToArray();
         }
     }

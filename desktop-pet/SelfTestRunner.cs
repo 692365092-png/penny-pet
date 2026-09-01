@@ -2233,6 +2233,9 @@ namespace PennyPet
             internal bool DailyBriefingCoordinatorOk;
             internal bool DailyBriefingRejectedRetryOk;
             internal bool DailyBriefingSameDaySwitchOk;
+            internal bool AlmanacCalculatorOk;
+            internal bool AlmanacSemanticOk;
+            internal bool AlmanacWordingOk;
         }
 
         private static BubbleCheckResult RunBubbleChecks()
@@ -2771,6 +2774,55 @@ namespace PennyPet
                 CuratedDailyLineSelector.Select(sameInstant.ToOffset(
                     TimeSpan.FromHours(-8))).Id;
 
+            AlmanacDayInfo actualAlmanacDay = AlmanacCalculator.Calculate(
+                briefingDate);
+            AlmanacDailySelection actualAlmanac = actualAlmanacDay == null
+                ? null : AlmanacDailySelector.Select(actualAlmanacDay,
+                    briefingDate);
+            result.AlmanacCalculatorOk = AlmanacCalculator.Sect == 1 &&
+                actualAlmanacDay != null &&
+                actualAlmanacDay.Year == briefingDate.Year &&
+                actualAlmanacDay.Month == briefingDate.Month &&
+                actualAlmanacDay.Day == briefingDate.Day &&
+                actualAlmanacDay.Yi.Count > 0 &&
+                actualAlmanacDay.Ji.Count > 0;
+            AlmanacDailySelection dedupedSocial =
+                AlmanacDailySelector.Select(new AlmanacDayInfo(2026, 9, 3,
+                    new[] { "会友", "会亲友" }, new string[0]),
+                    briefingDate);
+            AlmanacDailySelection conflictedOuting =
+                AlmanacDailySelector.Select(new AlmanacDayInfo(2026, 9, 3,
+                    new[] { "出行" }, new[] { "出行" }), briefingDate);
+            AlmanacDailySelection restricted = AlmanacDailySelector.Select(
+                new AlmanacDayInfo(2026, 9, 3,
+                    new[] { "求医", "纳财", "祭祀", "动土" },
+                    new string[0]), briefingDate);
+            result.AlmanacSemanticOk = dedupedSocial != null &&
+                dedupedSocial.Topic == AlmanacTopic.Social &&
+                conflictedOuting == null && restricted == null;
+            HashSet<string> tidyVariants = new HashSet<string>();
+            bool wordingStable = true;
+            for (int day = 0; day < 730; day++)
+            {
+                DateTimeOffset date = rangeStart.AddDays(day);
+                AlmanacDayInfo tidyDay = new AlmanacDayInfo(date.Year,
+                    date.Month, date.Day, new[] { "扫舍" }, new string[0]);
+                AlmanacDailySelection first = AlmanacDailySelector.Select(
+                    tidyDay, date);
+                AlmanacDailySelection retry = AlmanacDailySelector.Select(
+                    tidyDay, date);
+                wordingStable &= first != null && retry != null &&
+                    first.VariantId == retry.VariantId &&
+                    first.Text == retry.Text &&
+                    !first.Text.Contains("今天一定") &&
+                    !first.Text.Contains("必须") &&
+                    !first.Text.Contains("千万不要") &&
+                    !first.Text.Contains("绝对不能");
+                if (first != null) tidyVariants.Add(first.VariantId);
+            }
+            result.AlmanacWordingOk = wordingStable &&
+                tidyVariants.Count >= 5;
+
             SolarTermInfo? whiteDew = SolarTermCalculator.FindForLocalDate(
                 new DateTimeOffset(2026, 9, 7, 12, 0, 0,
                     TimeSpan.FromHours(8)));
@@ -2784,30 +2836,34 @@ namespace PennyPet
                 !nonTerm.HasValue;
             string afternoonGreeting = DailyContentRules.GreetingFor(
                 DayPart.Afternoon);
-            DailyBriefingContent caseA = new DailyBriefingContent(null,
-                selectedCurated, null);
-            DailyBriefingContent caseB = new DailyBriefingContent(null,
-                selectedCurated, selectedScorpio);
-            DailyBriefingContent caseC = new DailyBriefingContent(whiteDew,
-                selectedCurated, null);
-            DailyBriefingContent caseD = new DailyBriefingContent(whiteDew,
-                selectedCurated, selectedScorpio);
+            const string almanacText = "黄历内容。";
+            DailyBriefingContent caseA = new DailyBriefingContent(whiteDew,
+                almanacText, selectedCurated, selectedScorpio);
+            DailyBriefingContent caseB = new DailyBriefingContent(whiteDew,
+                null, selectedCurated, selectedScorpio);
+            DailyBriefingContent caseC = new DailyBriefingContent(null,
+                almanacText, selectedCurated, selectedScorpio);
+            DailyBriefingContent caseD = new DailyBriefingContent(null,
+                null, selectedCurated, null);
+            DailyBriefingContent caseE = new DailyBriefingContent(null,
+                null, selectedCurated, selectedScorpio);
             result.DailyBriefingBudgetOk = whiteDew.HasValue &&
                 DailyBriefingComposer.Compose(DayPart.Afternoon, caseA) ==
-                    afternoonGreeting + "\n" + selectedCurated.Text &&
+                    afternoonGreeting + "\n今天是白露哦。\n" + almanacText &&
                 DailyBriefingComposer.Compose(DayPart.Afternoon, caseB) ==
+                    afternoonGreeting + "\n今天是白露哦。" &&
+                DailyBriefingComposer.Compose(DayPart.Afternoon, caseC) ==
+                    afternoonGreeting + "\n" + almanacText &&
+                DailyBriefingComposer.Compose(DayPart.Afternoon, caseD) ==
+                    afternoonGreeting + "\n" + selectedCurated.Text &&
+                DailyBriefingComposer.Compose(DayPart.Afternoon, caseE) ==
                     afternoonGreeting + "\n" + selectedCurated.Text +
                         "\n" + selectedScorpio.Text &&
-                DailyBriefingComposer.Compose(DayPart.Afternoon, caseC) ==
-                    afternoonGreeting + "\n今天是白露哦。\n" +
-                        selectedCurated.Text &&
-                DailyBriefingComposer.Compose(DayPart.Afternoon, caseD) ==
-                    afternoonGreeting + "\n今天是白露哦。\n" +
-                        selectedScorpio.Text &&
                 DailyBriefingComposer.SelectSupplementary(caseA).Length <= 2 &&
                 DailyBriefingComposer.SelectSupplementary(caseB).Length <= 2 &&
                 DailyBriefingComposer.SelectSupplementary(caseC).Length <= 2 &&
-                DailyBriefingComposer.SelectSupplementary(caseD).Length <= 2;
+                DailyBriefingComposer.SelectSupplementary(caseD).Length <= 2 &&
+                DailyBriefingComposer.SelectSupplementary(caseE).Length <= 2;
 
             lastBriefingDate = String.Empty;
             silent = false;
@@ -2820,7 +2876,9 @@ namespace PennyPet
             bool zodiacShown = daily.HandlePetPoked(briefingDate);
             string expectedZodiacText = DailyBriefingComposer.Compose(
                 DailyContentRules.ResolveDayPart(briefingDate),
-                new DailyBriefingContent(null, selectedCurated,
+                new DailyBriefingContent(null,
+                    actualAlmanac == null ? null : actualAlmanac.Text,
+                    selectedCurated,
                     selectedScorpio));
             bool zodiacTextOk = greetingText == expectedZodiacText &&
                 recordCount == 1;
@@ -2836,9 +2894,15 @@ namespace PennyPet
             greetingCount = 0;
             recordCount = 0;
             bool solarZodiacShown = daily.HandlePetPoked(whiteDewDate);
+            AlmanacDayInfo whiteDewAlmanacDay = AlmanacCalculator.Calculate(
+                whiteDewDate);
+            AlmanacDailySelection whiteDewAlmanac = whiteDewAlmanacDay == null
+                ? null : AlmanacDailySelector.Select(whiteDewAlmanacDay,
+                    whiteDewDate);
             string solarZodiacExpected = DailyBriefingComposer.Compose(
                 DailyContentRules.ResolveDayPart(whiteDewDate),
                 new DailyBriefingContent(whiteDew,
+                    whiteDewAlmanac == null ? null : whiteDewAlmanac.Text,
                     CuratedDailyLineSelector.Select(whiteDewDate),
                     ZodiacDailySelector.Select(ZodiacSign.Scorpio,
                         whiteDewDate)));
@@ -4337,6 +4401,12 @@ namespace PennyPet
                     bubbleChecks.DailyBriefingRejectedRetryOk) + ",\n" +
                 "  \"daily_briefing_same_day_sign_switch_ok\": " + Bool(
                     bubbleChecks.DailyBriefingSameDaySwitchOk) + ",\n" +
+                "  \"almanac_calculator_dependency_and_sect_ok\": " + Bool(
+                    bubbleChecks.AlmanacCalculatorOk) + ",\n" +
+                "  \"almanac_semantic_whitelist_conflict_ok\": " + Bool(
+                    bubbleChecks.AlmanacSemanticOk) + ",\n" +
+                "  \"almanac_wording_deterministic_variation_ok\": " + Bool(
+                    bubbleChecks.AlmanacWordingOk) + ",\n" +
                 "  \"daily_content_settings_ui_and_menu_ok\": " + Bool(
                     shellChecks.DailyContentSettingsUiOk) + ",\n" +
                 "  \"zodiac_preference_settings_ui_ok\": " + Bool(

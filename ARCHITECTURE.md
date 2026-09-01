@@ -81,17 +81,22 @@ PennyPet.Tools -> 美术发布包和启动缓存生成
 | `Core/DailyContent/CuratedDailyLineCatalog.cs` / `CuratedDailyLineSelector.cs` | 96 条有限精选目录及当地日期确定性选择 | 平台无关纯规则 |
 | `Core/DailyContent/ZodiacSign.cs` | 用户星座偏好的稳定业务身份 | 平台无关 |
 | `Core/DailyContent/ZodiacDailyCatalog.cs` / `ZodiacDailySelector.cs` | 72 条有限 Zodiac 目录及当地日期约 15% 的确定性补位资格 | 平台无关纯规则 |
-| `Core/DailyContent/DailyBriefingContent.cs` | Solar、Curated、Zodiac 候选值 | 平台无关；不预留未实现来源字段 |
+| `Core/Calendar/Almanac/AlmanacCalculator.cs` | 当地民用日期经 `lunar-csharp 1.6.8`、显式 sect 1 转成 detached Yi/Ji | 平台无关第三方适配边界；失败返回 null |
+| `Core/DailyContent/Almanac/AlmanacSemanticCatalog.cs` | 原始传统术语的精确保守白名单与现代 Topic | 平台无关纯规则 |
+| `Core/DailyContent/Almanac/AlmanacDailySelector.cs` / `AlmanacWordingCatalog.cs` | 稳定 Topic 排序、冲突抑制、确定性候选与非机械 wording | 平台无关纯规则；无历史和缓存 |
+| `Core/DailyContent/DailyBriefingContent.cs` | Solar、Almanac、Curated、Zodiac 候选值 | 平台无关；不预留未实现来源字段 |
 | `Core/DailyContent/DailyBriefingComposer.cs` | DayPart、候选优先级与两条 supplementary budget | 平台无关纯规则 |
 | `Core/Calendar/SolarTerm*` | 二十四节气天文事实 | 平台无关 |
 | `PetDailyContentCoordinator.cs` | 首次有效 Poke eligibility、compose、Bubble accepted 后消费日期 | Windows 产品协调 |
 | `DailyContentSettingsForm.cs` | Daily Content、节气和星座偏好设置 UI | Windows-only |
 
-`DailyBriefing` 固定为 greeting 加至多两条 supplementary。启用且当天存在的 SolarTerm 是受保护的高优先级内容；Curated 与低频 Zodiac 只负责补位，不是每日新鲜度的主要来源。选择结果是当天可重算的派生值，不缓存、不持久化；两个内置目录分别固定上限为 96 和 72 条。
+`DailyBriefing` 固定为 greeting 加至多两条 supplementary。启用且当天存在的 SolarTerm 是受保护的高优先级内容；Almanac 是其后的高新鲜度事实内容。任一事实内容存在后不机械补 Curated/Zodiac；只有两者都不存在时才进入 filler layer。选择结果是当天可重算的派生值，不缓存、不持久化；两个 filler 目录分别固定上限为 96 和 72 条。
+
+Almanac 的边界固定为 `lunar-csharp → raw traditional Yi/Ji → Penny exact semantic whitelist → modern conversational copy`。原始宜忌绝不直接成为 DailyBriefing 输出；现代化只改变表达，不改变传统术语含义。医疗、法律、财务、丧葬、宗教、施工及其他不适合的传统术语不进入 v1 建议；Yi/Ji 对同一 Topic 冲突时该 Topic 当天直接抑制。Penny v1 采用日粒度、sect 1 的黄历语义以保证同一当地民用日内稳定，这不代表其比其他民俗流派更权威。
 
 每日新鲜度应主要来自变化中的事实语境，而不是尽量增加固定文案池的随机变化。未来 Weather 与 Almanac 若实现，应提供高新鲜度事实候选并服从同一 briefing budget；当前没有这些模块或占位字段。
 
-`PennyPet.Core` 直接使用 `CosineKitty.AstronomyEngine 2.1.19`，当前用途仅为 `SolarTermCalculator` 的平台无关天文计算。兼容单文件 Windows 项目把固定的 `astronomy.dll` 嵌入 EXE，并由窄范围 `EmbeddedAssemblyResolver` 只解析该程序集；第三方许可见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+`PennyPet.Core` 直接使用 `CosineKitty.AstronomyEngine 2.1.19` 计算既有 SolarTerm，并使用 `lunar-csharp 1.6.8` 读取 Almanac Yi/Ji；两条链互不替代。兼容单文件 Windows 项目把固定的 `astronomy.dll` 与 `lunar.dll` 嵌入 EXE，并由窄范围 `EmbeddedAssemblyResolver` 只按这两个确切程序集名解析；第三方许可见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 
 ### 便利贴、Dock 与链接
 
