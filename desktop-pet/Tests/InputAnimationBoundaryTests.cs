@@ -380,6 +380,39 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void ZodiacDailyContent_UsesBundledPureSelectionAndExistingDailyFlow()
+        {
+            string catalog = ReadSource(
+                "Core/DailyContent/ZodiacDailyCatalog.cs");
+            string selector = ReadSource(
+                "Core/DailyContent/ZodiacDailySelector.cs");
+            string composer = ReadSource(
+                "Core/DailyContent/DailyBriefingComposer.cs");
+            string coordinator = ReadSource("PetDailyContentCoordinator.cs");
+            string form = ReadSource("PetForm.cs");
+            string commands = ReadSource(
+                "Infrastructure/SelfTestCommandRouter.cs");
+
+            Assert.IsTrue(catalog.Contains("LinesBySign") &&
+                selector.Contains("localNow.Year * 372") &&
+                selector.Contains("PetSettingRules.NormalizeZodiacSign") &&
+                composer.Contains("solarTerm.HasValue") &&
+                composer.Contains("!String.IsNullOrWhiteSpace(zodiacText)"),
+                "Zodiac content must be bundled, deterministic and optional.");
+            Assert.IsFalse(selector.Contains("Random") ||
+                selector.Contains("GetHashCode") ||
+                selector.Contains("Http") || selector.Contains("Cache"),
+                "Daily selection must not need runtime randomness, network or cache.");
+            Assert.IsTrue(coordinator.Contains("Func<ZodiacSign>") &&
+                coordinator.Contains("ZodiacDailySelector.Select") &&
+                form.Contains("delegate { return _settings.ZodiacSign; }") &&
+                commands.Contains("--zodiac-daily-probe="),
+                "The existing Daily coordinator must own the one new getter and probe.");
+            Assert.IsFalse(form.Contains("ZodiacEnabled"),
+                "ZodiacSign.None remains the only v1 enablement rule.");
+        }
+
+        [TestMethod]
         public void PetMouseDown_OnlyClosesHoverBubble()
         {
             string animation = ReadSource("PetAnimationRuntime.cs");

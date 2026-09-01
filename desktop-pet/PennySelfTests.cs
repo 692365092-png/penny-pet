@@ -913,6 +913,49 @@ namespace PennyPet
             }
         }
 
+        public static void RunZodiacDailyProbe(string outputPath)
+        {
+            DateTimeOffset start = new DateTimeOffset(2026, 9, 1, 12, 0, 0,
+                TimeSpan.FromHours(8));
+            const ZodiacSign sign = ZodiacSign.Scorpio;
+            HashSet<string> selectedLines = new HashSet<string>();
+            StringBuilder days = new StringBuilder();
+            bool deterministic = true;
+            for (int day = 0; day < 7; day++)
+            {
+                DateTimeOffset localDate = start.AddDays(day);
+                string text = ZodiacDailySelector.Select(sign, localDate);
+                deterministic &= !String.IsNullOrWhiteSpace(text) && text ==
+                    ZodiacDailySelector.Select(sign, localDate);
+                selectedLines.Add(text);
+                string escaped = text.Replace("\\", "\\\\")
+                    .Replace("\"", "\\\"");
+                days.Append("    { \"date\": \"");
+                days.Append(localDate.ToString("yyyy-MM-dd",
+                    System.Globalization.CultureInfo.InvariantCulture));
+                days.Append("\", \"text\": \"");
+                days.Append(escaped);
+                days.Append("\" }");
+                if (day < 6) days.Append(",");
+                days.Append("\n");
+            }
+            bool ok = deterministic && selectedLines.Count > 1;
+            string first = ZodiacDailySelector.Select(sign, start)
+                .Replace("\\", "\\\\").Replace("\"", "\\\"");
+            string json = "{\n" +
+                "  \"ok\": " + Bool(ok) + ",\n" +
+                "  \"deterministic\": " + Bool(deterministic) + ",\n" +
+                "  \"date\": \"2026-09-01\",\n" +
+                "  \"offset\": \"+08:00\",\n" +
+                "  \"sign\": \"Scorpio\",\n" +
+                "  \"text\": \"" + first + "\",\n" +
+                "  \"days\": [\n" + days + "  ]\n" +
+                "}\n";
+            string parent = Path.GetDirectoryName(Path.GetFullPath(outputPath));
+            if (!String.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
+            File.WriteAllText(outputPath, json, new UTF8Encoding(false));
+        }
+
         public static void RunSolarTermProbe(string outputPath)
         {
             Stopwatch timer = Stopwatch.StartNew();

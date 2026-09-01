@@ -2227,6 +2227,12 @@ namespace PennyPet
             internal bool SmallTalkCoordinatorReminderRetryOk;
             internal bool SolarTermOk;
             internal bool DailyContentPreferencesOk;
+            internal bool ZodiacCatalogOk;
+            internal bool ZodiacSelectorOk;
+            internal bool ZodiacComposerOk;
+            internal bool ZodiacCoordinatorOk;
+            internal bool ZodiacRejectedRetryOk;
+            internal bool ZodiacSameDaySwitchOk;
         }
 
         private static BubbleCheckResult RunBubbleChecks()
@@ -2618,6 +2624,7 @@ namespace PennyPet
             bool acceptGreeting = true;
             bool dailyContentEnabled = true;
             bool solarTermEnabled = true;
+            ZodiacSign zodiacSign = ZodiacSign.None;
             int greetingCount = 0;
             int recordCount = 0;
             string greetingText = null;
@@ -2627,6 +2634,7 @@ namespace PennyPet
                     delegate { return silent; },
                     delegate { return dailyContentEnabled; },
                     delegate { return solarTermEnabled; },
+                    delegate { return zodiacSign; },
                     delegate(string text)
                     {
                         greetingCount++;
@@ -2689,6 +2697,49 @@ namespace PennyPet
                 plainGreeting && !solarEnabledSameDayPoke && solarOnPoke &&
                 greetingText.IndexOf("今天是白露哦。",
                     StringComparison.Ordinal) >= 0;
+
+            bool catalogValid = ZodiacDailyCatalog.GetLines(
+                ZodiacSign.None).Length == 0;
+            for (int value = (int)ZodiacSign.Aries;
+                value <= (int)ZodiacSign.Pisces; value++)
+            {
+                string[] lines = ZodiacDailyCatalog.GetLines(
+                    (ZodiacSign)value);
+                HashSet<string> unique = new HashSet<string>();
+                catalogValid &= lines.Length == 6;
+                foreach (string line in lines)
+                    catalogValid &= !String.IsNullOrWhiteSpace(line) &&
+                        unique.Add(line);
+            }
+            result.ZodiacCatalogOk = catalogValid;
+
+            DateTimeOffset zodiacDate = new DateTimeOffset(2026, 9, 1,
+                12, 0, 0, TimeSpan.FromHours(8));
+            string selectedScorpio = ZodiacDailySelector.Select(
+                ZodiacSign.Scorpio, zodiacDate);
+            HashSet<string> monthlySelections = new HashSet<string>();
+            bool deterministic = true;
+            for (int day = 0; day < 30; day++)
+            {
+                string selected = ZodiacDailySelector.Select(
+                    ZodiacSign.Scorpio, zodiacDate.AddDays(day));
+                monthlySelections.Add(selected);
+                if (day == 0) deterministic &= selected == selectedScorpio;
+            }
+            DateTimeOffset sameInstant = new DateTimeOffset(2026, 9, 1,
+                16, 30, 0, TimeSpan.Zero);
+            result.ZodiacSelectorOk = deterministic &&
+                monthlySelections.Count > 1 &&
+                ZodiacDailySelector.Select(ZodiacSign.None, zodiacDate) ==
+                    null && ZodiacDailySelector.Select((ZodiacSign)999,
+                        zodiacDate) == null &&
+                Array.IndexOf(ZodiacDailyCatalog.GetLines(
+                    ZodiacSign.Scorpio), selectedScorpio) >= 0 &&
+                ZodiacDailySelector.Select(ZodiacSign.Scorpio,
+                    sameInstant.ToOffset(TimeSpan.FromHours(8))) !=
+                ZodiacDailySelector.Select(ZodiacSign.Scorpio,
+                    sameInstant.ToOffset(TimeSpan.FromHours(-8)));
+
             SolarTermInfo? whiteDew = SolarTermCalculator.FindForLocalDate(
                 new DateTimeOffset(2026, 9, 7, 12, 0, 0,
                     TimeSpan.FromHours(8)));
@@ -2700,6 +2751,67 @@ namespace PennyPet
                 whiteDew.Value.ChineseName == "白露" &&
                 whiteDew.Value.LongitudeDegrees == 165 &&
                 !nonTerm.HasValue;
+            string afternoonGreeting = DailyContentRules.GreetingFor(
+                DayPart.Afternoon);
+            result.ZodiacComposerOk = whiteDew.HasValue &&
+                DailyBriefingComposer.Compose(DayPart.Afternoon, null,
+                    null) == afternoonGreeting &&
+                DailyBriefingComposer.Compose(DayPart.Afternoon, whiteDew,
+                    null) == afternoonGreeting + "\n今天是白露哦。" &&
+                DailyBriefingComposer.Compose(DayPart.Afternoon, null,
+                    selectedScorpio) == afternoonGreeting + "\n" +
+                        selectedScorpio &&
+                DailyBriefingComposer.Compose(DayPart.Afternoon, whiteDew,
+                    selectedScorpio) == afternoonGreeting +
+                        "\n今天是白露哦。\n" + selectedScorpio;
+
+            lastBriefingDate = String.Empty;
+            silent = false;
+            dailyContentEnabled = true;
+            solarTermEnabled = false;
+            zodiacSign = ZodiacSign.Scorpio;
+            acceptGreeting = true;
+            greetingCount = 0;
+            recordCount = 0;
+            bool zodiacShown = daily.HandlePetPoked(zodiacDate);
+            string expectedZodiacText = DailyBriefingComposer.Compose(
+                DailyContentRules.ResolveDayPart(zodiacDate), null,
+                selectedScorpio);
+            bool zodiacTextOk = greetingText == expectedZodiacText &&
+                recordCount == 1;
+            zodiacSign = ZodiacSign.Pisces;
+            bool changedSignSameDay = daily.HandlePetPoked(
+                zodiacDate.AddHours(1));
+            result.ZodiacSameDaySwitchOk = zodiacShown &&
+                !changedSignSameDay && recordCount == 1;
+
+            lastBriefingDate = String.Empty;
+            solarTermEnabled = true;
+            zodiacSign = ZodiacSign.Scorpio;
+            greetingCount = 0;
+            recordCount = 0;
+            bool solarZodiacShown = daily.HandlePetPoked(whiteDewDate);
+            string solarZodiacExpected = DailyBriefingComposer.Compose(
+                DailyContentRules.ResolveDayPart(whiteDewDate), whiteDew,
+                ZodiacDailySelector.Select(ZodiacSign.Scorpio,
+                    whiteDewDate));
+            result.ZodiacCoordinatorOk = zodiacTextOk &&
+                solarZodiacShown && greetingText == solarZodiacExpected &&
+                recordCount == 1;
+
+            lastBriefingDate = String.Empty;
+            solarTermEnabled = false;
+            acceptGreeting = false;
+            greetingCount = 0;
+            recordCount = 0;
+            bool zodiacRejected = !daily.HandlePetPoked(zodiacDate);
+            string rejectedZodiacText = greetingText;
+            acceptGreeting = true;
+            bool zodiacRetried = daily.HandlePetPoked(
+                zodiacDate.AddMinutes(1));
+            result.ZodiacRejectedRetryOk = zodiacRejected && zodiacRetried &&
+                greetingCount == 2 && recordCount == 1 &&
+                greetingText == rejectedZodiacText;
             PetBubbleRequest dailyRequest = PetBubbleRequest.DailyGreeting(
                 "早上好", KeyboardOverlayForm.TextFontFamilyName, 15F);
             result.DailyGreetingRequestOk = dailyRequest.Kind ==
@@ -4165,6 +4277,18 @@ namespace PennyPet
                     bubbleChecks.SolarTermOk) + ",\n" +
                 "  \"daily_content_preference_flow_ok\": " + Bool(
                     bubbleChecks.DailyContentPreferencesOk) + ",\n" +
+                "  \"zodiac_daily_catalog_complete_unique_ok\": " + Bool(
+                    bubbleChecks.ZodiacCatalogOk) + ",\n" +
+                "  \"zodiac_daily_selector_deterministic_local_date_ok\": " +
+                    Bool(bubbleChecks.ZodiacSelectorOk) + ",\n" +
+                "  \"zodiac_daily_composer_order_ok\": " + Bool(
+                    bubbleChecks.ZodiacComposerOk) + ",\n" +
+                "  \"zodiac_daily_coordinator_integration_ok\": " + Bool(
+                    bubbleChecks.ZodiacCoordinatorOk) + ",\n" +
+                "  \"zodiac_daily_rejected_show_retry_ok\": " + Bool(
+                    bubbleChecks.ZodiacRejectedRetryOk) + ",\n" +
+                "  \"zodiac_daily_same_day_sign_switch_ok\": " + Bool(
+                    bubbleChecks.ZodiacSameDaySwitchOk) + ",\n" +
                 "  \"daily_content_settings_ui_and_menu_ok\": " + Bool(
                     shellChecks.DailyContentSettingsUiOk) + ",\n" +
                 "  \"zodiac_preference_settings_ui_ok\": " + Bool(

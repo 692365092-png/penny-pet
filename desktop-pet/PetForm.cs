@@ -214,6 +214,7 @@ namespace PennyPet
                 delegate { return _settings.SilentMode; },
                 delegate { return _settings.DailyContentEnabled; },
                 delegate { return _settings.SolarTermEnabled; },
+                delegate { return _settings.ZodiacSign; },
                 delegate(string text)
                 {
                     return _bubbleCoordinator.Show(

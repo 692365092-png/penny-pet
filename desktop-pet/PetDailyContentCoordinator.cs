@@ -9,12 +9,13 @@ namespace PennyPet
         private readonly Func<bool> _silentMode;
         private readonly Func<bool> _dailyContentEnabled;
         private readonly Func<bool> _solarTermEnabled;
+        private readonly Func<ZodiacSign> _zodiacSign;
         private readonly Func<string, bool> _showDailyGreeting;
         private readonly Action<string> _recordBriefingDate;
 
         internal PetDailyContentCoordinator(Func<string> lastBriefingDate,
             Func<bool> silentMode, Func<bool> dailyContentEnabled,
-            Func<bool> solarTermEnabled,
+            Func<bool> solarTermEnabled, Func<ZodiacSign> zodiacSign,
             Func<string, bool> showDailyGreeting,
             Action<string> recordBriefingDate)
         {
@@ -26,6 +27,8 @@ namespace PennyPet
                 throw new ArgumentNullException("dailyContentEnabled");
             _solarTermEnabled = solarTermEnabled ??
                 throw new ArgumentNullException("solarTermEnabled");
+            _zodiacSign = zodiacSign ??
+                throw new ArgumentNullException("zodiacSign");
             _showDailyGreeting = showDailyGreeting ??
                 throw new ArgumentNullException("showDailyGreeting");
             _recordBriefingDate = recordBriefingDate ??
@@ -42,7 +45,10 @@ namespace PennyPet
             SolarTermInfo? solarTerm = _solarTermEnabled()
                 ? SolarTermCalculator.FindForLocalDate(localNow)
                 : (SolarTermInfo?)null;
-            string text = DailyBriefingComposer.Compose(dayPart, solarTerm);
+            string zodiacText = ZodiacDailySelector.Select(_zodiacSign(),
+                localNow);
+            string text = DailyBriefingComposer.Compose(dayPart, solarTerm,
+                zodiacText);
             if (!_showDailyGreeting(text)) return false;
             _recordBriefingDate(DailyContentRules.DateKey(localNow));
             return true;

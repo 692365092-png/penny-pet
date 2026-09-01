@@ -78,10 +78,14 @@ PennyPet.Tools -> 美术发布包和启动缓存生成
 |---|---|---|
 | `Core/DailyContent/DailyContentRules.cs` | 日期键、每日一次和 DayPart 纯规则 | 平台无关 |
 | `Core/DailyContent/DailyBriefingComposer.cs` | DayPart 与结构化每日事实组合为短文案 | 平台无关 |
-| `Core/DailyContent/ZodiacSign.cs` | 用户星座偏好的稳定业务身份；当前没有运势消费者 | 平台无关 |
+| `Core/DailyContent/ZodiacSign.cs` | 用户星座偏好的稳定业务身份 | 平台无关 |
+| `Core/DailyContent/ZodiacDailyCatalog.cs` | 随应用发布的原创 Zodiac daily copy | 平台无关、有限静态内容 |
+| `Core/DailyContent/ZodiacDailySelector.cs` | 按当地日期与星座确定性选择每日文案 | 平台无关纯规则 |
 | `Core/Calendar/SolarTerm*` | 二十四节气天文事实 | 平台无关 |
 | `PetDailyContentCoordinator.cs` | 首次有效 Poke eligibility、compose、Bubble accepted 后消费日期 | Windows 产品协调 |
 | `DailyContentSettingsForm.cs` | Daily Content、节气和星座偏好设置 UI | Windows-only |
+
+`DailyBriefingComposer` 按 greeting、可选 solar term、可选 zodiac 的顺序合成一次 `DailyGreeting`；选择结果不缓存、不持久化。
 
 `PennyPet.Core` 直接使用 `CosineKitty.AstronomyEngine 2.1.19`，当前用途仅为 `SolarTermCalculator` 的平台无关天文计算。兼容单文件 Windows 项目把固定的 `astronomy.dll` 嵌入 EXE，并由窄范围 `EmbeddedAssemblyResolver` 只解析该程序集；第三方许可见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 
