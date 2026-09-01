@@ -1028,6 +1028,11 @@ namespace PennyPet
             int selectedTextCount = 0;
             int legacyAlmanacTermCount = 0;
             int startsWithToday = 0;
+            int yiJiTermCount = 0;
+            int traditionalCalendarTermCount = 0;
+            int folkTermCount = 0;
+            int lifeFirstCount = 0;
+            int sourceLateCount = 0;
             for (int year = 2026; year <= 2028; year++)
             {
                 AlmanacCoverageProbeYear stats =
@@ -1089,6 +1094,14 @@ namespace PennyPet
                             legacyAlmanacTermCount++;
                         if (compact.StartsWith("今天",
                             StringComparison.Ordinal)) startsWithToday++;
+                        if (compact.Contains("宜忌")) yiJiTermCount++;
+                        if (compact.Contains("传统日历"))
+                            traditionalCalendarTermCount++;
+                        if (compact.Contains("民俗")) folkTermCount++;
+                        if (selection.FramingId == "F06-LIFE-FIRST")
+                            lifeFirstCount++;
+                        if (selection.FramingId == "F07-SOURCE-LATE")
+                            sourceLateCount++;
                     }
                     if (day != null)
                     {
@@ -1184,6 +1197,17 @@ namespace PennyPet
                 "  \"legacyAlmanacTermPercent\": " + Percent(
                     legacyAlmanacTermCount, selectedTextCount) + ",\n" +
                 "  \"todayPrefixPercent\": " + Percent(startsWithToday,
+                    selectedTextCount) + ",\n" +
+                "  \"yiJiTermPercent\": " + Percent(yiJiTermCount,
+                    selectedTextCount) + ",\n" +
+                "  \"traditionalCalendarTermPercent\": " + Percent(
+                    traditionalCalendarTermCount, selectedTextCount) +
+                    ",\n" +
+                "  \"folkTermPercent\": " + Percent(folkTermCount,
+                    selectedTextCount) + ",\n" +
+                "  \"lifeFirstPercent\": " + Percent(lifeFirstCount,
+                    selectedTextCount) + ",\n" +
+                "  \"sourceLatePercent\": " + Percent(sourceLateCount,
                     selectedTextCount) + ",\n" +
                 "  \"topUnmapped\": " + CountListJson(unmapped, 20) +
                     ",\n" +

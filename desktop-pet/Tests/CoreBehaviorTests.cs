@@ -1225,6 +1225,11 @@ namespace PennyPet.Tests
             Dictionary<string, int> prefixes = new Dictionary<string, int>();
             int textCount = 0;
             int todayPrefix = 0;
+            int yiJiTermCount = 0;
+            bool sawTraditionalCalendar = false;
+            bool sawFolkWording = false;
+            bool sawLifeFirst = false;
+            bool sawSourceLate = false;
             foreach (var item in cases)
             {
                 HashSet<string> variants = new HashSet<string>();
@@ -1252,6 +1257,12 @@ namespace PennyPet.Tests
                         selected.Text.Contains("千万不要") ||
                         selected.Text.Contains("绝对不能"));
                     Assert.IsFalse(selected.Text.Contains("老黄历"));
+                    if (selected.Text.Contains("宜忌")) yiJiTermCount++;
+                    sawTraditionalCalendar |= selected.Text.Contains(
+                        "传统日历");
+                    sawFolkWording |= selected.Text.Contains("民俗");
+                    sawLifeFirst |= selected.FramingId == "F06-LIFE-FIRST";
+                    sawSourceLate |= selected.FramingId == "F07-SOURCE-LATE";
                     variants.Add(selected.VariantId);
                     string compact = selected.Text.Replace("\n", "");
                     if (compact.StartsWith("今天",
@@ -1268,6 +1279,11 @@ namespace PennyPet.Tests
             }
             Assert.IsTrue(prefixes.Values.Max() * 100D / textCount < 25D);
             Assert.IsTrue(todayPrefix * 100D / textCount < 25D);
+            Assert.IsTrue(yiJiTermCount * 100D / textCount < 35D);
+            Assert.IsTrue(sawTraditionalCalendar);
+            Assert.IsTrue(sawFolkWording);
+            Assert.IsTrue(sawLifeFirst);
+            Assert.IsTrue(sawSourceLate);
         }
 
         [TestMethod]

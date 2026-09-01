@@ -94,7 +94,7 @@ PennyPet.Tools -> 美术发布包和启动缓存生成
 
 Almanac 的边界固定为 `lunar-csharp → raw traditional Yi/Ji → Penny exact semantic whitelist → modern conversational copy`。原始宜忌绝不直接成为 DailyBriefing 输出；现代化只改变表达，不改变传统术语含义。医疗、法律、财务、丧葬、宗教、施工及其他不适合的传统术语不进入 v1 建议；Yi/Ji 对同一 Topic 冲突时该 Topic 当天直接抑制。Penny v1 采用日粒度、sect 1 的黄历语义以保证同一当地民用日内稳定，这不代表其比其他民俗流派更权威。
 
-每日新鲜度应主要来自变化中的事实语境，而不是尽量增加固定文案池的随机变化。未来 Weather 与 Almanac 若实现，应提供高新鲜度事实候选并服从同一 briefing budget；当前没有这些模块或占位字段。
+每日新鲜度应主要来自变化中的事实语境，而不是尽量增加固定文案池的随机变化。Almanac 已作为高新鲜度事实候选服从同一 briefing budget；未来 Weather 若实现也应遵守这一边界，当前没有 Weather 模块或占位字段。
 
 `PennyPet.Core` 直接使用 `CosineKitty.AstronomyEngine 2.1.19` 计算既有 SolarTerm，并使用 `lunar-csharp 1.6.8` 读取 Almanac Yi/Ji；两条链互不替代。兼容单文件 Windows 项目把固定的 `astronomy.dll` 与 `lunar.dll` 嵌入 EXE，并由窄范围 `EmbeddedAssemblyResolver` 只按这两个确切程序集名解析；第三方许可见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 
