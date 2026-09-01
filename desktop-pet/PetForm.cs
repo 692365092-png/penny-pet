@@ -80,6 +80,8 @@ namespace PennyPet
         private readonly StickyNoteRepository _notes;
         private readonly StickyNoteTabsForm _leftNoteTabs;
         private readonly StickyNoteTabsForm _rightNoteTabs;
+        internal static int HostedStickyWindowCreatedCount;
+        internal static int LegacyStickyWindowCreatedCount;
         private readonly Dictionary<string, StickyNoteWindow> _noteWindows =
             new Dictionary<string, StickyNoteWindow>(StringComparer.OrdinalIgnoreCase);
         private readonly Random _random = new Random();

@@ -415,6 +415,7 @@ namespace PennyPet
                 // report the second failure while the original data stays safe.
                 form = new StickyNoteWindow(note);
             }
+            LegacyStickyWindowCreatedCount++;
             form.NoteChanged += delegate
             {
                 _notes.SaveAsync();
@@ -487,6 +488,7 @@ namespace PennyPet
                 legacy != null && !legacy.IsDisposed) return false;
             string noteId = note.Id;
             if (!_hostedRuntime.AddNote(noteId)) return true;
+            HostedStickyWindowCreatedCount++;
             StickyUiCommand command = StickyUiCommand.Create(
                 StickyNoteUiSnapshot.FromData(note), focusEditor,
                 _reminders.GetItems());
@@ -917,6 +919,7 @@ namespace PennyPet
                     return false;
                 }
                 createdHostedIds.Add(member.Id);
+                HostedStickyWindowCreatedCount++;
             }
 
             int pending = ordered.Count;
