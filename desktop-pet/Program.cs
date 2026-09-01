@@ -8,6 +8,7 @@ namespace PennyPet
         [STAThread]
         private static void Main(string[] args)
         {
+            EmbeddedAssemblyResolver.Register();
             // Compatibility-test build: keep WPF sticky-note rendering away
             // from GPU/driver-specific layered-window paths.  The animated pet
             // itself remains on the existing WinForms renderer.

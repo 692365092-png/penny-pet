@@ -8,6 +8,7 @@ namespace PennyPet
         ReminderDue,
         DailyGreeting,
         Discovery,
-        EasterEgg
+        EasterEgg,
+        SmallTalk
     }
 }

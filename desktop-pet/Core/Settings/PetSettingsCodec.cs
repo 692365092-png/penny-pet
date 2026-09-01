@@ -82,6 +82,16 @@ namespace PennyPet
                     settings.SilentMode = value == "1";
                     recognized = true;
                 }
+                else if (key == "DailyContentEnabled")
+                {
+                    settings.DailyContentEnabled = value != "0";
+                    recognized = true;
+                }
+                else if (key == "SolarTermEnabled")
+                {
+                    settings.SolarTermEnabled = value != "0";
+                    recognized = true;
+                }
                 else if (key == "LastDailyBriefingDate")
                 {
                     settings.LastDailyBriefingDate =
@@ -173,6 +183,10 @@ namespace PennyPet
             lines.Add("KeyboardPrivacyNoticeAccepted=" +
                 (settings.KeyboardPrivacyNoticeAccepted ? "1" : "0"));
             lines.Add("SilentMode=" + (settings.SilentMode ? "1" : "0"));
+            lines.Add("DailyContentEnabled=" +
+                (settings.DailyContentEnabled ? "1" : "0"));
+            lines.Add("SolarTermEnabled=" +
+                (settings.SolarTermEnabled ? "1" : "0"));
             lines.Add("LastDailyBriefingDate=" + DailyContentRules
                 .NormalizeDateKey(settings.LastDailyBriefingDate));
             lines.Add("KeyOverlayScalePercent=" + PetSettingRules

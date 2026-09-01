@@ -40,6 +40,11 @@ namespace PennyPet
             RecoverWindowsItem = new ToolStripMenuItem(
                 "展开全部并平铺到此屏幕");
             RecoverWindowsItem.Click += delegate { _commands.RecoverWindows(); };
+            DailyContentItem = new ToolStripMenuItem("每日内容…");
+            DailyContentItem.Click += delegate
+            {
+                _commands.ShowDailyContentSettings();
+            };
             ScaleItem = new ToolStripMenuItem("调整桌宠大小…");
             ScaleItem.Click += delegate { _commands.ShowScale(); };
             StartupItem = new ToolStripMenuItem("开机自动启动");
@@ -74,6 +79,7 @@ namespace PennyPet
             Menu.Items.Add(SetReminderItem);
             Menu.Items.Add(CancelItem);
             Menu.Items.Add(new ToolStripSeparator());
+            Menu.Items.Add(DailyContentItem);
             Menu.Items.Add(ScaleItem);
             Menu.Items.Add(KeyboardItem);
             Menu.Items.Add(SilentItem);
@@ -98,6 +104,7 @@ namespace PennyPet
         internal ToolStripMenuItem CollapseNotesItem { get; private set; }
         internal ToolStripMenuItem ExpandTabsItem { get; private set; }
         internal ToolStripMenuItem RecoverWindowsItem { get; private set; }
+        internal ToolStripMenuItem DailyContentItem { get; private set; }
         internal ToolStripMenuItem ScaleItem { get; private set; }
         internal ToolStripMenuItem StartupItem { get; private set; }
         internal ToolStripMenuItem KeyboardItem { get; private set; }
@@ -122,6 +129,7 @@ namespace PennyPet
         internal Action CollapseNotes;
         internal Action ExpandTabs;
         internal Action RecoverWindows;
+        internal Action ShowDailyContentSettings;
         internal Action ShowScale;
         internal EventHandler StartupClick;
         internal EventHandler KeyboardClick;

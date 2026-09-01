@@ -345,6 +345,24 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void PetMouseDown_OnlyClosesHoverBubble()
+        {
+            string animation = ReadSource("PetAnimationRuntime.cs");
+            string mouseDown = Between(animation,
+                "private void PetMouseDown",
+                "private void PetMouseMove");
+
+            Assert.IsTrue(mouseDown.Contains(
+                "_bubbleCoordinator.IsCurrent(PetMessageKind.Hover)") &&
+                mouseDown.Contains(
+                    "_bubbleCoordinator.CloseIfCurrent(PetMessageKind.Hover)"),
+                "Mouse-down may close only the ambient Hover bubble.");
+            Assert.IsFalse(mouseDown.Contains(
+                "CloseCurrentBubbleWithoutRestoringHover"),
+                "Mouse-down must not close foreground user messages.");
+        }
+
+        [TestMethod]
         public void StickyUiCanary_ExternalCloseUsesAsyncFinalSnapshotProtocol()
         {
             string form = ReadSource("PetForm.cs");

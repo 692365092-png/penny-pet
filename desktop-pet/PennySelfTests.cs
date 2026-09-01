@@ -894,6 +894,162 @@ namespace PennyPet
             _reportedChecks = null;
         }
 
+        private sealed class SolarTermProbeCase
+        {
+            internal readonly DateTimeOffset LocalDate;
+            internal readonly SolarTerm ExpectedTerm;
+            internal readonly string ExpectedName;
+            internal readonly int ExpectedLongitude;
+
+            internal SolarTermProbeCase(int year, int month, int day,
+                TimeSpan offset, SolarTerm expectedTerm,
+                string expectedName, int expectedLongitude)
+            {
+                LocalDate = new DateTimeOffset(year, month, day, 12, 0, 0,
+                    offset);
+                ExpectedTerm = expectedTerm;
+                ExpectedName = expectedName;
+                ExpectedLongitude = expectedLongitude;
+            }
+        }
+
+        public static void RunSolarTermProbe(string outputPath)
+        {
+            Stopwatch timer = Stopwatch.StartNew();
+            SolarTermProbeCase[] cases = new SolarTermProbeCase[]
+            {
+                new SolarTermProbeCase(2016, 2, 4, TimeSpan.FromHours(8),
+                    SolarTerm.StartOfSpring, "立春", 315),
+                new SolarTermProbeCase(2016, 3, 20, TimeSpan.FromHours(8),
+                    SolarTerm.VernalEquinox, "春分", 0),
+                new SolarTermProbeCase(2016, 6, 21, TimeSpan.FromHours(8),
+                    SolarTerm.SummerSolstice, "夏至", 90),
+                new SolarTermProbeCase(2016, 9, 7, TimeSpan.FromHours(8),
+                    SolarTerm.WhiteDew, "白露", 165),
+                new SolarTermProbeCase(2016, 12, 21, TimeSpan.FromHours(8),
+                    SolarTerm.WinterSolstice, "冬至", 270),
+                new SolarTermProbeCase(2026, 2, 4, TimeSpan.FromHours(8),
+                    SolarTerm.StartOfSpring, "立春", 315),
+                new SolarTermProbeCase(2026, 2, 18, TimeSpan.FromHours(8),
+                    SolarTerm.RainWater, "雨水", 330),
+                new SolarTermProbeCase(2026, 9, 7, TimeSpan.FromHours(8),
+                    SolarTerm.WhiteDew, "白露", 165),
+                new SolarTermProbeCase(2026, 9, 23, TimeSpan.FromHours(8),
+                    SolarTerm.AutumnalEquinox, "秋分", 180),
+                new SolarTermProbeCase(2026, 12, 7, TimeSpan.FromHours(8),
+                    SolarTerm.MajorSnow, "大雪", 255),
+                new SolarTermProbeCase(2026, 12, 22, TimeSpan.FromHours(8),
+                    SolarTerm.WinterSolstice, "冬至", 270)
+            };
+            DateTimeOffset[] nonTermDates = new DateTimeOffset[]
+            {
+                new DateTimeOffset(2026, 9, 6, 12, 0, 0,
+                    TimeSpan.FromHours(8)),
+                new DateTimeOffset(2026, 9, 8, 12, 0, 0,
+                    TimeSpan.FromHours(8))
+            };
+
+            bool oracleOk = true;
+            bool nonTermOk = true;
+            string failure = null;
+            StringBuilder json = new StringBuilder();
+            try
+            {
+                json.Append("  \"oracle\": [\n");
+                for (int i = 0; i < cases.Length; i++)
+                {
+                    SolarTermInfo? info =
+                        SolarTermCalculator.FindForLocalDate(
+                            cases[i].LocalDate);
+                    bool match = info.HasValue &&
+                        info.Value.Term == cases[i].ExpectedTerm &&
+                        info.Value.ChineseName == cases[i].ExpectedName &&
+                        info.Value.LongitudeDegrees ==
+                            cases[i].ExpectedLongitude;
+                    oracleOk &= match;
+                    json.Append(SolarTermProbeEntry("oracle-" + (i + 1),
+                        cases[i].LocalDate, info, match));
+                    if (i < cases.Length - 1) json.Append(",");
+                    json.Append("\n");
+                }
+                json.Append("  ],\n  \"non_term\": [\n");
+                for (int i = 0; i < nonTermDates.Length; i++)
+                {
+                    SolarTermInfo? info =
+                        SolarTermCalculator.FindForLocalDate(nonTermDates[i]);
+                    bool match = !info.HasValue;
+                    nonTermOk &= match;
+                    json.Append(SolarTermProbeEntry("non-term-" + (i + 1),
+                        nonTermDates[i], info, match));
+                    if (i < nonTermDates.Length - 1) json.Append(",");
+                    json.Append("\n");
+                }
+                json.Append("  ],\n");
+                SolarTermInfo? current =
+                    SolarTermCalculator.FindForLocalDate(DateTimeOffset.Now);
+                json.Append("  \"current\": ");
+                json.Append(SolarTermProbeEntry("current",
+                    DateTimeOffset.Now, current, true));
+                json.Append("\n");
+            }
+            catch (Exception error)
+            {
+                failure = error.GetType().Name + ": " + error.Message;
+            }
+            timer.Stop();
+            bool ok = failure == null && oracleOk && nonTermOk;
+            string escapedFailure = failure == null ? "" : failure
+                .Replace("\\", "\\\\").Replace("\"", "\\\"");
+            string prefix = "{\n  \"ok\": " + Bool(ok) + ",\n" +
+                "  \"oracle_ok\": " + Bool(oracleOk) + ",\n" +
+                "  \"non_term_ok\": " + Bool(nonTermOk) + ",\n" +
+                "  \"elapsed_ms\": " + timer.ElapsedMilliseconds + ",\n" +
+                "  \"failure\": \"" + escapedFailure + "\",\n";
+            string body = json.Length == 0
+                ? "  \"oracle\": []\n" : json.ToString().Substring(
+                    json.ToString().IndexOf("  \"oracle\":",
+                    StringComparison.Ordinal));
+            string parent = Path.GetDirectoryName(
+                Path.GetFullPath(outputPath));
+            if (!String.IsNullOrEmpty(parent))
+                Directory.CreateDirectory(parent);
+            File.WriteAllText(outputPath, prefix + body + "}\n",
+                new UTF8Encoding(false));
+        }
+
+        private static string SolarTermProbeEntry(string label,
+            DateTimeOffset local, SolarTermInfo? info, bool matched)
+        {
+            string term = info.HasValue ? "\"" + info.Value.Term + "\"" :
+                "null";
+            string chineseName = info.HasValue
+                ? "\"" + info.Value.ChineseName + "\"" : "null";
+            string longitude = info.HasValue
+                ? info.Value.LongitudeDegrees.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture) :
+                "null";
+            string instantUtc = info.HasValue
+                ? "\"" + info.Value.InstantUtc.ToString(
+                    "yyyy-MM-ddTHH:mm:sszzz",
+                    System.Globalization.CultureInfo.InvariantCulture) + "\"" :
+                "null";
+            string localDate = local.ToString("yyyy-MM-dd",
+                System.Globalization.CultureInfo.InvariantCulture);
+            string offset = local.Offset.Hours >= 0 ? "+" : "-";
+            offset += Math.Abs(local.Offset.Hours).ToString("00",
+                System.Globalization.CultureInfo.InvariantCulture) + ":" +
+                Math.Abs(local.Offset.Minutes).ToString("00",
+                    System.Globalization.CultureInfo.InvariantCulture);
+            return "    { \"label\": \"" + label + "\", " +
+                "\"local_date\": \"" + localDate + "\", " +
+                "\"offset\": \"" + offset + "\", " +
+                "\"matched\": " + (matched ? "true" : "false") + ", " +
+                "\"term\": " + term + ", " +
+                "\"chinese_name\": " + chineseName + ", " +
+                "\"longitude\": " + longitude + ", " +
+                "\"instant_utc\": " + instantUtc + " }";
+        }
+
         private static string Bool(bool value)
         {
             if (_reportedChecks != null) _reportedChecks.Add(value);

@@ -42,6 +42,17 @@ namespace PennyPet
         private readonly PetDailyContentCoordinator _dailyContentCoordinator;
         private readonly PetPokeBurstTracker _pokeBurstTracker =
             new PetPokeBurstTracker();
+        private static readonly string[] SmallTalkPhrases =
+        {
+            "需要我帮什么忙吗？",
+            "我在呢～",
+            "怎么啦？",
+            "今天想做点什么？",
+            "要不要休息一下？"
+        };
+        private readonly Random _smallTalkRandom = new Random();
+        private int _lastSmallTalkIndex = -1;
+        private DateTime _lastSmallTalkUtc = DateTime.MinValue;
         private long _lastReminderBannerSecond
             { get { return _reminderCoordinator.LastBannerSecond; }
                 set { _reminderCoordinator.LastBannerSecond = value; } }
@@ -122,8 +133,6 @@ namespace PennyPet
                 set { _animation.ReminderAttentionActive = value; } }
         private DateTime _nextFrameUtc { get { return _animation.NextFrameUtc; }
             set { _animation.NextFrameUtc = value; } }
-        private DateTime _easterEggBubbleCloseUntilUtc;
-        private bool _easterEggBubblePendingClose;
         private bool _exiting;
         private int _scalePercent = 100;
         private KeyboardInputEventArgs _latestKeyboardEvent;
@@ -203,6 +212,8 @@ namespace PennyPet
             _dailyContentCoordinator = new PetDailyContentCoordinator(
                 delegate { return _settings.LastDailyBriefingDate; },
                 delegate { return _settings.SilentMode; },
+                delegate { return _settings.DailyContentEnabled; },
+                delegate { return _settings.SolarTermEnabled; },
                 delegate(string text)
                 {
                     return _bubbleCoordinator.Show(
@@ -328,6 +339,8 @@ namespace PennyPet
                 QueueStickyWindowAction(ExpandAndTileAllStickyNotesToPetScreen,
                     "sticky-window-expand-and-tile");
             };
+            menuCommands.ShowDailyContentSettings =
+                ShowDailyContentSettingsDialog;
             menuCommands.ShowScale = ShowScaleDialog;
             menuCommands.StartupClick = StartupItemClick;
             menuCommands.KeyboardClick = KeyboardItemClick;

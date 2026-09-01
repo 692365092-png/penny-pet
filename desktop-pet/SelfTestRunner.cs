@@ -175,6 +175,7 @@ namespace PennyPet
             internal bool KeyboardPrivacyNoticePersistenceOk;
             internal bool SilentModePersistenceOk;
             internal bool DailyBriefingDatePersistenceOk;
+            internal bool DailyContentPreferencesPersistenceOk;
             internal bool FailureDirtyRetryOk;
             internal bool BackupRecoveryOk;
         }
@@ -228,6 +229,8 @@ namespace PennyPet
             memorySettings.KeyboardPrivacyNoticeAccepted = true;
             memorySettings.KeyOverlayScalePercent = 150;
             memorySettings.SilentMode = true;
+            memorySettings.DailyContentEnabled = false;
+            memorySettings.SolarTermEnabled = false;
             memorySettings.LastDailyBriefingDate = "20350908";
             memorySettings.SaveToFile(persistenceTestPath);
             PetSettings diskSettings = PetSettings.LoadFromFile(
@@ -249,6 +252,15 @@ namespace PennyPet
             result.SilentModePersistenceOk = diskSettings.SilentMode;
             result.DailyBriefingDatePersistenceOk =
                 diskSettings.LastDailyBriefingDate == "20350908";
+            PetSettingsData legacyDailySettings = PetSettingsCodec.Parse(
+                new string[] { "SilentMode=0" });
+            result.DailyContentPreferencesPersistenceOk =
+                !diskSettings.DailyContentEnabled &&
+                !diskSettings.SolarTermEnabled &&
+                legacyDailySettings.DailyContentEnabled &&
+                legacyDailySettings.SolarTermEnabled &&
+                new PetSettings().DailyContentEnabled &&
+                new PetSettings().SolarTermEnabled;
 
             string settingsRetryPath = outputPath +
                 ".settings-retry-test.ini";
@@ -2179,6 +2191,11 @@ namespace PennyPet
             internal bool DailyRejectedRetryOk;
             internal bool DailyGreetingRequestOk;
             internal bool EasterEggRequestOk;
+            internal bool MinimumReadableOk;
+            internal bool ReadabilityBypassOk;
+            internal bool SmallTalkRequestOk;
+            internal bool SolarTermOk;
+            internal bool DailyContentPreferencesOk;
         }
 
         private static BubbleCheckResult RunBubbleChecks()
@@ -2233,12 +2250,14 @@ namespace PennyPet
             bool exiting = false;
             int restoreCount = 0;
             int closeCount = 0;
+            DateTime bubbleNow = DateTime.UtcNow;
             using (Form owner = new Form())
             using (PetBubbleCoordinator coordinator = new PetBubbleCoordinator(
                 owner, delegate { return dragging; },
                 delegate { return exiting; },
                 delegate(PetMessageKind kind) { closeCount++; },
-                delegate { restoreCount++; }))
+                delegate { restoreCount++; },
+                delegate { return bubbleNow; }))
             {
                 IntPtr ownerHandle = owner.Handle;
                 PetBubbleRequest firstRequest = PetBubbleRequest.Feedback(
@@ -2249,6 +2268,7 @@ namespace PennyPet
                     PetMessageKind.Feedback &&
                     coordinator.CurrentRequestForTest.Kind ==
                         PetMessageKind.Feedback;
+                bubbleNow = bubbleNow.AddMilliseconds(1500);
                 coordinator.Show(PetBubbleRequest.Feedback("第二条",
                     KeyboardOverlayForm.TextFontFamilyName, 18F));
                 Application.DoEvents();
@@ -2268,6 +2288,20 @@ namespace PennyPet
                         coordinator.CurrentBubbleForTest) &&
                     !protectedBubble.IsDisposed;
                 coordinator.CloseCurrent(true);
+                coordinator.Show(PetBubbleRequest.DailyGreeting(
+                    "早上好～", KeyboardOverlayForm.TextFontFamilyName,
+                    18F));
+                bool smallTalkBlocked = !coordinator.Show(
+                    PetBubbleRequest.SmallTalk("需要我帮什么忙吗？",
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                bubbleNow = bubbleNow.AddMilliseconds(3000);
+                bool smallTalkAllowed = coordinator.Show(
+                    PetBubbleRequest.SmallTalk("怎么啦？",
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                result.MinimumReadableOk = smallTalkBlocked &&
+                    smallTalkAllowed &&
+                    coordinator.CurrentKind == PetMessageKind.SmallTalk;
+                coordinator.CloseCurrent(true);
                 dragging = true;
                 coordinator.Show(PetBubbleRequest.BriefFeedback(
                     "拖拽后显示", "Microsoft YaHei UI", 19F));
@@ -2279,7 +2313,9 @@ namespace PennyPet
                 result.DeferredMessageSemanticsOk = queued && restored != null &&
                     restored.Kind == PetMessageKind.Feedback &&
                     restored.Text == "拖拽后显示" &&
-                    restored.AutoCloseMilliseconds == 2000 &&
+                    restored.AutoCloseMilliseconds ==
+                        BubbleReadingDurationRules.AutoCloseMilliseconds(
+                            "拖拽后显示") &&
                     restored.DeferWhileDragging &&
                     Math.Abs(restored.FontSizePoints - 19F) < 0.2F;
                 coordinator.CurrentBubbleForTest.Close();
@@ -2287,6 +2323,33 @@ namespace PennyPet
                 Application.DoEvents();
                 result.SingleRestoreAfterCloseOk = restoreCount == 1 &&
                     !coordinator.HasCurrent;
+            }
+            DateTime bypassNow = DateTime.UtcNow;
+            using (Form bypassOwner = new Form())
+            using (PetBubbleCoordinator bypass = new PetBubbleCoordinator(
+                bypassOwner, delegate { return false; },
+                delegate { return false; }, delegate { },
+                delegate { }, delegate { return bypassNow; }))
+            {
+                bypass.Show(PetBubbleRequest.DailyGreeting(
+                    "早上好～", KeyboardOverlayForm.TextFontFamilyName,
+                    18F));
+                bool smallTalkBlocked = !bypass.Show(
+                    PetBubbleRequest.SmallTalk("需要我帮什么忙吗？",
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                bool easterAccepted = bypass.Show(
+                    PetBubbleRequest.EasterEgg(
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                bypass.CloseCurrent(true);
+                bypass.Show(PetBubbleRequest.DailyGreeting(
+                    "早上好～", KeyboardOverlayForm.TextFontFamilyName,
+                    18F));
+                bool reminderAccepted = bypass.Show(
+                    PetBubbleRequest.ReminderDue("提醒到了",
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                result.ReadabilityBypassOk = smallTalkBlocked &&
+                    easterAccepted && reminderAccepted &&
+                    bypass.CurrentKind == PetMessageKind.ReminderDue;
             }
             using (SpeechBubbleForm empty = new SpeechBubbleForm("", 0))
             using (SpeechBubbleForm shortChinese = new SpeechBubbleForm(
@@ -2339,6 +2402,8 @@ namespace PennyPet
             string lastBriefingDate = String.Empty;
             bool silent = false;
             bool acceptGreeting = true;
+            bool dailyContentEnabled = true;
+            bool solarTermEnabled = true;
             int greetingCount = 0;
             int recordCount = 0;
             string greetingText = null;
@@ -2346,6 +2411,8 @@ namespace PennyPet
                 new PetDailyContentCoordinator(
                     delegate { return lastBriefingDate; },
                     delegate { return silent; },
+                    delegate { return dailyContentEnabled; },
+                    delegate { return solarTermEnabled; },
                     delegate(string text)
                     {
                         greetingCount++;
@@ -2357,17 +2424,16 @@ namespace PennyPet
                         recordCount++;
                         lastBriefingDate = date;
                     });
-            DateTime morning = new DateTime(2035, 9, 8, 8, 30, 0,
-                DateTimeKind.Local);
+            DateTimeOffset morning = new DateTimeOffset(2035, 6, 15, 8, 30, 0,
+                TimeSpan.FromHours(8));
             bool firstPoke = daily.HandlePetPoked(morning);
             bool secondPoke = daily.HandlePetPoked(morning.AddHours(1));
-            lastBriefingDate = "20350907";
-            bool nextDay = daily.HandlePetPoked(new DateTime(
-                2035, 9, 8, 15, 0, 0, DateTimeKind.Local));
+            lastBriefingDate = "20350614";
+            bool nextDay = daily.HandlePetPoked(morning.AddHours(6.5));
             result.DailyFirstPokeOk = firstPoke && !secondPoke && nextDay &&
                 greetingCount == 2 && recordCount == 2 &&
                 greetingText == "下午好～今天过得怎么样？" &&
-                lastBriefingDate == "20350908";
+                lastBriefingDate == "20350615";
             lastBriefingDate = String.Empty;
             greetingCount = 0;
             recordCount = 0;
@@ -2380,12 +2446,53 @@ namespace PennyPet
             bool retriedPoke = daily.HandlePetPoked(morning);
             result.DailyRejectedRetryOk = !silentPoke && !rejectedPoke &&
                 retriedPoke && greetingCount == 2 && recordCount == 1 &&
-                lastBriefingDate == "20350908";
+                lastBriefingDate == "20350615";
+            lastBriefingDate = String.Empty;
+            greetingCount = 0;
+            recordCount = 0;
+            dailyContentEnabled = false;
+            bool disabledPoke = daily.HandlePetPoked(morning);
+            dailyContentEnabled = true;
+            bool enabledLaterPoke = daily.HandlePetPoked(morning);
+            bool enabledSameDayPoke = daily.HandlePetPoked(
+                morning.AddHours(1));
+            lastBriefingDate = String.Empty;
+            greetingCount = 0;
+            recordCount = 0;
+            solarTermEnabled = false;
+            DateTimeOffset whiteDewDate = new DateTimeOffset(
+                2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(8));
+            bool solarOffPoke = daily.HandlePetPoked(whiteDewDate);
+            bool plainGreeting = greetingText.IndexOf("白露",
+                StringComparison.Ordinal) < 0;
+            solarTermEnabled = true;
+            bool solarEnabledSameDayPoke = daily.HandlePetPoked(
+                whiteDewDate.AddHours(1));
+            lastBriefingDate = String.Empty;
+            bool solarOnPoke = daily.HandlePetPoked(whiteDewDate);
+            result.DailyContentPreferencesOk = !disabledPoke &&
+                enabledLaterPoke && !enabledSameDayPoke && solarOffPoke &&
+                plainGreeting && !solarEnabledSameDayPoke && solarOnPoke &&
+                greetingText.IndexOf("今天是白露哦。",
+                    StringComparison.Ordinal) >= 0;
+            SolarTermInfo? whiteDew = SolarTermCalculator.FindForLocalDate(
+                new DateTimeOffset(2026, 9, 7, 12, 0, 0,
+                    TimeSpan.FromHours(8)));
+            SolarTermInfo? nonTerm = SolarTermCalculator.FindForLocalDate(
+                new DateTimeOffset(2026, 9, 6, 12, 0, 0,
+                    TimeSpan.FromHours(8)));
+            result.SolarTermOk = whiteDew.HasValue &&
+                whiteDew.Value.Term == SolarTerm.WhiteDew &&
+                whiteDew.Value.ChineseName == "白露" &&
+                whiteDew.Value.LongitudeDegrees == 165 &&
+                !nonTerm.HasValue;
             PetBubbleRequest dailyRequest = PetBubbleRequest.DailyGreeting(
                 "早上好", KeyboardOverlayForm.TextFontFamilyName, 15F);
             result.DailyGreetingRequestOk = dailyRequest.Kind ==
                 PetMessageKind.DailyGreeting &&
-                dailyRequest.AutoCloseMilliseconds == 20000 &&
+                dailyRequest.AutoCloseMilliseconds ==
+                    BubbleReadingDurationRules.AutoCloseMilliseconds(
+                        "早上好") &&
                 !dailyRequest.DeferWhileDragging;
             PetBubbleRequest easterEggRequest = PetBubbleRequest.EasterEgg(
                 KeyboardOverlayForm.TextFontFamilyName, 15F);
@@ -2393,7 +2500,8 @@ namespace PennyPet
                 PetMessageKind.EasterEgg &&
                 easterEggRequest.Text == "你在整我是不是。" &&
                 !easterEggRequest.DeferWhileDragging &&
-                easterEggRequest.AutoCloseMilliseconds == 0 &&
+                easterEggRequest.AutoCloseMilliseconds == 2800 &&
+                easterEggRequest.MinimumReadableMilliseconds == 1000 &&
                 !easterEggRequest.ClosesOnMouseDown &&
                 !PetMessagePolicy.ShouldReplace(PetMessageKind.ReminderDue,
                     PetMessageKind.EasterEgg, false) &&
@@ -2406,6 +2514,18 @@ namespace PennyPet
                     PetMessageKind.Feedback, false) &&
                 PetMessagePolicy.ShouldReplace(PetMessageKind.DailyGreeting,
                     PetMessageKind.EasterEgg, false);
+            PetBubbleRequest smallTalkRequest = PetBubbleRequest.SmallTalk(
+                "怎么啦？", KeyboardOverlayForm.TextFontFamilyName, 15F);
+            result.SmallTalkRequestOk = smallTalkRequest.Kind ==
+                PetMessageKind.SmallTalk &&
+                smallTalkRequest.MinimumReadableMilliseconds ==
+                    BubbleReadingDurationRules.MinimumReadableMilliseconds(
+                        "怎么啦？") &&
+                smallTalkRequest.AutoCloseMilliseconds ==
+                    BubbleReadingDurationRules.AutoCloseMilliseconds(
+                        "怎么啦？") &&
+                PetMessagePolicy.ShouldSuppress(
+                    PetMessageKind.SmallTalk, true);
             return result;
         }
 
@@ -2416,6 +2536,7 @@ namespace PennyPet
             internal bool StickyUiHostOk;
             internal StickyCanaryCheckResult StickyCanary;
             internal bool ScaleRangeOk;
+            internal bool DailyContentSettingsUiOk;
             internal bool ReverseReminderStepOk;
             internal bool PinActionTextOk;
             internal bool TodoPinActionTextOk;
@@ -2515,6 +2636,36 @@ namespace PennyPet
                 PetForm.NormalizeScalePercent(207) == 200 &&
                 PetForm.ScaledPetSize(50) == new Size(96, 104) &&
                 PetForm.ScaledPetSize(200) == new Size(384, 416);
+            using (DailyContentSettingsForm dailySettings =
+                new DailyContentSettingsForm(false, true))
+            {
+                bool disabledKeepsChoice =
+                    !dailySettings.DailyContentEnabled &&
+                    dailySettings.SolarTermEnabled &&
+                    !dailySettings.SolarTermControlEnabledForTest;
+                dailySettings.SetDailyContentEnabledForTest(true);
+                result.DailyContentSettingsUiOk = disabledKeepsChoice &&
+                    dailySettings.DailyContentEnabled &&
+                    dailySettings.SolarTermEnabled &&
+                    dailySettings.SolarTermControlEnabledForTest;
+            }
+            int dailyMenuClicks = 0;
+            PetContextMenuCommands menuCommands =
+                new PetContextMenuCommands();
+            menuCommands.ShowDailyContentSettings =
+                delegate { dailyMenuClicks++; };
+            using (PetContextMenu contextMenu = new PetContextMenu(
+                "Penny", false, false, false, menuCommands))
+            {
+                contextMenu.DailyContentItem.PerformClick();
+                result.DailyContentSettingsUiOk =
+                    result.DailyContentSettingsUiOk &&
+                    contextMenu.DailyContentItem.Text == "每日内容…" &&
+                    contextMenu.Menu.Items.IndexOf(
+                        contextMenu.DailyContentItem) <
+                    contextMenu.Menu.Items.IndexOf(contextMenu.ScaleItem) &&
+                    dailyMenuClicks == 1;
+            }
             result.ReverseReminderStepOk =
                 ReverseStepDateTimePicker.ReverseVirtualKey(0x26) == 0x28 &&
                 ReverseStepDateTimePicker.ReverseVirtualKey(0x28) == 0x26;
@@ -3450,7 +3601,10 @@ namespace PennyPet
                 "  \"sixth_reminder_blocked\": " + Bool(
                     settingsChecks.SixthReminderBlocked) + ",\n" +
                 "  \"reminder_memory_ok\": " + Bool(
-                    settingsChecks.ReminderMemoryOk) + ",\n";
+                    settingsChecks.ReminderMemoryOk) + ",\n" +
+                "  \"daily_content_preferences_persistence_and_legacy_defaults_ok\": " +
+                    Bool(settingsChecks
+                        .DailyContentPreferencesPersistenceOk) + ",\n";
         }
 
         private static string BuildScheduleAndExpiredReminderReportFields(
@@ -3734,6 +3888,18 @@ namespace PennyPet
                     bubbleChecks.DailyGreetingRequestOk) + ",\n" +
                 "  \"poke_easter_egg_typed_request_and_priority_ok\": " + Bool(
                     bubbleChecks.EasterEggRequestOk) + ",\n" +
+                "  \"bubble_minimum_readable_dwell_ok\": " + Bool(
+                    bubbleChecks.MinimumReadableOk) + ",\n" +
+                "  \"bubble_readability_priority_bypass_ok\": " + Bool(
+                    bubbleChecks.ReadabilityBypassOk) + ",\n" +
+                "  \"smalltalk_typed_request_and_silent_mode_ok\": " + Bool(
+                    bubbleChecks.SmallTalkRequestOk) + ",\n" +
+                "  \"solar_term_daily_greeting_fact_ok\": " + Bool(
+                    bubbleChecks.SolarTermOk) + ",\n" +
+                "  \"daily_content_preference_flow_ok\": " + Bool(
+                    bubbleChecks.DailyContentPreferencesOk) + ",\n" +
+                "  \"daily_content_settings_ui_and_menu_ok\": " + Bool(
+                    shellChecks.DailyContentSettingsUiOk) + ",\n" +
                 "  \"scale_50_to_200_step_10_ok\": " + Bool(
                     shellChecks.ScaleRangeOk) + ",\n" +
                 "  \"keyboard_text_scale_choices_ok\": " + Bool(

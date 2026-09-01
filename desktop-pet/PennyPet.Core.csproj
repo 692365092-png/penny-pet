@@ -11,6 +11,9 @@
     <Compile Include="Core\**\*.cs" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="CosineKitty.AstronomyEngine" Version="2.1.19" />
+  </ItemGroup>
+  <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>PennyPet.Windows.Core</_Parameter1>
     </AssemblyAttribute>

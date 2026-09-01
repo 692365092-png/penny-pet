@@ -12,8 +12,6 @@ namespace PennyPet
     // Animation selection policy remains in PetAnimationController.
     internal sealed partial class PetForm
     {
-        private const int EasterEggMinimumReadableDwellMilliseconds = 1200;
-
         private void AnimationTick(object sender, EventArgs e)
         {
             DateTime now = DateTime.UtcNow;
@@ -61,13 +59,6 @@ namespace PennyPet
                 if (now < _nextFrameUtc) return;
                 if (_frame >= RuntimeFrameCount(_row) - 1)
                 {
-                    if (_animation.InteractionAnimationKind ==
-                        PetInteractionAnimationKind.EasterEgg)
-                    {
-                        _easterEggBubblePendingClose = true;
-                        _easterEggBubbleCloseUntilUtc = now.AddMilliseconds(
-                            EasterEggMinimumReadableDwellMilliseconds);
-                    }
                     _animation.CompleteInteractionAnimation();
                     _row = ChooseRow();
                     _frame = 0;
@@ -79,12 +70,6 @@ namespace PennyPet
                 ScheduleNextFrame(now);
                 RenderCurrentFrame();
                 return;
-            }
-            if (_easterEggBubblePendingClose &&
-                now >= _easterEggBubbleCloseUntilUtc)
-            {
-                _easterEggBubblePendingClose = false;
-                _bubbleCoordinator.CloseIfCurrent(PetMessageKind.EasterEgg);
             }
             int wanted = ChooseRow();
             if (_row != wanted)
@@ -167,7 +152,8 @@ namespace PennyPet
             _dragging = true;
             _dragMoved = false;
             QueueArtPreload(FailedRow);
-            CloseCurrentBubbleWithoutRestoringHover();
+            if (_bubbleCoordinator.IsCurrent(PetMessageKind.Hover))
+                _bubbleCoordinator.CloseIfCurrent(PetMessageKind.Hover);
             _keyOverlay.HideImmediately();
             _typingSession = false;
             _dragMouseOrigin = Cursor.Position;
@@ -217,8 +203,32 @@ namespace PennyPet
                 StartPokeEasterEgg(nowUtc);
                 return;
             }
-            _dailyContentCoordinator.HandlePetPoked(DateTime.Now);
+            bool dailyShown = _dailyContentCoordinator.HandlePetPoked(
+                DateTimeOffset.Now);
+            if (!dailyShown) TryShowSmallTalk(nowUtc);
             StartOrdinaryPokeAnimation(nowUtc);
+        }
+
+        private void TryShowSmallTalk(DateTime nowUtc)
+        {
+            if (PetMessagePolicy.ShouldSuppress(PetMessageKind.SmallTalk,
+                _settings.SilentMode)) return;
+            if (!PetSmallTalkPolicy.ShouldAttempt(_lastSmallTalkUtc, nowUtc,
+                _smallTalkRandom.Next(100))) return;
+            int phraseIndex = PetSmallTalkPolicy.NextPhraseIndex(
+                _lastSmallTalkIndex,
+                _smallTalkRandom.Next(SmallTalkPhrases.Length),
+                SmallTalkPhrases.Length);
+            bool shown = _bubbleCoordinator.Show(PetBubbleRequest.SmallTalk(
+                SmallTalkPhrases[phraseIndex],
+                KeyboardOverlayForm.TextFontFamilyName,
+                KeyboardOverlayForm.TextFontSizePoints(
+                    _settings.KeyOverlayScalePercent)));
+            if (shown)
+            {
+                _lastSmallTalkUtc = nowUtc;
+                _lastSmallTalkIndex = phraseIndex;
+            }
         }
 
         private void StartOrdinaryPokeAnimation(DateTime nowUtc)
@@ -240,7 +250,6 @@ namespace PennyPet
 
         private void StartPokeEasterEgg(DateTime nowUtc)
         {
-            _easterEggBubblePendingClose = false;
             if (_bubbleCoordinator.CurrentKind.HasValue &&
                 PetMessagePolicy.IsProtectedReminder(
                     _bubbleCoordinator.CurrentKind.Value)) return;

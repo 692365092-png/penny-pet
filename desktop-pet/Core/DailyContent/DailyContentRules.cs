@@ -17,6 +17,18 @@ namespace PennyPet
             return localDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
         }
 
+        internal static bool ShouldShow(string lastBriefingDate,
+            DateTimeOffset localNow)
+        {
+            return !String.Equals(NormalizeDateKey(lastBriefingDate),
+                DateKey(localNow), StringComparison.Ordinal);
+        }
+
+        internal static string DateKey(DateTimeOffset localDate)
+        {
+            return localDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+        }
+
         internal static string NormalizeDateKey(string value)
         {
             DateTime parsed;
@@ -26,6 +38,16 @@ namespace PennyPet
         }
 
         internal static DayPart ResolveDayPart(DateTime localTime)
+        {
+            int hour = localTime.Hour;
+            if (hour < 5) return DayPart.LateNight;
+            if (hour < 11) return DayPart.Morning;
+            if (hour < 14) return DayPart.Midday;
+            if (hour < 18) return DayPart.Afternoon;
+            return DayPart.Evening;
+        }
+
+        internal static DayPart ResolveDayPart(DateTimeOffset localTime)
         {
             int hour = localTime.Hour;
             if (hour < 5) return DayPart.LateNight;

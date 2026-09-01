@@ -12,6 +12,11 @@ namespace PennyPet
             if (current.Value == PetMessageKind.ReminderDue) return false;
             if (current.Value == PetMessageKind.EasterEgg)
                 return incoming == PetMessageKind.ReminderPreAlert;
+            if (current.Value == PetMessageKind.SmallTalk &&
+                (incoming == PetMessageKind.Hover ||
+                    incoming == PetMessageKind.DailyGreeting ||
+                    incoming == PetMessageKind.Discovery ||
+                    incoming == PetMessageKind.Feedback)) return false;
             return true;
         }
 
@@ -21,13 +26,21 @@ namespace PennyPet
             if (!silentMode) return false;
             return kind == PetMessageKind.Hover ||
                 kind == PetMessageKind.DailyGreeting ||
-                kind == PetMessageKind.Discovery;
+                kind == PetMessageKind.Discovery ||
+                kind == PetMessageKind.SmallTalk;
         }
 
         internal static bool IsProtectedReminder(PetMessageKind kind)
         {
             return kind == PetMessageKind.ReminderPreAlert ||
                 kind == PetMessageKind.ReminderDue ||
+                kind == PetMessageKind.EasterEgg;
+        }
+
+        internal static bool CanBreakReadability(PetMessageKind kind)
+        {
+            return kind == PetMessageKind.ReminderDue ||
+                kind == PetMessageKind.ReminderPreAlert ||
                 kind == PetMessageKind.EasterEgg;
         }
     }

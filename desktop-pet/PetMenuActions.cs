@@ -78,6 +78,24 @@ namespace PennyPet
             }
         }
 
+        private void ShowDailyContentSettingsDialog()
+        {
+            using (DailyContentSettingsForm dialog =
+                new DailyContentSettingsForm(
+                    _settings.DailyContentEnabled,
+                    _settings.SolarTermEnabled))
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                if (_settings.DailyContentEnabled ==
+                        dialog.DailyContentEnabled &&
+                    _settings.SolarTermEnabled == dialog.SolarTermEnabled)
+                    return;
+                _settings.DailyContentEnabled = dialog.DailyContentEnabled;
+                _settings.SolarTermEnabled = dialog.SolarTermEnabled;
+                _settings.Save();
+            }
+        }
+
         private void ApplyScale(int percent, int keyTextPercent)
         {
             int next = NormalizeScalePercent(percent);

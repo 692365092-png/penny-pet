@@ -9,7 +9,7 @@ namespace PennyPet
         private PetBubbleRequest(PetMessageKind kind, string text,
             string fontFamilyName, float fontSizePoints,
             int autoCloseMilliseconds, bool deferWhileDragging,
-            bool closesOnMouseDown)
+            bool closesOnMouseDown, int minimumReadableMilliseconds)
         {
             Kind = kind;
             Text = text ?? String.Empty;
@@ -18,6 +18,8 @@ namespace PennyPet
             AutoCloseMilliseconds = Math.Max(0, autoCloseMilliseconds);
             DeferWhileDragging = deferWhileDragging;
             ClosesOnMouseDown = closesOnMouseDown;
+            MinimumReadableMilliseconds = Math.Max(0,
+                minimumReadableMilliseconds);
         }
 
         internal readonly PetMessageKind Kind;
@@ -27,32 +29,42 @@ namespace PennyPet
         internal readonly int AutoCloseMilliseconds;
         internal readonly bool DeferWhileDragging;
         internal readonly bool ClosesOnMouseDown;
+        internal readonly int MinimumReadableMilliseconds;
 
         internal static PetBubbleRequest Feedback(string text,
             string fontFamilyName, float fontSizePoints)
         {
             return new PetBubbleRequest(PetMessageKind.Feedback, text,
-                fontFamilyName, fontSizePoints, 20000, true, true);
+                fontFamilyName, fontSizePoints,
+                BubbleReadingDurationRules.AutoCloseMilliseconds(text),
+                true, true,
+                BubbleReadingDurationRules.MinimumReadableMilliseconds(text));
         }
 
         internal static PetBubbleRequest BriefFeedback(string text,
             string fontFamilyName, float fontSizePoints)
         {
             return new PetBubbleRequest(PetMessageKind.Feedback, text,
-                fontFamilyName, fontSizePoints, 2000, true, true);
+                fontFamilyName, fontSizePoints,
+                BubbleReadingDurationRules.AutoCloseMilliseconds(text),
+                true, true,
+                BubbleReadingDurationRules.MinimumReadableMilliseconds(text));
         }
 
         internal static PetBubbleRequest DailyGreeting(string text,
             string fontFamilyName, float fontSizePoints)
         {
             return new PetBubbleRequest(PetMessageKind.DailyGreeting, text,
-                fontFamilyName, fontSizePoints, 20000, false, true);
+                fontFamilyName, fontSizePoints,
+                BubbleReadingDurationRules.AutoCloseMilliseconds(text),
+                false, true,
+                BubbleReadingDurationRules.MinimumReadableMilliseconds(text));
         }
 
         internal static PetBubbleRequest EasterEgg(string fontFamilyName,
             float fontSizePoints)
         {
-            return EasterEgg(fontFamilyName, fontSizePoints, 0);
+            return EasterEgg(fontFamilyName, fontSizePoints, 2800);
         }
 
         internal static PetBubbleRequest EasterEgg(string fontFamilyName,
@@ -60,21 +72,31 @@ namespace PennyPet
         {
             return new PetBubbleRequest(PetMessageKind.EasterEgg,
                 "你在整我是不是。", fontFamilyName, fontSizePoints,
-                autoCloseMilliseconds, false, false);
+                autoCloseMilliseconds, false, false, 1000);
+        }
+
+        internal static PetBubbleRequest SmallTalk(string text,
+            string fontFamilyName, float fontSizePoints)
+        {
+            return new PetBubbleRequest(PetMessageKind.SmallTalk, text,
+                fontFamilyName, fontSizePoints,
+                BubbleReadingDurationRules.AutoCloseMilliseconds(text),
+                false, true,
+                BubbleReadingDurationRules.MinimumReadableMilliseconds(text));
         }
 
         internal static PetBubbleRequest Hover(string text,
             string fontFamilyName, float fontSizePoints)
         {
             return new PetBubbleRequest(PetMessageKind.Hover, text,
-                fontFamilyName, fontSizePoints, 0, false, true);
+                fontFamilyName, fontSizePoints, 0, false, true, 0);
         }
 
         internal static PetBubbleRequest ReminderPreAlert(string text,
             string fontFamilyName, float fontSizePoints)
         {
             return new PetBubbleRequest(PetMessageKind.ReminderPreAlert, text,
-                fontFamilyName, fontSizePoints, 0, false, true);
+                fontFamilyName, fontSizePoints, 0, false, true, 0);
         }
 
         internal static PetBubbleRequest ReminderDue(string text,
@@ -83,14 +105,14 @@ namespace PennyPet
             return new PetBubbleRequest(PetMessageKind.ReminderDue, text,
                 fontFamilyName, fontSizePoints,
                 PetReminderCoordinator.DueReminderBubbleDurationMilliseconds,
-                false, true);
+                false, true, 0);
         }
 
         internal PetBubbleRequest WithText(string text)
         {
             return new PetBubbleRequest(Kind, text, FontFamilyName,
                 FontSizePoints, AutoCloseMilliseconds, DeferWhileDragging,
-                ClosesOnMouseDown);
+                ClosesOnMouseDown, MinimumReadableMilliseconds);
         }
     }
 
@@ -106,12 +128,15 @@ namespace PennyPet
             new Queue<PetBubbleRequest>();
         private SpeechBubbleForm _bubble;
         private PetBubbleRequest _current;
+        private DateTime _shownAtUtc;
+        private DateTime _minimumReadableUntilUtc;
+        private readonly Func<DateTime> _clock;
         private bool _suppressRestore;
         private bool _disposed;
 
         internal PetBubbleCoordinator(Form owner, Func<bool> isDragging,
             Func<bool> isExiting, Action<PetMessageKind> messageClosed,
-            Action restoreAmbientMessage)
+            Action restoreAmbientMessage, Func<DateTime> clock = null)
         {
             _owner = owner ?? throw new ArgumentNullException("owner");
             _isDragging = isDragging ?? throw new ArgumentNullException(
@@ -120,6 +145,7 @@ namespace PennyPet
                 "isExiting");
             _messageClosed = messageClosed;
             _restoreAmbientMessage = restoreAmbientMessage;
+            _clock = clock ?? (() => DateTime.UtcNow);
         }
 
         internal PetMessageKind? CurrentKind
@@ -146,6 +172,10 @@ namespace PennyPet
             if (_disposed || request == null || _owner.IsDisposed) return false;
             if (HasCurrent && !PetMessagePolicy.ShouldReplace(CurrentKind,
                 request.Kind, _isExiting())) return false;
+            DateTime now = _clock();
+            if (HasCurrent && now < _minimumReadableUntilUtc &&
+                !PetMessagePolicy.CanBreakReadability(request.Kind))
+                return false;
             if (_isDragging() && request.DeferWhileDragging)
             {
                 _pending.Enqueue(request);
@@ -157,6 +187,9 @@ namespace PennyPet
                 request.FontSizePoints, request.ClosesOnMouseDown);
             _bubble = bubble;
             _current = request;
+            _shownAtUtc = now;
+            _minimumReadableUntilUtc = now.AddMilliseconds(
+                request.MinimumReadableMilliseconds);
             bubble.FormClosed += BubbleClosed;
             bubble.ShowNear(_owner);
             return true;
