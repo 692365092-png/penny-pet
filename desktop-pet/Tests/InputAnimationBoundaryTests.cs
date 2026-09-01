@@ -523,6 +523,35 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void OwnedModalWindows_SuspendOverlayAtWindowBoundary()
+        {
+            string menu = ReadSource("PetMenuActions.cs");
+            string keyboard = ReadSource(
+                "Features/KeyboardOverlay/PetKeyboardOverlayCoordinator.cs");
+            string dialog = ReadSource("WeatherLocationDialog.cs");
+            string modal = Between(menu,
+                "private DialogResult ShowOwnedModalDialog",
+                "private void ApplyScale");
+
+            Assert.IsTrue(menu.Contains("ShowOwnedModalDialog(dialog)") &&
+                menu.Contains("_ownedModalUiActive = true") &&
+                menu.Contains("_keyOverlay.HideImmediately()") &&
+                menu.Contains("_pendingOverlayGeneration++") &&
+                menu.Contains("finally") &&
+                menu.Contains("_ownedModalUiActive = false"),
+                "Pet-owned modal windows must own overlay suspension and cleanup.");
+            Assert.IsTrue(keyboard.Contains("if (_ownedModalUiActive)") &&
+                keyboard.Contains("_ownedModalUiActive ||") &&
+                !modal.Contains("SensitiveInputDetector") &&
+                !modal.Contains("PetKeyboardPrivacyPolicy"),
+                "Modal Z-order suppression must stay separate from privacy classification.");
+            Assert.IsTrue(dialog.Contains("FormattingEnabled = true") &&
+                dialog.Contains("ClientSize = new Size(410, 255)") &&
+                dialog.Contains("_results.Size = new Size(364, 96)"),
+                "Weather results must use their display projection in a compact window.");
+        }
+
+        [TestMethod]
         public void PetMouseDown_OnlyClosesHoverBubble()
         {
             string animation = ReadSource("PetAnimationRuntime.cs");

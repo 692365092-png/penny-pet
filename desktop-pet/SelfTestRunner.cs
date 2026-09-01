@@ -2272,6 +2272,7 @@ namespace PennyPet
             internal bool DailyCoordinatorFailureFallbackOk;
             internal bool DailyCoordinatorInFlightOk;
             internal bool RejectedBubbleReusesForecastOk;
+            internal bool LocationDialogLayoutOk;
         }
 
         private sealed class WeatherFixtureHandler : HttpMessageHandler
@@ -2343,6 +2344,11 @@ namespace PennyPet
             WeatherLocation location;
             WeatherLocation.TryCreate("武汉", "湖北", "中国", 30.5928,
                 114.3055, "Asia/Shanghai", out location);
+            using (PetWeatherSource dialogSource = new PetWeatherSource())
+            using (WeatherLocationDialog dialog =
+                new WeatherLocationDialog(dialogSource))
+                result.LocationDialogLayoutOk =
+                    dialog.UsesCompactFormattedResultsForTest(location);
             string forecastUrl = Uri.UnescapeDataString(
                 OpenMeteoForecastClient.BuildUri(location).AbsoluteUri);
             result.ForecastRequestShapeOk = forecastUrl.StartsWith(
@@ -4879,6 +4885,8 @@ namespace PennyPet
                     weatherChecks.DailyCoordinatorInFlightOk) + ",\n" +
                 "  \"weather_rejected_bubble_reuses_forecast_ok\": " + Bool(
                     weatherChecks.RejectedBubbleReusesForecastOk) + ",\n" +
+                "  \"weather_location_dialog_compact_formatting_ok\": " +
+                    Bool(weatherChecks.LocationDialogLayoutOk) + ",\n" +
                 "  \"zodiac_preference_settings_ui_ok\": " + Bool(
                     shellChecks.ZodiacPreferenceSettingsUiOk) + ",\n" +
                 "  \"scale_50_to_200_step_10_ok\": " + Bool(

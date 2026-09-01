@@ -52,6 +52,11 @@ namespace PennyPet
                 _keyboardUiDispatchQueued = false;
             }
             if (keyboardEvent == null || _dragging || _exiting) return;
+            if (_ownedModalUiActive)
+            {
+                _keyOverlay.HideImmediately();
+                return;
+            }
             if (ShouldSuppressOwnApplicationInput(
                 keyboardEvent.FocusSnapshot))
             {
@@ -144,7 +149,8 @@ namespace PennyPet
                         if (!IsCurrentPrivacyScan(generation,
                             _pendingOverlayGeneration)) return;
                     }
-                    if (_dragging || _exiting || !_settings.ShowKeyOverlay ||
+                    if (_dragging || _exiting || _ownedModalUiActive ||
+                        !_settings.ShowKeyOverlay ||
                         ShouldSuppressOwnApplicationInput(focusSnapshot) ||
                         sensitive)
                     {

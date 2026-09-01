@@ -73,7 +73,7 @@ namespace PennyPet
             using (ScaleDialog dialog = new ScaleDialog(_scalePercent,
                 _settings.KeyOverlayScalePercent))
             {
-                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                if (ShowOwnedModalDialog(dialog) != DialogResult.OK) return;
                 ApplyScale(dialog.SelectedPercent, dialog.SelectedKeyTextPercent);
             }
         }
@@ -95,7 +95,7 @@ namespace PennyPet
                     _settings.WeatherEnabled, currentLocation,
                     _settings.ZodiacSign, _weatherSource))
             {
-                DialogResult result = dialog.ShowDialog(this);
+                DialogResult result = ShowOwnedModalDialog(dialog);
                 if (!dialog.ApplyIfAccepted(_settings, result)) return;
                 WeatherLocation selected = dialog.SelectedWeatherLocation;
                 string nextLocationKey = selected == null
@@ -104,6 +104,30 @@ namespace PennyPet
                     StringComparison.Ordinal))
                     _weatherSource.InvalidateCache();
                 _settings.Save();
+            }
+        }
+
+        private DialogResult ShowOwnedModalDialog(Form dialog)
+        {
+            _ownedModalUiActive = true;
+            lock (_keyboardQueueGate)
+            {
+                // Invalidate an overlay scan started before the modal window
+                // entered the TopMost band; it must not surface after close.
+                _pendingOverlayGeneration++;
+                _pendingOverlayText = String.Empty;
+                _pendingOverlayOccurrences = 0;
+                _pendingOverlayVirtualKeyCode = 0;
+                _pendingOverlayFocusSnapshot = null;
+            }
+            _keyOverlay.HideImmediately();
+            try
+            {
+                return dialog.ShowDialog(this);
+            }
+            finally
+            {
+                _ownedModalUiActive = false;
             }
         }
 

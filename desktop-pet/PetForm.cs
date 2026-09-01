@@ -130,6 +130,7 @@ namespace PennyPet
         private int _pendingKeyboardOccurrences;
         private bool _keyboardUiDispatchQueued;
         private bool _privacyScanRunning;
+        private bool _ownedModalUiActive;
         private string _pendingOverlayText = String.Empty;
         private int _pendingOverlayOccurrences;
         private int _pendingOverlayVirtualKeyCode;

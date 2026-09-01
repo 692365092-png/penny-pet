@@ -26,7 +26,7 @@ namespace PennyPet
             MinimizeBox = false;
             ShowInTaskbar = false;
             TopMost = true;
-            ClientSize = new Size(480, 350);
+            ClientSize = new Size(410, 255);
             Font = SystemFonts.MessageBoxFont;
 
             Label hint = new Label();
@@ -36,18 +36,19 @@ namespace PennyPet
 
             _query = new TextBox();
             _query.Location = new Point(23, 48);
-            _query.Size = new Size(336, 27);
+            _query.Size = new Size(274, 27);
             _query.KeyDown += QueryKeyDown;
 
             _search = new Button();
             _search.Text = "搜索";
-            _search.Location = new Point(370, 46);
-            _search.Size = new Size(86, 30);
+            _search.Location = new Point(307, 46);
+            _search.Size = new Size(80, 30);
             _search.Click += async delegate { await SearchAsync(); };
 
             _results = new ListBox();
-            _results.Location = new Point(23, 88);
-            _results.Size = new Size(433, 174);
+            _results.FormattingEnabled = true;
+            _results.Location = new Point(23, 84);
+            _results.Size = new Size(364, 96);
             _results.Format += delegate(object sender,
                 ListControlConvertEventArgs e)
             {
@@ -65,20 +66,20 @@ namespace PennyPet
 
             _status = new Label();
             _status.AutoEllipsis = true;
-            _status.Location = new Point(23, 271);
-            _status.Size = new Size(433, 23);
+            _status.Location = new Point(23, 187);
+            _status.Size = new Size(364, 23);
 
             _ok = new Button();
             _ok.Text = "确定";
             _ok.DialogResult = DialogResult.OK;
             _ok.Enabled = false;
-            _ok.Location = new Point(291, 305);
+            _ok.Location = new Point(221, 213);
             _ok.Size = new Size(76, 30);
 
             Button cancel = new Button();
             cancel.Text = "取消";
             cancel.DialogResult = DialogResult.Cancel;
-            cancel.Location = new Point(380, 305);
+            cancel.Location = new Point(311, 213);
             cancel.Size = new Size(76, 30);
 
             Controls.Add(hint);
@@ -95,6 +96,14 @@ namespace PennyPet
         internal WeatherLocation SelectedLocation
         {
             get { return _results.SelectedItem as WeatherLocation; }
+        }
+
+        internal bool UsesCompactFormattedResultsForTest(
+            WeatherLocation location)
+        {
+            return _results.FormattingEnabled && ClientSize.Width <= 410 &&
+                ClientSize.Height <= 255 && _results.Height <= 100 &&
+                _results.GetItemText(location) == location.DisplayName;
         }
 
         private async void QueryKeyDown(object sender, KeyEventArgs e)
