@@ -906,6 +906,44 @@ namespace PennyPet
             return true;
         }
 
+        private bool ResizeHostedStickyDockDivider(DockWindowFacts snapshot)
+        {
+            if (_synchronizingDockLayout || _movingDockGroup ||
+                _activeNoteDragId != null || snapshot == null) return false;
+            StickyNoteData seed = _notes.Find(snapshot.NoteId);
+            if (seed == null) return false;
+            List<StickyNoteData> ordered = BuildDockChainOrder(seed);
+            int sourceIndex = ordered.FindIndex(
+                delegate(StickyNoteData note)
+                {
+                    return String.Equals(note.Id, snapshot.NoteId,
+                        StringComparison.OrdinalIgnoreCase);
+                });
+            if (sourceIndex < 0) return false;
+
+            Dictionary<string, DockWindowFacts> facts =
+                new Dictionary<string, DockWindowFacts>(
+                    StringComparer.OrdinalIgnoreCase);
+            foreach (StickyNoteData note in ordered)
+            {
+                if (note == null || !note.Visible) continue;
+                facts[note.Id] = DockWindowFacts.FromData(note);
+            }
+            facts[snapshot.NoteId] = snapshot;
+
+            DockWindowFacts root;
+            if (!facts.TryGetValue(ordered[0].Id, out root)) return false;
+            _synchronizingDockLayout = true;
+            try
+            {
+                LayoutDockChain(ordered, facts, root.X, root.Y,
+                    root.Width);
+            }
+            finally { _synchronizingDockLayout = false; }
+            RefreshDockResizeRoles();
+            return true;
+        }
+
         internal static List<DockLayoutTarget> CalculateDockDividerTargets(
             DockWindowFacts upper, DockWindowFacts lower)
         {

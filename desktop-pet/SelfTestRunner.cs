@@ -1173,6 +1173,7 @@ namespace PennyPet
             internal bool RootAnchorPreservedOk;
             internal bool DividerMovesFollowingChainOk;
             internal bool DividerIndependentRangeOk;
+            internal bool DividerPreservesDownstreamHeightsOk;
             internal bool WideNarrowDockingOk;
             internal bool LongCoordinateGuardOk;
             internal bool FirstDragRecoveryOk;
@@ -1217,6 +1218,25 @@ namespace PennyPet
                 PetForm.CalculateDockDividerHeight(50) == 220 &&
                 PetForm.CalculateDockDividerHeight(500) == 500 &&
                 PetForm.CalculateDockDividerHeight(900) == 700;
+            List<Rectangle> beforeDividerLayout =
+                PetForm.CalculateUnifiedDockLayout(
+                    new Size[] { new Size(420, 300),
+                        new Size(420, 300), new Size(420, 300) },
+                    120, 80, 420);
+            List<Rectangle> afterDividerLayout =
+                PetForm.CalculateUnifiedDockLayout(
+                    new Size[] { new Size(420, 350),
+                        new Size(420, 300), new Size(420, 300) },
+                    120, 80, 420);
+            result.DividerPreservesDownstreamHeightsOk =
+                beforeDividerLayout.Count == 3 &&
+                afterDividerLayout.Count == 3 &&
+                afterDividerLayout[1].Height == 300 &&
+                afterDividerLayout[2].Height == 300 &&
+                afterDividerLayout[1].Top ==
+                    beforeDividerLayout[1].Top + 50 &&
+                afterDividerLayout[2].Top ==
+                    beforeDividerLayout[2].Top + 50;
             result.WideNarrowDockingOk = PetForm.CanDockBelow(
                 new Rectangle(80, 400, 900, 300),
                 new Rectangle(400, 100, 280, 300), 20) &&
@@ -4344,6 +4364,9 @@ namespace PennyPet
                     dockChecks.Geometry.DividerMovesFollowingChainOk) + ",\n" +
                 "  \"sticky_internal_divider_independent_range_ok\": " + Bool(
                     dockChecks.Geometry.DividerIndependentRangeOk) + ",\n" +
+                "  \"sticky_internal_divider_preserves_downstream_heights_ok\": " +
+                    Bool(dockChecks.Geometry
+                        .DividerPreservesDownstreamHeightsOk) + ",\n" +
                 "  \"sticky_long_group_coordinate_guard_ok\": " + Bool(
                     dockChecks.Geometry.LongCoordinateGuardOk) + ",\n" +
                 "  \"sticky_root_close_collapses_group_ok\": " + Bool(
