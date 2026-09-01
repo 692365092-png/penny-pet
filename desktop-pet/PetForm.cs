@@ -40,19 +40,9 @@ namespace PennyPet
             new PetReminderCoordinator();
         private readonly PetBubbleCoordinator _bubbleCoordinator;
         private readonly PetDailyContentCoordinator _dailyContentCoordinator;
+        private readonly PetSmallTalkCoordinator _smallTalkCoordinator;
         private readonly PetPokeBurstTracker _pokeBurstTracker =
             new PetPokeBurstTracker();
-        private static readonly string[] SmallTalkPhrases =
-        {
-            "需要我帮什么忙吗？",
-            "我在呢～",
-            "怎么啦？",
-            "今天想做点什么？",
-            "要不要休息一下？"
-        };
-        private readonly Random _smallTalkRandom = new Random();
-        private int _lastSmallTalkIndex = -1;
-        private DateTime _lastSmallTalkUtc = DateTime.MinValue;
         private long _lastReminderBannerSecond
             { get { return _reminderCoordinator.LastBannerSecond; }
                 set { _reminderCoordinator.LastBannerSecond = value; } }
@@ -209,6 +199,16 @@ namespace PennyPet
                 RestoreAmbientBubble);
 
             _settings = preloadedSettings ?? PetSettings.Load();
+            _smallTalkCoordinator = new PetSmallTalkCoordinator(
+                delegate { return _settings.SilentMode; },
+                delegate(string text)
+                {
+                    return _bubbleCoordinator.Show(
+                        PetBubbleRequest.SmallTalk(text,
+                            KeyboardOverlayForm.TextFontFamilyName,
+                            KeyboardOverlayForm.TextFontSizePoints(
+                                _settings.KeyOverlayScalePercent)));
+                });
             _dailyContentCoordinator = new PetDailyContentCoordinator(
                 delegate { return _settings.LastDailyBriefingDate; },
                 delegate { return _settings.SilentMode; },

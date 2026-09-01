@@ -816,8 +816,14 @@ namespace PennyPet.Tests
                 PetMessageKind.Feedback, true));
             Assert.IsTrue(PetMessagePolicy.ShouldSuppress(
                 PetMessageKind.SmallTalk, true));
-            Assert.IsFalse(PetMessagePolicy.ShouldReplace(
+            Assert.IsTrue(PetMessagePolicy.ShouldReplace(
                 PetMessageKind.SmallTalk, PetMessageKind.Feedback, false));
+            Assert.IsFalse(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.SmallTalk, PetMessageKind.Hover, false));
+            Assert.IsFalse(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.SmallTalk, PetMessageKind.Discovery, false));
+            Assert.IsTrue(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.SmallTalk, PetMessageKind.ReminderDue, false));
         }
 
         [TestMethod]

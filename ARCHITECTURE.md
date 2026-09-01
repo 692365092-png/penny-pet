@@ -55,6 +55,36 @@ PennyPet.Tools -> 美术发布包和启动缓存生成
 
 `Core/Art` 的“跨平台”只表示代码和数据模型可复用，不代表 `art/` 中的美术资源采用 GPL 授权。泥泥NINII原创美术资源的版权与使用限制见根目录 [`ASSET_LICENSE.md`](ASSET_LICENSE.md)。
 
+### 消息与桌宠互动
+
+| 文件/目录 | 当前职责 | 边界 |
+|---|---|---|
+| `Core/Messaging/PetMessageKind.cs` | Bubble 产品消息身份 | 平台无关 |
+| `Core/Messaging/PetMessagePolicy.cs` | replacement、silent suppression 和 readability interrupt 规则 | 平台无关 |
+| `Core/Messaging/BubbleReadingDurationRules.cs` | 文本动态阅读时间和 minimum readable 纯规则 | 平台无关 |
+| `Core/Interaction/PetPokeBurstTracker.cs` | 快速连续 Poke 计数及单次 50 连戳触发 | 平台无关、仅进程内状态 |
+| `Core/Interaction/PetSmallTalkPolicy.cs` | SmallTalk 概率、cooldown 和相邻文案不重复规则 | 平台无关 |
+| `PetSmallTalkCoordinator.cs` | SmallTalk eligibility、文案选择、cooldown 状态及显示接受结果 | 平台无关产品协调 |
+| `PetBubbleCoordinator.cs` | Bubble 窗口生命周期、pending、minimum readability 和 reposition | Windows-only |
+| `PetAnimationRuntime.cs` | Poke 输入、产品顺序与实际 Windows 动画接线 | Windows-only |
+
+`PetBubbleCoordinator` 只在 pending request 真正显示成功后将其移出队列；因 minimum readable 或 replacement policy 暂时失败的 request 会保留到现有 MouseUp/当前 Bubble 关闭重试点。没有额外轮询 Timer 或第二套消息管道。
+
+`PetSmallTalkCoordinator` 只持有最小的进程内运行状态，并通过 `Func<string, bool>` 请求显示；`PetSmallTalkPolicy` 继续保持无状态纯规则。
+
+### Daily Content
+
+| 文件/目录 | 当前职责 | 边界 |
+|---|---|---|
+| `Core/DailyContent/DailyContentRules.cs` | 日期键、每日一次和 DayPart 纯规则 | 平台无关 |
+| `Core/DailyContent/DailyBriefingComposer.cs` | DayPart 与结构化每日事实组合为短文案 | 平台无关 |
+| `Core/DailyContent/ZodiacSign.cs` | 用户星座偏好的稳定业务身份；当前没有运势消费者 | 平台无关 |
+| `Core/Calendar/SolarTerm*` | 二十四节气天文事实 | 平台无关 |
+| `PetDailyContentCoordinator.cs` | 首次有效 Poke eligibility、compose、Bubble accepted 后消费日期 | Windows 产品协调 |
+| `DailyContentSettingsForm.cs` | Daily Content、节气和星座偏好设置 UI | Windows-only |
+
+`PennyPet.Core` 直接使用 `CosineKitty.AstronomyEngine 2.1.19`，当前用途仅为 `SolarTermCalculator` 的平台无关天文计算。兼容单文件 Windows 项目把固定的 `astronomy.dll` 嵌入 EXE，并由窄范围 `EmbeddedAssemblyResolver` 只解析该程序集；第三方许可见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+
 ### 便利贴、Dock 与链接
 
 | 文件/目录 | 当前职责 | 边界 |

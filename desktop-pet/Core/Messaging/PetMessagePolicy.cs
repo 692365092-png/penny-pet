@@ -14,9 +14,7 @@ namespace PennyPet
                 return incoming == PetMessageKind.ReminderPreAlert;
             if (current.Value == PetMessageKind.SmallTalk &&
                 (incoming == PetMessageKind.Hover ||
-                    incoming == PetMessageKind.DailyGreeting ||
-                    incoming == PetMessageKind.Discovery ||
-                    incoming == PetMessageKind.Feedback)) return false;
+                    incoming == PetMessageKind.Discovery)) return false;
             return true;
         }
 
@@ -30,7 +28,8 @@ namespace PennyPet
                 kind == PetMessageKind.SmallTalk;
         }
 
-        internal static bool IsProtectedReminder(PetMessageKind kind)
+        internal static bool IsProtectedForegroundMessage(
+            PetMessageKind kind)
         {
             return kind == PetMessageKind.ReminderPreAlert ||
                 kind == PetMessageKind.ReminderDue ||

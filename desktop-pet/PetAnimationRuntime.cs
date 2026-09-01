@@ -205,36 +205,15 @@ namespace PennyPet
             }
             bool dailyShown = _dailyContentCoordinator.HandlePetPoked(
                 DateTimeOffset.Now);
-            if (!dailyShown) TryShowSmallTalk(nowUtc);
+            if (!dailyShown)
+                _smallTalkCoordinator.HandlePetPoked(nowUtc);
             StartOrdinaryPokeAnimation(nowUtc);
-        }
-
-        private void TryShowSmallTalk(DateTime nowUtc)
-        {
-            if (PetMessagePolicy.ShouldSuppress(PetMessageKind.SmallTalk,
-                _settings.SilentMode)) return;
-            if (!PetSmallTalkPolicy.ShouldAttempt(_lastSmallTalkUtc, nowUtc,
-                _smallTalkRandom.Next(100))) return;
-            int phraseIndex = PetSmallTalkPolicy.NextPhraseIndex(
-                _lastSmallTalkIndex,
-                _smallTalkRandom.Next(SmallTalkPhrases.Length),
-                SmallTalkPhrases.Length);
-            bool shown = _bubbleCoordinator.Show(PetBubbleRequest.SmallTalk(
-                SmallTalkPhrases[phraseIndex],
-                KeyboardOverlayForm.TextFontFamilyName,
-                KeyboardOverlayForm.TextFontSizePoints(
-                    _settings.KeyOverlayScalePercent)));
-            if (shown)
-            {
-                _lastSmallTalkUtc = nowUtc;
-                _lastSmallTalkIndex = phraseIndex;
-            }
         }
 
         private void StartOrdinaryPokeAnimation(DateTime nowUtc)
         {
             if (_bubbleCoordinator.CurrentKind.HasValue &&
-                PetMessagePolicy.IsProtectedReminder(
+                PetMessagePolicy.IsProtectedForegroundMessage(
                     _bubbleCoordinator.CurrentKind.Value)) return;
             int row = PetAnimationController.PickRandomManualAnimationRow(
                 _random, _row);
@@ -251,7 +230,7 @@ namespace PennyPet
         private void StartPokeEasterEgg(DateTime nowUtc)
         {
             if (_bubbleCoordinator.CurrentKind.HasValue &&
-                PetMessagePolicy.IsProtectedReminder(
+                PetMessagePolicy.IsProtectedForegroundMessage(
                     _bubbleCoordinator.CurrentKind.Value)) return;
             if (!_animation.TryStartEasterEgg(FailedRow)) return;
             bool shown = _bubbleCoordinator.Show(PetBubbleRequest.EasterEgg(

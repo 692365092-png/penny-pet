@@ -126,7 +126,7 @@ namespace PennyPet
                 }
                 SaveReminders();
                 RefreshMenuText();
-                ShowBriefBubble("提醒已修改：" +
+                ShowBubble("提醒已修改：" +
                     replacement.DeadlineUtc.ToLocalTime()
                     .ToString("yyyy年MM月dd日 HH:mm:ss"));
             }
@@ -207,7 +207,7 @@ namespace PennyPet
                 QueueArtPreload(NotificationRow);
                 SaveReminders();
                 RefreshMenuText();
-                ShowBriefBubble("提醒已添加：" +
+                ShowBubble("提醒已添加：" +
                     item.DeadlineUtc.ToLocalTime().ToString(
                         "yyyy年MM月dd日 HH:mm:ss"));
             }
@@ -221,7 +221,7 @@ namespace PennyPet
                 CloseCurrentBubbleWithoutRestoringHover(true);
             SaveReminders();
             RefreshMenuText();
-            if (announce) ShowBriefBubble("这条提醒已经取消。");
+            if (announce) ShowBubble("这条提醒已经取消。");
         }
 
         private void CancelAllReminders()

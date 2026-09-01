@@ -2177,6 +2177,24 @@ namespace PennyPet
             return result;
         }
 
+        private sealed class SequenceRandom : Random
+        {
+            private readonly int[] _values;
+            private int _index;
+
+            internal SequenceRandom(params int[] values)
+            {
+                _values = values ?? new int[0];
+            }
+
+            public override int Next(int maxValue)
+            {
+                if (maxValue <= 0) return 0;
+                int value = _index < _values.Length ? _values[_index++] : 0;
+                return (value & Int32.MaxValue) % maxValue;
+            }
+        }
+
         private sealed class BubbleCheckResult
         {
             internal bool HoverCopyOk;
@@ -2190,6 +2208,9 @@ namespace PennyPet
             internal bool ReplacementClosesOldFormOk;
             internal bool ProtectedMessageOk;
             internal bool DeferredMessageSemanticsOk;
+            internal bool PendingRetryOk;
+            internal bool SmallTalkFeedbackLifecycleOk;
+            internal bool ReminderPriorityRegressionOk;
             internal bool SingleRestoreAfterCloseOk;
             internal bool AdaptiveSizingOk;
             internal bool UpdateTextRelayoutOk;
@@ -2200,6 +2221,10 @@ namespace PennyPet
             internal bool MinimumReadableOk;
             internal bool ReadabilityBypassOk;
             internal bool SmallTalkRequestOk;
+            internal bool SmallTalkCoordinatorCooldownOk;
+            internal bool SmallTalkCoordinatorRejectedRetryOk;
+            internal bool SmallTalkCoordinatorSilentModeOk;
+            internal bool SmallTalkCoordinatorReminderRetryOk;
             internal bool SolarTermOk;
             internal bool DailyContentPreferencesOk;
         }
@@ -2207,6 +2232,83 @@ namespace PennyPet
         private static BubbleCheckResult RunBubbleChecks()
         {
             BubbleCheckResult result = new BubbleCheckResult();
+            DateTime smallTalkStart = new DateTime(2035, 1, 1, 0, 0, 0,
+                DateTimeKind.Utc);
+            bool smallTalkSilent = false;
+            int smallTalkShowCount = 0;
+            string firstSmallTalk = null;
+            string secondSmallTalk = null;
+            PetSmallTalkCoordinator smallTalk = new PetSmallTalkCoordinator(
+                delegate { return smallTalkSilent; },
+                delegate(string text)
+                {
+                    smallTalkShowCount++;
+                    if (firstSmallTalk == null) firstSmallTalk = text;
+                    else secondSmallTalk = text;
+                    return true;
+                }, new SequenceRandom(0, 0, 0, 0, 0));
+            bool firstSmallTalkShown = smallTalk.HandlePetPoked(
+                smallTalkStart);
+            bool cooldownBlocked = !smallTalk.HandlePetPoked(
+                smallTalkStart.AddMilliseconds(
+                    PetSmallTalkPolicy.CooldownMilliseconds - 1));
+            bool cooldownElapsed = smallTalk.HandlePetPoked(
+                smallTalkStart.AddMilliseconds(
+                    PetSmallTalkPolicy.CooldownMilliseconds));
+            result.SmallTalkCoordinatorCooldownOk = firstSmallTalkShown &&
+                cooldownBlocked && cooldownElapsed &&
+                smallTalkShowCount == 2 && firstSmallTalk != secondSmallTalk;
+
+            int rejectedShowCount = 0;
+            PetSmallTalkCoordinator rejectedSmallTalk =
+                new PetSmallTalkCoordinator(delegate { return false; },
+                    delegate
+                    {
+                        rejectedShowCount++;
+                        return rejectedShowCount > 1;
+                    }, new SequenceRandom(0, 0, 0, 0));
+            bool rejectedFirst = !rejectedSmallTalk.HandlePetPoked(
+                smallTalkStart);
+            bool rejectedRetry = rejectedSmallTalk.HandlePetPoked(
+                smallTalkStart.AddMilliseconds(1));
+            result.SmallTalkCoordinatorRejectedRetryOk = rejectedFirst &&
+                rejectedRetry && rejectedShowCount == 2;
+
+            int silentShowCount = 0;
+            smallTalkSilent = true;
+            PetSmallTalkCoordinator silentSmallTalk =
+                new PetSmallTalkCoordinator(
+                    delegate { return smallTalkSilent; },
+                    delegate
+                    {
+                        silentShowCount++;
+                        return true;
+                    }, new SequenceRandom(0, 0));
+            bool silentBlocked = !silentSmallTalk.HandlePetPoked(
+                smallTalkStart);
+            smallTalkSilent = false;
+            bool silentRetry = silentSmallTalk.HandlePetPoked(
+                smallTalkStart.AddMilliseconds(1));
+            result.SmallTalkCoordinatorSilentModeOk = silentBlocked &&
+                silentRetry && silentShowCount == 1;
+
+            bool reminderDue = true;
+            int reminderRejectedCount = 0;
+            PetSmallTalkCoordinator reminderRejectedSmallTalk =
+                new PetSmallTalkCoordinator(delegate { return false; },
+                    delegate
+                    {
+                        reminderRejectedCount++;
+                        return !reminderDue;
+                    }, new SequenceRandom(0, 0, 0, 0));
+            bool reminderRejected = !reminderRejectedSmallTalk.HandlePetPoked(
+                smallTalkStart);
+            reminderDue = false;
+            bool afterReminderShown = reminderRejectedSmallTalk.HandlePetPoked(
+                smallTalkStart.AddMilliseconds(1));
+            result.SmallTalkCoordinatorReminderRetryOk = reminderRejected &&
+                afterReminderShown && reminderRejectedCount == 2;
+
             using (SpeechBubbleForm bubble = new SpeechBubbleForm("初始", 0))
             using (SpeechBubbleForm styled = new SpeechBubbleForm(
                 "样式提醒", 0, "Microsoft YaHei UI", 24F))
@@ -2309,7 +2411,7 @@ namespace PennyPet
                     coordinator.CurrentKind == PetMessageKind.SmallTalk;
                 coordinator.CloseCurrent(true);
                 dragging = true;
-                coordinator.Show(PetBubbleRequest.BriefFeedback(
+                coordinator.Show(PetBubbleRequest.Feedback(
                     "拖拽后显示", "Microsoft YaHei UI", 19F));
                 bool queued = coordinator.PendingCountForTest == 1 &&
                     !coordinator.HasCurrent;
@@ -2329,6 +2431,112 @@ namespace PennyPet
                 Application.DoEvents();
                 result.SingleRestoreAfterCloseOk = restoreCount == 1 &&
                     !coordinator.HasCurrent;
+            }
+            DateTime pendingNow = DateTime.UtcNow;
+            bool pendingDragging = true;
+            using (Form pendingOwner = new Form())
+            using (PetBubbleCoordinator pending = new PetBubbleCoordinator(
+                pendingOwner, delegate { return pendingDragging; },
+                delegate { return false; }, delegate { }, delegate { },
+                delegate { return pendingNow; }))
+            {
+                IntPtr pendingOwnerHandle = pendingOwner.Handle;
+                pending.Show(PetBubbleRequest.Feedback("稍后反馈",
+                    KeyboardOverlayForm.TextFontFamilyName, 18F));
+                pending.Show(PetBubbleRequest.DailyGreeting("早上好～",
+                    KeyboardOverlayForm.TextFontFamilyName, 18F));
+                pendingDragging = false;
+                pending.ShowNextPending();
+                bool minimumRetained = pending.PendingCountForTest == 1 &&
+                    pending.CurrentKind == PetMessageKind.DailyGreeting;
+                pending.ShowNextPending();
+                bool retryNotDuplicated = pending.PendingCountForTest == 1;
+                pendingNow = pendingNow.AddMilliseconds(
+                    BubbleReadingDurationRules.MinimumReadableMilliseconds(
+                        "早上好～") + 1);
+                pending.ShowNextPending();
+                bool minimumEventuallyShown = pending.PendingCountForTest == 0 &&
+                    pending.CurrentKind == PetMessageKind.Feedback;
+                pending.CloseCurrent(true);
+
+                pendingDragging = true;
+                pending.Show(PetBubbleRequest.Feedback("提醒后反馈",
+                    KeyboardOverlayForm.TextFontFamilyName, 18F));
+                pending.Show(PetBubbleRequest.ReminderDue("提醒到了",
+                    KeyboardOverlayForm.TextFontFamilyName, 18F));
+                pendingDragging = false;
+                pending.ShowNextPending();
+                bool policyRetained = pending.PendingCountForTest == 1 &&
+                    pending.CurrentKind == PetMessageKind.ReminderDue;
+                pending.CurrentBubbleForTest.Close();
+                Application.DoEvents();
+                Application.DoEvents();
+                bool policyEventuallyShown = pending.PendingCountForTest == 0 &&
+                    pending.CurrentKind == PetMessageKind.Feedback;
+                result.PendingRetryOk = minimumRetained &&
+                    retryNotDuplicated && minimumEventuallyShown &&
+                    policyRetained && policyEventuallyShown;
+            }
+            DateTime lifecycleNow = DateTime.UtcNow;
+            using (Form lifecycleOwner = new Form())
+            using (PetBubbleCoordinator lifecycle = new PetBubbleCoordinator(
+                lifecycleOwner, delegate { return false; },
+                delegate { return false; }, delegate { }, delegate { },
+                delegate { return lifecycleNow; }))
+            {
+                IntPtr lifecycleOwnerHandle = lifecycleOwner.Handle;
+                const string smallTalkText = "怎么啦？";
+                lifecycle.Show(PetBubbleRequest.SmallTalk(smallTalkText,
+                    KeyboardOverlayForm.TextFontFamilyName, 18F));
+                bool feedbackBlocked = !lifecycle.Show(
+                    PetBubbleRequest.Feedback("设置完成",
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                lifecycleNow = lifecycleNow.AddMilliseconds(
+                    BubbleReadingDurationRules.MinimumReadableMilliseconds(
+                        smallTalkText) + 1);
+                bool feedbackAllowed = lifecycle.Show(
+                    PetBubbleRequest.Feedback("设置完成",
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                lifecycle.CloseCurrent(true);
+                lifecycle.Show(PetBubbleRequest.SmallTalk(smallTalkText,
+                    KeyboardOverlayForm.TextFontFamilyName, 18F));
+                lifecycleNow = lifecycleNow.AddMilliseconds(
+                    BubbleReadingDurationRules.MinimumReadableMilliseconds(
+                        smallTalkText) + 1);
+                bool hoverBlocked = !lifecycle.Show(PetBubbleRequest.Hover(
+                    "今天想做什么？",
+                    KeyboardOverlayForm.TextFontFamilyName, 18F));
+                result.SmallTalkFeedbackLifecycleOk = feedbackBlocked &&
+                    feedbackAllowed && hoverBlocked;
+
+                bool reminderFromSmallTalk = lifecycle.Show(
+                    PetBubbleRequest.ReminderDue("提醒一",
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                bool feedbackCannotReplaceDue = !lifecycle.Show(
+                    PetBubbleRequest.Feedback("不能覆盖",
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                lifecycle.CloseCurrent(true);
+                lifecycle.Show(PetBubbleRequest.DailyGreeting("下午好～",
+                    KeyboardOverlayForm.TextFontFamilyName, 18F));
+                bool reminderFromDaily = lifecycle.Show(
+                    PetBubbleRequest.ReminderDue("提醒二",
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                lifecycle.CloseCurrent(true);
+                lifecycle.Show(PetBubbleRequest.EasterEgg(
+                    KeyboardOverlayForm.TextFontFamilyName, 18F));
+                bool preAlertFromEaster = lifecycle.Show(
+                    PetBubbleRequest.ReminderPreAlert("提醒倒计时",
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                lifecycle.CloseCurrent(true);
+                lifecycle.Show(PetBubbleRequest.EasterEgg(
+                    KeyboardOverlayForm.TextFontFamilyName, 18F));
+                bool reminderFromEaster = lifecycle.Show(
+                    PetBubbleRequest.ReminderDue("提醒三",
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                result.ReminderPriorityRegressionOk =
+                    reminderFromSmallTalk && feedbackCannotReplaceDue &&
+                    reminderFromDaily && preAlertFromEaster &&
+                    reminderFromEaster;
             }
             DateTime bypassNow = DateTime.UtcNow;
             using (Form bypassOwner = new Form())
@@ -3916,6 +4124,13 @@ namespace PennyPet
                     bubbleChecks.ProtectedMessageOk) + ",\n" +
                 "  \"bubble_deferred_message_semantics_ok\": " + Bool(
                     bubbleChecks.DeferredMessageSemanticsOk) + ",\n" +
+                "  \"bubble_pending_retry_without_loss_or_duplication_ok\": " +
+                    Bool(bubbleChecks.PendingRetryOk) + ",\n" +
+                "  \"smalltalk_feedback_minimum_readable_lifecycle_ok\": " +
+                    Bool(bubbleChecks.SmallTalkFeedbackLifecycleOk) +
+                    ",\n" +
+                "  \"bubble_reminder_priority_regression_ok\": " + Bool(
+                    bubbleChecks.ReminderPriorityRegressionOk) + ",\n" +
                 "  \"bubble_single_restore_after_close_ok\": " + Bool(
                     bubbleChecks.SingleRestoreAfterCloseOk) + ",\n" +
                 "  \"bubble_adaptive_sizing_ok\": " + Bool(
@@ -3936,6 +4151,16 @@ namespace PennyPet
                     bubbleChecks.ReadabilityBypassOk) + ",\n" +
                 "  \"smalltalk_typed_request_and_silent_mode_ok\": " + Bool(
                     bubbleChecks.SmallTalkRequestOk) + ",\n" +
+                "  \"smalltalk_coordinator_cooldown_and_rotation_ok\": " + Bool(
+                    bubbleChecks.SmallTalkCoordinatorCooldownOk) + ",\n" +
+                "  \"smalltalk_coordinator_rejected_show_retry_ok\": " + Bool(
+                    bubbleChecks.SmallTalkCoordinatorRejectedRetryOk) +
+                    ",\n" +
+                "  \"smalltalk_coordinator_silent_mode_retry_ok\": " + Bool(
+                    bubbleChecks.SmallTalkCoordinatorSilentModeOk) + ",\n" +
+                "  \"smalltalk_coordinator_reminder_reject_retry_ok\": " + Bool(
+                    bubbleChecks.SmallTalkCoordinatorReminderRetryOk) +
+                    ",\n" +
                 "  \"solar_term_daily_greeting_fact_ok\": " + Bool(
                     bubbleChecks.SolarTermOk) + ",\n" +
                 "  \"daily_content_preference_flow_ok\": " + Bool(

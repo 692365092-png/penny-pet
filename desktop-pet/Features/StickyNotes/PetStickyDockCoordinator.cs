@@ -1451,7 +1451,7 @@ namespace PennyPet
                     {
                         ReportHostedStickyCommandFailure(
                             "sticky-hosted-delete", result);
-                        ShowBriefBubble("便利贴仍在编辑，删除已取消。");
+                        ShowBubble("便利贴仍在编辑，删除已取消。");
                         return;
                     }
                     ApplyHostedStickySnapshot(result.Snapshot,

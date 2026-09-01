@@ -41,16 +41,6 @@ namespace PennyPet
                 BubbleReadingDurationRules.MinimumReadableMilliseconds(text));
         }
 
-        internal static PetBubbleRequest BriefFeedback(string text,
-            string fontFamilyName, float fontSizePoints)
-        {
-            return new PetBubbleRequest(PetMessageKind.Feedback, text,
-                fontFamilyName, fontSizePoints,
-                BubbleReadingDurationRules.AutoCloseMilliseconds(text),
-                true, true,
-                BubbleReadingDurationRules.MinimumReadableMilliseconds(text));
-        }
-
         internal static PetBubbleRequest DailyGreeting(string text,
             string fontFamilyName, float fontSizePoints)
         {
@@ -128,7 +118,6 @@ namespace PennyPet
             new Queue<PetBubbleRequest>();
         private SpeechBubbleForm _bubble;
         private PetBubbleRequest _current;
-        private DateTime _shownAtUtc;
         private DateTime _minimumReadableUntilUtc;
         private readonly Func<DateTime> _clock;
         private bool _suppressRestore;
@@ -187,7 +176,6 @@ namespace PennyPet
                 request.FontSizePoints, request.ClosesOnMouseDown);
             _bubble = bubble;
             _current = request;
-            _shownAtUtc = now;
             _minimumReadableUntilUtc = now.AddMilliseconds(
                 request.MinimumReadableMilliseconds);
             bubble.FormClosed += BubbleClosed;
@@ -199,7 +187,7 @@ namespace PennyPet
         {
             if (_disposed || _isDragging() || _isExiting() ||
                 _pending.Count == 0) return;
-            Show(_pending.Dequeue());
+            if (Show(_pending.Peek())) _pending.Dequeue();
         }
 
         internal void UpdateCurrentText(string text)
@@ -225,11 +213,12 @@ namespace PennyPet
             if (IsCurrent(kind)) _bubble.Close();
         }
 
-        internal void CloseCurrent(bool forceProtectedReminder)
+        internal void CloseCurrent(bool forceProtectedMessage)
         {
             if (!HasCurrent) return;
-            if (PetMessagePolicy.IsProtectedReminder(_current.Kind) &&
-                !forceProtectedReminder && !_isExiting()) return;
+            if (PetMessagePolicy.IsProtectedForegroundMessage(
+                _current.Kind) && !forceProtectedMessage && !_isExiting())
+                return;
             _suppressRestore = true;
             _bubble.Close();
             _suppressRestore = false;
@@ -297,14 +286,6 @@ namespace PennyPet
         private void ShowBubble(string text)
         {
             _bubbleCoordinator.Show(PetBubbleRequest.Feedback(text,
-                KeyboardOverlayForm.TextFontFamilyName,
-                KeyboardOverlayForm.TextFontSizePoints(
-                    _settings.KeyOverlayScalePercent)));
-        }
-
-        private void ShowBriefBubble(string text)
-        {
-            _bubbleCoordinator.Show(PetBubbleRequest.BriefFeedback(text,
                 KeyboardOverlayForm.TextFontFamilyName,
                 KeyboardOverlayForm.TextFontSizePoints(
                     _settings.KeyOverlayScalePercent)));
@@ -386,9 +367,9 @@ namespace PennyPet
         }
 
         private void CloseCurrentBubbleWithoutRestoringHover(
-            bool forceProtectedReminder = false)
+            bool forceProtectedMessage = false)
         {
-            _bubbleCoordinator.CloseCurrent(forceProtectedReminder);
+            _bubbleCoordinator.CloseCurrent(forceProtectedMessage);
         }
 
         private void BubbleMessageClosed(PetMessageKind kind)

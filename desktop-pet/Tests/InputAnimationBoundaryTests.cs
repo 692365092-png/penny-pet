@@ -345,6 +345,41 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void SmallTalkRuntime_IsOwnedByCoordinator()
+        {
+            string form = ReadSource("PetForm.cs");
+            string animation = ReadSource("PetAnimationRuntime.cs");
+            string coordinator = ReadSource("PetSmallTalkCoordinator.cs");
+            string poke = Between(animation, "private void HandlePetPoked",
+                "private void StartOrdinaryPokeAnimation");
+
+            Assert.IsTrue(form.Contains(
+                    "private readonly PetSmallTalkCoordinator") &&
+                poke.Contains("_dailyContentCoordinator.HandlePetPoked") &&
+                poke.Contains("if (!dailyShown)") &&
+                poke.Contains("_smallTalkCoordinator.HandlePetPoked(nowUtc)") &&
+                poke.Contains("StartOrdinaryPokeAnimation(nowUtc)"),
+                "PetForm must preserve Easter, Daily, SmallTalk, animation order.");
+            Assert.IsFalse(form.Contains("SmallTalkPhrases") ||
+                form.Contains("_smallTalkRandom") ||
+                form.Contains("_lastSmallTalkIndex") ||
+                form.Contains("_lastSmallTalkUtc") ||
+                animation.Contains("TryShowSmallTalk"),
+                "PetForm must not retain a second SmallTalk runtime state.");
+            Assert.IsTrue(coordinator.Contains("DefaultPhrases") &&
+                coordinator.Contains("PetSmallTalkPolicy.ShouldAttempt") &&
+                coordinator.Contains("PetMessagePolicy.ShouldSuppress") &&
+                coordinator.Contains("if (!_show(") &&
+                coordinator.Contains("_lastShownUtc = nowUtc"),
+                "The coordinator must own eligibility, selection and accepted state.");
+            Assert.IsFalse(coordinator.Contains("PetForm") ||
+                coordinator.Contains("PetBubbleCoordinator") ||
+                coordinator.Contains("System.Windows.Forms") ||
+                coordinator.Contains("KeyboardOverlayForm"),
+                "SmallTalk runtime must remain independent of Windows UI details.");
+        }
+
+        [TestMethod]
         public void PetMouseDown_OnlyClosesHoverBubble()
         {
             string animation = ReadSource("PetAnimationRuntime.cs");
@@ -360,6 +395,21 @@ namespace PennyPet.Tests
             Assert.IsFalse(mouseDown.Contains(
                 "CloseCurrentBubbleWithoutRestoringHover"),
                 "Mouse-down must not close foreground user messages.");
+        }
+
+        [TestMethod]
+        public void PetLocationChange_RepositionsCurrentBubble()
+        {
+            string form = ReadSource("PetForm.cs");
+            int locationChanged = form.IndexOf("LocationChanged += delegate",
+                StringComparison.Ordinal);
+            int sizeChanged = form.IndexOf("SizeChanged += delegate",
+                locationChanged, StringComparison.Ordinal);
+            string body = form.Substring(locationChanged,
+                sizeChanged - locationChanged);
+
+            Assert.IsTrue(body.Contains("RepositionCurrentBubble()"),
+                "Pet movement must reposition rather than close its Bubble.");
         }
 
         [TestMethod]

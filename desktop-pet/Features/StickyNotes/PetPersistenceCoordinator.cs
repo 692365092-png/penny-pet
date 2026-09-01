@@ -21,7 +21,7 @@ namespace PennyPet
             _lastPersistenceWarningUtc = now;
             string dataName = Object.ReferenceEquals(sender, _settings)
                 ? "设置" : "便利贴";
-            ShowBriefBubble(dataName +
+            ShowBubble(dataName +
                 "尚未保存，Penny 会自动重试。请暂时不要退出。");
         }
 
@@ -38,7 +38,7 @@ namespace PennyPet
             if (_settings.HasUnsavedChanges && !_settings.Save().Succeeded) return;
             if (_notes.HasUnsavedChanges || _settings.HasUnsavedChanges) return;
             _persistenceRetryTimer.Stop();
-            if (!_exiting) ShowBriefBubble("未保存的数据已重新写入磁盘。");
+            if (!_exiting) ShowBubble("未保存的数据已重新写入磁盘。");
         }
 
         private bool FlushPersistenceBeforeExit()

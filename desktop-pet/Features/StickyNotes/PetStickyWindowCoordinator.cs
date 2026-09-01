@@ -166,7 +166,7 @@ namespace PennyPet
                 PrepareStickyExpandAndTileTargets(_notes.GetAll(), work);
             if (targets.Count == 0)
             {
-                ShowBriefBubble("当前没有便利贴。");
+                ShowBubble("当前没有便利贴。");
                 return;
             }
 
@@ -221,7 +221,7 @@ namespace PennyPet
             RefreshDockResizeRoles();
             RefreshNoteTabs();
             RefreshMenuText();
-            ShowBriefBubble("已展开并平铺 " + targets.Count +
+            ShowBubble("已展开并平铺 " + targets.Count +
                 " 张便利贴到当前屏幕。");
         }
 
@@ -784,7 +784,7 @@ namespace PennyPet
                         _hostedRuntime.CancelExit();
                         ReportHostedStickyCommandFailure(
                             "sticky-hosted-exit", result);
-                        ShowBriefBubble("便利贴仍在收尾，退出已取消，请稍后重试。");
+                        ShowBubble("便利贴仍在收尾，退出已取消，请稍后重试。");
                         return;
                     }
                     if (result.FinalSnapshots != null)
