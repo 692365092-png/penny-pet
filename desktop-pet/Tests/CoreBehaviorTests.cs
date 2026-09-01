@@ -718,6 +718,29 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void PetMessagePolicy_PreservesReminderPriorityAndSilentMode()
+        {
+            Assert.IsTrue(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.Hover, PetMessageKind.Feedback, false));
+            Assert.IsFalse(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.ReminderPreAlert,
+                PetMessageKind.Feedback, false));
+            Assert.IsTrue(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.ReminderPreAlert,
+                PetMessageKind.ReminderDue, false));
+            Assert.IsTrue(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.ReminderDue,
+                PetMessageKind.Feedback, false));
+            Assert.IsFalse(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.ReminderDue,
+                PetMessageKind.DailyGreeting, false));
+            Assert.IsTrue(PetMessagePolicy.ShouldSuppress(
+                PetMessageKind.DailyGreeting, true));
+            Assert.IsFalse(PetMessagePolicy.ShouldSuppress(
+                PetMessageKind.Feedback, true));
+        }
+
+        [TestMethod]
         public void KeyDisplayAccumulator_AggregatesOnlyWithinItsTimeWindows()
         {
             KeyDisplayAccumulator accumulator = new KeyDisplayAccumulator();

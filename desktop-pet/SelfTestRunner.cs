@@ -1865,21 +1865,26 @@ namespace PennyPet
                 PetForm.DueReminderBubbleFontSizePoints(100) -
                 KeyboardOverlayForm.TextFontSizePoints(100)) < 0.2F;
             result.DueBubbleReplacementOk =
-                PetReminderCoordinator.ShouldReplaceBubble(
-                    true, false, false, false) &&
-                PetReminderCoordinator.ShouldReplaceBubble(
-                    true, false, true, false) &&
-                PetReminderCoordinator.ShouldReplaceBubble(
-                    true, false, false, true) &&
-                PetReminderCoordinator.ShouldReplaceBubble(
-                    false, false, false, false);
+                PetMessagePolicy.ShouldReplace(PetMessageKind.ReminderDue,
+                    PetMessageKind.Feedback, false) &&
+                PetMessagePolicy.ShouldReplace(PetMessageKind.ReminderDue,
+                    PetMessageKind.ReminderDue, false) &&
+                PetMessagePolicy.ShouldReplace(PetMessageKind.ReminderDue,
+                    PetMessageKind.DailyGreeting, true) &&
+                PetMessagePolicy.ShouldReplace(PetMessageKind.Hover,
+                    PetMessageKind.Feedback, false) &&
+                !PetMessagePolicy.ShouldReplace(PetMessageKind.ReminderDue,
+                    PetMessageKind.DailyGreeting, false);
             result.PreAlertBubbleProtectionOk =
-                !PetReminderCoordinator.ShouldReplaceBubble(
-                    false, true, false, false) &&
-                PetReminderCoordinator.ShouldReplaceBubble(
-                    false, true, true, false) &&
-                PetReminderCoordinator.ShouldReplaceBubble(
-                    false, true, false, true);
+                !PetMessagePolicy.ShouldReplace(
+                    PetMessageKind.ReminderPreAlert,
+                    PetMessageKind.Feedback, false) &&
+                PetMessagePolicy.ShouldReplace(
+                    PetMessageKind.ReminderPreAlert,
+                    PetMessageKind.ReminderDue, false) &&
+                PetMessagePolicy.ShouldReplace(
+                    PetMessageKind.ReminderPreAlert,
+                    PetMessageKind.Feedback, true);
             ReminderItem expired = new ReminderItem(
                 DateTime.UtcNow.AddMinutes(-1), "已错过");
             ReminderItem future = new ReminderItem(
@@ -2138,6 +2143,11 @@ namespace PennyPet
             internal bool DragSuppressionOk;
             internal bool SilentModeOk;
             internal bool PositionMathOk;
+            internal bool SingleMessageKindOk;
+            internal bool ReplacementClosesOldFormOk;
+            internal bool ProtectedMessageOk;
+            internal bool DeferredMessageSemanticsOk;
+            internal bool SingleRestoreAfterCloseOk;
         }
 
         private static BubbleCheckResult RunBubbleChecks()
@@ -2175,14 +2185,78 @@ namespace PennyPet
             result.SilentModeOk =
                 !PetForm.ShouldShowHoverBubble(true, false, false, true) &&
                 PetForm.ShouldShowHoverBubble(true, false, false, false) &&
-                PetForm.ShouldSuppressDailyBubble(true, false) &&
-                !PetForm.ShouldSuppressDailyBubble(true, true) &&
-                !PetForm.ShouldSuppressDailyBubble(false, false);
+                PetMessagePolicy.ShouldSuppress(
+                    PetMessageKind.DailyGreeting, true) &&
+                PetMessagePolicy.ShouldSuppress(
+                    PetMessageKind.Discovery, true) &&
+                !PetMessagePolicy.ShouldSuppress(
+                    PetMessageKind.Feedback, true) &&
+                !PetMessagePolicy.ShouldSuppress(
+                    PetMessageKind.ReminderDue, true);
             Point position = SpeechBubbleForm.CalculateNearLocation(
                 new Rectangle(1400, 800, 192, 208), new Size(330, 138),
                 new Rectangle(0, 0, 1920, 1080));
             result.PositionMathOk = position.X > 1000 && position.Y > 500 &&
                 position != Point.Empty;
+            bool dragging = false;
+            bool exiting = false;
+            int restoreCount = 0;
+            int closeCount = 0;
+            using (Form owner = new Form())
+            using (PetBubbleCoordinator coordinator = new PetBubbleCoordinator(
+                owner, delegate { return dragging; },
+                delegate { return exiting; },
+                delegate(PetMessageKind kind) { closeCount++; },
+                delegate { restoreCount++; }))
+            {
+                IntPtr ownerHandle = owner.Handle;
+                PetBubbleRequest firstRequest = PetBubbleRequest.Feedback(
+                    "第一条", KeyboardOverlayForm.TextFontFamilyName, 18F);
+                coordinator.Show(firstRequest);
+                SpeechBubbleForm first = coordinator.CurrentBubbleForTest;
+                result.SingleMessageKindOk = coordinator.CurrentKind ==
+                    PetMessageKind.Feedback &&
+                    coordinator.CurrentRequestForTest.Kind ==
+                        PetMessageKind.Feedback;
+                coordinator.Show(PetBubbleRequest.Feedback("第二条",
+                    KeyboardOverlayForm.TextFontFamilyName, 18F));
+                Application.DoEvents();
+                result.ReplacementClosesOldFormOk = first.IsDisposed &&
+                    coordinator.CurrentRequestForTest.Text == "第二条" &&
+                    closeCount == 1;
+                coordinator.Show(PetBubbleRequest.ReminderPreAlert(
+                    "提醒倒计时", KeyboardOverlayForm.TextFontFamilyName,
+                    18F));
+                SpeechBubbleForm protectedBubble =
+                    coordinator.CurrentBubbleForTest;
+                bool feedbackAccepted = coordinator.Show(
+                    PetBubbleRequest.Feedback("不能覆盖",
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                result.ProtectedMessageOk = !feedbackAccepted &&
+                    ReferenceEquals(protectedBubble,
+                        coordinator.CurrentBubbleForTest) &&
+                    !protectedBubble.IsDisposed;
+                coordinator.CloseCurrent(true);
+                dragging = true;
+                coordinator.Show(PetBubbleRequest.BriefFeedback(
+                    "拖拽后显示", "Microsoft YaHei UI", 19F));
+                bool queued = coordinator.PendingCountForTest == 1 &&
+                    !coordinator.HasCurrent;
+                dragging = false;
+                coordinator.ShowNextPending();
+                PetBubbleRequest restored = coordinator.CurrentRequestForTest;
+                result.DeferredMessageSemanticsOk = queued && restored != null &&
+                    restored.Kind == PetMessageKind.Feedback &&
+                    restored.Text == "拖拽后显示" &&
+                    restored.AutoCloseMilliseconds == 2000 &&
+                    restored.DeferWhileDragging &&
+                    Math.Abs(restored.FontSizePoints - 19F) < 0.2F;
+                coordinator.CurrentBubbleForTest.Close();
+                Application.DoEvents();
+                Application.DoEvents();
+                result.SingleRestoreAfterCloseOk = restoreCount == 1 &&
+                    !coordinator.HasCurrent;
+            }
             return result;
         }
 
@@ -3472,7 +3546,8 @@ namespace PennyPet
                 "  \"silent_mode_daily_bubbles_suppressed_ok\": " + Bool(
                     bubbleChecks.SilentModeOk) + ",\n" +
                 "  \"silent_mode_reminder_bubbles_preserved_ok\": " + Bool(
-                    !PetForm.ShouldSuppressDailyBubble(true, true)) + ",\n" +
+                    !PetMessagePolicy.ShouldSuppress(
+                        PetMessageKind.ReminderDue, true)) + ",\n" +
                 "  \"manual_animation_random_pool_excludes_running_rows_ok\": " + Bool(
                     animationChecks.ManualRandomPoolOk) + ",\n" +
                 "  \"manual_special_animation_probability_reduced_ok\": " + Bool(
@@ -3484,6 +3559,16 @@ namespace PennyPet
                     animationChecks.ClickDragThresholdOk) + ",\n" +
                 "  \"bubble_position_math_ok\": " + Bool(
                     bubbleChecks.PositionMathOk) + ",\n" +
+                "  \"bubble_single_message_kind_ok\": " + Bool(
+                    bubbleChecks.SingleMessageKindOk) + ",\n" +
+                "  \"bubble_replacement_closes_old_form_ok\": " + Bool(
+                    bubbleChecks.ReplacementClosesOldFormOk) + ",\n" +
+                "  \"bubble_protected_message_ok\": " + Bool(
+                    bubbleChecks.ProtectedMessageOk) + ",\n" +
+                "  \"bubble_deferred_message_semantics_ok\": " + Bool(
+                    bubbleChecks.DeferredMessageSemanticsOk) + ",\n" +
+                "  \"bubble_single_restore_after_close_ok\": " + Bool(
+                    bubbleChecks.SingleRestoreAfterCloseOk) + ",\n" +
                 "  \"scale_50_to_200_step_10_ok\": " + Bool(
                     shellChecks.ScaleRangeOk) + ",\n" +
                 "  \"keyboard_text_scale_choices_ok\": " + Bool(

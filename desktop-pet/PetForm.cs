@@ -27,23 +27,6 @@ namespace PennyPet
         private const int ThinkingRow = PetAnimationController.ThinkingRow;
         private const int ReviewRow = PetAnimationController.ReviewRow;
         private const int NotificationRow = PetAnimationController.NotificationRow;
-        // Zero means an at-time reminder stays until the bubble itself is
-        // clicked or another application message replaces it.
-        private sealed class BubbleMessage
-        {
-            public BubbleMessage(string text, string fontFamilyName,
-                float fontSizePoints)
-            {
-                Text = text ?? String.Empty;
-                FontFamilyName = fontFamilyName ?? "Microsoft YaHei UI";
-                FontSizePoints = fontSizePoints;
-            }
-
-            public readonly string Text;
-            public readonly string FontFamilyName;
-            public readonly float FontSizePoints;
-        }
-
         private sealed class DockTarget
         {
             public string ParentNoteId;
@@ -55,6 +38,7 @@ namespace PennyPet
         private readonly System.Windows.Forms.Timer _persistenceRetryTimer;
         private readonly PetReminderCoordinator _reminderCoordinator =
             new PetReminderCoordinator();
+        private readonly PetBubbleCoordinator _bubbleCoordinator;
         private long _lastReminderBannerSecond
             { get { return _reminderCoordinator.LastBannerSecond; }
                 set { _reminderCoordinator.LastBannerSecond = value; } }
@@ -91,8 +75,6 @@ namespace PennyPet
         private readonly StickyNoteTabsForm _rightNoteTabs;
         private readonly Dictionary<string, StickyNoteWindow> _noteWindows =
             new Dictionary<string, StickyNoteWindow>(StringComparer.OrdinalIgnoreCase);
-        private readonly Queue<BubbleMessage> _pendingBubbleTexts =
-            new Queue<BubbleMessage>();
         private readonly Random _random = new Random();
         private readonly object _keyboardQueueGate = new object();
         private readonly ArtPreloadReservations _artPreloads =
@@ -111,15 +93,10 @@ namespace PennyPet
         private PetArtPackage _art;
         private Bitmap[][] _renderedFrames;
         private bool _renderedFramesOwnBitmaps;
-        private SpeechBubbleForm _bubble;
         private ContactAuthorForm _contactAuthorForm;
-        private bool _bubbleIsHover;
-        private bool _bubbleIsPreAlert;
-        private bool _bubbleIsDueReminder;
         private ReminderItem _preAlertItem
             { get { return _reminderCoordinator.PreAlertItem; }
                 set { _reminderCoordinator.PreAlertItem = value; } }
-        private bool _suppressHoverRestore;
         private int _row
             { get { return _animation.Row; } set { _animation.Row = value; } }
         private int _frame
@@ -221,6 +198,10 @@ namespace PennyPet
             ClientSize = new Size(CellWidth, CellHeight);
             DoubleBuffered = true;
             AutoScaleMode = AutoScaleMode.None;
+            _bubbleCoordinator = new PetBubbleCoordinator(this,
+                delegate { return _dragging; },
+                delegate { return _exiting; }, BubbleMessageClosed,
+                RestoreAmbientBubble);
 
             _settings = preloadedSettings ?? PetSettings.Load();
             _settings.SaveFailed += PersistenceSaveFailed;
@@ -466,8 +447,7 @@ namespace PennyPet
             _keyboard.Dispose();
             _keyOverlay.Dispose();
             _mouseInside = false;
-            _suppressHoverRestore = true;
-            if (_bubble != null && !_bubble.IsDisposed) _bubble.Close();
+            _bubbleCoordinator.Dispose();
             if (_contactAuthorForm != null && !_contactAuthorForm.IsDisposed)
                 _contactAuthorForm.Close();
             _trayIcon.Visible = false;

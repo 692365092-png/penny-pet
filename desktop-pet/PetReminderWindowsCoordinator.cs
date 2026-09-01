@@ -179,10 +179,11 @@ namespace PennyPet
             if (PetReminderCoordinator.ShouldShowPreAlert(next, next == null
                 ? TimeSpan.Zero : next.DeadlineUtc - now))
                 ShowOrUpdatePreAlert(next);
-            else if (_bubbleIsPreAlert)
+            else if (_bubbleCoordinator.IsCurrent(
+                PetMessageKind.ReminderPreAlert))
                 CloseCurrentBubbleWithoutRestoringHover(true);
 
-            if (_bubbleIsHover)
+            if (_bubbleCoordinator.IsCurrent(PetMessageKind.Hover))
                 ShowOrUpdateHoverBubble();
         }
 
@@ -240,18 +241,16 @@ namespace PennyPet
             StickyNoteData linkedNote = ClearLinkedNoteReminder(item, true);
             // A due reminder always replaces hover, confirmation and daily
             // speech instead of waiting behind a long-lived bubble.
-            if (_bubble != null && !_bubble.IsDisposed)
+            if (_bubbleCoordinator.HasCurrent)
                 CloseCurrentBubbleWithoutRestoringHover(true);
             SaveReminders();
             RefreshMenuText();
             RequestReminderAttentionAnimation();
             string reminderText = String.IsNullOrWhiteSpace(text)
                 ? "到时间啦。" : text;
-            ShowBubble(reminderText, KeyboardOverlayForm.TextFontFamilyName,
+            ShowDueReminderBubble(reminderText,
                 DueReminderBubbleFontSizePoints(
-                    _settings.KeyOverlayScalePercent),
-                PetReminderCoordinator.DueReminderBubbleDurationMilliseconds,
-                false, true);
+                    _settings.KeyOverlayScalePercent));
             System.Media.SystemSounds.Asterisk.Play();
             if (linkedNote != null)
                 ShowStickyNote(linkedNote, !HasFocusedOwnNoteTextInput());

@@ -98,7 +98,7 @@ namespace PennyPet
                 Location = new Point(centerX - Width / 2, bottom - Height);
                 KeepFullyVisible();
                 RenderCurrentFrame();
-                if (_bubble != null && !_bubble.IsDisposed) _bubble.ShowNear(this);
+                _bubbleCoordinator.ShowCurrentNearOwner();
             }
             _keyOverlay.SetTextScale(nextKeyText);
             _settings.ScalePercent = _scalePercent;
@@ -222,7 +222,7 @@ namespace PennyPet
             _nextFrameUtc = DateTime.UtcNow.AddMilliseconds(
                 RuntimeFrameDuration(_row, _frame));
             RenderCurrentFrame();
-            if (!ShouldSuppressDailyBubble(_settings.SilentMode, false))
+            if (!_settings.SilentMode)
                 ShowBubble("再见啦，照顾好自己！");
         }
 
