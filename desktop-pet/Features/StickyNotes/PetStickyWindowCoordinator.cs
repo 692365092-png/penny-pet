@@ -45,6 +45,11 @@ namespace PennyPet
                 note.IsTodoList = true;
                 note.Title = "待办清单";
                 _notes.Save();
+                if (TryStartHostedSticky(note, true))
+                {
+                    RefreshMenuText();
+                    return;
+                }
                 ShowStickyNote(note, true);
                 PlaceNewStickyWindowOnPetScreen(note);
                 EnsureCreatedStickyWindowVisible(note);
@@ -70,6 +75,11 @@ namespace PennyPet
                 note.FontSizeTwips = 320;
                 note.Height = 360;
                 _notes.Save();
+                if (TryStartHostedSticky(note, true))
+                {
+                    RefreshMenuText();
+                    return;
+                }
                 ShowStickyNote(note, true);
                 PlaceNewStickyWindowOnPetScreen(note);
                 EnsureCreatedStickyWindowVisible(note);
