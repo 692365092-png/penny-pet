@@ -921,14 +921,25 @@ namespace PennyPet
                 });
             if (sourceIndex < 0) return false;
 
+            if (_activeHostedDockResizeFacts == null ||
+                !String.Equals(_activeHostedDockResizeSourceId,
+                    snapshot.NoteId, StringComparison.OrdinalIgnoreCase))
+            {
+                _activeHostedDockResizeSourceId = snapshot.NoteId;
+                _activeHostedDockResizeFacts =
+                    new Dictionary<string, DockWindowFacts>(
+                        StringComparer.OrdinalIgnoreCase);
+                foreach (StickyNoteData note in ordered)
+                {
+                    if (note == null || !note.Visible) continue;
+                    _activeHostedDockResizeFacts[note.Id] =
+                        DockWindowFacts.FromData(note);
+                }
+            }
             Dictionary<string, DockWindowFacts> facts =
                 new Dictionary<string, DockWindowFacts>(
+                    _activeHostedDockResizeFacts,
                     StringComparer.OrdinalIgnoreCase);
-            foreach (StickyNoteData note in ordered)
-            {
-                if (note == null || !note.Visible) continue;
-                facts[note.Id] = DockWindowFacts.FromData(note);
-            }
             facts[snapshot.NoteId] = snapshot;
 
             DockWindowFacts root;

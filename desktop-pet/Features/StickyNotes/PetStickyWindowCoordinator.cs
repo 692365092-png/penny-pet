@@ -616,6 +616,9 @@ namespace PennyPet
             }
             if (value.Kind == StickyUiEventKind.BoundsChanged)
             {
+                if (String.Equals(_activeHostedDockResizeSourceId,
+                    value.NoteId, StringComparison.OrdinalIgnoreCase))
+                    ClearHostedDockResizeSession();
                 ApplyHostedStickySnapshot(value.Snapshot, value.Sequence, false);
                 return;
             }
@@ -665,6 +668,7 @@ namespace PennyPet
             }
             if (value.Kind == StickyUiEventKind.Closed)
             {
+                ClearHostedDockResizeSession();
                 ApplyHostedStickySnapshot(value.Snapshot, value.Sequence);
                 _hostedRuntime.RemoveNote(value.NoteId);
                 _renderedFirstRenderNoteIds.Remove(value.NoteId);
@@ -733,6 +737,12 @@ namespace PennyPet
                 !String.Equals(oldHiddenTitle, canonical.DisplayTitle,
                     StringComparison.Ordinal))) RefreshNoteTabs();
             return true;
+        }
+
+        private void ClearHostedDockResizeSession()
+        {
+            _activeHostedDockResizeFacts = null;
+            _activeHostedDockResizeSourceId = null;
         }
 
         internal static bool ShouldApplyHostedSequence(long sequence,

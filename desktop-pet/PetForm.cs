@@ -175,6 +175,9 @@ namespace PennyPet
         private bool _startupUiReady;
         private bool _startupArtReady;
         private bool _startupReadyRaised;
+        private Dictionary<string, DockWindowFacts>
+            _activeHostedDockResizeFacts;
+        private string _activeHostedDockResizeSourceId;
         // The loading window is the only startup visual.  Keep the layered pet
         // window alive for initialization, but do not publish one of its frames
         // until both the restored notes and animation rows are ready.  Showing
