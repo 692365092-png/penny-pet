@@ -1899,7 +1899,8 @@ namespace PennyPet
             internal bool TextScaleChoicesOk;
             internal bool ShortcutAndRepeatOk;
             internal bool HeldKeyStableOk;
-            internal bool OwnProcessIsolationOk;
+            internal bool HookCapturePolicyOk;
+            internal bool OwnProcessEligibilityOk;
             internal bool PrivacyGenerationOk;
             internal bool FocusSnapshotIdentityOk;
             internal bool AdaptiveContrastOk;
@@ -1949,10 +1950,16 @@ namespace PennyPet
             result.HeldKeyStableOk =
                 GlobalKeyboardActivity.ShouldPublishKeyDown(false) &&
                 !GlobalKeyboardActivity.ShouldPublishKeyDown(true);
-            result.OwnProcessIsolationOk =
-                !GlobalKeyboardActivity.ShouldPublishKey(false, 42, 42) &&
-                GlobalKeyboardActivity.ShouldPublishKey(false, 42, 43) &&
-                !GlobalKeyboardActivity.ShouldPublishKey(true, 42, 43);
+            result.HookCapturePolicyOk =
+                GlobalKeyboardActivity.ShouldPublishKey(false) &&
+                !GlobalKeyboardActivity.ShouldPublishKey(true);
+            result.OwnProcessEligibilityOk =
+                !PetKeyboardPrivacyPolicy.ShouldSuppressOwnApplicationInput(
+                    false, false) &&
+                !PetKeyboardPrivacyPolicy.ShouldSuppressOwnApplicationInput(
+                    true, true) &&
+                PetKeyboardPrivacyPolicy.ShouldSuppressOwnApplicationInput(
+                    true, false);
             result.PrivacyGenerationOk = PetForm.IsCurrentPrivacyScan(12, 12) &&
                 !PetForm.IsCurrentPrivacyScan(12, 13);
             KeyboardFocusSnapshot captured = new KeyboardFocusSnapshot(
@@ -3311,8 +3318,10 @@ namespace PennyPet
                     windowPolicyChecks.ManagerMarqueeBatchDeleteOk) + ",\n" +
                 "  \"held_key_overlay_stays_constant_ok\": " + Bool(
                     keyboardOverlayChecks.HeldKeyStableOk) + ",\n" +
-                "  \"own_process_hook_isolation_ok\": " + Bool(
-                    keyboardOverlayChecks.OwnProcessIsolationOk) + ",\n" +
+                "  \"keyboard_hook_captures_own_process_ok\": " + Bool(
+                    keyboardOverlayChecks.HookCapturePolicyOk) + ",\n" +
+                "  \"own_process_sticky_eligibility_ok\": " + Bool(
+                    keyboardOverlayChecks.OwnProcessEligibilityOk) + ",\n" +
                 "  \"ime_animation_guard_ok\": " + Bool(
                     editorChecks.ImeAnimationGuardOk) + ",\n" +
                 "  \"ime_autosave_guard_ok\": " + Bool(

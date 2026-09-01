@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -7,6 +8,9 @@ namespace PennyPet
     // Coordinates keyboard hook events, privacy scans and overlay delivery.
     internal sealed partial class PetForm
     {
+        private static readonly uint OwnKeyboardProcessId =
+            (uint)Process.GetCurrentProcess().Id;
+
         private void KeyboardActivity(object sender, KeyboardInputEventArgs e)
         {
             if (IsDisposed || !IsHandleCreated) return;
@@ -48,7 +52,8 @@ namespace PennyPet
                 _keyboardUiDispatchQueued = false;
             }
             if (keyboardEvent == null || _dragging || _exiting) return;
-            if (HasFocusedOwnNoteTextInput() || IsOwnApplicationInputFocused())
+            if (ShouldSuppressOwnApplicationInput(
+                keyboardEvent.FocusSnapshot))
             {
                 _keyOverlay.HideImmediately();
                 return;
@@ -140,8 +145,8 @@ namespace PennyPet
                             _pendingOverlayGeneration)) return;
                     }
                     if (_dragging || _exiting || !_settings.ShowKeyOverlay ||
-                        HasFocusedOwnNoteTextInput() ||
-                        IsOwnApplicationInputFocused() || sensitive)
+                        ShouldSuppressOwnApplicationInput(focusSnapshot) ||
+                        sensitive)
                     {
                         _keyOverlay.HideImmediately();
                         return;
@@ -153,15 +158,13 @@ namespace PennyPet
             catch { }
         }
 
-        private static bool IsOwnApplicationInputFocused()
+        private bool ShouldSuppressOwnApplicationInput(
+            KeyboardFocusSnapshot focusSnapshot)
         {
-            foreach (Form form in Application.OpenForms)
-            {
-                if (form != null && !form.IsDisposed && form.ContainsFocus &&
-                    form.GetType().Assembly == typeof(PetForm).Assembly)
-                    return true;
-            }
-            return false;
+            bool ownApplicationInput = focusSnapshot != null &&
+                focusSnapshot.ProcessId == OwnKeyboardProcessId;
+            return PetKeyboardPrivacyPolicy.ShouldSuppressOwnApplicationInput(
+                ownApplicationInput, HasFocusedOwnNoteTextInput());
         }
 
         internal static bool IsCurrentPrivacyScan(long capturedGeneration,

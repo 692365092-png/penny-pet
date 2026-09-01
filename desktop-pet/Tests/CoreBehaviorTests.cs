@@ -706,6 +706,15 @@ namespace PennyPet.Tests
             Assert.IsFalse(
                 PetKeyboardPrivacyPolicy.ShouldSuppressCapturedInput(
                     false, true));
+            Assert.IsFalse(
+                PetKeyboardPrivacyPolicy.ShouldSuppressOwnApplicationInput(
+                    false, false));
+            Assert.IsFalse(
+                PetKeyboardPrivacyPolicy.ShouldSuppressOwnApplicationInput(
+                    true, true));
+            Assert.IsTrue(
+                PetKeyboardPrivacyPolicy.ShouldSuppressOwnApplicationInput(
+                    true, false));
         }
 
         [TestMethod]

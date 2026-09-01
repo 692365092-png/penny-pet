@@ -299,6 +299,8 @@ namespace PennyPet.Tests
                 "Features/StickyNotes/PetStickyWindowCoordinator.cs");
             string overlay = ReadSource(
                 "Features/KeyboardOverlay/PetKeyboardOverlayCoordinator.cs");
+            string hook = ReadSource(
+                "Features/KeyboardOverlay/GlobalKeyboardActivity.cs");
 
             Assert.IsTrue(commands.Contains("InputFocusChanged") &&
                 session.Contains("_window.HasFocusedTextInput") &&
@@ -306,9 +308,16 @@ namespace PennyPet.Tests
                     "_hostedRuntime.SetInputFocus(value.NoteId, value.Flag)"),
                 "Sticky STA must asynchronously report a plain focus flag.");
             Assert.IsTrue(overlay.Contains(
-                "HasFocusedOwnNoteTextInput() ||") &&
-                overlay.Contains("IsOwnApplicationInputFocused() || sensitive"),
-                "Both keyboard-overlay privacy checks must suppress own input.");
+                    "ShouldSuppressOwnApplicationInput(focusSnapshot)") &&
+                overlay.Contains("HasFocusedOwnNoteTextInput())") &&
+                overlay.Contains("focusSnapshot.ProcessId ==") &&
+                overlay.Contains(
+                    "PetKeyboardPrivacyPolicy.ShouldSuppressOwnApplicationInput"),
+                "Sticky focus must allow only the owned Sticky text-input exception.");
+            Assert.IsTrue(hook.Contains("ShouldPublishKey(injected)") &&
+                !hook.Contains("ownProcessId") &&
+                !hook.Contains("foregroundProcessId"),
+                "The hook must capture physical own-process keys for policy evaluation.");
         }
 
         [TestMethod]
