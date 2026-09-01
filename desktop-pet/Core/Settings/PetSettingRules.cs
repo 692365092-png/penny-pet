@@ -17,5 +17,11 @@ namespace PennyPet
             if (value >= 125) return 150;
             return 100;
         }
+
+        internal static ZodiacSign NormalizeZodiacSign(ZodiacSign value)
+        {
+            return Enum.IsDefined(typeof(ZodiacSign), value)
+                ? value : ZodiacSign.None;
+        }
     }
 }

@@ -19,6 +19,7 @@ namespace PennyPet
         public bool SilentMode;
         public bool DailyContentEnabled = true;
         public bool SolarTermEnabled = true;
+        public ZodiacSign ZodiacSign = ZodiacSign.None;
         public string LastDailyBriefingDate = String.Empty;
         public readonly List<ReminderItem> Reminders =
             new List<ReminderItem>();
@@ -58,6 +59,8 @@ namespace PennyPet
             SilentMode = source.SilentMode;
             DailyContentEnabled = source.DailyContentEnabled;
             SolarTermEnabled = source.SolarTermEnabled;
+            ZodiacSign = PetSettingRules.NormalizeZodiacSign(
+                source.ZodiacSign);
             LastDailyBriefingDate = source.LastDailyBriefingDate;
             SetReminders(source.Reminders);
         }

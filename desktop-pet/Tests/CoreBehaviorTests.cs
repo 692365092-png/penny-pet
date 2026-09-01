@@ -1064,6 +1064,7 @@ namespace PennyPet.Tests
                 SilentMode = true,
                 DailyContentEnabled = false,
                 SolarTermEnabled = false,
+                ZodiacSign = ZodiacSign.Scorpio,
                 LastDailyBriefingDate = "20350405"
             };
             source.Reminders.Add(new ReminderItem(
@@ -1073,9 +1074,14 @@ namespace PennyPet.Tests
             List<string> serialized = PetSettingsCodec.Serialize(source);
             PetSettingsData restored = PetSettingsCodec.Parse(serialized);
             int dailyDateLines = 0;
+            int zodiacLines = 0;
             foreach (string line in serialized)
+            {
                 if (line.StartsWith("LastDailyBriefingDate=",
                     StringComparison.Ordinal)) dailyDateLines++;
+                if (line.StartsWith("ZodiacSign=",
+                    StringComparison.Ordinal)) zodiacLines++;
+            }
 
             Assert.IsTrue(restored.HasLocation);
             Assert.AreEqual(-120, restored.X);
@@ -1088,8 +1094,10 @@ namespace PennyPet.Tests
             Assert.IsTrue(restored.SilentMode);
             Assert.IsFalse(restored.DailyContentEnabled);
             Assert.IsFalse(restored.SolarTermEnabled);
+            Assert.AreEqual(ZodiacSign.Scorpio, restored.ZodiacSign);
             Assert.AreEqual("20350405", restored.LastDailyBriefingDate);
             Assert.AreEqual(1, dailyDateLines);
+            Assert.AreEqual(1, zodiacLines);
             Assert.AreEqual(1, restored.Reminders.Count);
             Assert.AreEqual("喝水", restored.Reminders[0].Text);
             Assert.AreEqual("note-42", restored.Reminders[0].SourceNoteId);
@@ -1119,6 +1127,7 @@ namespace PennyPet.Tests
             Assert.AreEqual(150, restored.KeyOverlayScalePercent);
             Assert.IsTrue(restored.DailyContentEnabled);
             Assert.IsTrue(restored.SolarTermEnabled);
+            Assert.AreEqual(ZodiacSign.None, restored.ZodiacSign);
             Assert.AreEqual(1, restored.Reminders.Count);
             Assert.AreEqual("旧提醒", restored.Reminders[0].Text);
             Assert.AreEqual(deadline, restored.Reminders[0].DeadlineUtc);
@@ -1140,6 +1149,8 @@ namespace PennyPet.Tests
             Assert.IsFalse(new PetSettingsData().StartAtLogin);
             Assert.IsTrue(new PetSettingsData().DailyContentEnabled);
             Assert.IsTrue(new PetSettingsData().SolarTermEnabled);
+            Assert.AreEqual(ZodiacSign.None,
+                new PetSettingsData().ZodiacSign);
         }
 
         [TestMethod]
@@ -1149,6 +1160,7 @@ namespace PennyPet.Tests
             {
                 DailyContentEnabled = false,
                 SolarTermEnabled = false,
+                ZodiacSign = ZodiacSign.Taurus,
                 LastDailyBriefingDate = "20350908"
             };
             PetSettingsData target = new PetSettingsData();
@@ -1157,7 +1169,25 @@ namespace PennyPet.Tests
 
             Assert.IsFalse(target.DailyContentEnabled);
             Assert.IsFalse(target.SolarTermEnabled);
+            Assert.AreEqual(ZodiacSign.Taurus, target.ZodiacSign);
             Assert.AreEqual("20350908", target.LastDailyBriefingDate);
+        }
+
+        [TestMethod]
+        public void SettingsCodec_NormalizesInvalidAndRoundTripsPisces()
+        {
+            PetSettingsData pisces = new PetSettingsData
+            {
+                ZodiacSign = ZodiacSign.Pisces
+            };
+            Assert.AreEqual(ZodiacSign.Pisces, PetSettingsCodec.Parse(
+                PetSettingsCodec.Serialize(pisces)).ZodiacSign);
+            Assert.AreEqual(ZodiacSign.None, PetSettingsCodec.Parse(
+                new string[] { "ZodiacSign=999" }).ZodiacSign);
+            Assert.AreEqual(ZodiacSign.None, PetSettingsCodec.Parse(
+                new string[] { "ZodiacSign=Scorpio" }).ZodiacSign);
+            Assert.AreEqual(ZodiacSign.None,
+                PetSettingRules.NormalizeZodiacSign((ZodiacSign)(-1)));
         }
     }
 }

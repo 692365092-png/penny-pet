@@ -92,6 +92,14 @@ namespace PennyPet
                     settings.SolarTermEnabled = value != "0";
                     recognized = true;
                 }
+                else if (key == "ZodiacSign")
+                {
+                    settings.ZodiacSign = Int32.TryParse(value, out intValue)
+                        ? PetSettingRules.NormalizeZodiacSign(
+                            (ZodiacSign)intValue)
+                        : ZodiacSign.None;
+                    recognized = true;
+                }
                 else if (key == "LastDailyBriefingDate")
                 {
                     settings.LastDailyBriefingDate =
@@ -187,6 +195,8 @@ namespace PennyPet
                 (settings.DailyContentEnabled ? "1" : "0"));
             lines.Add("SolarTermEnabled=" +
                 (settings.SolarTermEnabled ? "1" : "0"));
+            lines.Add("ZodiacSign=" + (int)PetSettingRules
+                .NormalizeZodiacSign(settings.ZodiacSign));
             lines.Add("LastDailyBriefingDate=" + DailyContentRules
                 .NormalizeDateKey(settings.LastDailyBriefingDate));
             lines.Add("KeyOverlayScalePercent=" + PetSettingRules

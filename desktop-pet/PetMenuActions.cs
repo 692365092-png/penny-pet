@@ -83,15 +83,11 @@ namespace PennyPet
             using (DailyContentSettingsForm dialog =
                 new DailyContentSettingsForm(
                     _settings.DailyContentEnabled,
-                    _settings.SolarTermEnabled))
+                    _settings.SolarTermEnabled,
+                    _settings.ZodiacSign))
             {
-                if (dialog.ShowDialog(this) != DialogResult.OK) return;
-                if (_settings.DailyContentEnabled ==
-                        dialog.DailyContentEnabled &&
-                    _settings.SolarTermEnabled == dialog.SolarTermEnabled)
-                    return;
-                _settings.DailyContentEnabled = dialog.DailyContentEnabled;
-                _settings.SolarTermEnabled = dialog.SolarTermEnabled;
+                DialogResult result = dialog.ShowDialog(this);
+                if (!dialog.ApplyIfAccepted(_settings, result)) return;
                 _settings.Save();
             }
         }

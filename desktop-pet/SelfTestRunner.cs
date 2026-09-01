@@ -176,6 +176,7 @@ namespace PennyPet
             internal bool SilentModePersistenceOk;
             internal bool DailyBriefingDatePersistenceOk;
             internal bool DailyContentPreferencesPersistenceOk;
+            internal bool ZodiacPreferencePersistenceOk;
             internal bool FailureDirtyRetryOk;
             internal bool BackupRecoveryOk;
         }
@@ -231,6 +232,7 @@ namespace PennyPet
             memorySettings.SilentMode = true;
             memorySettings.DailyContentEnabled = false;
             memorySettings.SolarTermEnabled = false;
+            memorySettings.ZodiacSign = ZodiacSign.Scorpio;
             memorySettings.LastDailyBriefingDate = "20350908";
             memorySettings.SaveToFile(persistenceTestPath);
             PetSettings diskSettings = PetSettings.LoadFromFile(
@@ -261,6 +263,10 @@ namespace PennyPet
                 legacyDailySettings.SolarTermEnabled &&
                 new PetSettings().DailyContentEnabled &&
                 new PetSettings().SolarTermEnabled;
+            result.ZodiacPreferencePersistenceOk =
+                diskSettings.ZodiacSign == ZodiacSign.Scorpio &&
+                legacyDailySettings.ZodiacSign == ZodiacSign.None &&
+                new PetSettings().ZodiacSign == ZodiacSign.None;
 
             string settingsRetryPath = outputPath +
                 ".settings-retry-test.ini";
@@ -2537,6 +2543,7 @@ namespace PennyPet
             internal StickyCanaryCheckResult StickyCanary;
             internal bool ScaleRangeOk;
             internal bool DailyContentSettingsUiOk;
+            internal bool ZodiacPreferenceSettingsUiOk;
             internal bool ReverseReminderStepOk;
             internal bool PinActionTextOk;
             internal bool TodoPinActionTextOk;
@@ -2637,17 +2644,49 @@ namespace PennyPet
                 PetForm.ScaledPetSize(50) == new Size(96, 104) &&
                 PetForm.ScaledPetSize(200) == new Size(384, 416);
             using (DailyContentSettingsForm dailySettings =
-                new DailyContentSettingsForm(false, true))
+                new DailyContentSettingsForm(false, true,
+                    ZodiacSign.Scorpio))
+            using (DailyContentSettingsForm unsetDailySettings =
+                new DailyContentSettingsForm(true, true,
+                    ZodiacSign.None))
             {
-                bool disabledKeepsChoice =
+                PetSettingsData stored = new PetSettingsData
+                {
+                    DailyContentEnabled = false,
+                    SolarTermEnabled = true,
+                    ZodiacSign = ZodiacSign.Scorpio
+                };
+                result.DailyContentSettingsUiOk =
                     !dailySettings.DailyContentEnabled &&
                     dailySettings.SolarTermEnabled &&
                     !dailySettings.SolarTermControlEnabledForTest;
+                result.ZodiacPreferenceSettingsUiOk =
+                    !dailySettings.ZodiacControlEnabledForTest &&
+                    dailySettings.SelectedZodiacSign == ZodiacSign.Scorpio &&
+                    dailySettings.ZodiacDisplayNameForTest == "天蝎座" &&
+                    unsetDailySettings.ZodiacDisplayNameForTest ==
+                        "暂未设置";
+                dailySettings.SetZodiacSignForTest(ZodiacSign.Pisces);
+                bool canceled = dailySettings.ApplyIfAccepted(stored,
+                    DialogResult.Cancel);
+                bool cancelKeepsStored = !canceled &&
+                    stored.ZodiacSign == ZodiacSign.Scorpio;
                 dailySettings.SetDailyContentEnabledForTest(true);
-                result.DailyContentSettingsUiOk = disabledKeepsChoice &&
+                bool accepted = dailySettings.ApplyIfAccepted(stored,
+                    DialogResult.OK);
+                result.DailyContentSettingsUiOk =
+                    result.DailyContentSettingsUiOk &&
                     dailySettings.DailyContentEnabled &&
                     dailySettings.SolarTermEnabled &&
                     dailySettings.SolarTermControlEnabledForTest;
+                result.ZodiacPreferenceSettingsUiOk =
+                    result.ZodiacPreferenceSettingsUiOk &&
+                    cancelKeepsStored && accepted &&
+                    dailySettings.ZodiacControlEnabledForTest &&
+                    dailySettings.ZodiacDisplayNameForTest == "双鱼座" &&
+                    stored.DailyContentEnabled &&
+                    stored.SolarTermEnabled &&
+                    stored.ZodiacSign == ZodiacSign.Pisces;
             }
             int dailyMenuClicks = 0;
             PetContextMenuCommands menuCommands =
@@ -3604,7 +3643,10 @@ namespace PennyPet
                     settingsChecks.ReminderMemoryOk) + ",\n" +
                 "  \"daily_content_preferences_persistence_and_legacy_defaults_ok\": " +
                     Bool(settingsChecks
-                        .DailyContentPreferencesPersistenceOk) + ",\n";
+                        .DailyContentPreferencesPersistenceOk) + ",\n" +
+                "  \"zodiac_preference_persistence_and_legacy_default_ok\": " +
+                    Bool(settingsChecks.ZodiacPreferencePersistenceOk) +
+                    ",\n";
         }
 
         private static string BuildScheduleAndExpiredReminderReportFields(
@@ -3900,6 +3942,8 @@ namespace PennyPet
                     bubbleChecks.DailyContentPreferencesOk) + ",\n" +
                 "  \"daily_content_settings_ui_and_menu_ok\": " + Bool(
                     shellChecks.DailyContentSettingsUiOk) + ",\n" +
+                "  \"zodiac_preference_settings_ui_ok\": " + Bool(
+                    shellChecks.ZodiacPreferenceSettingsUiOk) + ",\n" +
                 "  \"scale_50_to_200_step_10_ok\": " + Bool(
                     shellChecks.ScaleRangeOk) + ",\n" +
                 "  \"keyboard_text_scale_choices_ok\": " + Bool(
