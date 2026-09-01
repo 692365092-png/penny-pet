@@ -136,7 +136,7 @@ Windows Coordinator 把 `Point`、`Size`、`Rectangle` 等平台对象转换为 
 | `PetSettings.cs` / `WindowsDataPaths.cs` | Windows 路径、备份、原子保存和诊断 | Windows-only |
 | `Core/Keyboard` | 首次确认、偏好和 fail-closed 隐私判定 | 平台无关标准化输入 |
 | `Features/KeyboardOverlay` | Hook、虚拟键、UIA/Win32 敏感输入证据和覆盖窗口 | Windows-only |
-| `PetWindowLayerCoordinator.cs` | Pet-owned Form modal stack、嵌套遮挡范围和 no-activate transient z-order | Windows-only 必要运行状态；不持久化 |
+| `PetWindowLayerCoordinator.cs` | Pet-owned Form modal stack 和 no-activate transient z-order | Windows-only 必要运行状态；不持久化 |
 | `PetStartupCoordinator.cs` | Timer、Registry、窗口创建、首帧等待和事件触发 | Windows-only 启动协调 |
 | `StartupLoadingForm.cs` | 直接读取 embedded loading asset、按 Pet canvas 等比贴底呈现 | Windows-only bootstrap visual；不依赖 `PetArtPackage` 或 Sticky runtime |
 | `StartupLoadingThreadHost.cs` | 临时 WinForms STA、独立 message loop、异步置前/关闭和线程退出 | Windows-only bootstrap host；不创建 `PetForm`、Art 或 Sticky state |

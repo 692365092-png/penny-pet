@@ -1951,7 +1951,6 @@ namespace PennyPet
             internal bool PrivacyGenerationOk;
             internal bool FocusSnapshotIdentityOk;
             internal bool AdaptiveContrastOk;
-            internal bool ModalWindowLayerOk;
         }
 
         private static KeyboardOverlayCheckResult RunKeyboardOverlayChecks()
@@ -2028,19 +2027,6 @@ namespace PennyPet
                     Color.Black &&
                 KeyboardOverlayForm.ChooseTextColorFromLuminance(0.2) ==
                     Color.White;
-            Rectangle petBounds = new Rectangle(760, 300, 192, 208);
-            Rectangle workArea = new Rectangle(0, 0, 960, 540);
-            Size overlaySize = new Size(220, 46);
-            Rectangle modalBounds = new Rectangle(500, 100, 440, 360);
-            Point normalPosition = KeyboardOverlayForm.CalculateLocationForTest(
-                petBounds, workArea, overlaySize, null);
-            Point modalPosition = KeyboardOverlayForm.CalculateLocationForTest(
-                petBounds, workArea, overlaySize, modalBounds);
-            Rectangle positionedOverlay = new Rectangle(modalPosition,
-                overlaySize);
-            result.ModalWindowLayerOk = modalPosition != normalPosition &&
-                !positionedOverlay.IntersectsWith(modalBounds) &&
-                workArea.Contains(positionedOverlay);
             return result;
         }
 
@@ -4914,9 +4900,7 @@ namespace PennyPet
                 "  \"keyboard_focus_snapshot_identity_ok\": " + Bool(
                     keyboardOverlayChecks.FocusSnapshotIdentityOk) + ",\n" +
                 "  \"adaptive_black_white_text_ok\": " + Bool(
-                    keyboardOverlayChecks.AdaptiveContrastOk) + ",\n" +
-                "  \"keyboard_modal_window_layer_ok\": " + Bool(
-                    keyboardOverlayChecks.ModalWindowLayerOk) + ",\n";
+                    keyboardOverlayChecks.AdaptiveContrastOk) + ",\n";
         }
 
         private static string BuildStaticReportTail()

@@ -535,12 +535,12 @@ namespace PennyPet.Tests
             string bubble = ReadSource("PetBubbleCoordinator.cs");
             string keyboard = ReadSource(
                 "Features/KeyboardOverlay/PetKeyboardOverlayCoordinator.cs");
+            string overlay = ReadSource(
+                "Features/KeyboardOverlay/KeyboardOverlayForm.cs");
             string dialog = ReadSource("WeatherLocationDialog.cs");
 
             Assert.IsTrue(layers.Contains("List<Form> _modalStack") &&
                 layers.Contains("DialogResult ShowModal") &&
-                layers.Contains("ModalAvoidanceBounds") &&
-                layers.Contains("Rectangle.Union") &&
                 layers.Contains("ModalZOrderFloor") &&
                 layers.Contains("KeepTransientBelowModal") &&
                 layers.Contains("SetWindowPos(transient.Handle, floor.Handle") &&
@@ -559,11 +559,10 @@ namespace PennyPet.Tests
                 !menu.Contains("ShowOwnedModalDialog") &&
                 !menu.Contains("_ownedModalUi"),
                 "Pet-owned Form dialogs, including nested weather settings, must use the shared layer boundary.");
-            Assert.IsTrue(keyboard.Contains(
-                    "_windowLayers.ModalAvoidanceBounds") &&
-                keyboard.Contains("_windowLayers.HasActiveModal") &&
+            Assert.IsTrue(keyboard.Contains("_windowLayers.HasActiveModal") &&
                 keyboard.Contains("HasFocusedOwnNoteTextInput() ||") &&
                 keyboard.Contains("ShowKeyRepeatCount(this, displayText") &&
+                keyboard.Contains("_keyOverlay.UpdatePosition(this)") &&
                 keyboard.Contains(
                     "_windowLayers.KeepTransientBelowModal(_keyOverlay)") &&
                 keyboard.Contains(
@@ -571,8 +570,10 @@ namespace PennyPet.Tests
                 bubble.Contains("ApplyWindowLayer()") &&
                 bubble.Contains(
                     "_windowLayers.KeepTransientBelowModal(_bubble)") &&
-                keyboard.Contains("SensitiveInputDetector.IsSensitiveFocus"),
-                "Non-activating Pet chrome must stay below modal windows while sensitive detection remains intact.");
+                keyboard.Contains("SensitiveInputDetector.IsSensitiveFocus") &&
+                !keyboard.Contains("ModalAvoidanceBounds") &&
+                !overlay.Contains("avoidBounds"),
+                "Pet chrome must stay below modal windows without moving keyboard hints away from the Pet.");
             Assert.IsTrue(dialog.Contains("FormattingEnabled = true") &&
                 dialog.Contains("ClientSize = new Size(410, 255)") &&
                 dialog.Contains("_results.Size = new Size(364, 96)"),

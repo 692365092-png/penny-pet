@@ -63,7 +63,7 @@
 - “展开全部并平铺到此屏幕”会展开全部 note、真正清除 Dock relation，并通过 hosted/legacy owned effect path 平铺。
 - Side Tabs 是不激活的 TopMost Pet chrome；monitor、work area 或 Pet scale 改变时会重新验证左右 split，仅在分配变化时 rebuild。
 - Side Tabs 继续由 WinForms Pet STA 承载；`SideTabSnapshot.ToDisplayData()` 保留为 compatibility adapter。
-- Pet-owned WinForms Form modal 统一经过 `PetWindowLayerCoordinator` 的内存栈；Keyboard Overlay、Bubble 和 Side Tabs 保持 no-activate，但不会盖住嵌套 modal chain，键盘提示会避开其联合 bounds。密码/凭据检测仍由原隐私链独立 fail closed。
+- Pet-owned WinForms Form modal 统一经过 `PetWindowLayerCoordinator` 的内存栈；Keyboard Overlay、Bubble 和 Side Tabs 保持 no-activate，并位于嵌套 modal chain 之后。键盘提示始终跟随 Pet，不因 modal 改变位置。密码/凭据检测仍由原隐私链独立 fail closed。
 
 ## Startup loading ownership
 

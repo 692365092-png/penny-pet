@@ -152,8 +152,7 @@ namespace PennyPet
                         return;
                     }
                     _keyOverlay.ShowKeyRepeatCount(this, displayText,
-                        occurrences, virtualKeyCode,
-                        _windowLayers.ModalAvoidanceBounds);
+                        occurrences, virtualKeyCode);
                     _windowLayers.KeepTransientBelowModal(_keyOverlay);
                 });
             }
@@ -172,8 +171,7 @@ namespace PennyPet
 
         private void PetWindowLayerChanged(object sender, EventArgs e)
         {
-            _keyOverlay.UpdatePosition(this,
-                _windowLayers.ModalAvoidanceBounds);
+            _keyOverlay.UpdatePosition(this);
             _windowLayers.KeepTransientBelowModal(_keyOverlay);
             _windowLayers.KeepTransientBelowModal(_leftNoteTabs);
             _windowLayers.KeepTransientBelowModal(_rightNoteTabs);

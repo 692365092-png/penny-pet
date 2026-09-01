@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -21,23 +20,6 @@ namespace PennyPet
         internal bool HasActiveModal
         {
             get { return ModalZOrderFloor != null; }
-        }
-
-        internal Rectangle? ModalAvoidanceBounds
-        {
-            get
-            {
-                Rectangle? bounds = null;
-                for (int index = 0; index < _modalStack.Count; index++)
-                {
-                    Form modal = _modalStack[index];
-                    if (!IsVisibleModal(modal)) continue;
-                    bounds = bounds.HasValue
-                        ? Rectangle.Union(bounds.Value, modal.Bounds)
-                        : modal.Bounds;
-                }
-                return bounds;
-            }
         }
 
         internal DialogResult ShowModal(IWin32Window owner, Form dialog)
