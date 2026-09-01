@@ -864,6 +864,9 @@ namespace PennyPet
             if (StickyDockOperations.ShouldRestoreWholeDockComponent(
                 storedDockOrder.Count, anyHiddenDockMember))
             {
+                if (TryRestoreHostedDockComponent(storedDockOrder, note,
+                    focusEditor, persistVisibility))
+                    return;
                 RestoreStickyDockComponent(storedDockOrder, note,
                     focusEditor, persistVisibility);
                 return;
@@ -876,6 +879,81 @@ namespace PennyPet
             form.EnableWinFormsKeyboardInterop();
             if (!focusEditor && persistVisibility) _notes.Save();
             RefreshNoteTabs();
+        }
+
+        private bool TryRestoreHostedDockComponent(
+            List<StickyNoteData> ordered, StickyNoteData focus,
+            bool focusEditor, bool persistVisibility)
+        {
+            if (ordered == null || ordered.Count == 0) return false;
+            StickyNoteData rootData = ordered[0];
+            int rootWidth = Math.Max(280, Math.Min(900, rootData.Width));
+            Rectangle rootHeader = new Rectangle(rootData.X, rootData.Y,
+                rootWidth, 32);
+            Rectangle work = Screen.FromRectangle(rootHeader).WorkingArea;
+            Point translation = CalculateHeaderReachableTranslation(
+                rootHeader, work);
+            int rootLeft = rootData.X + translation.X;
+            int rootTop = rootData.Y + translation.Y;
+            List<Size> sizes = new List<Size>();
+            foreach (StickyNoteData member in ordered)
+            {
+                sizes.Add(new Size(member.Width, member.Height));
+                member.Visible = true;
+                member.AlwaysOnTop = rootData.AlwaysOnTop;
+            }
+            StickyDockGroups.ApplyOrderedGroup(ordered);
+            List<Rectangle> layout = CalculateUnifiedDockLayout(sizes,
+                rootLeft, rootTop, rootWidth);
+
+            foreach (StickyNoteData member in ordered)
+            {
+                if (member == null || _hostedRuntime.ContainsNote(member.Id) ||
+                    !_hostedRuntime.AddNote(member.Id))
+                    return false;
+            }
+
+            for (int index = 0; index < ordered.Count; index++)
+            {
+                StickyNoteData member = ordered[index];
+                Rectangle bounds = layout[index];
+                int dividerMinimum = 220;
+                int dividerMaximum = 700;
+                PostHostedStickyCommand(
+                    StickyUiCommand.Create(StickyNoteUiSnapshot.FromData(
+                        member), false, _reminders.GetItems()),
+                    delegate(StickyUiCommandResult result)
+                    {
+                        if (result == null ||
+                            result.Status != StickyUiCommandStatus.Handled)
+                        {
+                            ReportHostedStickyCommandFailure(
+                                "sticky-hosted-dock-create", result);
+                            return;
+                        }
+                        ApplyHostedStickySnapshot(result.Snapshot,
+                            result.Sequence);
+                        PostHostedStickyCommand(
+                            StickyUiCommand.SetBounds(member.Id,
+                                new StickyUiBounds(bounds.Left, bounds.Top,
+                                    bounds.Width, bounds.Height)),
+                            delegate(StickyUiCommandResult boundsResult) { });
+                        PostHostedStickyCommand(
+                            StickyUiCommand.SetDockResizeRole(member.Id,
+                                new StickyUiDockResizeRole(true,
+                                    index == 0, true, index < ordered.Count - 1,
+                                    dividerMinimum, dividerMaximum)),
+                            delegate(StickyUiCommandResult roleResult) { });
+                        PostHostedStickyCommand(
+                            StickyUiCommand.Show(member.Id, false),
+                            delegate(StickyUiCommandResult showResult) { });
+                    });
+            }
+
+            if (persistVisibility) _notes.Save();
+            RefreshMenuText();
+            RefreshNoteTabs();
+            return true;
         }
 
 
