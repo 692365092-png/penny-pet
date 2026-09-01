@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace PennyPet
 {
@@ -8,14 +9,35 @@ namespace PennyPet
     internal static class DailyBriefingComposer
     {
         internal static string Compose(DayPart dayPart,
-            SolarTermInfo? solarTerm, string zodiacText)
+            DailyBriefingContent content)
         {
             string text = DailyContentRules.GreetingFor(dayPart);
-            if (solarTerm.HasValue)
-                text += "\n今天是" + solarTerm.Value.ChineseName + "哦。";
-            if (!String.IsNullOrWhiteSpace(zodiacText))
-                text += "\n" + zodiacText;
+            foreach (string supplementary in SelectSupplementary(content))
+                text += "\n" + supplementary;
             return text;
+        }
+
+        internal static string[] SelectSupplementary(
+            DailyBriefingContent content)
+        {
+            if (content == null) return new string[0];
+            List<string> selected = new List<string>(2);
+            if (content.SolarTerm.HasValue)
+            {
+                selected.Add("今天是" +
+                    content.SolarTerm.Value.ChineseName + "哦。");
+                DailyLineEntry second = content.ZodiacLine ??
+                    content.CuratedLine;
+                if (second != null) selected.Add(second.Text);
+            }
+            else
+            {
+                if (content.CuratedLine != null)
+                    selected.Add(content.CuratedLine.Text);
+                if (content.ZodiacLine != null)
+                    selected.Add(content.ZodiacLine.Text);
+            }
+            return selected.ToArray();
         }
     }
 }

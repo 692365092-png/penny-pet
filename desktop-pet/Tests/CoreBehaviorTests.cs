@@ -999,55 +999,84 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void ZodiacDailyCatalog_HasCompleteUniqueBundledCopy()
+        public void CuratedDailyLineCatalog_HasCompleteUniqueBundledCopy()
+        {
+            DailyLineEntry[] entries = CuratedDailyLineCatalog.GetEntries();
+            Assert.AreEqual(96, entries.Length);
+            Assert.AreEqual(96, entries.Select(entry => entry.Id)
+                .Distinct().Count());
+            Assert.AreEqual(96, entries.Select(entry => entry.Text)
+                .Distinct().Count());
+            Assert.IsTrue(entries.All(entry =>
+                !String.IsNullOrWhiteSpace(entry.Id) &&
+                !String.IsNullOrWhiteSpace(entry.Text)));
+        }
+
+        [TestMethod]
+        public void ZodiacDailyCatalog_RetainsStableSignSpecificEntries()
         {
             Assert.AreEqual(0,
-                ZodiacDailyCatalog.GetLines(ZodiacSign.None).Length);
+                ZodiacDailyCatalog.GetEntries(ZodiacSign.None).Length);
+            HashSet<string> allIds = new HashSet<string>();
             for (int value = (int)ZodiacSign.Aries;
                 value <= (int)ZodiacSign.Pisces; value++)
             {
                 ZodiacSign sign = (ZodiacSign)value;
-                string[] lines = ZodiacDailyCatalog.GetLines(sign);
-                Assert.AreEqual(6, lines.Length, sign.ToString());
-                Assert.IsTrue(lines.All(line =>
-                    !String.IsNullOrWhiteSpace(line)), sign.ToString());
-                Assert.AreEqual(lines.Length, lines.Distinct().Count(),
+                DailyLineEntry[] entries = ZodiacDailyCatalog.GetEntries(sign);
+                Assert.AreEqual(6, entries.Length, sign.ToString());
+                Assert.IsTrue(entries.All(entry =>
+                    !String.IsNullOrWhiteSpace(entry.Id) &&
+                    !String.IsNullOrWhiteSpace(entry.Text) &&
+                    allIds.Add(entry.Id)), sign.ToString());
+                Assert.AreEqual(entries.Length, entries.Select(entry =>
+                    entry.Text).Distinct().Count(),
                     sign.ToString());
             }
+            Assert.AreEqual(72, allIds.Count);
         }
 
         [TestMethod]
-        public void ZodiacDailySelector_IsDeterministicAndUsesOwnCatalog()
+        public void DailyLineSelectors_AreDeterministicAndBounded()
         {
-            DateTimeOffset localNow = new DateTimeOffset(2026, 9, 1,
+            DateTimeOffset localNow = new DateTimeOffset(2026, 9, 3,
                 12, 0, 0, TimeSpan.FromHours(8));
+            DailyLineEntry curated = CuratedDailyLineSelector.Select(localNow);
+            Assert.IsNotNull(curated);
+            Assert.AreEqual(curated.Id,
+                CuratedDailyLineSelector.Select(localNow).Id);
             Assert.IsNull(ZodiacDailySelector.Select(ZodiacSign.None,
                 localNow));
             Assert.IsNull(ZodiacDailySelector.Select((ZodiacSign)999,
                 localNow));
 
-            string scorpio = ZodiacDailySelector.Select(ZodiacSign.Scorpio,
+            DailyLineEntry scorpio = ZodiacDailySelector.Select(
+                ZodiacSign.Scorpio,
                 localNow);
+            Assert.IsNotNull(scorpio);
             for (int i = 0; i < 10; i++)
-                Assert.AreEqual(scorpio, ZodiacDailySelector.Select(
-                    ZodiacSign.Scorpio, localNow));
-            Assert.IsTrue(ZodiacDailyCatalog.GetLines(ZodiacSign.Scorpio)
-                .Contains(scorpio));
+                Assert.AreEqual(scorpio.Id, ZodiacDailySelector.Select(
+                    ZodiacSign.Scorpio, localNow).Id);
+            Assert.IsTrue(ZodiacDailyCatalog.GetEntries(ZodiacSign.Scorpio)
+                .Any(entry => entry.Id == scorpio.Id));
 
-            HashSet<string> month = new HashSet<string>();
-            for (int day = 0; day < 30; day++)
-                month.Add(ZodiacDailySelector.Select(ZodiacSign.Scorpio,
-                    localNow.AddDays(day)));
-            Assert.IsTrue(month.Count > 1);
-
-            foreach (ZodiacSign sign in new[] { ZodiacSign.Aries,
-                ZodiacSign.Scorpio, ZodiacSign.Pisces })
-                Assert.IsTrue(ZodiacDailyCatalog.GetLines(sign).Contains(
-                    ZodiacDailySelector.Select(sign, localNow)));
+            DateTimeOffset start = new DateTimeOffset(2026, 1, 1,
+                12, 0, 0, TimeSpan.FromHours(8));
+            for (int value = (int)ZodiacSign.Aries;
+                value <= (int)ZodiacSign.Pisces; value++)
+            {
+                ZodiacSign sign = (ZodiacSign)value;
+                int eligibleDays = 0;
+                for (int day = 0; day < 3650; day++)
+                    if (ZodiacDailySelector.Select(sign,
+                        start.AddDays(day)) != null) eligibleDays++;
+                double percent = eligibleDays * 100D / 3650D;
+                Assert.IsTrue(percent >= 10D && percent <= 20D,
+                    sign + ": " + percent);
+            }
         }
 
         [TestMethod]
-        public void ZodiacDailySelector_UsesLocalCivilDateAcrossOffsets()
+        public void DailyLineSelectors_UseLocalCivilDateAcrossOffsets()
         {
             DateTimeOffset sameInstant = new DateTimeOffset(2026, 9, 1,
                 16, 30, 0, TimeSpan.Zero);
@@ -1057,39 +1086,46 @@ namespace PennyPet.Tests
                 TimeSpan.FromHours(-8));
             Assert.AreEqual(2, hongKong.Day);
             Assert.AreEqual(1, pacific.Day);
-            Assert.AreNotEqual(ZodiacDailySelector.Select(
-                    ZodiacSign.Scorpio, hongKong),
-                ZodiacDailySelector.Select(ZodiacSign.Scorpio, pacific));
-            Assert.AreEqual(ZodiacDailySelector.Select(ZodiacSign.Scorpio,
+            Assert.AreNotEqual(CuratedDailyLineSelector.Select(hongKong).Id,
+                CuratedDailyLineSelector.Select(pacific).Id);
+            Assert.AreEqual(CuratedDailyLineSelector.Select(
                     new DateTimeOffset(2026, 9, 1, 1, 0, 0,
-                        TimeSpan.FromHours(8))),
-                ZodiacDailySelector.Select(ZodiacSign.Scorpio,
+                        TimeSpan.FromHours(8))).Id,
+                CuratedDailyLineSelector.Select(
                     new DateTimeOffset(2026, 9, 1, 23, 0, 0,
-                        TimeSpan.FromHours(-5))));
+                        TimeSpan.FromHours(-5))).Id);
         }
 
         [TestMethod]
-        public void DailyBriefingComposer_ComposesOptionalFactsInOrder()
+        public void DailyBriefingComposer_EnforcesSupplementaryBudget()
         {
             string greeting = DailyContentRules.GreetingFor(
                 DayPart.Afternoon);
-            const string zodiac =
-                "天蝎座今天的小提示：先把最重要的一件事处理好。";
-            Assert.AreEqual(greeting, DailyBriefingComposer.Compose(
-                DayPart.Afternoon, null, null));
+            DailyLineEntry curated = new DailyLineEntry("C-TEST", "精选。");
+            DailyLineEntry zodiac = new DailyLineEntry("Z-TEST", "星座。");
 
             SolarTermInfo? whiteDew = new SolarTermInfo(SolarTerm.WhiteDew,
                 "白露", 165, new DateTimeOffset(2026, 9, 7, 12, 0, 0,
                     TimeSpan.FromHours(8)));
-            Assert.AreEqual(greeting + "\n今天是白露哦。",
-                DailyBriefingComposer.Compose(DayPart.Afternoon, whiteDew,
-                    null));
-            Assert.AreEqual(greeting + "\n" + zodiac,
-                DailyBriefingComposer.Compose(DayPart.Afternoon, null,
-                    zodiac));
-            Assert.AreEqual(greeting + "\n今天是白露哦。\n" + zodiac,
-                DailyBriefingComposer.Compose(DayPart.Afternoon, whiteDew,
-                    zodiac));
+            DailyBriefingContent caseA = new DailyBriefingContent(null,
+                curated, null);
+            DailyBriefingContent caseB = new DailyBriefingContent(null,
+                curated, zodiac);
+            DailyBriefingContent caseC = new DailyBriefingContent(whiteDew,
+                curated, null);
+            DailyBriefingContent caseD = new DailyBriefingContent(whiteDew,
+                curated, zodiac);
+            Assert.AreEqual(greeting + "\n精选。",
+                DailyBriefingComposer.Compose(DayPart.Afternoon, caseA));
+            Assert.AreEqual(greeting + "\n精选。\n星座。",
+                DailyBriefingComposer.Compose(DayPart.Afternoon, caseB));
+            Assert.AreEqual(greeting + "\n今天是白露哦。\n精选。",
+                DailyBriefingComposer.Compose(DayPart.Afternoon, caseC));
+            Assert.AreEqual(greeting + "\n今天是白露哦。\n星座。",
+                DailyBriefingComposer.Compose(DayPart.Afternoon, caseD));
+            Assert.IsTrue(new[] { caseA, caseB, caseC, caseD }.All(content =>
+                DailyBriefingComposer.SelectSupplementary(content).Length <=
+                    2));
         }
 
         private static void AssertOracleTerm(int year, int month, int day,

@@ -45,10 +45,13 @@ namespace PennyPet
             SolarTermInfo? solarTerm = _solarTermEnabled()
                 ? SolarTermCalculator.FindForLocalDate(localNow)
                 : (SolarTermInfo?)null;
-            string zodiacText = ZodiacDailySelector.Select(_zodiacSign(),
+            DailyLineEntry curatedLine = CuratedDailyLineSelector.Select(
                 localNow);
-            string text = DailyBriefingComposer.Compose(dayPart, solarTerm,
-                zodiacText);
+            DailyLineEntry zodiacLine = ZodiacDailySelector.Select(
+                _zodiacSign(), localNow);
+            DailyBriefingContent content = new DailyBriefingContent(solarTerm,
+                curatedLine, zodiacLine);
+            string text = DailyBriefingComposer.Compose(dayPart, content);
             if (!_showDailyGreeting(text)) return false;
             _recordBriefingDate(DailyContentRules.DateKey(localNow));
             return true;

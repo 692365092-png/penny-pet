@@ -380,12 +380,18 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void ZodiacDailyContent_UsesBundledPureSelectionAndExistingDailyFlow()
+        public void DailyBriefingFoundation_StaysPureAndUsesExistingFlow()
         {
-            string catalog = ReadSource(
+            string zodiacCatalog = ReadSource(
                 "Core/DailyContent/ZodiacDailyCatalog.cs");
-            string selector = ReadSource(
+            string curatedCatalog = ReadSource(
+                "Core/DailyContent/CuratedDailyLineCatalog.cs");
+            string curatedSelector = ReadSource(
+                "Core/DailyContent/CuratedDailyLineSelector.cs");
+            string zodiacSelector = ReadSource(
                 "Core/DailyContent/ZodiacDailySelector.cs");
+            string content = ReadSource(
+                "Core/DailyContent/DailyBriefingContent.cs");
             string composer = ReadSource(
                 "Core/DailyContent/DailyBriefingComposer.cs");
             string coordinator = ReadSource("PetDailyContentCoordinator.cs");
@@ -393,23 +399,33 @@ namespace PennyPet.Tests
             string commands = ReadSource(
                 "Infrastructure/SelfTestCommandRouter.cs");
 
-            Assert.IsTrue(catalog.Contains("LinesBySign") &&
-                selector.Contains("localNow.Year * 372") &&
-                selector.Contains("PetSettingRules.NormalizeZodiacSign") &&
-                composer.Contains("solarTerm.HasValue") &&
-                composer.Contains("!String.IsNullOrWhiteSpace(zodiacText)"),
-                "Zodiac content must be bundled, deterministic and optional.");
-            Assert.IsFalse(selector.Contains("Random") ||
-                selector.Contains("GetHashCode") ||
-                selector.Contains("Http") || selector.Contains("Cache"),
-                "Daily selection must not need runtime randomness, network or cache.");
+            Assert.IsTrue(zodiacCatalog.Contains("EntriesBySign") &&
+                curatedCatalog.Contains("Line(\"C096\"") &&
+                curatedSelector.Contains("localNow.Year * 372") &&
+                zodiacSelector.Contains("EligibilityPercent = 15") &&
+                zodiacSelector.Contains(
+                    "PetSettingRules.NormalizeZodiacSign") &&
+                composer.Contains("content.SolarTerm.HasValue") &&
+                composer.Contains("content.ZodiacLine ??") &&
+                composer.Contains("content.CuratedLine"),
+                "Candidate selection and the two-item budget stay explicit.");
+            Assert.IsFalse(curatedSelector.Contains("ZodiacSign") ||
+                zodiacSelector.Contains("Random") ||
+                zodiacSelector.Contains("GetHashCode") ||
+                zodiacSelector.Contains("Http") ||
+                zodiacSelector.Contains("Cache"),
+                "Selection must be deterministic, local and independent.");
             Assert.IsTrue(coordinator.Contains("Func<ZodiacSign>") &&
+                coordinator.Contains("CuratedDailyLineSelector.Select") &&
                 coordinator.Contains("ZodiacDailySelector.Select") &&
                 form.Contains("delegate { return _settings.ZodiacSign; }") &&
-                commands.Contains("--zodiac-daily-probe="),
-                "The existing Daily coordinator must own the one new getter and probe.");
-            Assert.IsFalse(form.Contains("ZodiacEnabled"),
-                "ZodiacSign.None remains the only v1 enablement rule.");
+                commands.Contains("--daily-briefing-probe="),
+                "The existing Daily coordinator owns candidates and the probe.");
+            Assert.IsFalse(content.Contains("Weather") ||
+                content.Contains("Almanac") ||
+                content.Contains("Provider") || content.Contains("Manager") ||
+                content.Contains("Context") || form.Contains("ZodiacEnabled"),
+                "Foundation must not pre-build future modules or settings.");
         }
 
         [TestMethod]

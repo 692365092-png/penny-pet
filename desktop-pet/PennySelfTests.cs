@@ -913,47 +913,68 @@ namespace PennyPet
             }
         }
 
-        public static void RunZodiacDailyProbe(string outputPath)
+        public static void RunDailyBriefingProbe(string outputPath)
         {
-            DateTimeOffset start = new DateTimeOffset(2026, 9, 1, 12, 0, 0,
+            DateTimeOffset localDate = new DateTimeOffset(2026, 9, 3,
+                12, 0, 0,
                 TimeSpan.FromHours(8));
             const ZodiacSign sign = ZodiacSign.Scorpio;
-            HashSet<string> selectedLines = new HashSet<string>();
-            StringBuilder days = new StringBuilder();
-            bool deterministic = true;
-            for (int day = 0; day < 7; day++)
+            DayPart dayPart = DailyContentRules.ResolveDayPart(localDate);
+            SolarTermInfo? solar = SolarTermCalculator.FindForLocalDate(
+                localDate);
+            DailyLineEntry curated = CuratedDailyLineSelector.Select(
+                localDate);
+            DailyLineEntry zodiac = ZodiacDailySelector.Select(sign,
+                localDate);
+            DailyBriefingContent content = new DailyBriefingContent(solar,
+                curated, zodiac);
+            string[] selected = DailyBriefingComposer.SelectSupplementary(
+                content);
+            string finalText = DailyBriefingComposer.Compose(dayPart,
+                content);
+            StringBuilder selectedJson = new StringBuilder();
+            for (int i = 0; i < selected.Length; i++)
             {
-                DateTimeOffset localDate = start.AddDays(day);
-                string text = ZodiacDailySelector.Select(sign, localDate);
-                deterministic &= !String.IsNullOrWhiteSpace(text) && text ==
-                    ZodiacDailySelector.Select(sign, localDate);
-                selectedLines.Add(text);
-                string escaped = text.Replace("\\", "\\\\")
-                    .Replace("\"", "\\\"");
-                days.Append("    { \"date\": \"");
-                days.Append(localDate.ToString("yyyy-MM-dd",
-                    System.Globalization.CultureInfo.InvariantCulture));
-                days.Append("\", \"text\": \"");
-                days.Append(escaped);
-                days.Append("\" }");
-                if (day < 6) days.Append(",");
-                days.Append("\n");
+                if (i > 0) selectedJson.Append(", ");
+                selectedJson.Append(JsonString(selected[i]));
             }
-            bool ok = deterministic && selectedLines.Count > 1;
-            string first = ZodiacDailySelector.Select(sign, start)
-                .Replace("\\", "\\\\").Replace("\"", "\\\"");
+            bool deterministic = curated.Id == CuratedDailyLineSelector
+                .Select(localDate).Id && ((zodiac == null &&
+                    ZodiacDailySelector.Select(sign, localDate) == null) ||
+                    (zodiac != null && zodiac.Id == ZodiacDailySelector
+                        .Select(sign, localDate).Id));
+            bool ok = deterministic && curated != null &&
+                selected.Length <= 2;
             string json = "{\n" +
                 "  \"ok\": " + Bool(ok) + ",\n" +
                 "  \"deterministic\": " + Bool(deterministic) + ",\n" +
-                "  \"date\": \"2026-09-01\",\n" +
-                "  \"offset\": \"+08:00\",\n" +
-                "  \"sign\": \"Scorpio\",\n" +
-                "  \"text\": \"" + first + "\",\n" +
-                "  \"days\": [\n" + days + "  ]\n" +
+                "  \"date\": \"2026-09-03\",\n" +
+                "  \"dayPart\": " + JsonString(dayPart.ToString()) +
+                    ",\n" +
+                "  \"solarCandidate\": " + JsonString(solar.HasValue
+                    ? solar.Value.ChineseName : null) + ",\n" +
+                "  \"curatedId\": " + JsonString(curated.Id) + ",\n" +
+                "  \"curatedText\": " + JsonString(curated.Text) + ",\n" +
+                "  \"zodiacEligible\": " + Bool(zodiac != null) + ",\n" +
+                "  \"zodiacId\": " + JsonString(zodiac == null ? null :
+                    zodiac.Id) + ",\n" +
+                "  \"zodiacText\": " + JsonString(zodiac == null ? null :
+                    zodiac.Text) + ",\n" +
+                "  \"selectedSupplementary\": [" + selectedJson +
+                    "],\n" +
+                "  \"finalText\": " + JsonString(finalText) + "\n" +
                 "}\n";
             string parent = Path.GetDirectoryName(Path.GetFullPath(outputPath));
             if (!String.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
             File.WriteAllText(outputPath, json, new UTF8Encoding(false));
+        }
+
+        private static string JsonString(string value)
+        {
+            if (value == null) return "null";
+            return "\"" + value.Replace("\\", "\\\\")
+                .Replace("\"", "\\\"").Replace("\r", "\\r")
+                .Replace("\n", "\\n").Replace("\t", "\\t") + "\"";
         }
 
         public static void RunSolarTermProbe(string outputPath)

@@ -77,15 +77,19 @@ PennyPet.Tools -> 美术发布包和启动缓存生成
 | 文件/目录 | 当前职责 | 边界 |
 |---|---|---|
 | `Core/DailyContent/DailyContentRules.cs` | 日期键、每日一次和 DayPart 纯规则 | 平台无关 |
-| `Core/DailyContent/DailyBriefingComposer.cs` | DayPart 与结构化每日事实组合为短文案 | 平台无关 |
+| `Core/DailyContent/DailyLineEntry.cs` | 有稳定 ID 的内置每日短句值 | 平台无关 |
+| `Core/DailyContent/CuratedDailyLineCatalog.cs` / `CuratedDailyLineSelector.cs` | 96 条有限精选目录及当地日期确定性选择 | 平台无关纯规则 |
 | `Core/DailyContent/ZodiacSign.cs` | 用户星座偏好的稳定业务身份 | 平台无关 |
-| `Core/DailyContent/ZodiacDailyCatalog.cs` | 随应用发布的原创 Zodiac daily copy | 平台无关、有限静态内容 |
-| `Core/DailyContent/ZodiacDailySelector.cs` | 按当地日期与星座确定性选择每日文案 | 平台无关纯规则 |
+| `Core/DailyContent/ZodiacDailyCatalog.cs` / `ZodiacDailySelector.cs` | 72 条有限 Zodiac 目录及当地日期约 15% 的确定性补位资格 | 平台无关纯规则 |
+| `Core/DailyContent/DailyBriefingContent.cs` | Solar、Curated、Zodiac 候选值 | 平台无关；不预留未实现来源字段 |
+| `Core/DailyContent/DailyBriefingComposer.cs` | DayPart、候选优先级与两条 supplementary budget | 平台无关纯规则 |
 | `Core/Calendar/SolarTerm*` | 二十四节气天文事实 | 平台无关 |
 | `PetDailyContentCoordinator.cs` | 首次有效 Poke eligibility、compose、Bubble accepted 后消费日期 | Windows 产品协调 |
 | `DailyContentSettingsForm.cs` | Daily Content、节气和星座偏好设置 UI | Windows-only |
 
-`DailyBriefingComposer` 按 greeting、可选 solar term、可选 zodiac 的顺序合成一次 `DailyGreeting`；选择结果不缓存、不持久化。
+`DailyBriefing` 固定为 greeting 加至多两条 supplementary。启用且当天存在的 SolarTerm 是受保护的高优先级内容；Curated 与低频 Zodiac 只负责补位，不是每日新鲜度的主要来源。选择结果是当天可重算的派生值，不缓存、不持久化；两个内置目录分别固定上限为 96 和 72 条。
+
+每日新鲜度应主要来自变化中的事实语境，而不是尽量增加固定文案池的随机变化。未来 Weather 与 Almanac 若实现，应提供高新鲜度事实候选并服从同一 briefing budget；当前没有这些模块或占位字段。
 
 `PennyPet.Core` 直接使用 `CosineKitty.AstronomyEngine 2.1.19`，当前用途仅为 `SolarTermCalculator` 的平台无关天文计算。兼容单文件 Windows 项目把固定的 `astronomy.dll` 嵌入 EXE，并由窄范围 `EmbeddedAssemblyResolver` 只解析该程序集；第三方许可见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 
