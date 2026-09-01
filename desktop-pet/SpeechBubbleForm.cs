@@ -5,8 +5,8 @@ using System.Windows.Forms;
 
 namespace PennyPet
 {
-    // All speech-bubble layout and rendering lives here. Reminder scheduling
-    // decides what to display, while this form only draws and positions it.
+    // Pure Windows presentation: PetBubbleCoordinator decides what to show;
+    // this form only measures, draws, times and positions that message.
     internal sealed class SpeechBubbleForm : Form
     {
         internal static readonly Size MinimumBubbleSize = new Size(160, 88);

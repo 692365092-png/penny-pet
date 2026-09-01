@@ -9,6 +9,8 @@ namespace PennyPet
             if (incoming == PetMessageKind.ReminderDue) return true;
             if (current.Value == PetMessageKind.ReminderPreAlert) return false;
             if (current.Value != PetMessageKind.ReminderDue) return true;
+            // Product rule: a due reminder yields to direct user feedback,
+            // but ambient Hover/DailyGreeting/Discovery never replaces it.
             return incoming == PetMessageKind.Feedback;
         }
 

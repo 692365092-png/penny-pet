@@ -734,6 +734,12 @@ namespace PennyPet.Tests
             Assert.IsFalse(PetMessagePolicy.ShouldReplace(
                 PetMessageKind.ReminderDue,
                 PetMessageKind.DailyGreeting, false));
+            Assert.IsFalse(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.ReminderDue,
+                PetMessageKind.Discovery, false));
+            Assert.IsFalse(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.ReminderDue,
+                PetMessageKind.Hover, false));
             Assert.IsTrue(PetMessagePolicy.ShouldSuppress(
                 PetMessageKind.DailyGreeting, true));
             Assert.IsFalse(PetMessagePolicy.ShouldSuppress(
