@@ -9,11 +9,18 @@ namespace PennyPet
     // decides what to display, while this form only draws and positions it.
     internal sealed class SpeechBubbleForm : Form
     {
+        internal static readonly Size MinimumBubbleSize = new Size(160, 88);
+        internal static readonly Size MaximumBubbleSize = new Size(440, 230);
         internal static readonly Color BubbleFillColor =
             Color.FromArgb(255, 73, 74, 40);
         internal static readonly Color BubbleBorderColor =
             Color.FromArgb(255, 45, 46, 24);
         internal static readonly Color BubbleTextColor = Color.White;
+        private const int HorizontalPadding = 44;
+        private const int TextTopPadding = 16;
+        private const int TextBottomPadding = 16;
+        private const int TailHeight = 20;
+        private const int CornerRadius = 18;
         private string _text;
         private readonly System.Windows.Forms.Timer _closeTimer;
         private bool _ownedResourcesDisposed;
@@ -38,11 +45,7 @@ namespace PennyPet
             DoubleBuffered = true;
             Font = StickyNoteWindow.CreateSafeFont(fontFamilyName,
                 fontSizePoints, KeyboardOverlayForm.TextFontStyle);
-            Size measured = TextRenderer.MeasureText(_text, Font,
-                new Size(396, 180), TextFormatFlags.WordBreak);
-            ClientSize = new Size(Math.Max(330, Math.Min(440,
-                measured.Width + 48)), Math.Max(138, Math.Min(230,
-                measured.Height + 58)));
+            ApplyMeasuredLayout();
             if (autoCloseMilliseconds > 0)
             {
                 _closeTimer = new System.Windows.Forms.Timer();
@@ -108,6 +111,7 @@ namespace PennyPet
             string next = text ?? String.Empty;
             if (String.Equals(_text, next, StringComparison.Ordinal)) return;
             _text = next;
+            ApplyMeasuredLayout();
             Invalidate();
         }
 
@@ -127,13 +131,15 @@ namespace PennyPet
                 e.Graphics.FillPath(fill, path);
                 e.Graphics.DrawPath(border, path);
             }
-            Rectangle textArea = new Rectangle(22, 16,
-                Width - 44, Height - 52);
+            Rectangle textArea = new Rectangle(HorizontalPadding / 2,
+                TextTopPadding, Width - HorizontalPadding,
+                Height - TextTopPadding - TextBottomPadding - TailHeight);
             TextRenderer.DrawText(e.Graphics, _text, Font, textArea,
                 BubbleTextColor,
                 TextFormatFlags.WordBreak |
                 TextFormatFlags.HorizontalCenter |
                 TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPrefix |
                 TextFormatFlags.EndEllipsis);
         }
 
@@ -149,8 +155,8 @@ namespace PennyPet
 
         private static GraphicsPath BubblePath(Rectangle bounds)
         {
-            int radius = 18;
-            int bottom = bounds.Bottom - 20;
+            int radius = CornerRadius;
+            int bottom = bounds.Bottom - TailHeight;
             GraphicsPath path = new GraphicsPath();
             path.AddArc(bounds.Left + 2, bounds.Top + 2,
                 radius, radius, 180, 90);
@@ -166,6 +172,41 @@ namespace PennyPet
                 radius, radius, 90, 90);
             path.CloseFigure();
             return path;
+        }
+
+        private void ApplyMeasuredLayout()
+        {
+            string value = String.IsNullOrEmpty(_text) ? " " : _text;
+            int minimumTextWidth = MinimumBubbleSize.Width - HorizontalPadding;
+            int maximumTextWidth = MaximumBubbleSize.Width - HorizontalPadding;
+            int naturalWidth = 0;
+            string[] lines = value.Replace("\r\n", "\n").Replace('\r', '\n')
+                .Split('\n');
+            foreach (string line in lines)
+            {
+                Size lineSize = TextRenderer.MeasureText(
+                    line.Length == 0 ? " " : line, Font,
+                    new Size(4096, MaximumBubbleSize.Height),
+                    TextFormatFlags.SingleLine | TextFormatFlags.NoPadding |
+                    TextFormatFlags.NoPrefix);
+                naturalWidth = Math.Max(naturalWidth, lineSize.Width);
+            }
+            int textWidth = Math.Max(minimumTextWidth,
+                Math.Min(maximumTextWidth, naturalWidth));
+            int maximumTextHeight = MaximumBubbleSize.Height -
+                TextTopPadding - TextBottomPadding - TailHeight;
+            Size wrapped = TextRenderer.MeasureText(value, Font,
+                new Size(textWidth, maximumTextHeight),
+                TextFormatFlags.WordBreak | TextFormatFlags.NoPadding |
+                TextFormatFlags.NoPrefix);
+            int width = Math.Max(MinimumBubbleSize.Width,
+                Math.Min(MaximumBubbleSize.Width,
+                    textWidth + HorizontalPadding));
+            int height = Math.Max(MinimumBubbleSize.Height,
+                Math.Min(MaximumBubbleSize.Height, wrapped.Height +
+                    TextTopPadding + TextBottomPadding + TailHeight));
+            Size measured = new Size(width, height);
+            if (ClientSize != measured) ClientSize = measured;
         }
     }
 }

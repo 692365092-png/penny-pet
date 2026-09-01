@@ -583,11 +583,13 @@ namespace PennyPet
 
         public static void RenderHoverBubblePreview(string outputPath)
         {
-            using (Bitmap preview = new Bitmap(680, 160, PixelFormat.Format32bppArgb))
-            using (Graphics graphics = Graphics.FromImage(preview))
             using (SpeechBubbleForm empty = new SpeechBubbleForm("今天想要做些什么呢？", 0))
             using (SpeechBubbleForm countdown = new SpeechBubbleForm(
                 "距离最近提醒还有1小时20分钟。\n当前共有 3 条提醒。", 0))
+            using (Bitmap preview = new Bitmap(empty.Width + countdown.Width +
+                30, Math.Max(empty.Height, countdown.Height) + 20,
+                PixelFormat.Format32bppArgb))
+            using (Graphics graphics = Graphics.FromImage(preview))
             using (Bitmap emptyBitmap = new Bitmap(empty.Width, empty.Height,
                 PixelFormat.Format32bppArgb))
             using (Bitmap countdownBitmap = new Bitmap(countdown.Width, countdown.Height,
@@ -601,7 +603,8 @@ namespace PennyPet
                 countdownBitmap.MakeTransparent(countdown.TransparencyKey);
                 graphics.Clear(Color.FromArgb(225, 229, 236));
                 graphics.DrawImageUnscaled(emptyBitmap, 5, 10);
-                graphics.DrawImageUnscaled(countdownBitmap, 345, 10);
+                graphics.DrawImageUnscaled(countdownBitmap,
+                    empty.Width + 20, 10);
                 string parent = Path.GetDirectoryName(Path.GetFullPath(outputPath));
                 if (!String.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
                 preview.Save(outputPath, ImageFormat.Png);

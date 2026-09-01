@@ -2148,6 +2148,8 @@ namespace PennyPet
             internal bool ProtectedMessageOk;
             internal bool DeferredMessageSemanticsOk;
             internal bool SingleRestoreAfterCloseOk;
+            internal bool AdaptiveSizingOk;
+            internal bool UpdateTextRelayoutOk;
         }
 
         private static BubbleCheckResult RunBubbleChecks()
@@ -2256,6 +2258,54 @@ namespace PennyPet
                 Application.DoEvents();
                 result.SingleRestoreAfterCloseOk = restoreCount == 1 &&
                     !coordinator.HasCurrent;
+            }
+            using (SpeechBubbleForm empty = new SpeechBubbleForm("", 0))
+            using (SpeechBubbleForm shortChinese = new SpeechBubbleForm(
+                "嗯。", 0))
+            using (SpeechBubbleForm greeting = new SpeechBubbleForm(
+                "早上好～", 0))
+            using (SpeechBubbleForm medium = new SpeechBubbleForm(
+                "今天想要做些什么呢？", 0))
+            using (SpeechBubbleForm english = new SpeechBubbleForm(
+                "What would you like to work on today?", 0))
+            using (SpeechBubbleForm countdown = new SpeechBubbleForm(
+                "提醒倒计时 19 秒", 0))
+            using (SpeechBubbleForm multiline = new SpeechBubbleForm(
+                "第一行提醒\n第二行提醒\n第三行提醒", 0))
+            using (SpeechBubbleForm veryLong = new SpeechBubbleForm(
+                new String('长', 300), 0))
+            {
+                SpeechBubbleForm[] samples = new SpeechBubbleForm[]
+                {
+                    empty, shortChinese, greeting, medium, english,
+                    countdown, multiline, veryLong
+                };
+                bool valid = true;
+                foreach (SpeechBubbleForm sample in samples)
+                {
+                    valid &= sample.Width >=
+                        SpeechBubbleForm.MinimumBubbleSize.Width &&
+                        sample.Height >=
+                            SpeechBubbleForm.MinimumBubbleSize.Height &&
+                        sample.Width <=
+                            SpeechBubbleForm.MaximumBubbleSize.Width &&
+                        sample.Height <=
+                            SpeechBubbleForm.MaximumBubbleSize.Height;
+                }
+                result.AdaptiveSizingOk = valid &&
+                    shortChinese.Width * shortChinese.Height <
+                        medium.Width * medium.Height &&
+                    multiline.Height > shortChinese.Height &&
+                    veryLong.Width ==
+                        SpeechBubbleForm.MaximumBubbleSize.Width &&
+                    veryLong.Height <=
+                        SpeechBubbleForm.MaximumBubbleSize.Height;
+                Size shortSize = shortChinese.ClientSize;
+                shortChinese.UpdateText(new String('长', 300));
+                Size longSize = shortChinese.ClientSize;
+                shortChinese.UpdateText("嗯。");
+                result.UpdateTextRelayoutOk = longSize != shortSize &&
+                    shortChinese.ClientSize == shortSize;
             }
             return result;
         }
@@ -3569,6 +3619,10 @@ namespace PennyPet
                     bubbleChecks.DeferredMessageSemanticsOk) + ",\n" +
                 "  \"bubble_single_restore_after_close_ok\": " + Bool(
                     bubbleChecks.SingleRestoreAfterCloseOk) + ",\n" +
+                "  \"bubble_adaptive_sizing_ok\": " + Bool(
+                    bubbleChecks.AdaptiveSizingOk) + ",\n" +
+                "  \"bubble_update_text_relayout_ok\": " + Bool(
+                    bubbleChecks.UpdateTextRelayoutOk) + ",\n" +
                 "  \"scale_50_to_200_step_10_ok\": " + Bool(
                     shellChecks.ScaleRangeOk) + ",\n" +
                 "  \"keyboard_text_scale_choices_ok\": " + Bool(
