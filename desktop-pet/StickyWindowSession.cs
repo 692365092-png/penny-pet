@@ -258,8 +258,8 @@ namespace PennyPet
 
         private void BoundsChanged(object sender, EventArgs e)
         {
-            bool dividerInput = !_applyingBounds &&
-                e is System.Windows.SizeChangedEventArgs &&
+            if (_applyingBounds) return;
+            bool dividerInput = e is System.Windows.SizeChangedEventArgs &&
                 _window.DockDividerResizeActive;
             EmitSnapshot(dividerInput
                 ? StickyUiEventKind.DockDividerResizing

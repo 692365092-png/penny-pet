@@ -913,7 +913,7 @@ namespace PennyPet.Tests
                 session.Contains("role.DividerMinimumHeight") &&
                 session.Contains("role.DividerMaximumHeight") &&
                 session.Contains("_window.DockDividerResizeActive") &&
-                session.Contains("!_applyingBounds") &&
+                session.Contains("if (_applyingBounds) return;") &&
                 session.Contains("StickyUiEventKind.CloseRequested"),
                 "StickyUiHost must forward dock drag/resize events.");
         }
