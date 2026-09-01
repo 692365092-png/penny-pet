@@ -13,7 +13,8 @@ namespace PennyPet
         SetDockResizeRole,
         SetBounds,
         Close,
-        CloseAll
+        CloseAll,
+        UpdateReminders
     }
 
     internal sealed class StickyUiCommand
@@ -22,7 +23,8 @@ namespace PennyPet
         internal StickyUiCommand(StickyUiCommandKind kind, string noteId,
             bool flag, StickyNoteUiSnapshot snapshot = null,
             StickyUiBounds bounds = null,
-            StickyUiDockResizeRole dockResizeRole = null)
+            StickyUiDockResizeRole dockResizeRole = null,
+            ReminderItem[] reminders = null)
         {
             Kind = kind;
             NoteId = noteId ?? String.Empty;
@@ -30,15 +32,24 @@ namespace PennyPet
             Snapshot = snapshot;
             Bounds = bounds;
             DockResizeRole = dockResizeRole;
+            Reminders = CopyReminders(reminders);
         }
 
         internal static StickyUiCommand Create(StickyNoteUiSnapshot snapshot,
-            bool focusEditor)
+            bool focusEditor, IEnumerable<ReminderItem> reminders = null)
         {
             if (snapshot == null)
                 throw new ArgumentNullException(nameof(snapshot));
             return new StickyUiCommand(StickyUiCommandKind.Create,
-                snapshot.NoteId, focusEditor, snapshot);
+                snapshot.NoteId, focusEditor, snapshot, null, null,
+                CopyReminders(reminders));
+        }
+
+        internal static StickyUiCommand UpdateReminders(string noteId,
+            IEnumerable<ReminderItem> reminders)
+        {
+            return new StickyUiCommand(StickyUiCommandKind.UpdateReminders,
+                noteId, false, null, null, null, CopyReminders(reminders));
         }
 
         internal static StickyUiCommand Show(string noteId, bool focusEditor)
@@ -99,6 +110,28 @@ namespace PennyPet
         internal StickyNoteUiSnapshot Snapshot { get; private set; }
         internal StickyUiBounds Bounds { get; private set; }
         internal StickyUiDockResizeRole DockResizeRole { get; private set; }
+        internal ReminderItem[] Reminders { get; private set; }
+
+        private static ReminderItem[] CopyReminders(
+            IEnumerable<ReminderItem> reminders)
+        {
+            List<ReminderItem> copy = new List<ReminderItem>();
+            if (reminders != null)
+            {
+                foreach (ReminderItem source in reminders)
+                {
+                    if (source == null) continue;
+                    copy.Add(new ReminderItem(
+                        source.DeadlineUtc,
+                        source.Text,
+                        source.SourceNoteId,
+                        source.FontSizeTwips / 20F,
+                        source.PreAlertEnabled));
+                    if (copy.Count >= 5) break;
+                }
+            }
+            return copy.ToArray();
+        }
     }
 
     // Immutable cross-thread value snapshot. The WPF STA creates its own

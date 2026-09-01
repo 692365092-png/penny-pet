@@ -204,10 +204,10 @@ namespace PennyPet
                 return;
             }
             StartOrdinaryPokeAnimation(nowUtc);
-            bool dailyShown = await _dailyContentCoordinator
+            bool dailyHandled = await _dailyContentCoordinator
                 .HandlePetPokedAsync(DateTimeOffset.Now);
             if (_exiting || IsDisposed || Disposing) return;
-            if (!dailyShown)
+            if (!dailyHandled)
                 _smallTalkCoordinator.HandlePetPoked(nowUtc);
         }
 

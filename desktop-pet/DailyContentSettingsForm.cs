@@ -8,6 +8,7 @@ namespace PennyPet
     {
         private readonly CheckBox _dailyContent;
         private readonly CheckBox _solarTerm;
+        private readonly CheckBox _almanac;
         private readonly CheckBox _weather;
         private readonly Label _weatherLocationLabel;
         private readonly Button _weatherLocationButton;
@@ -17,7 +18,7 @@ namespace PennyPet
         private WeatherLocation _weatherLocation;
 
         internal DailyContentSettingsForm(bool dailyContentEnabled,
-            bool solarTermEnabled, bool weatherEnabled,
+            bool solarTermEnabled, bool almanacEnabled, bool weatherEnabled,
             WeatherLocation weatherLocation, ZodiacSign zodiacSign,
             PetWeatherSource weatherSource,
             PetWindowLayerCoordinator windowLayers = null)
@@ -32,7 +33,7 @@ namespace PennyPet
             MinimizeBox = false;
             ShowInTaskbar = false;
             TopMost = true;
-            ClientSize = new Size(450, 325);
+            ClientSize = new Size(450, 355);
             Font = SystemFonts.MessageBoxFont;
 
             Label title = new Label();
@@ -54,20 +55,26 @@ namespace PennyPet
             _solarTerm.Location = new Point(54, 84);
             _solarTerm.Checked = solarTermEnabled;
 
+            _almanac = new CheckBox();
+            _almanac.Text = "传统黄历（民俗）";
+            _almanac.AutoSize = true;
+            _almanac.Location = new Point(54, 114);
+            _almanac.Checked = almanacEnabled;
+
             _weather = new CheckBox();
             _weather.Text = "本地天气";
             _weather.AutoSize = true;
-            _weather.Location = new Point(54, 114);
+            _weather.Location = new Point(54, 144);
             _weather.Checked = weatherEnabled;
 
             _weatherLocationLabel = new Label();
             _weatherLocationLabel.AutoEllipsis = true;
-            _weatherLocationLabel.Location = new Point(75, 144);
+            _weatherLocationLabel.Location = new Point(75, 174);
             _weatherLocationLabel.Size = new Size(252, 24);
 
             _weatherLocationButton = new Button();
             _weatherLocationButton.Text = "设置城市…";
-            _weatherLocationButton.Location = new Point(334, 138);
+            _weatherLocationButton.Location = new Point(334, 168);
             _weatherLocationButton.Size = new Size(94, 30);
             _weatherLocationButton.Click += SetWeatherLocation;
 
@@ -75,17 +82,17 @@ namespace PennyPet
             attribution.Text = "天气数据：Open-Meteo";
             attribution.AutoSize = true;
             attribution.ForeColor = SystemColors.GrayText;
-            attribution.Location = new Point(75, 171);
+            attribution.Location = new Point(75, 201);
 
             Label zodiacLabel = new Label();
             zodiacLabel.Text = "我的星座：";
             zodiacLabel.AutoSize = true;
-            zodiacLabel.Location = new Point(54, 207);
+            zodiacLabel.Location = new Point(54, 237);
 
             _zodiac = new ComboBox();
             _zodiac.DropDownStyle = ComboBoxStyle.DropDownList;
             _zodiac.FormattingEnabled = true;
-            _zodiac.Location = new Point(136, 202);
+            _zodiac.Location = new Point(136, 232);
             _zodiac.Size = new Size(180, 28);
             _zodiac.Format += delegate(object sender,
                 ListControlConvertEventArgs e)
@@ -100,7 +107,7 @@ namespace PennyPet
 
             Button ok = new Button();
             ok.Text = "确定";
-            ok.Location = new Point(279, 277);
+            ok.Location = new Point(279, 307);
             ok.Size = new Size(72, 30);
             ok.Click += delegate
             {
@@ -117,12 +124,13 @@ namespace PennyPet
             Button cancel = new Button();
             cancel.Text = "取消";
             cancel.DialogResult = DialogResult.Cancel;
-            cancel.Location = new Point(359, 277);
+            cancel.Location = new Point(359, 307);
             cancel.Size = new Size(72, 30);
 
             Controls.Add(title);
             Controls.Add(_dailyContent);
             Controls.Add(_solarTerm);
+            Controls.Add(_almanac);
             Controls.Add(_weather);
             Controls.Add(_weatherLocationLabel);
             Controls.Add(_weatherLocationButton);
@@ -145,6 +153,11 @@ namespace PennyPet
         internal bool SolarTermEnabled
         {
             get { return _solarTerm.Checked; }
+        }
+
+        internal bool AlmanacEnabled
+        {
+            get { return _almanac.Checked; }
         }
 
         internal bool WeatherEnabled
@@ -175,11 +188,13 @@ namespace PennyPet
             bool changed = settings.DailyContentEnabled !=
                     DailyContentEnabled ||
                 settings.SolarTermEnabled != SolarTermEnabled ||
+                settings.AlmanacEnabled != AlmanacEnabled ||
                 settings.WeatherEnabled != WeatherEnabled ||
                 !HasSameWeatherLocation(settings, _weatherLocation) ||
                 settings.ZodiacSign != SelectedZodiacSign;
             settings.DailyContentEnabled = DailyContentEnabled;
             settings.SolarTermEnabled = SolarTermEnabled;
+            settings.AlmanacEnabled = AlmanacEnabled;
             settings.WeatherEnabled = WeatherEnabled;
             if (_weatherLocation != null)
             {
@@ -197,6 +212,11 @@ namespace PennyPet
         internal bool SolarTermControlEnabledForTest
         {
             get { return _solarTerm.Enabled; }
+        }
+
+        internal bool AlmanacControlEnabledForTest
+        {
+            get { return _almanac.Enabled; }
         }
 
         internal bool ZodiacControlEnabledForTest
@@ -234,6 +254,11 @@ namespace PennyPet
             _weather.Checked = enabled;
         }
 
+        internal void SetAlmanacEnabledForTest(bool enabled)
+        {
+            _almanac.Checked = enabled;
+        }
+
         internal void SetWeatherLocationForTest(WeatherLocation location)
         {
             _weatherLocation = location;
@@ -243,6 +268,7 @@ namespace PennyPet
         private void RefreshChildState()
         {
             _solarTerm.Enabled = _dailyContent.Checked;
+            _almanac.Enabled = _dailyContent.Checked;
             _weather.Enabled = _dailyContent.Checked;
             _weatherLocationButton.Enabled = _dailyContent.Checked &&
                 _weatherSource != null;

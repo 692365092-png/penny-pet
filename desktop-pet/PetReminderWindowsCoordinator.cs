@@ -50,6 +50,21 @@ namespace PennyPet
             {
                 if (!form.IsDisposed) form.UpdateReminderBanner(reminders);
             }
+            foreach (StickyNoteData note in _notes.GetAll())
+            {
+                if (note == null || !_hostedRuntime.ContainsNote(note.Id))
+                    continue;
+                PostHostedStickyCommand(
+                    StickyUiCommand.UpdateReminders(note.Id, reminders),
+                    delegate(StickyUiCommandResult result)
+                    {
+                        if (result == null ||
+                            result.Status == StickyUiCommandStatus.Handled)
+                            return;
+                        ReportHostedStickyCommandFailure(
+                            "sticky-hosted-reminder-refresh", result);
+                    });
+            }
         }
 
         private void ReconcileNoteReminders()

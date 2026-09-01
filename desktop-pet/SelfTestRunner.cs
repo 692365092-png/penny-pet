@@ -2485,7 +2485,9 @@ namespace PennyPet
                 new PetDailyContentCoordinator(
                     delegate { return lastDate; },
                     delegate { return false; }, delegate { return true; },
-                    delegate { return false; }, delegate { return true; },
+                    delegate { return false; },
+                    delegate { return true; },
+                    delegate { return true; },
                     delegate { return location; },
                     delegate
                     {
@@ -2515,7 +2517,9 @@ namespace PennyPet
                 new PetDailyContentCoordinator(
                     delegate { return lastDate; },
                     delegate { return false; }, delegate { return true; },
-                    delegate { return false; }, delegate { return true; },
+                    delegate { return false; },
+                    delegate { return true; },
+                    delegate { return true; },
                     delegate { return location; },
                     delegate
                     {
@@ -2550,6 +2554,7 @@ namespace PennyPet
                         delegate { return false; },
                         delegate { return true; },
                         delegate { return false; },
+                        delegate { return true; },
                         delegate { return true; },
                         delegate { return location; },
                         delegate
@@ -2593,6 +2598,7 @@ namespace PennyPet
                             delegate { return false; },
                             delegate { return true; },
                             delegate { return false; },
+                            delegate { return true; },
                             delegate { return true; },
                             delegate { return location; },
                             delegate(WeatherLocation target,
@@ -3031,6 +3037,13 @@ namespace PennyPet
                     delegate { return silent; },
                     delegate { return dailyContentEnabled; },
                     delegate { return solarTermEnabled; },
+                    delegate { return true; },
+                    delegate { return false; },
+                    delegate { return null; },
+                    delegate
+                    {
+                        return Task.FromResult<WeatherForecastWindow>(null);
+                    },
                     delegate { return zodiacSign; },
                     delegate(string text)
                     {
@@ -3505,16 +3518,17 @@ namespace PennyPet
                 114.3055, "Asia/Shanghai", out testWeatherLocation);
             using (PetWeatherSource weatherSource = new PetWeatherSource())
             using (DailyContentSettingsForm dailySettings =
-                new DailyContentSettingsForm(false, true, true,
+                new DailyContentSettingsForm(false, true, true, true,
                     testWeatherLocation, ZodiacSign.Scorpio, weatherSource))
             using (DailyContentSettingsForm unsetDailySettings =
-                new DailyContentSettingsForm(true, true, false, null,
+                new DailyContentSettingsForm(true, true, true, false, null,
                     ZodiacSign.None, weatherSource))
             {
                 PetSettingsData stored = new PetSettingsData
                 {
                     DailyContentEnabled = false,
                     SolarTermEnabled = true,
+                    AlmanacEnabled = true,
                     WeatherEnabled = true,
                     WeatherLocationName = "武汉",
                     WeatherLocationAdmin1 = "湖北",
@@ -3527,7 +3541,9 @@ namespace PennyPet
                 result.DailyContentSettingsUiOk =
                     !dailySettings.DailyContentEnabled &&
                     dailySettings.SolarTermEnabled &&
+                    dailySettings.AlmanacEnabled &&
                     !dailySettings.SolarTermControlEnabledForTest &&
+                    !dailySettings.AlmanacControlEnabledForTest &&
                     !dailySettings.WeatherControlEnabledForTest &&
                     !dailySettings.WeatherLocationButtonEnabledForTest;
                 result.ZodiacPreferenceSettingsUiOk =
@@ -3542,6 +3558,7 @@ namespace PennyPet
                 bool cancelKeepsStored = !canceled &&
                     stored.ZodiacSign == ZodiacSign.Scorpio;
                 dailySettings.SetDailyContentEnabledForTest(true);
+                dailySettings.SetAlmanacEnabledForTest(false);
                 bool accepted = dailySettings.ApplyIfAccepted(stored,
                     DialogResult.OK);
                 unsetDailySettings.SetWeatherEnabledForTest(true);
@@ -3552,11 +3569,14 @@ namespace PennyPet
                     dailySettings.DailyContentEnabled &&
                     dailySettings.SolarTermEnabled &&
                     dailySettings.SolarTermControlEnabledForTest &&
+                    dailySettings.AlmanacControlEnabledForTest &&
+                    !dailySettings.AlmanacEnabled &&
                     dailySettings.WeatherControlEnabledForTest &&
                     dailySettings.WeatherLocationButtonEnabledForTest &&
                     stored.WeatherEnabled &&
                     stored.WeatherLocationName == "武汉" &&
                     stored.WeatherTimezone == "Asia/Shanghai" &&
+                    !stored.AlmanacEnabled &&
                     missingCityRejected;
                 result.ZodiacPreferenceSettingsUiOk =
                     result.ZodiacPreferenceSettingsUiOk &&

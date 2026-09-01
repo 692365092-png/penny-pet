@@ -23,8 +23,7 @@ namespace PennyPet
                 return WeatherMeaning.Snow;
             if (rainy && windy) return WeatherMeaning.RainAndWind;
             if (rainy && cooling) return WeatherMeaning.RainAndCooling;
-            if (rainy && (today.TotalPrecipitationMm >= 15D ||
-                today.MaximumPrecipitationProbability >= 90D))
+            if (rainy && today.TotalPrecipitationMm >= 15D)
                 return WeatherMeaning.HeavyRain;
             if (rainy && today.LikelyPrecipitationHours >= 6)
                 return WeatherMeaning.PersistentRain;

@@ -10,6 +10,7 @@ namespace PennyPet
         private readonly Func<bool> _silentMode;
         private readonly Func<bool> _dailyContentEnabled;
         private readonly Func<bool> _solarTermEnabled;
+        private readonly Func<bool> _almanacEnabled;
         private readonly Func<bool> _weatherEnabled;
         private readonly Func<WeatherLocation> _weatherLocation;
         private readonly Func<WeatherLocation, DateTime,
@@ -22,22 +23,8 @@ namespace PennyPet
 
         internal PetDailyContentCoordinator(Func<string> lastBriefingDate,
             Func<bool> silentMode, Func<bool> dailyContentEnabled,
-            Func<bool> solarTermEnabled, Func<ZodiacSign> zodiacSign,
-            Func<string, bool> showDailyGreeting,
-            Action<string> recordBriefingDate)
-            : this(lastBriefingDate, silentMode, dailyContentEnabled,
-                solarTermEnabled, delegate { return false; },
-                delegate { return null; },
-                delegate
-                {
-                    return Task.FromResult<WeatherForecastWindow>(null);
-                }, zodiacSign, showDailyGreeting, recordBriefingDate)
-        {
-        }
-
-        internal PetDailyContentCoordinator(Func<string> lastBriefingDate,
-            Func<bool> silentMode, Func<bool> dailyContentEnabled,
-            Func<bool> solarTermEnabled, Func<bool> weatherEnabled,
+            Func<bool> solarTermEnabled, Func<bool> almanacEnabled,
+            Func<bool> weatherEnabled,
             Func<WeatherLocation> weatherLocation,
             Func<WeatherLocation, DateTime, Task<WeatherForecastWindow>>
                 weatherForecast,
@@ -53,6 +40,8 @@ namespace PennyPet
                 throw new ArgumentNullException("dailyContentEnabled");
             _solarTermEnabled = solarTermEnabled ??
                 throw new ArgumentNullException("solarTermEnabled");
+            _almanacEnabled = almanacEnabled ??
+                throw new ArgumentNullException("almanacEnabled");
             _weatherEnabled = weatherEnabled ??
                 throw new ArgumentNullException("weatherEnabled");
             _weatherLocation = weatherLocation ??
@@ -67,6 +56,8 @@ namespace PennyPet
                 throw new ArgumentNullException("recordBriefingDate");
         }
 
+        // true means this poke was handled/claimed by DailyContent,
+        // including an already in-flight daily attempt.
         internal async Task<bool> HandlePetPokedAsync(
             DateTimeOffset localNow)
         {
@@ -85,10 +76,15 @@ namespace PennyPet
                 SolarTermInfo? solarTerm = _solarTermEnabled()
                     ? SolarTermCalculator.FindForLocalDate(localNow)
                     : (SolarTermInfo?)null;
-                AlmanacDayInfo almanacDay = AlmanacCalculator.Calculate(
-                    localNow);
-                AlmanacDailySelection almanac = almanacDay == null ? null :
-                    AlmanacDailySelector.Select(almanacDay, localNow);
+                AlmanacDailySelection almanac = null;
+                if (_almanacEnabled())
+                {
+                    AlmanacDayInfo almanacDay =
+                        AlmanacCalculator.Calculate(localNow);
+                    if (almanacDay != null)
+                        almanac = AlmanacDailySelector.Select(
+                            almanacDay, localNow);
+                }
                 string weatherLine = null;
                 WeatherLocation location = _weatherEnabled()
                     ? _weatherLocation() : null;

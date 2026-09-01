@@ -19,6 +19,7 @@ namespace PennyPet
         public bool SilentMode;
         public bool DailyContentEnabled = true;
         public bool SolarTermEnabled = true;
+        public bool AlmanacEnabled = true;
         public bool WeatherEnabled;
         public string WeatherLocationName = String.Empty;
         public string WeatherLocationAdmin1 = String.Empty;
@@ -66,6 +67,7 @@ namespace PennyPet
             SilentMode = source.SilentMode;
             DailyContentEnabled = source.DailyContentEnabled;
             SolarTermEnabled = source.SolarTermEnabled;
+            AlmanacEnabled = source.AlmanacEnabled;
             WeatherEnabled = source.WeatherEnabled;
             WeatherLocationName = source.WeatherLocationName;
             WeatherLocationAdmin1 = source.WeatherLocationAdmin1;

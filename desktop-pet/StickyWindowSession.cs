@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Windows.Forms;
 
 namespace PennyPet
@@ -79,6 +80,15 @@ namespace PennyPet
             _window.SetDockResizeRole(role.Grouped, role.ResizeTop,
                 role.ResizeBottom, role.SplitBottom,
                 role.DividerMinimumHeight, role.DividerMaximumHeight);
+            return CurrentResult();
+        }
+
+        internal StickyUiCommandResult UpdateReminders(
+            IEnumerable<ReminderItem> reminders)
+        {
+            if (!IsAvailable) return StickyUiCommandResult.NotHandled();
+            _window.UpdateReminderBanner(reminders ??
+                new ReminderItem[0]);
             return CurrentResult();
         }
 

@@ -360,7 +360,7 @@ namespace PennyPet.Tests
                 poke.Contains("StartOrdinaryPokeAnimation(nowUtc)") &&
                 poke.Contains("_dailyContentCoordinator") &&
                 poke.Contains(".HandlePetPokedAsync") &&
-                poke.Contains("if (!dailyShown)") &&
+                poke.Contains("if (!dailyHandled)") &&
                 poke.Contains("_smallTalkCoordinator.HandlePetPoked(nowUtc)") &&
                 !poke.Contains(".Wait(") && !poke.Contains(".Result"),
                 "PetForm must preserve Easter, Daily, SmallTalk, animation order.");
@@ -400,6 +400,7 @@ namespace PennyPet.Tests
                 "Core/DailyContent/DailyBriefingComposer.cs");
             string coordinator = ReadSource("PetDailyContentCoordinator.cs");
             string form = ReadSource("PetForm.cs");
+            string settingsForm = ReadSource("DailyContentSettingsForm.cs");
             string settings = ReadSource(
                 "Core/Settings/PetSettingsData.cs");
             string commands = ReadSource(
@@ -451,10 +452,13 @@ namespace PennyPet.Tests
                 commands.Contains("--daily-briefing-probe="),
                 "Both pure diagnostic seams must remain available.");
             Assert.IsFalse(
-                form.Contains("Almanac") || settings.Contains("Almanac") ||
                 semantic.Contains("Provider") ||
                 selector.Contains("Manager") || selector.Contains("Engine"),
-                "Almanac must remain setting-free and avoid speculative framework.");
+                "Almanac must remain narrow and avoid speculative framework.");
+            Assert.IsTrue(
+                settings.Contains("AlmanacEnabled") &&
+                settingsForm.Contains("传统黄历（民俗）"),
+                "Almanac preference must be wired into settings and UI.");
         }
 
         [TestMethod]
@@ -840,6 +844,22 @@ namespace PennyPet.Tests
             Assert.IsTrue(host.Contains("StickyUiCommandKind.SetBounds") &&
                 session.Contains("StickyUiEventKind.BoundsChanged"),
                 "StickyUiHost must execute and report typed bounds changes.");
+        }
+
+        [TestMethod]
+        public void StickyTypedProtocol_ExposesReminderUpdateCommand()
+        {
+            string commands = ReadSource(
+                "Features/StickyNotes/StickyUiCommand.cs");
+            string host = ReadSource("StickyUiHost.cs");
+            string session = ReadSource("StickyWindowSession.cs");
+
+            Assert.IsTrue(
+                commands.Contains("UpdateReminders") &&
+                commands.Contains("CopyReminders") &&
+                host.Contains("StickyUiCommandKind.UpdateReminders") &&
+                session.Contains("UpdateReminders("),
+                "Hosted reminder parity needs a detached update command.");
         }
 
         [TestMethod]

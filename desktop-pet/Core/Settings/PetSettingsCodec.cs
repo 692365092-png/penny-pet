@@ -94,6 +94,11 @@ namespace PennyPet
                     settings.SolarTermEnabled = value != "0";
                     recognized = true;
                 }
+                else if (key == "AlmanacEnabled")
+                {
+                    settings.AlmanacEnabled = value != "0";
+                    recognized = true;
+                }
                 else if (key == "WeatherEnabled")
                 {
                     settings.WeatherEnabled = value == "1";
@@ -243,6 +248,8 @@ namespace PennyPet
                 (settings.DailyContentEnabled ? "1" : "0"));
             lines.Add("SolarTermEnabled=" +
                 (settings.SolarTermEnabled ? "1" : "0"));
+            lines.Add("AlmanacEnabled=" +
+                (settings.AlmanacEnabled ? "1" : "0"));
             lines.Add("WeatherEnabled=" +
                 (settings.WeatherEnabled ? "1" : "0"));
             lines.Add("WeatherLocationNameBase64=" +

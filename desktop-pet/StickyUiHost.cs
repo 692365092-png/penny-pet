@@ -92,6 +92,10 @@ namespace PennyPet
                         return TryGetSession(command.NoteId, out session)
                             ? session.SetBounds(command.Bounds)
                             : StickyUiCommandResult.NotHandled();
+                    case StickyUiCommandKind.UpdateReminders:
+                        return TryGetSession(command.NoteId, out session)
+                            ? session.UpdateReminders(command.Reminders)
+                            : StickyUiCommandResult.NotHandled();
                     case StickyUiCommandKind.Close:
                         return TryGetSession(command.NoteId, out session)
                             ? session.Close()
@@ -126,6 +130,8 @@ namespace PennyPet
             StickyWindowSession session = new StickyWindowSession(
                 command.Snapshot, SessionEventRaised);
             _sessions[command.NoteId] = session;
+            if (command.Reminders != null)
+                session.UpdateReminders(command.Reminders);
             try { return session.Show(command.Flag); }
             catch
             {

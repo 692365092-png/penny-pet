@@ -93,6 +93,7 @@ namespace PennyPet
                 new DailyContentSettingsForm(
                     _settings.DailyContentEnabled,
                     _settings.SolarTermEnabled,
+                    _settings.AlmanacEnabled,
                     _settings.WeatherEnabled, currentLocation,
                     _settings.ZodiacSign, _weatherSource, _windowLayers))
             {

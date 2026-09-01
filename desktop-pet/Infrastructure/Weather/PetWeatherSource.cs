@@ -25,8 +25,7 @@ namespace PennyPet
         private int _forecastRequestCount;
         private bool _disposed;
 
-        internal PetWeatherSource() : this(new HttpClient(
-            new HttpClientHandler { UseProxy = false }),
+        internal PetWeatherSource() : this(new HttpClient(),
             delegate { return DateTimeOffset.UtcNow; })
         {
         }
@@ -38,8 +37,13 @@ namespace PennyPet
                 throw new ArgumentNullException(nameof(httpClient));
             _utcNow = utcNow ?? throw new ArgumentNullException(nameof(utcNow));
             _httpClient.Timeout = TimeSpan.FromSeconds(3);
+            Version version = typeof(PetWeatherSource).Assembly
+                .GetName().Version;
+            string userAgent = "PennyPet/" + (version == null
+                ? "1.0.0"
+                : version.ToString(3));
             if (!_httpClient.DefaultRequestHeaders.UserAgent.TryParseAdd(
-                "PennyPet/1.1"))
+                userAgent))
                 throw new InvalidOperationException("Invalid user agent.");
             _geocoding = new OpenMeteoGeocodingClient(_httpClient);
             _forecast = new OpenMeteoForecastClient(_httpClient);

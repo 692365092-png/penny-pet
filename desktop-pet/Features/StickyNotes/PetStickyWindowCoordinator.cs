@@ -478,7 +478,8 @@ namespace PennyPet
             string noteId = note.Id;
             if (!_hostedRuntime.AddNote(noteId)) return true;
             StickyUiCommand command = StickyUiCommand.Create(
-                StickyNoteUiSnapshot.FromData(note), focusEditor);
+                StickyNoteUiSnapshot.FromData(note), focusEditor,
+                _reminders.GetItems());
             PostHostedStickyCommand(command,
                 delegate(StickyUiCommandResult result)
                 {

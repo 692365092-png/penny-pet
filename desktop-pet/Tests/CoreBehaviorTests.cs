@@ -77,51 +77,6 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void DailyNoteFeature_ProgressesDaysAndDetectsMissedDay()
-        {
-            DailyNoteEntry entry = new DailyNoteEntry("day", "body");
-            DateTime firstDate = new DateTime(2026, 8, 28);
-            DailyNoteProgress progress = new DailyNoteProgress();
-
-            DailyNoteAction first = DailyNoteFeature.Decide(firstDate,
-                progress, entry);
-            Assert.AreEqual(DailyNoteActionKind.Create, first.Kind);
-            Assert.AreEqual(1, first.DayNumber);
-
-            DailyNoteProgress issued = DailyNoteFeature.MarkIssued(
-                progress, firstDate, first.DayNumber);
-            DailyNoteAction sameDay = DailyNoteFeature.Decide(firstDate,
-                issued, entry);
-            Assert.AreEqual(DailyNoteActionKind.AlreadyIssued, sameDay.Kind);
-
-            DailyNoteAction next = DailyNoteFeature.Decide(
-                firstDate.AddDays(1), issued, entry);
-            Assert.AreEqual(DailyNoteActionKind.Create, next.Kind);
-            Assert.AreEqual(2, next.DayNumber);
-
-            DailyNoteAction missed = DailyNoteFeature.Decide(
-                firstDate.AddDays(3), issued, entry);
-            Assert.AreEqual(DailyNoteActionKind.MissedDay, missed.Kind);
-            Assert.AreEqual(2, missed.DayNumber);
-        }
-
-        [TestMethod]
-        public void DailyNoteFeature_CompletesAfterThirtyDays()
-        {
-            DailyNoteProgress progress = new DailyNoteProgress
-            {
-                IssuedDay = 30,
-                LastIssuedLocalDate = new DateTime(2026, 9, 26),
-                Completed = true
-            };
-            DailyNoteAction action = DailyNoteFeature.Decide(
-                new DateTime(2026, 9, 27), progress, null);
-
-            Assert.AreEqual(DailyNoteActionKind.ProgramComplete, action.Kind);
-            Assert.AreEqual(30, action.DayNumber);
-        }
-
-        [TestMethod]
         public void StickyDockOperations_CoordinateGuardUsesClampedHeights()
         {
             Assert.IsTrue(
@@ -1330,6 +1285,19 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void WeatherMeaningRules_HeavyRainRequiresPrecipitationNotProbability()
+        {
+            WeatherDaySummary yesterday = WeatherDay(15, 25, 15, 25,
+                0, 0, 0, null, 10, false);
+            Assert.AreNotEqual(WeatherMeaning.HeavyRain, SelectWeather(
+                yesterday, WeatherDay(17, 24, 17, 24, 3, 95, 2, 8, 20,
+                    false)));
+            Assert.AreEqual(WeatherMeaning.HeavyRain, SelectWeather(
+                yesterday, WeatherDay(17, 24, 17, 24, 16, 80, 3, 8, 20,
+                    false)));
+        }
+
+        [TestMethod]
         public void WeatherWording_IsDeterministicVariedAndCautious()
         {
             DateTime start = new DateTime(2026, 1, 1);
@@ -1656,6 +1624,25 @@ namespace PennyPet.Tests
             Assert.AreEqual("Asia/Hong_Kong", target.WeatherTimezone);
             Assert.AreEqual(ZodiacSign.Taurus, target.ZodiacSign);
             Assert.AreEqual("20350908", target.LastDailyBriefingDate);
+        }
+
+        [TestMethod]
+        public void SettingsCodec_AlmanacDefaultsTrueAndRoundTripsFalse()
+        {
+            Assert.IsTrue(new PetSettingsData().AlmanacEnabled);
+            Assert.IsTrue(PetSettingsCodec.Parse(new[] { "DailyContentEnabled=1" })
+                .AlmanacEnabled);
+
+            PetSettingsData disabled = new PetSettingsData
+            {
+                AlmanacEnabled = false
+            };
+            Assert.IsFalse(PetSettingsCodec.Parse(
+                PetSettingsCodec.Serialize(disabled)).AlmanacEnabled);
+
+            PetSettingsData target = new PetSettingsData();
+            target.CopyFrom(disabled);
+            Assert.IsFalse(target.AlmanacEnabled);
         }
 
         [TestMethod]
