@@ -52,11 +52,6 @@ namespace PennyPet
                 _keyboardUiDispatchQueued = false;
             }
             if (keyboardEvent == null || _dragging || _exiting) return;
-            if (_ownedModalUiActive)
-            {
-                _keyOverlay.HideImmediately();
-                return;
-            }
             if (ShouldSuppressOwnApplicationInput(
                 keyboardEvent.FocusSnapshot))
             {
@@ -149,16 +144,17 @@ namespace PennyPet
                         if (!IsCurrentPrivacyScan(generation,
                             _pendingOverlayGeneration)) return;
                     }
-                    if (_dragging || _exiting || _ownedModalUiActive ||
-                        !_settings.ShowKeyOverlay ||
+                    if (_dragging || _exiting || !_settings.ShowKeyOverlay ||
                         ShouldSuppressOwnApplicationInput(focusSnapshot) ||
                         sensitive)
                     {
                         _keyOverlay.HideImmediately();
                         return;
                     }
-                    _keyOverlay.ShowKeyRepeatCount(this, displayText, occurrences,
-                        virtualKeyCode);
+                    _keyOverlay.ShowKeyRepeatCount(this, displayText,
+                        occurrences, virtualKeyCode,
+                        _windowLayers.ModalAvoidanceBounds);
+                    _windowLayers.KeepTransientBelowModal(_keyOverlay);
                 });
             }
             catch { }
@@ -170,7 +166,18 @@ namespace PennyPet
             bool ownApplicationInput = focusSnapshot != null &&
                 focusSnapshot.ProcessId == OwnKeyboardProcessId;
             return PetKeyboardPrivacyPolicy.ShouldSuppressOwnApplicationInput(
-                ownApplicationInput, HasFocusedOwnNoteTextInput());
+                ownApplicationInput, HasFocusedOwnNoteTextInput() ||
+                    _windowLayers.HasActiveModal);
+        }
+
+        private void PetWindowLayerChanged(object sender, EventArgs e)
+        {
+            _keyOverlay.UpdatePosition(this,
+                _windowLayers.ModalAvoidanceBounds);
+            _windowLayers.KeepTransientBelowModal(_keyOverlay);
+            _windowLayers.KeepTransientBelowModal(_leftNoteTabs);
+            _windowLayers.KeepTransientBelowModal(_rightNoteTabs);
+            _bubbleCoordinator.ApplyWindowLayer();
         }
 
         internal static bool IsCurrentPrivacyScan(long capturedGeneration,

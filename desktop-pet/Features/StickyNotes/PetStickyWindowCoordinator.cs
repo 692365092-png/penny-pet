@@ -1037,7 +1037,7 @@ namespace PennyPet
                 delegate(StickyNoteData note) { HideStickyNote(note); },
                 delegate(StickyNoteData note) { DeleteStickyNote(note); }))
             {
-                manager.ShowDialog(this);
+                _windowLayers.ShowModal(this, manager);
                 createRequested = manager.CreateRequested;
                 showRequested = manager.ShowRequested;
             }

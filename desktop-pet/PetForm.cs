@@ -75,6 +75,8 @@ namespace PennyPet
         private readonly PetSettings _settings;
         private readonly GlobalKeyboardActivity _keyboard;
         private readonly KeyboardOverlayForm _keyOverlay;
+        private readonly PetWindowLayerCoordinator _windowLayers =
+            new PetWindowLayerCoordinator();
         private readonly StickyNoteRepository _notes;
         private readonly StickyNoteTabsForm _leftNoteTabs;
         private readonly StickyNoteTabsForm _rightNoteTabs;
@@ -130,7 +132,6 @@ namespace PennyPet
         private int _pendingKeyboardOccurrences;
         private bool _keyboardUiDispatchQueued;
         private bool _privacyScanRunning;
-        private bool _ownedModalUiActive;
         private string _pendingOverlayText = String.Empty;
         private int _pendingOverlayOccurrences;
         private int _pendingOverlayVirtualKeyCode;
@@ -198,7 +199,7 @@ namespace PennyPet
             _bubbleCoordinator = new PetBubbleCoordinator(this,
                 delegate { return _dragging; },
                 delegate { return _exiting; }, BubbleMessageClosed,
-                RestoreAmbientBubble);
+                RestoreAmbientBubble, null, _windowLayers);
 
             _settings = preloadedSettings ?? PetSettings.Load();
             _weatherSource = new PetWeatherSource();
@@ -426,6 +427,7 @@ namespace PennyPet
             SizeChanged += delegate { PositionNoteTabs(); };
 
             _keyOverlay = new KeyboardOverlayForm(_settings.KeyOverlayScalePercent);
+            _windowLayers.LayerChanged += PetWindowLayerChanged;
             _keyboard = new GlobalKeyboardActivity();
             _keyboard.Activity += KeyboardActivity;
             RefreshKeyboardMenuText();
@@ -493,6 +495,7 @@ namespace PennyPet
             _leftNoteTabs.Close();
             _rightNoteTabs.Close();
             _keyboard.Dispose();
+            _windowLayers.LayerChanged -= PetWindowLayerChanged;
             _keyOverlay.Dispose();
             _mouseInside = false;
             _bubbleCoordinator.Dispose();

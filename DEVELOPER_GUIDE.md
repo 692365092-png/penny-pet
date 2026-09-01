@@ -123,8 +123,9 @@ Dock 修改必须同时检查：组关系、组内顺序、持久化快照、统
 - `KeyboardInputFormatter.cs` / `KeyboardOverlayForm.cs`：Windows 虚拟键显示和透明覆盖窗口。
 - `Core/Keyboard/KeyDisplayAccumulator.cs`：连按/长按计数状态机。
 - `Core/Keyboard/PetKeyboardPrivacyPolicy.cs`：首次确认、偏好和检查失败时 fail-closed 的平台中性判定。
+- `PetWindowLayerCoordinator.cs`：统一登记 Pet-owned WinForms Form modal stack；键盘覆盖、Bubble 和 Side Tabs 仍是 no-activate chrome，但在整个嵌套 modal chain 之后，并由键盘覆盖避开其联合 bounds。该栈只存在于内存，窗口关闭即移除。
 
-按键显示默认关闭；关闭必须卸载 Hook。第三方自绘控件、浏览器、跨权限窗口和远程桌面无法保证全部识别，产品文案只能说“尽力隐藏”。
+按键显示默认关闭；关闭必须卸载 Hook。Pet-owned modal 的普通文本输入可以显示按键，但密码/凭据检测仍独立执行并 fail closed；不要用隐藏整个 overlay 的方式修复窗口层级。第三方自绘控件、浏览器、跨权限窗口和远程桌面无法保证全部识别，产品文案只能说“尽力隐藏”。
 
 ## 4. IME 与富文本：修改前必读
 

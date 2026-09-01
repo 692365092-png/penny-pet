@@ -309,11 +309,12 @@ namespace PennyPet.Tests
                 "Sticky STA must asynchronously report a plain focus flag.");
             Assert.IsTrue(overlay.Contains(
                     "ShouldSuppressOwnApplicationInput(focusSnapshot)") &&
-                overlay.Contains("HasFocusedOwnNoteTextInput())") &&
+                overlay.Contains("HasFocusedOwnNoteTextInput() ||") &&
+                overlay.Contains("_windowLayers.HasActiveModal") &&
                 overlay.Contains("focusSnapshot.ProcessId ==") &&
                 overlay.Contains(
                     "PetKeyboardPrivacyPolicy.ShouldSuppressOwnApplicationInput"),
-                "Sticky focus must allow only the owned Sticky text-input exception.");
+                "Only Sticky text input and an active owned modal may allow own-process overlay input.");
             Assert.IsTrue(hook.Contains("ShouldPublishKey(injected)") &&
                 !hook.Contains("ownProcessId") &&
                 !hook.Contains("foregroundProcessId"),
@@ -523,28 +524,55 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void OwnedModalWindows_SuspendOverlayAtWindowBoundary()
+        public void OwnedModalWindows_UseSharedLayerBoundaryWithoutSuppressingKeys()
         {
+            string layers = ReadSource("PetWindowLayerCoordinator.cs");
             string menu = ReadSource("PetMenuActions.cs");
+            string settings = ReadSource("DailyContentSettingsForm.cs");
+            string reminders = ReadSource("PetReminderWindowsCoordinator.cs");
+            string sticky = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string bubble = ReadSource("PetBubbleCoordinator.cs");
             string keyboard = ReadSource(
                 "Features/KeyboardOverlay/PetKeyboardOverlayCoordinator.cs");
             string dialog = ReadSource("WeatherLocationDialog.cs");
-            string modal = Between(menu,
-                "private DialogResult ShowOwnedModalDialog",
-                "private void ApplyScale");
 
-            Assert.IsTrue(menu.Contains("ShowOwnedModalDialog(dialog)") &&
-                menu.Contains("_ownedModalUiActive = true") &&
-                menu.Contains("_keyOverlay.HideImmediately()") &&
-                menu.Contains("_pendingOverlayGeneration++") &&
-                menu.Contains("finally") &&
-                menu.Contains("_ownedModalUiActive = false"),
-                "Pet-owned modal windows must own overlay suspension and cleanup.");
-            Assert.IsTrue(keyboard.Contains("if (_ownedModalUiActive)") &&
-                keyboard.Contains("_ownedModalUiActive ||") &&
-                !modal.Contains("SensitiveInputDetector") &&
-                !modal.Contains("PetKeyboardPrivacyPolicy"),
-                "Modal Z-order suppression must stay separate from privacy classification.");
+            Assert.IsTrue(layers.Contains("List<Form> _modalStack") &&
+                layers.Contains("DialogResult ShowModal") &&
+                layers.Contains("ModalAvoidanceBounds") &&
+                layers.Contains("Rectangle.Union") &&
+                layers.Contains("ModalZOrderFloor") &&
+                layers.Contains("KeepTransientBelowModal") &&
+                layers.Contains("SetWindowPos(transient.Handle, floor.Handle") &&
+                layers.Contains("SwpNoActivate") &&
+                layers.Contains("finally") &&
+                layers.Contains("_modalStack.Remove(dialog)"),
+                "Pet modal ownership and transient z-order must share one bounded runtime stack.");
+            Assert.IsTrue(menu.Contains(
+                    "_windowLayers.ShowModal(this, dialog)") &&
+                settings.Contains(
+                    "_windowLayers.ShowModal(this, dialog)") &&
+                reminders.Contains(
+                    "_windowLayers.ShowModal(this, dialog)") &&
+                sticky.Contains(
+                    "_windowLayers.ShowModal(this, manager)") &&
+                !menu.Contains("ShowOwnedModalDialog") &&
+                !menu.Contains("_ownedModalUi"),
+                "Pet-owned Form dialogs, including nested weather settings, must use the shared layer boundary.");
+            Assert.IsTrue(keyboard.Contains(
+                    "_windowLayers.ModalAvoidanceBounds") &&
+                keyboard.Contains("_windowLayers.HasActiveModal") &&
+                keyboard.Contains("HasFocusedOwnNoteTextInput() ||") &&
+                keyboard.Contains("ShowKeyRepeatCount(this, displayText") &&
+                keyboard.Contains(
+                    "_windowLayers.KeepTransientBelowModal(_keyOverlay)") &&
+                keyboard.Contains(
+                    "_windowLayers.KeepTransientBelowModal(_leftNoteTabs)") &&
+                bubble.Contains("ApplyWindowLayer()") &&
+                bubble.Contains(
+                    "_windowLayers.KeepTransientBelowModal(_bubble)") &&
+                keyboard.Contains("SensitiveInputDetector.IsSensitiveFocus"),
+                "Non-activating Pet chrome must stay below modal windows while sensitive detection remains intact.");
             Assert.IsTrue(dialog.Contains("FormattingEnabled = true") &&
                 dialog.Contains("ClientSize = new Size(410, 255)") &&
                 dialog.Contains("_results.Size = new Size(364, 96)"),

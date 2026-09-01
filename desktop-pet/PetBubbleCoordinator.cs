@@ -114,6 +114,7 @@ namespace PennyPet
         private readonly Func<bool> _isExiting;
         private readonly Action<PetMessageKind> _messageClosed;
         private readonly Action _restoreAmbientMessage;
+        private readonly PetWindowLayerCoordinator _windowLayers;
         private readonly Queue<PetBubbleRequest> _pending =
             new Queue<PetBubbleRequest>();
         private SpeechBubbleForm _bubble;
@@ -125,7 +126,8 @@ namespace PennyPet
 
         internal PetBubbleCoordinator(Form owner, Func<bool> isDragging,
             Func<bool> isExiting, Action<PetMessageKind> messageClosed,
-            Action restoreAmbientMessage, Func<DateTime> clock = null)
+            Action restoreAmbientMessage, Func<DateTime> clock = null,
+            PetWindowLayerCoordinator windowLayers = null)
         {
             _owner = owner ?? throw new ArgumentNullException("owner");
             _isDragging = isDragging ?? throw new ArgumentNullException(
@@ -135,6 +137,7 @@ namespace PennyPet
             _messageClosed = messageClosed;
             _restoreAmbientMessage = restoreAmbientMessage;
             _clock = clock ?? (() => DateTime.UtcNow);
+            _windowLayers = windowLayers;
         }
 
         internal PetMessageKind? CurrentKind
@@ -180,6 +183,7 @@ namespace PennyPet
                 request.MinimumReadableMilliseconds);
             bubble.FormClosed += BubbleClosed;
             bubble.ShowNear(_owner);
+            ApplyWindowLayer();
             return true;
         }
 
@@ -200,12 +204,22 @@ namespace PennyPet
 
         internal void Reposition()
         {
-            if (HasCurrent) _bubble.RepositionNear(_owner);
+            if (!HasCurrent) return;
+            _bubble.RepositionNear(_owner);
+            ApplyWindowLayer();
         }
 
         internal void ShowCurrentNearOwner()
         {
-            if (HasCurrent) _bubble.ShowNear(_owner);
+            if (!HasCurrent) return;
+            _bubble.ShowNear(_owner);
+            ApplyWindowLayer();
+        }
+
+        internal void ApplyWindowLayer()
+        {
+            if (HasCurrent && _windowLayers != null)
+                _windowLayers.KeepTransientBelowModal(_bubble);
         }
 
         internal void CloseIfCurrent(PetMessageKind kind)

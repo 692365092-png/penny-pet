@@ -71,14 +71,21 @@ namespace PennyPet
         public void ShowKey(Form pet, string keyText, int occurrences,
             int virtualKeyCode)
         {
+            ShowKey(pet, keyText, occurrences, virtualKeyCode, null);
+        }
+
+        internal void ShowKey(Form pet, string keyText, int occurrences,
+            int virtualKeyCode, Rectangle? avoidBounds)
+        {
             if (pet == null || pet.IsDisposed || String.IsNullOrEmpty(keyText)) return;
             DateTime now = DateTime.UtcNow;
             _displayText = _accumulator.Register(keyText, now, occurrences);
             _heldVirtualKeyCode = virtualKeyCode;
             _lastInputUtc = now;
             _opacity = 255;
-            RenderSurface(ChooseTextColor(CalculateLocation(pet)));
-            UpdatePosition(pet);
+            RenderSurface(ChooseTextColor(CalculateLocation(pet,
+                avoidBounds)));
+            UpdatePosition(pet, avoidBounds);
             if (!Visible) Show(pet);
             LayeredSpriteRenderer.Show(this, _surface, _opacity);
             _fadeTimer.Start();
@@ -87,14 +94,22 @@ namespace PennyPet
         public void ShowKeyRepeatCount(Form pet, string keyText, int repeatCount,
             int virtualKeyCode)
         {
+            ShowKeyRepeatCount(pet, keyText, repeatCount, virtualKeyCode,
+                null);
+        }
+
+        internal void ShowKeyRepeatCount(Form pet, string keyText,
+            int repeatCount, int virtualKeyCode, Rectangle? avoidBounds)
+        {
             if (pet == null || pet.IsDisposed || String.IsNullOrEmpty(keyText)) return;
             DateTime now = DateTime.UtcNow;
             _displayText = _accumulator.RegisterAbsolute(keyText, now, repeatCount);
             _heldVirtualKeyCode = virtualKeyCode;
             _lastInputUtc = now;
             _opacity = 255;
-            RenderSurface(ChooseTextColor(CalculateLocation(pet)));
-            UpdatePosition(pet);
+            RenderSurface(ChooseTextColor(CalculateLocation(pet,
+                avoidBounds)));
+            UpdatePosition(pet, avoidBounds);
             if (!Visible) Show(pet);
             LayeredSpriteRenderer.Show(this, _surface, _opacity);
             _fadeTimer.Start();
@@ -102,8 +117,13 @@ namespace PennyPet
 
         public void UpdatePosition(Form pet)
         {
+            UpdatePosition(pet, null);
+        }
+
+        internal void UpdatePosition(Form pet, Rectangle? avoidBounds)
+        {
             if (pet == null || pet.IsDisposed) return;
-            Location = CalculateLocation(pet);
+            Location = CalculateLocation(pet, avoidBounds);
             if (Visible && _surface != null)
                 LayeredSpriteRenderer.Show(this, _surface, _opacity);
         }
@@ -160,15 +180,69 @@ namespace PennyPet
                 return RenderTextBitmap(text, color, opacity, font);
         }
 
-        private Point CalculateLocation(Form pet)
+        private Point CalculateLocation(Form pet, Rectangle? avoidBounds)
         {
             Rectangle work = Screen.FromRectangle(pet.Bounds).WorkingArea;
-            int x = pet.Left + pet.Width / 2 - Width / 2;
-            int y = pet.Bottom + 4;
-            x = Math.Max(work.Left + 4, Math.Min(x, work.Right - Width - 4));
-            if (y + Height > work.Bottom - 2)
-                y = Math.Max(work.Top + 2, pet.Top - Height - 4);
-            return new Point(x, y);
+            return CalculateLocationForTest(pet.Bounds, work, ClientSize,
+                avoidBounds);
+        }
+
+        internal static Point CalculateLocationForTest(Rectangle petBounds,
+            Rectangle workingArea, Size overlaySize, Rectangle? avoidBounds)
+        {
+            int x = Clamp(petBounds.Left + petBounds.Width / 2 -
+                overlaySize.Width / 2, workingArea.Left + 4,
+                workingArea.Right - overlaySize.Width - 4);
+            int y = petBounds.Bottom + 4;
+            if (y + overlaySize.Height > workingArea.Bottom - 2)
+                y = Math.Max(workingArea.Top + 2,
+                    petBounds.Top - overlaySize.Height - 4);
+            Point normal = new Point(x, y);
+            if (!avoidBounds.HasValue || !avoidBounds.Value.IntersectsWith(
+                new Rectangle(normal, overlaySize))) return normal;
+
+            Rectangle avoid = avoidBounds.Value;
+            Point[] candidates =
+            {
+                new Point(avoid.Right + 8,
+                    petBounds.Top + petBounds.Height / 2 -
+                        overlaySize.Height / 2),
+                new Point(avoid.Left - overlaySize.Width - 8,
+                    petBounds.Top + petBounds.Height / 2 -
+                        overlaySize.Height / 2),
+                new Point(petBounds.Left + petBounds.Width / 2 -
+                    overlaySize.Width / 2, avoid.Bottom + 8),
+                new Point(petBounds.Left + petBounds.Width / 2 -
+                    overlaySize.Width / 2,
+                    avoid.Top - overlaySize.Height - 8)
+            };
+            Point best = normal;
+            long bestDistance = Int64.MaxValue;
+            foreach (Point candidate in candidates)
+            {
+                Point fitted = new Point(
+                    Clamp(candidate.X, workingArea.Left + 4,
+                        workingArea.Right - overlaySize.Width - 4),
+                    Clamp(candidate.Y, workingArea.Top + 2,
+                        workingArea.Bottom - overlaySize.Height - 2));
+                Rectangle bounds = new Rectangle(fitted, overlaySize);
+                if (avoid.IntersectsWith(bounds)) continue;
+                long dx = bounds.Left + bounds.Width / 2 -
+                    (petBounds.Left + petBounds.Width / 2);
+                long dy = bounds.Top + bounds.Height / 2 -
+                    (petBounds.Top + petBounds.Height / 2);
+                long distance = dx * dx + dy * dy;
+                if (distance >= bestDistance) continue;
+                best = fitted;
+                bestDistance = distance;
+            }
+            return best;
+        }
+
+        private static int Clamp(int value, int minimum, int maximum)
+        {
+            if (maximum < minimum) return minimum;
+            return Math.Max(minimum, Math.Min(value, maximum));
         }
 
         private Color ChooseTextColor(Point location)

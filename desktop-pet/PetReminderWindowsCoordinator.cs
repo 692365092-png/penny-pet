@@ -99,7 +99,7 @@ namespace PennyPet
                                 dialog.ReminderFontSizePoints);
                     };
                 }
-                if (dialog.ShowDialog(this) !=
+                if (_windowLayers.ShowModal(this, dialog) !=
                     System.Windows.Forms.DialogResult.OK)
                 {
                     UpdateAllStickyNoteReminderBanners();
@@ -196,7 +196,8 @@ namespace PennyPet
             }
             using (ReminderDialog dialog = new ReminderDialog())
             {
-                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                if (_windowLayers.ShowModal(this, dialog) != DialogResult.OK)
+                    return;
                 // Pet-menu reminders stay standalone. Every ordinary sticky
                 // window already renders the current reminder list, including
                 // notes the user creates after this reminder is saved.

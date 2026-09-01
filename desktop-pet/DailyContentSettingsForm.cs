@@ -13,14 +13,17 @@ namespace PennyPet
         private readonly Button _weatherLocationButton;
         private readonly ComboBox _zodiac;
         private readonly PetWeatherSource _weatherSource;
+        private readonly PetWindowLayerCoordinator _windowLayers;
         private WeatherLocation _weatherLocation;
 
         internal DailyContentSettingsForm(bool dailyContentEnabled,
             bool solarTermEnabled, bool weatherEnabled,
             WeatherLocation weatherLocation, ZodiacSign zodiacSign,
-            PetWeatherSource weatherSource)
+            PetWeatherSource weatherSource,
+            PetWindowLayerCoordinator windowLayers = null)
         {
             _weatherSource = weatherSource;
+            _windowLayers = windowLayers ?? new PetWindowLayerCoordinator();
             _weatherLocation = weatherLocation;
             Text = "每日内容";
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -252,7 +255,7 @@ namespace PennyPet
             using (WeatherLocationDialog dialog =
                 new WeatherLocationDialog(_weatherSource))
             {
-                if (dialog.ShowDialog(this) != DialogResult.OK ||
+                if (_windowLayers.ShowModal(this, dialog) != DialogResult.OK ||
                     dialog.SelectedLocation == null) return;
                 _weatherLocation = dialog.SelectedLocation;
                 RefreshWeatherLocationText();
