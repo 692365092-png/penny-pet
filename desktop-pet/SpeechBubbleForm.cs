@@ -34,6 +34,14 @@ namespace PennyPet
 
         public SpeechBubbleForm(string text, int autoCloseMilliseconds,
             string fontFamilyName, float fontSizePoints)
+            : this(text, autoCloseMilliseconds, fontFamilyName,
+                fontSizePoints, true)
+        {
+        }
+
+        public SpeechBubbleForm(string text, int autoCloseMilliseconds,
+            string fontFamilyName, float fontSizePoints,
+            bool closesOnMouseDown)
         {
             _text = text ?? String.Empty;
             FormBorderStyle = FormBorderStyle.None;
@@ -53,7 +61,8 @@ namespace PennyPet
                 _closeTimer.Tick += delegate { Close(); };
                 _closeTimer.Start();
             }
-            MouseDown += delegate { Close(); };
+            if (closesOnMouseDown)
+                MouseDown += delegate { Close(); };
         }
 
         protected override bool ShowWithoutActivation

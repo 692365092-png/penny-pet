@@ -328,19 +328,18 @@ namespace PennyPet.Tests
             int mouseUp = animation.IndexOf("private void PetMouseUp",
                 StringComparison.Ordinal);
             int nextMethod = animation.IndexOf(
-                "private void AdvanceManualAnimation", mouseUp,
+                "private void HandlePetPoked", mouseUp,
                 StringComparison.Ordinal);
             string body = animation.Substring(mouseUp, nextMethod - mouseUp);
-            int poke = body.IndexOf(
-                "_dailyContentCoordinator.HandlePetPoked(DateTime.Now)",
-                StringComparison.Ordinal);
-            int animationAdvance = body.IndexOf("AdvanceManualAnimation()",
+            int poke = body.IndexOf("HandlePetPoked()",
                 StringComparison.Ordinal);
 
             Assert.IsTrue(body.Contains("if (wasDrag)") &&
-                body.Contains("else") && poke >= 0 &&
-                animationAdvance > poke,
-                "A valid poke must run before animation cooldown handling.");
+                body.Contains("else") && poke >= 0,
+                "A valid non-drag mouse-up must enter one poke boundary.");
+            Assert.IsFalse(body.Contains("_dailyContentCoordinator") ||
+                body.Contains("StartOrdinaryPokeAnimation"),
+                "PetMouseUp must not duplicate poke side effects.");
             Assert.IsFalse(startup.Contains("HandlePetPoked"),
                 "Startup must never trigger daily content.");
         }

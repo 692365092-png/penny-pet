@@ -8,7 +8,8 @@ namespace PennyPet
     {
         private PetBubbleRequest(PetMessageKind kind, string text,
             string fontFamilyName, float fontSizePoints,
-            int autoCloseMilliseconds, bool deferWhileDragging)
+            int autoCloseMilliseconds, bool deferWhileDragging,
+            bool closesOnMouseDown)
         {
             Kind = kind;
             Text = text ?? String.Empty;
@@ -16,6 +17,7 @@ namespace PennyPet
             FontSizePoints = fontSizePoints;
             AutoCloseMilliseconds = Math.Max(0, autoCloseMilliseconds);
             DeferWhileDragging = deferWhileDragging;
+            ClosesOnMouseDown = closesOnMouseDown;
         }
 
         internal readonly PetMessageKind Kind;
@@ -24,40 +26,55 @@ namespace PennyPet
         internal readonly float FontSizePoints;
         internal readonly int AutoCloseMilliseconds;
         internal readonly bool DeferWhileDragging;
+        internal readonly bool ClosesOnMouseDown;
 
         internal static PetBubbleRequest Feedback(string text,
             string fontFamilyName, float fontSizePoints)
         {
             return new PetBubbleRequest(PetMessageKind.Feedback, text,
-                fontFamilyName, fontSizePoints, 20000, true);
+                fontFamilyName, fontSizePoints, 20000, true, true);
         }
 
         internal static PetBubbleRequest BriefFeedback(string text,
             string fontFamilyName, float fontSizePoints)
         {
             return new PetBubbleRequest(PetMessageKind.Feedback, text,
-                fontFamilyName, fontSizePoints, 2000, true);
+                fontFamilyName, fontSizePoints, 2000, true, true);
         }
 
         internal static PetBubbleRequest DailyGreeting(string text,
             string fontFamilyName, float fontSizePoints)
         {
             return new PetBubbleRequest(PetMessageKind.DailyGreeting, text,
-                fontFamilyName, fontSizePoints, 20000, false);
+                fontFamilyName, fontSizePoints, 20000, false, true);
+        }
+
+        internal static PetBubbleRequest EasterEgg(string fontFamilyName,
+            float fontSizePoints)
+        {
+            return EasterEgg(fontFamilyName, fontSizePoints, 0);
+        }
+
+        internal static PetBubbleRequest EasterEgg(string fontFamilyName,
+            float fontSizePoints, int autoCloseMilliseconds)
+        {
+            return new PetBubbleRequest(PetMessageKind.EasterEgg,
+                "你在整我是不是。", fontFamilyName, fontSizePoints,
+                autoCloseMilliseconds, false, false);
         }
 
         internal static PetBubbleRequest Hover(string text,
             string fontFamilyName, float fontSizePoints)
         {
             return new PetBubbleRequest(PetMessageKind.Hover, text,
-                fontFamilyName, fontSizePoints, 0, false);
+                fontFamilyName, fontSizePoints, 0, false, true);
         }
 
         internal static PetBubbleRequest ReminderPreAlert(string text,
             string fontFamilyName, float fontSizePoints)
         {
             return new PetBubbleRequest(PetMessageKind.ReminderPreAlert, text,
-                fontFamilyName, fontSizePoints, 0, false);
+                fontFamilyName, fontSizePoints, 0, false, true);
         }
 
         internal static PetBubbleRequest ReminderDue(string text,
@@ -66,13 +83,14 @@ namespace PennyPet
             return new PetBubbleRequest(PetMessageKind.ReminderDue, text,
                 fontFamilyName, fontSizePoints,
                 PetReminderCoordinator.DueReminderBubbleDurationMilliseconds,
-                false);
+                false, true);
         }
 
         internal PetBubbleRequest WithText(string text)
         {
             return new PetBubbleRequest(Kind, text, FontFamilyName,
-                FontSizePoints, AutoCloseMilliseconds, DeferWhileDragging);
+                FontSizePoints, AutoCloseMilliseconds, DeferWhileDragging,
+                ClosesOnMouseDown);
         }
     }
 
@@ -136,7 +154,7 @@ namespace PennyPet
             CloseCurrent(true);
             SpeechBubbleForm bubble = new SpeechBubbleForm(request.Text,
                 request.AutoCloseMilliseconds, request.FontFamilyName,
-                request.FontSizePoints);
+                request.FontSizePoints, request.ClosesOnMouseDown);
             _bubble = bubble;
             _current = request;
             bubble.FormClosed += BubbleClosed;

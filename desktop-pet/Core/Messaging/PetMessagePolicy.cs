@@ -8,10 +8,11 @@ namespace PennyPet
             if (!current.HasValue || exiting) return true;
             if (incoming == PetMessageKind.ReminderDue) return true;
             if (current.Value == PetMessageKind.ReminderPreAlert) return false;
-            if (current.Value != PetMessageKind.ReminderDue) return true;
-            // Product rule: a due reminder yields to direct user feedback,
-            // but ambient Hover/DailyGreeting/Discovery never replaces it.
-            return incoming == PetMessageKind.Feedback;
+            // Product rule: an active due reminder is absolute priority.
+            if (current.Value == PetMessageKind.ReminderDue) return false;
+            if (current.Value == PetMessageKind.EasterEgg)
+                return incoming == PetMessageKind.ReminderPreAlert;
+            return true;
         }
 
         internal static bool ShouldSuppress(PetMessageKind kind,
@@ -26,7 +27,8 @@ namespace PennyPet
         internal static bool IsProtectedReminder(PetMessageKind kind)
         {
             return kind == PetMessageKind.ReminderPreAlert ||
-                kind == PetMessageKind.ReminderDue;
+                kind == PetMessageKind.ReminderDue ||
+                kind == PetMessageKind.EasterEgg;
         }
     }
 }

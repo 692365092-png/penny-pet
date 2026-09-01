@@ -12,6 +12,8 @@ namespace PennyPet
     // Animation selection policy remains in PetAnimationController.
     internal sealed partial class PetForm
     {
+        private const int EasterEggMinimumReadableDwellMilliseconds = 1200;
+
         private void AnimationTick(object sender, EventArgs e)
         {
             DateTime now = DateTime.UtcNow;
@@ -38,16 +40,19 @@ namespace PennyPet
             }
             if (_typingSession && now > _typingUntilUtc)
                 _typingSession = false;
-            if (_manualAnimationActive && !(_dragging && _dragMoved))
+            if (_animation.InteractionAnimationKind !=
+                PetInteractionAnimationKind.None &&
+                !(_dragging && _dragMoved))
             {
-                if (!_art.IsRowLoaded(_manualAnimationRow))
+                int interactionRow = _animation.InteractionAnimationRow;
+                if (!_art.IsRowLoaded(interactionRow))
                 {
-                    QueueArtPreload(_manualAnimationRow);
+                    QueueArtPreload(interactionRow);
                     return;
                 }
-                if (_row != _manualAnimationRow)
+                if (_row != interactionRow)
                 {
-                    _row = _manualAnimationRow;
+                    _row = interactionRow;
                     _frame = 0;
                     ScheduleNextFrame(now);
                     RenderCurrentFrame();
@@ -56,7 +61,14 @@ namespace PennyPet
                 if (now < _nextFrameUtc) return;
                 if (_frame >= RuntimeFrameCount(_row) - 1)
                 {
-                    _manualAnimationActive = false;
+                    if (_animation.InteractionAnimationKind ==
+                        PetInteractionAnimationKind.EasterEgg)
+                    {
+                        _easterEggBubblePendingClose = true;
+                        _easterEggBubbleCloseUntilUtc = now.AddMilliseconds(
+                            EasterEggMinimumReadableDwellMilliseconds);
+                    }
+                    _animation.CompleteInteractionAnimation();
                     _row = ChooseRow();
                     _frame = 0;
                 }
@@ -67,6 +79,12 @@ namespace PennyPet
                 ScheduleNextFrame(now);
                 RenderCurrentFrame();
                 return;
+            }
+            if (_easterEggBubblePendingClose &&
+                now >= _easterEggBubbleCloseUntilUtc)
+            {
+                _easterEggBubblePendingClose = false;
+                _bubbleCoordinator.CloseIfCurrent(PetMessageKind.EasterEgg);
             }
             int wanted = ChooseRow();
             if (_row != wanted)
@@ -168,7 +186,7 @@ namespace PennyPet
             if (!_dragMoved)
             {
                 _dragMoved = true;
-                _manualAnimationActive = false;
+                _animation.CancelInteractionAnimation();
             }
             Location = new Point(_dragWindowOrigin.X + dx, _dragWindowOrigin.Y + dy);
             _keyOverlay.UpdatePosition(this);
@@ -186,30 +204,62 @@ namespace PennyPet
             else
             {
                 Location = _dragWindowOrigin;
-                _dailyContentCoordinator.HandlePetPoked(DateTime.Now);
-                AdvanceManualAnimation();
+                HandlePetPoked();
             }
             ShowNextPendingBubble();
         }
 
-        private void AdvanceManualAnimation()
+        private void HandlePetPoked()
         {
-            DateTime now = DateTime.UtcNow;
-            if (!PetAnimationController.ManualAnimationClickReady(now,
-                _manualAnimationCooldownUntilUtc)) return;
-            _manualAnimationCooldownUntilUtc = now.AddMilliseconds(
-                PetAnimationController.ManualAnimationCooldownMilliseconds);
-            int current = _manualAnimationActive ? _manualAnimationRow : _row;
-            _manualAnimationRow =
-                PetAnimationController.PickRandomManualAnimationRow(
-                    _random, current);
-            _manualAnimationActive = true;
+            DateTime nowUtc = DateTime.UtcNow;
+            if (_pokeBurstTracker.RegisterPoke(nowUtc))
+            {
+                StartPokeEasterEgg(nowUtc);
+                return;
+            }
+            _dailyContentCoordinator.HandlePetPoked(DateTime.Now);
+            StartOrdinaryPokeAnimation(nowUtc);
+        }
+
+        private void StartOrdinaryPokeAnimation(DateTime nowUtc)
+        {
+            if (_bubbleCoordinator.CurrentKind.HasValue &&
+                PetMessagePolicy.IsProtectedReminder(
+                    _bubbleCoordinator.CurrentKind.Value)) return;
+            int row = PetAnimationController.PickRandomManualAnimationRow(
+                _random, _row);
+            if (!_animation.TryStartOrdinaryPoke(row)) return;
             _typingSession = false;
-            QueueArtPreload(_manualAnimationRow);
-            if (!_art.IsRowLoaded(_manualAnimationRow)) return;
-            _row = _manualAnimationRow;
+            QueueArtPreload(row);
+            if (!_art.IsRowLoaded(row)) return;
+            _row = row;
             _frame = 0;
-            ScheduleNextFrame(now);
+            ScheduleNextFrame(nowUtc);
+            RenderCurrentFrame();
+        }
+
+        private void StartPokeEasterEgg(DateTime nowUtc)
+        {
+            _easterEggBubblePendingClose = false;
+            if (_bubbleCoordinator.CurrentKind.HasValue &&
+                PetMessagePolicy.IsProtectedReminder(
+                    _bubbleCoordinator.CurrentKind.Value)) return;
+            if (!_animation.TryStartEasterEgg(FailedRow)) return;
+            bool shown = _bubbleCoordinator.Show(PetBubbleRequest.EasterEgg(
+                KeyboardOverlayForm.TextFontFamilyName,
+                KeyboardOverlayForm.TextFontSizePoints(
+                    _settings.KeyOverlayScalePercent)));
+            if (!shown)
+            {
+                _animation.CancelInteractionAnimation();
+                return;
+            }
+            _typingSession = false;
+            QueueArtPreload(FailedRow);
+            if (!_art.IsRowLoaded(FailedRow)) return;
+            _row = FailedRow;
+            _frame = 0;
+            ScheduleNextFrame(nowUtc);
             RenderCurrentFrame();
         }
 

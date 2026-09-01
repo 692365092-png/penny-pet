@@ -1869,7 +1869,7 @@ namespace PennyPet
                 PetForm.DueReminderBubbleFontSizePoints(100) -
                 KeyboardOverlayForm.TextFontSizePoints(100)) < 0.2F;
             result.DueBubbleReplacementOk =
-                PetMessagePolicy.ShouldReplace(PetMessageKind.ReminderDue,
+                !PetMessagePolicy.ShouldReplace(PetMessageKind.ReminderDue,
                     PetMessageKind.Feedback, false) &&
                 PetMessagePolicy.ShouldReplace(PetMessageKind.ReminderDue,
                     PetMessageKind.ReminderDue, false) &&
@@ -2005,7 +2005,8 @@ namespace PennyPet
             internal bool GuitarFailureProbabilityReducedOk;
             internal bool ManualRandomPoolOk;
             internal bool ManualSpecialProbabilityReducedOk;
-            internal bool ManualCooldownOk;
+            internal bool ManualFullCycleGuardOk;
+            internal bool PokeBurstOk;
             internal bool ClickDragThresholdOk;
         }
 
@@ -2093,14 +2094,14 @@ namespace PennyPet
                 manualRow = next;
             }
             result.ManualRandomPoolOk = manualNoImmediateRepeat &&
-                manualRows.Count == 7 &&
+                manualRows.Count == 6 &&
                 PetAnimationController.IsManualAnimationRow(0) &&
                 PetAnimationController.IsManualAnimationRow(4) &&
                 PetAnimationController.IsManualAnimationRow(5) &&
                 PetAnimationController.IsManualAnimationRow(6) &&
                 PetAnimationController.IsManualAnimationRow(7) &&
                 PetAnimationController.IsManualAnimationRow(8) &&
-                PetAnimationController.IsManualAnimationRow(9) &&
+                !PetAnimationController.IsManualAnimationRow(9) &&
                 !PetAnimationController.IsManualAnimationRow(1) &&
                 !PetAnimationController.IsManualAnimationRow(2) &&
                 !PetAnimationController.IsManualAnimationRow(3);
@@ -2118,18 +2119,38 @@ namespace PennyPet
                 if (selected == 8) manualSecondThought++;
             }
             result.ManualSpecialProbabilityReducedOk =
-                manualFirstThought >= 1700 && manualFirstThought <= 2300 &&
-                manualFailedGuitar >= 1700 && manualFailedGuitar <= 2300 &&
-                manualSecondThought >= 1700 && manualSecondThought <= 2300;
-            DateTime now = DateTime.UtcNow;
-            result.ManualCooldownOk =
-                PetAnimationController.ManualAnimationCooldownMilliseconds == 600 &&
-                PetAnimationController.ManualAnimationClickReady(
-                    now, DateTime.MinValue) &&
-                !PetAnimationController.ManualAnimationClickReady(
-                    now, now.AddMilliseconds(600)) &&
-                PetAnimationController.ManualAnimationClickReady(
-                    now.AddMilliseconds(600), now.AddMilliseconds(600));
+                manualFirstThought >= 2200 && manualFirstThought <= 2900 &&
+                manualFailedGuitar >= 2200 && manualFailedGuitar <= 2900 &&
+                manualSecondThought >= 2200 && manualSecondThought <= 2900;
+            PetAnimationController interaction =
+                new PetAnimationController();
+            bool firstOrdinary = interaction.TryStartOrdinaryPoke(4);
+            bool blockedOrdinary = interaction.TryStartOrdinaryPoke(6);
+            bool easterOverride = interaction.TryStartEasterEgg(5);
+            interaction.CompleteInteractionAnimation();
+            bool nextCycle = interaction.TryStartOrdinaryPoke(6);
+            result.ManualFullCycleGuardOk = firstOrdinary &&
+                !blockedOrdinary && easterOverride &&
+                interaction.InteractionAnimationRow == 6 && nextCycle;
+            DateTime burstStart = new DateTime(2035, 1, 1, 0, 0, 0,
+                DateTimeKind.Utc);
+            PetPokeBurstTracker burst = new PetPokeBurstTracker();
+            bool earlyTrigger = false;
+            for (int poke = 1; poke < PetPokeBurstTracker.TargetCount; poke++)
+                earlyTrigger |= burst.RegisterPoke(
+                    burstStart.AddMilliseconds((poke - 1) * 100));
+            bool targetTrigger = burst.RegisterPoke(
+                burstStart.AddMilliseconds(4900));
+            bool repeatedTrigger = burst.RegisterPoke(
+                burstStart.AddMilliseconds(5000));
+            PetPokeBurstTracker resetBurst = new PetPokeBurstTracker();
+            for (int poke = 1; poke < PetPokeBurstTracker.TargetCount; poke++)
+                resetBurst.RegisterPoke(
+                    burstStart.AddMilliseconds((poke - 1) * 100));
+            bool afterPause = resetBurst.RegisterPoke(
+                burstStart.AddMilliseconds(5201));
+            result.PokeBurstOk = !earlyTrigger && targetTrigger &&
+                !repeatedTrigger && !afterPause;
             result.ClickDragThresholdOk =
                 !PetAnimationController.MovementStartsDrag(5, 0) &&
                 !PetAnimationController.MovementStartsDrag(4, 4) &&
@@ -2157,6 +2178,7 @@ namespace PennyPet
             internal bool DailyFirstPokeOk;
             internal bool DailyRejectedRetryOk;
             internal bool DailyGreetingRequestOk;
+            internal bool EasterEggRequestOk;
         }
 
         private static BubbleCheckResult RunBubbleChecks()
@@ -2365,6 +2387,25 @@ namespace PennyPet
                 PetMessageKind.DailyGreeting &&
                 dailyRequest.AutoCloseMilliseconds == 20000 &&
                 !dailyRequest.DeferWhileDragging;
+            PetBubbleRequest easterEggRequest = PetBubbleRequest.EasterEgg(
+                KeyboardOverlayForm.TextFontFamilyName, 15F);
+            result.EasterEggRequestOk = easterEggRequest.Kind ==
+                PetMessageKind.EasterEgg &&
+                easterEggRequest.Text == "你在整我是不是。" &&
+                !easterEggRequest.DeferWhileDragging &&
+                easterEggRequest.AutoCloseMilliseconds == 0 &&
+                !easterEggRequest.ClosesOnMouseDown &&
+                !PetMessagePolicy.ShouldReplace(PetMessageKind.ReminderDue,
+                    PetMessageKind.EasterEgg, false) &&
+                !PetMessagePolicy.ShouldReplace(
+                    PetMessageKind.ReminderPreAlert,
+                    PetMessageKind.EasterEgg, false) &&
+                !PetMessagePolicy.ShouldReplace(PetMessageKind.EasterEgg,
+                    PetMessageKind.DailyGreeting, false) &&
+                !PetMessagePolicy.ShouldReplace(PetMessageKind.EasterEgg,
+                    PetMessageKind.Feedback, false) &&
+                PetMessagePolicy.ShouldReplace(PetMessageKind.DailyGreeting,
+                    PetMessageKind.EasterEgg, false);
             return result;
         }
 
@@ -3581,7 +3622,7 @@ namespace PennyPet
                     reminderCoordinatorChecks.DueBubblePersistentOk) + ",\n" +
                 "  \"due_reminder_bubble_uses_own_size_ok\": " + Bool(
                     reminderCoordinatorChecks.DueBubbleUsesOwnSizeOk) + ",\n" +
-                "  \"due_reminder_bubble_replaced_by_later_feedback_ok\": " +
+                "  \"due_reminder_bubble_blocks_lower_priority_messages_ok\": " +
                     Bool(reminderCoordinatorChecks.DueBubbleReplacementOk) +
                     ",\n" +
                 "  \"prealert_countdown_bubble_not_replaced_by_note_feedback_ok\": " +
@@ -3663,8 +3704,10 @@ namespace PennyPet
                 "  \"manual_special_animation_probability_reduced_ok\": " + Bool(
                     animationChecks.ManualSpecialProbabilityReducedOk) +
                     ",\n" +
-                "  \"manual_animation_cooldown_600ms_ok\": " + Bool(
-                    animationChecks.ManualCooldownOk) + ",\n" +
+                "  \"manual_animation_full_cycle_guard_ok\": " + Bool(
+                    animationChecks.ManualFullCycleGuardOk) + ",\n" +
+                "  \"poke_burst_fifty_once_until_pause_ok\": " + Bool(
+                    animationChecks.PokeBurstOk) + ",\n" +
                 "  \"left_click_drag_threshold_ok\": " + Bool(
                     animationChecks.ClickDragThresholdOk) + ",\n" +
                 "  \"bubble_position_math_ok\": " + Bool(
@@ -3689,6 +3732,8 @@ namespace PennyPet
                     bubbleChecks.DailyRejectedRetryOk) + ",\n" +
                 "  \"daily_greeting_typed_request_ok\": " + Bool(
                     bubbleChecks.DailyGreetingRequestOk) + ",\n" +
+                "  \"poke_easter_egg_typed_request_and_priority_ok\": " + Bool(
+                    bubbleChecks.EasterEggRequestOk) + ",\n" +
                 "  \"scale_50_to_200_step_10_ok\": " + Bool(
                     shellChecks.ScaleRangeOk) + ",\n" +
                 "  \"keyboard_text_scale_choices_ok\": " + Bool(

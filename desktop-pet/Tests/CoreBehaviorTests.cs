@@ -629,8 +629,56 @@ namespace PennyPet.Tests
             controller.TypingRow = PetAnimationController.ThinkingRow;
             Assert.AreEqual(PetAnimationController.ThinkingRow,
                 controller.ChooseRow(false, false, true, false, allRowsLoaded));
+
+            Assert.IsTrue(controller.TryStartOrdinaryPoke(
+                PetAnimationController.HoverRow));
+            Assert.IsFalse(controller.TryStartOrdinaryPoke(
+                PetAnimationController.WaitingRow));
+            Assert.AreEqual(PetAnimationController.HoverRow,
+                controller.ChooseRow(false, false, true, false, allRowsLoaded));
+            Assert.IsTrue(controller.TryStartEasterEgg(
+                PetAnimationController.FailedRow));
+            Assert.AreEqual(PetInteractionAnimationKind.EasterEgg,
+                controller.InteractionAnimationKind);
+            Assert.AreEqual(PetAnimationController.FailedRow,
+                controller.ChooseRow(false, false, true, false, allRowsLoaded));
+
+            controller.ReminderAttentionActive = true;
+            Assert.AreEqual(PetAnimationController.NotificationRow,
+                controller.ChooseRow(false, true, true, false, allRowsLoaded));
+            controller.CancelInteractionAnimation();
+            Assert.IsFalse(controller.TryStartOrdinaryPoke(
+                PetAnimationController.HoverRow));
+            controller.ReminderAttentionActive = false;
+            Assert.IsTrue(controller.TryStartOrdinaryPoke(
+                PetAnimationController.HoverRow));
+            controller.CompleteInteractionAnimation();
+            Assert.IsTrue(controller.TryStartOrdinaryPoke(
+                PetAnimationController.WaitingRow));
             Assert.IsFalse(PetAnimationController.MovementStartsDrag(4, 4));
             Assert.IsTrue(PetAnimationController.MovementStartsDrag(6, 0));
+        }
+
+        [TestMethod]
+        public void PokeBurstTracker_TriggersOnlyAtFiftyUntilAPause()
+        {
+            DateTime start = new DateTime(2035, 1, 1, 0, 0, 0,
+                DateTimeKind.Utc);
+            PetPokeBurstTracker tracker = new PetPokeBurstTracker();
+            for (int poke = 1; poke < PetPokeBurstTracker.TargetCount; poke++)
+                Assert.IsFalse(tracker.RegisterPoke(
+                    start.AddMilliseconds((poke - 1) * 100)));
+            Assert.IsTrue(tracker.RegisterPoke(start.AddMilliseconds(4900)));
+            Assert.IsFalse(tracker.RegisterPoke(start.AddMilliseconds(5000)));
+            Assert.IsFalse(tracker.RegisterPoke(start.AddMilliseconds(5100)));
+
+            PetPokeBurstTracker reset = new PetPokeBurstTracker();
+            for (int poke = 1; poke < PetPokeBurstTracker.TargetCount; poke++)
+                Assert.IsFalse(reset.RegisterPoke(
+                    start.AddMilliseconds((poke - 1) * 100)));
+            Assert.IsFalse(reset.RegisterPoke(start.AddMilliseconds(
+                (PetPokeBurstTracker.TargetCount - 2) * 100 +
+                PetPokeBurstTracker.MaxGapMilliseconds + 1)));
         }
 
         [TestMethod]
@@ -728,7 +776,7 @@ namespace PennyPet.Tests
             Assert.IsTrue(PetMessagePolicy.ShouldReplace(
                 PetMessageKind.ReminderPreAlert,
                 PetMessageKind.ReminderDue, false));
-            Assert.IsTrue(PetMessagePolicy.ShouldReplace(
+            Assert.IsFalse(PetMessagePolicy.ShouldReplace(
                 PetMessageKind.ReminderDue,
                 PetMessageKind.Feedback, false));
             Assert.IsFalse(PetMessagePolicy.ShouldReplace(
@@ -740,6 +788,27 @@ namespace PennyPet.Tests
             Assert.IsFalse(PetMessagePolicy.ShouldReplace(
                 PetMessageKind.ReminderDue,
                 PetMessageKind.Hover, false));
+            Assert.IsFalse(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.ReminderDue,
+                PetMessageKind.EasterEgg, false));
+            Assert.IsFalse(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.ReminderPreAlert,
+                PetMessageKind.EasterEgg, false));
+            Assert.IsFalse(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.EasterEgg,
+                PetMessageKind.DailyGreeting, false));
+            Assert.IsFalse(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.EasterEgg,
+                PetMessageKind.Feedback, false));
+            Assert.IsTrue(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.EasterEgg,
+                PetMessageKind.ReminderPreAlert, false));
+            Assert.IsTrue(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.DailyGreeting,
+                PetMessageKind.EasterEgg, false));
+            Assert.IsTrue(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.EasterEgg,
+                PetMessageKind.ReminderDue, false));
             Assert.IsTrue(PetMessagePolicy.ShouldSuppress(
                 PetMessageKind.DailyGreeting, true));
             Assert.IsFalse(PetMessagePolicy.ShouldSuppress(

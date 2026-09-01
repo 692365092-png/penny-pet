@@ -40,6 +40,8 @@ namespace PennyPet
             new PetReminderCoordinator();
         private readonly PetBubbleCoordinator _bubbleCoordinator;
         private readonly PetDailyContentCoordinator _dailyContentCoordinator;
+        private readonly PetPokeBurstTracker _pokeBurstTracker =
+            new PetPokeBurstTracker();
         private long _lastReminderBannerSecond
             { get { return _reminderCoordinator.LastBannerSecond; }
                 set { _reminderCoordinator.LastBannerSecond = value; } }
@@ -120,15 +122,8 @@ namespace PennyPet
                 set { _animation.ReminderAttentionActive = value; } }
         private DateTime _nextFrameUtc { get { return _animation.NextFrameUtc; }
             set { _animation.NextFrameUtc = value; } }
-        private DateTime _manualAnimationCooldownUntilUtc
-            { get { return _animation.ManualAnimationCooldownUntilUtc; }
-                set { _animation.ManualAnimationCooldownUntilUtc = value; } }
-        private bool _manualAnimationActive
-            { get { return _animation.ManualAnimationActive; }
-                set { _animation.ManualAnimationActive = value; } }
-        private int _manualAnimationRow
-            { get { return _animation.ManualAnimationRow; }
-                set { _animation.ManualAnimationRow = value; } }
+        private DateTime _easterEggBubbleCloseUntilUtc;
+        private bool _easterEggBubblePendingClose;
         private bool _exiting;
         private int _scalePercent = 100;
         private KeyboardInputEventArgs _latestKeyboardEvent;

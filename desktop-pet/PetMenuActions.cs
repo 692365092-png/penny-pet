@@ -212,7 +212,7 @@ namespace PennyPet
             _dragging = false;
             Capture = false;
             _typingSession = false;
-            _manualAnimationActive = false;
+            _animation.CancelInteractionAnimation();
             _keyOverlay.HideImmediately();
             _mouseInside = false;
             if (_menu.Visible) _menu.Close();

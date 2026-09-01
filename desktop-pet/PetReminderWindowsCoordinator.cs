@@ -236,6 +236,7 @@ namespace PennyPet
 
         private void TriggerReminder(ReminderItem item)
         {
+            _animation.CancelInteractionAnimation();
             string text = item == null ? String.Empty : item.Text;
             if (item != null) _reminders.Remove(item);
             StickyNoteData linkedNote = ClearLinkedNoteReminder(item, true);
@@ -294,6 +295,7 @@ namespace PennyPet
             if (_exiting || IsDisposed || generation !=
                 _reminderCoordinator.CurrentAnimationGeneration ||
                 !_art.IsRowLoaded(NotificationRow)) return;
+            _animation.CancelInteractionAnimation();
             _reminderAttentionActive = true;
             if (_row == NotificationRow)
             {

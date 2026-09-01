@@ -18,18 +18,16 @@ namespace PennyPet
         internal const int NotificationRow = 9;
         internal const int IdleThoughtProbabilityDenominator = 20;
         internal const int GuitarFailureProbabilityDenominator = 6;
-        internal const int ManualAnimationCooldownMilliseconds = 600;
         internal const int DragClickThresholdPixels = 6;
 
         private static readonly int[] ManualAnimationRows =
-            { IdleRow, HoverRow, FailedRow, WaitingRow, ThinkingRow, ReviewRow,
-                NotificationRow };
+            { IdleRow, HoverRow, FailedRow, WaitingRow, ThinkingRow, ReviewRow };
 
         internal PetAnimationController()
         {
             TypingRow = ThinkingRow;
             IdleRowState = IdleRow;
-            ManualAnimationRow = -1;
+            InteractionAnimationRow = -1;
         }
 
         internal int Row { get; set; }
@@ -40,9 +38,9 @@ namespace PennyPet
         internal DateTime TypingUntilUtc { get; set; }
         internal bool ReminderAttentionActive { get; set; }
         internal DateTime NextFrameUtc { get; set; }
-        internal DateTime ManualAnimationCooldownUntilUtc { get; set; }
-        internal bool ManualAnimationActive { get; set; }
-        internal int ManualAnimationRow { get; set; }
+        internal PetInteractionAnimationKind InteractionAnimationKind
+            { get; private set; }
+        internal int InteractionAnimationRow { get; private set; }
 
         internal int ChooseRow(bool exiting, bool draggingAndMoved,
             bool mouseInside, bool menuVisible, Func<int, bool> isRowLoaded)
@@ -50,17 +48,46 @@ namespace PennyPet
             if (isRowLoaded == null)
                 throw new ArgumentNullException(nameof(isRowLoaded));
             if (exiting) return isRowLoaded(WavingRow) ? WavingRow : IdleRow;
-            if (draggingAndMoved) return isRowLoaded(FailedRow)
-                ? FailedRow : IdleRow;
-            if (ManualAnimationActive) return isRowLoaded(ManualAnimationRow)
-                ? ManualAnimationRow : IdleRow;
-            if (TypingSession) return isRowLoaded(TypingRow)
-                ? TypingRow : IdleRow;
             if (ReminderAttentionActive)
                 return AttentionAnimationRow(isRowLoaded(NotificationRow));
+            if (draggingAndMoved) return isRowLoaded(FailedRow)
+                ? FailedRow : IdleRow;
+            if (InteractionAnimationKind != PetInteractionAnimationKind.None)
+                return isRowLoaded(InteractionAnimationRow)
+                    ? InteractionAnimationRow : IdleRow;
+            if (TypingSession) return isRowLoaded(TypingRow)
+                ? TypingRow : IdleRow;
             if (mouseInside && !menuVisible)
                 return isRowLoaded(HoverRow) ? HoverRow : IdleRow;
             return isRowLoaded(IdleRowState) ? IdleRowState : IdleRow;
+        }
+
+        internal bool TryStartOrdinaryPoke(int row)
+        {
+            if (ReminderAttentionActive || InteractionAnimationKind !=
+                PetInteractionAnimationKind.None) return false;
+            InteractionAnimationKind = PetInteractionAnimationKind.OrdinaryPoke;
+            InteractionAnimationRow = row;
+            return true;
+        }
+
+        internal bool TryStartEasterEgg(int row)
+        {
+            if (ReminderAttentionActive) return false;
+            InteractionAnimationKind = PetInteractionAnimationKind.EasterEgg;
+            InteractionAnimationRow = row;
+            return true;
+        }
+
+        internal void CompleteInteractionAnimation()
+        {
+            InteractionAnimationKind = PetInteractionAnimationKind.None;
+            InteractionAnimationRow = -1;
+        }
+
+        internal void CancelInteractionAnimation()
+        {
+            CompleteInteractionAnimation();
         }
 
         internal static bool ReminderAnimationCycleComplete(bool active,
@@ -147,12 +174,6 @@ namespace PennyPet
             // user clicks the pet for a random animation as well.
             return row == FailedRow || row == ReviewRow || row == ThinkingRow
                 ? 2 : 9;
-        }
-
-        internal static bool ManualAnimationClickReady(DateTime nowUtc,
-            DateTime cooldownUntilUtc)
-        {
-            return nowUtc >= cooldownUntilUtc;
         }
 
         internal static bool MovementStartsDrag(int dx, int dy)
