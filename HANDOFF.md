@@ -34,13 +34,21 @@
 - Dock 的拖拽、隐藏/恢复与多窗口同步仍依赖 Windows 窗口生命周期；只迁移已能用纯数值和数据表达的规则。
 - IME、WPF/WinForms 消息桥和键盘焦点采证据的时序不能为抽象而重写。
 - `PennyPet.Tests` 的 Core 程序集引用门禁可以阻止平台程序集进入 Core，但不能证明规则在语义上跨平台。
-- 当前没有 macOS UI 工程、完整 Application 层、网络服务或完整平台无关启动状态机，不应在文档或新代码中声称已经存在。
+- 当前没有 macOS UI 工程、完整 Application 层或完整平台无关启动状态机。已有网络边界仅限 Windows 的 opt-in Open-Meteo 天气适配，不应把它描述成通用网络服务框架。
 
 ## 后续原则
 
 未来新增业务功能应先判断哪些规则能保持平台无关，避免把网络、业务状态和持久化决策直接塞入 Windows 窗口类。具体 Feature/Application 结构由届时负责的程序员依据真实需求设计，本仓库不预设类名、目录、DI、Repository interface 或空工程。
 
 每次只迁移一组可在无窗口环境验证的规则；Windows Coordinator 继续负责平台事实、类型转换和副作用。完整 Windows SelfTest 与发布验证留给 CI/发布阶段。
+
+## Daily Weather ownership
+
+- `Core/DailyContent/Weather` 只接收 detached 三日摘要并做语义与确定性 wording；不得引用 HTTP、Open-Meteo URL 或网络 DTO。
+- `Infrastructure/Weather/OpenMeteo*` 负责手动城市搜索、固定 forecast request 和 JSON 转换；`PetWeatherSource` 是唯一 `HttpClient`、成功 Cache、同键 in-flight 与失败冷却 owner。
+- 城市是用户偏好：只长期保存当前选中值并覆盖更新。预报是 Cache：只在进程内最多保留 3 个地点日键。请求失败和 in-flight 是最小运行状态，不写入磁盘。
+- Weather 默认关闭，启动零请求，不轮询，不读取系统/IP 定位；Daily Poke 网络失败必须静默回退到 Solar/Almanac/filler。
+- 普通 SelfTests 只能读取 embedded fixture。真实调用只允许通过显式 `--weather-api-probe=<path>`，且网络失败不得使 gate 或本地功能失败。
 
 ## 当前 hosted / legacy 双路径
 

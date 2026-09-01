@@ -107,6 +107,15 @@ Dock 修改必须同时检查：组关系、组内顺序、持久化快照、统
 
 现有 `_startupUiReady + _startupArtReady`、`_startupDisplaySuppressed` 和 warm-row preload 语义保持在 Windows 启动流程。当前 Core 只有 `PetStartupRules` 的 readiness 纯门禁，不得将其描述为完整跨平台 startup framework。
 
+### Daily Weather 与数据寿命
+
+- 新数据先分类：用户偏好长期保存当前值；必要运行状态只保存最小值并覆盖；Cache 必须有 TTL、数量上限或覆盖策略；只有用户真正创造的内容才允许长期累积。
+- 天气城市属于用户偏好：`PetSettingsCodec` 只保存当前名称、行政区、国家、经纬度和 IANA 时区，使用 invariant 数字格式；换城市覆盖并使进程 Cache 失效。
+- 预报属于 Cache：`PetWeatherSource` 最多保留 3 个 `location + local day` 成功结果；同键并发复用一个 Task，失败键冷却 15 分钟，退出即丢弃。不得添加 forecast/history 磁盘文件。
+- `Core/DailyContent/Weather` 是纯摘要、语义和 wording；`Infrastructure/Weather` 才能引用 `HttpClient`、Open-Meteo URL 和 JSON DTO。不要为第二个 provider 预建 interface、factory、registry 或 DI。
+- 启动和 Timer 不得调用天气。城市搜索只响应明确 Search/Enter；Daily 预报只响应首个 eligible Poke，3 秒超时、零重试，失败继续组合其他内容。
+- fixture 是普通测试的唯一网络输入。需要人工验证实时响应时运行 `PennyPet.SelfTests.exe --weather-api-probe=<output.json>`；该命令不是 CI gate。
+
 ### 键盘显示与隐私
 
 - `Features/KeyboardOverlay/GlobalKeyboardActivity.cs`：Windows 全局低级键盘 Hook。

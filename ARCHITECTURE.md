@@ -84,17 +84,22 @@ PennyPet.Tools -> 美术发布包和启动缓存生成
 | `Core/Calendar/Almanac/AlmanacCalculator.cs` | 当地民用日期经 `lunar-csharp 1.6.8`、显式 sect 1 转成 detached Yi/Ji | 平台无关第三方适配边界；失败返回 null |
 | `Core/DailyContent/Almanac/AlmanacSemanticCatalog.cs` | 原始传统术语的精确保守白名单与现代 Topic | 平台无关纯规则 |
 | `Core/DailyContent/Almanac/AlmanacDailySelector.cs` / `AlmanacWordingCatalog.cs` | 稳定 Topic 排序、冲突抑制、确定性候选与非机械 wording | 平台无关纯规则；无历史和缓存 |
-| `Core/DailyContent/DailyBriefingContent.cs` | Solar、Almanac、Curated、Zodiac 候选值 | 平台无关；不预留未实现来源字段 |
+| `Core/DailyContent/Weather` | detached 地点/三日摘要、显式天气语义优先级和确定性 wording | 平台无关纯规则；无 HTTP、URL 或网络 DTO |
+| `Infrastructure/Weather/OpenMeteo*` | 手动城市搜索、固定 8 变量预报请求与 JSON → Core 摘要转换 | Windows 网络适配边界 |
+| `Infrastructure/Weather/PetWeatherSource.cs` | 单一 `HttpClient`、同地点日 in-flight、最多 3 键进程 Cache 与 15 分钟失败冷却 | Windows runtime；不持久化预报 |
+| `Core/DailyContent/DailyBriefingContent.cs` | Solar、Weather、Almanac、Curated、Zodiac 候选值 | 平台无关 |
 | `Core/DailyContent/DailyBriefingComposer.cs` | DayPart、候选优先级与两条 supplementary budget | 平台无关纯规则 |
 | `Core/Calendar/SolarTerm*` | 二十四节气天文事实 | 平台无关 |
-| `PetDailyContentCoordinator.cs` | 首次有效 Poke eligibility、compose、Bubble accepted 后消费日期 | Windows 产品协调 |
-| `DailyContentSettingsForm.cs` | Daily Content、节气和星座偏好设置 UI | Windows-only |
+| `PetDailyContentCoordinator.cs` | 首次有效 Poke eligibility、异步天气收集、compose、Bubble accepted 后消费日期 | Windows 产品协调 |
+| `DailyContentSettingsForm.cs` / `WeatherLocationDialog.cs` | Daily、节气、天气城市和星座偏好；搜索只由明确按钮/Enter 触发 | Windows-only |
 
-`DailyBriefing` 固定为 greeting 加至多两条 supplementary。启用且当天存在的 SolarTerm 是受保护的高优先级内容；Almanac 是其后的高新鲜度事实内容。任一事实内容存在后不机械补 Curated/Zodiac；只有两者都不存在时才进入 filler layer。选择结果是当天可重算的派生值，不缓存、不持久化；两个 filler 目录分别固定上限为 96 和 72 条。
+`DailyBriefing` 固定为 greeting 加至多两条 supplementary，事实优先级为 `SolarTerm → Weather → Almanac → filler`。Solar 与 Weather 同时存在时输出两者；没有 Solar 时 Weather 可与 Almanac 同时输出。任一高新鲜度事实存在后不机械补 Curated/Zodiac；三者都不存在才进入 filler layer。Weather 语义和 wording 是当天可重算的派生值；两个 filler 目录分别固定上限为 96 和 72 条。
 
 Almanac 的边界固定为 `lunar-csharp → raw traditional Yi/Ji → Penny exact semantic whitelist → modern conversational copy`。原始宜忌绝不直接成为 DailyBriefing 输出；现代化只改变表达，不改变传统术语含义。医疗、法律、财务、丧葬、宗教、施工及其他不适合的传统术语不进入 v1 建议；Yi/Ji 对同一 Topic 冲突时该 Topic 当天直接抑制。Penny v1 采用日粒度、sect 1 的黄历语义以保证同一当地民用日内稳定，这不代表其比其他民俗流派更权威。
 
-每日新鲜度应主要来自变化中的事实语境，而不是尽量增加固定文案池的随机变化。Almanac 已作为高新鲜度事实候选服从同一 briefing budget；未来 Weather 若实现也应遵守这一边界，当前没有 Weather 模块或占位字段。
+每日新鲜度主要来自变化中的事实语境，而不是无限增加固定文案。Weather 仅在用户 opt-in 后由首次 eligible Poke 异步请求；普通动画先启动，网络失败静默回退，启动零请求且没有轮询。成功预报只存在于最多 3 个 `location + local day` 进程 Cache 中，同键并发共享一个 Task；改变城市清空 Cache，失败键 15 分钟内不重试。城市偏好是覆盖保存的用户偏好，预报是有界 Cache，均不产生长期历史。
+
+Open-Meteo Forecast 请求固定为昨天、今天、明天和 8 个小时变量，3 秒超时、零自动重试；Geocoding 只在用户明确搜索时请求最多 5 条中文结果，必须由用户确认，不按键搜索，也不在重启后重新解析已保存城市。实现时（2026-09-01）免费服务页面列出的限制为 600 次/分钟、5,000 次/小时、10,000 次/日、300,000 次/月；这些数字只记录实现时依据，不是运行时契约，发布或商业使用前必须重新核对 [官方定价/限制](https://open-meteo.com/en/pricing) 并评估 customer endpoint。
 
 `PennyPet.Core` 直接使用 `CosineKitty.AstronomyEngine 2.1.19` 计算既有 SolarTerm，并使用 `lunar-csharp 1.6.8` 读取 Almanac Yi/Ji；两条链互不替代。兼容单文件 Windows 项目把固定的 `astronomy.dll` 与 `lunar.dll` 嵌入 EXE，并由窄范围 `EmbeddedAssemblyResolver` 只按这两个确切程序集名解析；第三方许可见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 

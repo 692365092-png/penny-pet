@@ -2,6 +2,15 @@
 
 This project includes the following third-party dependencies.
 
+## Open-Meteo weather data
+
+- Service: [Open-Meteo Forecast API](https://open-meteo.com/en/docs) and [Geocoding API](https://open-meteo.com/en/docs/geocoding-api)
+- Provider: Open-Meteo.com
+- Data license: [Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/)
+- Attribution: Weather data by Open-Meteo.com
+
+Penny requests raw hourly forecast data only after the user enables weather and adapts it into bounded daily summaries and short conversational guidance. The text shown by Penny is modified/derived output, not an official warning issued by Open-Meteo or a public authority. Geocoding results supplied through Open-Meteo are based on GeoNames data; see the [Open-Meteo geocoding documentation](https://open-meteo.com/en/docs/geocoding-api).
+
 ## Astronomy Engine
 
 - Package: `CosineKitty.AstronomyEngine`
