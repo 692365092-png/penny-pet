@@ -621,9 +621,9 @@ namespace PennyPet
             }
             if (value.Kind == StickyUiEventKind.DockDividerResizing)
             {
-                if (!_hostedRuntime.CanApplySequence(value.NoteId,
-                    value.Sequence)) return;
-                if (ResizeHostedStickyDockDivider(
+                if (!ApplyHostedStickySnapshot(value.Snapshot,
+                    value.Sequence, false)) return;
+                if (ResizeStickyDockDivider(
                     DockWindowFacts.FromSnapshot(value.Snapshot)))
                 {
                     _notes.SaveAsync();
