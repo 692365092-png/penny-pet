@@ -1287,6 +1287,100 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void WeatherMeaningRules_UseExplicitPriorityAndMundaneFallback()
+        {
+            WeatherDaySummary yesterday = WeatherDay(15, 30, 15, 30,
+                0, 0, 0, null, 15, false);
+            Assert.AreEqual(WeatherMeaning.Snow, SelectWeather(yesterday,
+                WeatherDay(-4, 1, -8, 0, 5, 90, 8, 15, 60, true)));
+            Assert.AreEqual(WeatherMeaning.RainAndWind, SelectWeather(
+                yesterday, WeatherDay(18, 22, 17, 21, 5, 80, 3, 9, 55,
+                    false)));
+            Assert.AreEqual(WeatherMeaning.RainAndCooling, SelectWeather(
+                yesterday, WeatherDay(16, 23, 15, 22, 5, 80, 3, 9, 20,
+                    false)));
+            Assert.AreEqual(WeatherMeaning.HeavyRain, SelectWeather(
+                WeatherDay(15, 25, 15, 25, 0, 0, 0, null, 10, false),
+                WeatherDay(17, 24, 17, 24, 16, 80, 3, 8, 20, false)));
+            Assert.AreEqual(WeatherMeaning.PersistentRain, SelectWeather(
+                yesterday, WeatherDay(18, 28, 18, 28, 5, 80, 6, 7, 20,
+                    false)));
+            Assert.AreEqual(WeatherMeaning.Windy, SelectWeather(yesterday,
+                WeatherDay(18, 28, 18, 28, 0, 10, 0, null, 55, false)));
+            Assert.AreEqual(WeatherMeaning.Cooling, SelectWeather(yesterday,
+                WeatherDay(15, 23, 15, 23, 0, 10, 0, null, 20, false)));
+            Assert.AreEqual(WeatherMeaning.Warming, SelectWeather(
+                WeatherDay(10, 20, 10, 20, 0, 0, 0, null, 10, false),
+                WeatherDay(15, 27, 15, 27, 0, 10, 0, null, 20, false)));
+            Assert.AreEqual(WeatherMeaning.RainLater, SelectWeather(
+                yesterday, WeatherDay(18, 28, 18, 28, 2, 80, 1, 15, 20,
+                    false)));
+            Assert.AreEqual(WeatherMeaning.Hot, SelectWeather(yesterday,
+                WeatherDay(25, 33, 26, 36, 0, 10, 0, null, 20, false)));
+            Assert.AreEqual(WeatherMeaning.Cold, SelectWeather(
+                WeatherDay(1, 8, 1, 8, 0, 0, 0, null, 10, false),
+                WeatherDay(1, 8, -1, 7, 0, 10, 0, null, 20, false)));
+            Assert.AreEqual(WeatherMeaning.LargeTemperatureRange,
+                SelectWeather(WeatherDay(10, 22, 10, 22, 0, 0, 0, null,
+                    10, false), WeatherDay(10, 22, 5, 25, 0, 10, 0, null,
+                    20, false)));
+            Assert.IsNull(SelectWeather(WeatherDay(18, 26, 18, 27, 0, 0,
+                0, null, 10, false), WeatherDay(18, 26, 18, 27, 0, 20, 0,
+                null, 20, false)));
+        }
+
+        [TestMethod]
+        public void WeatherWording_IsDeterministicVariedAndCautious()
+        {
+            DateTime start = new DateTime(2026, 1, 1);
+            Dictionary<string, int> prefixes =
+                new Dictionary<string, int>();
+            int todayPrefixes = 0;
+            int textCount = 0;
+            foreach (WeatherMeaning meaning in Enum.GetValues(
+                typeof(WeatherMeaning)))
+            {
+                string[] catalog = WeatherWordingCatalog.GetVariantsForTest(
+                    meaning);
+                int required = meaning == WeatherMeaning.RainLater ||
+                    meaning == WeatherMeaning.Cooling ||
+                    meaning == WeatherMeaning.Windy ||
+                    meaning == WeatherMeaning.Hot ? 5 : 3;
+                Assert.IsTrue(catalog.Length >= required, meaning.ToString());
+                HashSet<string> selected = new HashSet<string>();
+                for (int day = 0; day < 365; day++)
+                {
+                    DateTime date = start.AddDays(day);
+                    WeatherDailySelection first = WeatherWordingCatalog.Select(
+                        meaning, date, "30.5928,114.3055|Asia/Shanghai");
+                    WeatherDailySelection retry = WeatherWordingCatalog.Select(
+                        meaning, date, "30.5928,114.3055|Asia/Shanghai");
+                    Assert.AreEqual(first.Text, retry.Text);
+                    Assert.AreEqual(meaning, first.Meaning);
+                    Assert.IsTrue(first.Text.Length >= 20 &&
+                        first.Text.Length <= 60, first.Text);
+                    Assert.IsFalse(first.Text.Contains("预警"));
+                    Assert.IsFalse(first.Text.Contains("一定"));
+                    Assert.IsFalse(first.Text.Contains("保证"));
+                    selected.Add(first.Text);
+                    string compact = first.Text.Replace("\n", "");
+                    if (compact.StartsWith("今天",
+                        StringComparison.Ordinal)) todayPrefixes++;
+                    string prefix = compact.Substring(0,
+                        Math.Min(6, compact.Length));
+                    int count;
+                    prefixes.TryGetValue(prefix, out count);
+                    prefixes[prefix] = count + 1;
+                    textCount++;
+                }
+                Assert.IsTrue(selected.Count >= required,
+                    meaning + ": " + selected.Count);
+            }
+            Assert.IsTrue(todayPrefixes * 100D / textCount <= 25D);
+            Assert.IsTrue(prefixes.Values.Max() * 100D / textCount < 25D);
+        }
+
+        [TestMethod]
         public void DailyBriefingComposer_EnforcesSupplementaryBudget()
         {
             string greeting = DailyContentRules.GreetingFor(
@@ -1298,30 +1392,73 @@ namespace PennyPet.Tests
                 "白露", 165, new DateTimeOffset(2026, 9, 7, 12, 0, 0,
                     TimeSpan.FromHours(8)));
             const string almanac = "黄历内容。";
-            DailyBriefingContent caseA = new DailyBriefingContent(whiteDew,
-                almanac, curated, zodiac);
-            DailyBriefingContent caseB = new DailyBriefingContent(whiteDew,
-                null, curated, zodiac);
-            DailyBriefingContent caseC = new DailyBriefingContent(null,
-                almanac, curated, zodiac);
-            DailyBriefingContent caseD = new DailyBriefingContent(null,
-                null, curated, null);
-            DailyBriefingContent caseE = new DailyBriefingContent(null,
-                null, curated, zodiac);
+            const string weather = "天气内容。";
+            DailyBriefingContent solarWeatherAlmanac =
+                new DailyBriefingContent(whiteDew, weather, almanac,
+                    curated, zodiac);
+            DailyBriefingContent solarWeather = new DailyBriefingContent(
+                whiteDew, weather, null, curated, zodiac);
+            DailyBriefingContent solarAlmanac = new DailyBriefingContent(
+                whiteDew, null, almanac, curated, zodiac);
+            DailyBriefingContent solarOnly = new DailyBriefingContent(
+                whiteDew, null, null, curated, zodiac);
+            DailyBriefingContent weatherAlmanac = new DailyBriefingContent(
+                null, weather, almanac, curated, zodiac);
+            DailyBriefingContent weatherOnly = new DailyBriefingContent(
+                null, weather, null, curated, zodiac);
+            DailyBriefingContent almanacOnly = new DailyBriefingContent(
+                null, null, almanac, curated, zodiac);
+            DailyBriefingContent fallback = new DailyBriefingContent(null,
+                null, null, curated, zodiac);
+            Assert.AreEqual(greeting + "\n今天是白露哦。\n天气内容。",
+                DailyBriefingComposer.Compose(DayPart.Afternoon,
+                    solarWeatherAlmanac));
+            Assert.AreEqual(greeting + "\n今天是白露哦。\n天气内容。",
+                DailyBriefingComposer.Compose(DayPart.Afternoon,
+                    solarWeather));
             Assert.AreEqual(greeting + "\n今天是白露哦。\n黄历内容。",
-                DailyBriefingComposer.Compose(DayPart.Afternoon, caseA));
+                DailyBriefingComposer.Compose(DayPart.Afternoon,
+                    solarAlmanac));
             Assert.AreEqual(greeting + "\n今天是白露哦。",
-                DailyBriefingComposer.Compose(DayPart.Afternoon, caseB));
+                DailyBriefingComposer.Compose(DayPart.Afternoon, solarOnly));
+            Assert.AreEqual(greeting + "\n天气内容。\n黄历内容。",
+                DailyBriefingComposer.Compose(DayPart.Afternoon,
+                    weatherAlmanac));
+            Assert.AreEqual(greeting + "\n天气内容。",
+                DailyBriefingComposer.Compose(DayPart.Afternoon,
+                    weatherOnly));
             Assert.AreEqual(greeting + "\n黄历内容。",
-                DailyBriefingComposer.Compose(DayPart.Afternoon, caseC));
-            Assert.AreEqual(greeting + "\n精选。",
-                DailyBriefingComposer.Compose(DayPart.Afternoon, caseD));
+                DailyBriefingComposer.Compose(DayPart.Afternoon,
+                    almanacOnly));
             Assert.AreEqual(greeting + "\n精选。\n星座。",
-                DailyBriefingComposer.Compose(DayPart.Afternoon, caseE));
-            Assert.IsTrue(new[] { caseA, caseB, caseC, caseD, caseE }.All(
+                DailyBriefingComposer.Compose(DayPart.Afternoon, fallback));
+            Assert.IsTrue(new[] { solarWeatherAlmanac, solarWeather,
+                solarAlmanac, solarOnly, weatherAlmanac, weatherOnly,
+                almanacOnly, fallback }.All(
                 content =>
                 DailyBriefingComposer.SelectSupplementary(content).Length <=
                     2));
+        }
+
+        private static WeatherMeaning? SelectWeather(
+            WeatherDaySummary yesterday, WeatherDaySummary today)
+        {
+            return WeatherMeaningRules.Select(new WeatherForecastWindow(
+                yesterday, today, null));
+        }
+
+        private static WeatherDaySummary WeatherDay(double minimumTemperature,
+            double maximumTemperature, double minimumApparent,
+            double maximumApparent, double precipitation,
+            double precipitationProbability, int likelyHours,
+            int? firstLikelyHour, double maximumWindGust, bool hasSnow)
+        {
+            return new WeatherDaySummary(new DateTime(2026, 9, 1),
+                minimumTemperature, maximumTemperature, minimumApparent,
+                maximumApparent, precipitationProbability, precipitation,
+                hasSnow ? 1D : 0D, Math.Min(30D, maximumWindGust),
+                maximumWindGust, firstLikelyHour, firstLikelyHour,
+                likelyHours, hasSnow);
         }
 
         private static void AssertAlmanacMapping(string raw,

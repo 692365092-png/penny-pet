@@ -195,7 +195,7 @@ namespace PennyPet
             ShowNextPendingBubble();
         }
 
-        private void HandlePetPoked()
+        private async void HandlePetPoked()
         {
             DateTime nowUtc = DateTime.UtcNow;
             if (_pokeBurstTracker.RegisterPoke(nowUtc))
@@ -203,11 +203,12 @@ namespace PennyPet
                 StartPokeEasterEgg(nowUtc);
                 return;
             }
-            bool dailyShown = _dailyContentCoordinator.HandlePetPoked(
-                DateTimeOffset.Now);
+            StartOrdinaryPokeAnimation(nowUtc);
+            bool dailyShown = await _dailyContentCoordinator
+                .HandlePetPokedAsync(DateTimeOffset.Now);
+            if (_exiting || IsDisposed || Disposing) return;
             if (!dailyShown)
                 _smallTalkCoordinator.HandlePetPoked(nowUtc);
-            StartOrdinaryPokeAnimation(nowUtc);
         }
 
         private void StartOrdinaryPokeAnimation(DateTime nowUtc)

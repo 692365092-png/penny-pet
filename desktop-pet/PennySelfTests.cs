@@ -37,6 +37,10 @@ namespace PennyPet
                 failure = error.GetType().Name + ": " + error.Message;
             }
             timer.Stop();
+            WeatherMeaning? meaning = WeatherMeaningRules.Select(forecast);
+            WeatherDailySelection selection = meaning.HasValue
+                ? WeatherWordingCatalog.Select(meaning.Value,
+                    DateTime.Now.Date, location.StableKey) : null;
             string json = "{\n" +
                 "  \"ok\": " + Bool(failure == null &&
                     requestCount == 1) + ",\n" +
@@ -56,6 +60,10 @@ namespace PennyPet
                     forecast == null ? null : forecast.Today) + ",\n" +
                 "  \"tomorrow\": " + WeatherDayJson(
                     forecast == null ? null : forecast.Tomorrow) + ",\n" +
+                "  \"meaning\": " + (meaning.HasValue ? "\"" +
+                    meaning.Value + "\"" : "null") + ",\n" +
+                "  \"wording\": " + (selection == null ? "null" :
+                    "\"" + JsonText(selection.Text) + "\"") + ",\n" +
                 "  \"failure\": " + (failure == null ? "null" :
                     "\"" + JsonText(failure) + "\"") + "\n" +
                 "}\n";
@@ -1019,7 +1027,7 @@ namespace PennyPet
             AlmanacDailySelection almanac = almanacDay == null ? null :
                 AlmanacDailySelector.Select(almanacDay, localDate);
             DailyBriefingContent content = new DailyBriefingContent(solar,
-                almanac == null ? null : almanac.Text, curated, zodiac);
+                null, almanac == null ? null : almanac.Text, curated, zodiac);
             string[] selected = DailyBriefingComposer.SelectSupplementary(
                 content);
             string finalText = DailyBriefingComposer.Compose(dayPart,

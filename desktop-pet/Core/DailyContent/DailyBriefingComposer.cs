@@ -26,6 +26,15 @@ namespace PennyPet
             {
                 selected.Add("今天是" +
                     content.SolarTerm.Value.ChineseName + "哦。");
+                if (!String.IsNullOrWhiteSpace(content.WeatherLine))
+                    selected.Add(content.WeatherLine);
+                else if (!String.IsNullOrWhiteSpace(content.AlmanacLine))
+                    selected.Add(content.AlmanacLine);
+                return selected.ToArray();
+            }
+            if (!String.IsNullOrWhiteSpace(content.WeatherLine))
+            {
+                selected.Add(content.WeatherLine);
                 if (!String.IsNullOrWhiteSpace(content.AlmanacLine))
                     selected.Add(content.AlmanacLine);
                 return selected.ToArray();

@@ -25,7 +25,8 @@ namespace PennyPet
         private int _forecastRequestCount;
         private bool _disposed;
 
-        internal PetWeatherSource() : this(new HttpClient(),
+        internal PetWeatherSource() : this(new HttpClient(
+            new HttpClientHandler { UseProxy = false }),
             delegate { return DateTimeOffset.UtcNow; })
         {
         }

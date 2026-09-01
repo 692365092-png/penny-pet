@@ -216,9 +216,28 @@ namespace PennyPet
                 delegate { return _settings.SilentMode; },
                 delegate { return _settings.DailyContentEnabled; },
                 delegate { return _settings.SolarTermEnabled; },
+                delegate { return _settings.WeatherEnabled; },
+                delegate
+                {
+                    WeatherLocation location;
+                    WeatherLocation.TryCreate(
+                        _settings.WeatherLocationName,
+                        _settings.WeatherLocationAdmin1,
+                        _settings.WeatherLocationCountry,
+                        _settings.WeatherLatitude,
+                        _settings.WeatherLongitude,
+                        _settings.WeatherTimezone, out location);
+                    return location;
+                },
+                delegate(WeatherLocation location, DateTime localDate)
+                {
+                    return _weatherSource.GetForecastAsync(location,
+                        localDate);
+                },
                 delegate { return _settings.ZodiacSign; },
                 delegate(string text)
                 {
+                    if (_exiting || IsDisposed || Disposing) return false;
                     return _bubbleCoordinator.Show(
                         PetBubbleRequest.DailyGreeting(text,
                             KeyboardOverlayForm.TextFontFamilyName,

@@ -2267,6 +2267,11 @@ namespace PennyPet
             internal bool SameDayCacheAndInFlightOk;
             internal bool BoundedCacheInvalidationOk;
             internal bool FailureCooldownOk;
+            internal bool MeaningAndWordingOk;
+            internal bool DailyCoordinatorWeatherOk;
+            internal bool DailyCoordinatorFailureFallbackOk;
+            internal bool DailyCoordinatorInFlightOk;
+            internal bool RejectedBubbleReusesForecastOk;
         }
 
         private sealed class WeatherFixtureHandler : HttpMessageHandler
@@ -2320,18 +2325,7 @@ namespace PennyPet
         private static WeatherCheckResult RunWeatherChecks()
         {
             WeatherCheckResult result = new WeatherCheckResult();
-            const string resourceName =
-                "PennyPet.Tests.Fixtures.weather-rain-later.json";
-            string fixture;
-            using (Stream stream = Assembly.GetExecutingAssembly()
-                .GetManifestResourceStream(resourceName))
-            {
-                if (stream == null)
-                    throw new InvalidOperationException(
-                        "Missing weather fixture: " + resourceName);
-                using (StreamReader reader = new StreamReader(stream,
-                    Encoding.UTF8)) fixture = reader.ReadToEnd();
-            }
+            string fixture = ReadWeatherFixture("weather-rain-later.json");
 
             DateTime date = new DateTime(2026, 9, 1);
             WeatherForecastWindow parsed = new OpenMeteoForecastParser()
@@ -2431,7 +2425,205 @@ namespace PennyPet
                 result.FailureCooldownOk = failed == null &&
                     cooledDown == null && failing.ForecastCount == 1;
             }
+
+            string[] fixtureNames =
+            {
+                "weather-clear.json", "weather-rain-later.json",
+                "weather-cooling.json", "weather-rain-cooling.json",
+                "weather-windy.json", "weather-snow.json"
+            };
+            WeatherMeaning?[] expectedMeanings =
+            {
+                null, WeatherMeaning.RainLater, WeatherMeaning.Cooling,
+                WeatherMeaning.RainAndCooling, WeatherMeaning.Windy,
+                WeatherMeaning.Snow
+            };
+            bool meaningsOk = true;
+            for (int i = 0; i < fixtureNames.Length; i++)
+            {
+                WeatherForecastWindow window = new OpenMeteoForecastParser()
+                    .Parse(ReadWeatherFixture(fixtureNames[i]), date);
+                meaningsOk &= WeatherMeaningRules.Select(window) ==
+                    expectedMeanings[i];
+            }
+            foreach (WeatherMeaning meaning in Enum.GetValues(
+                typeof(WeatherMeaning)))
+            {
+                HashSet<string> variants = new HashSet<string>();
+                for (int day = 0; day < 365; day++)
+                {
+                    WeatherDailySelection selected =
+                        WeatherWordingCatalog.Select(meaning,
+                            date.AddDays(day), location.StableKey);
+                    variants.Add(selected.Text);
+                    meaningsOk &= selected.Text == WeatherWordingCatalog
+                        .Select(meaning, date.AddDays(day),
+                            location.StableKey).Text &&
+                        selected.Text.Length <= 60;
+                }
+                int required = meaning == WeatherMeaning.RainLater ||
+                    meaning == WeatherMeaning.Cooling ||
+                    meaning == WeatherMeaning.Windy ||
+                    meaning == WeatherMeaning.Hot ? 5 : 3;
+                meaningsOk &= variants.Count >= required;
+            }
+            result.MeaningAndWordingOk = meaningsOk;
+
+            WeatherForecastWindow rainLater = new OpenMeteoForecastParser()
+                .Parse(fixture, date);
+            string lastDate = String.Empty;
+            string shownText = null;
+            int dailyForecastCalls = 0;
+            int dailyShowCount = 0;
+            PetDailyContentCoordinator daily =
+                new PetDailyContentCoordinator(
+                    delegate { return lastDate; },
+                    delegate { return false; }, delegate { return true; },
+                    delegate { return false; }, delegate { return true; },
+                    delegate { return location; },
+                    delegate
+                    {
+                        dailyForecastCalls++;
+                        return Task.FromResult(rainLater);
+                    },
+                    delegate { return ZodiacSign.None; },
+                    delegate(string text)
+                    {
+                        dailyShowCount++;
+                        shownText = text;
+                        return true;
+                    },
+                    delegate(string value) { lastDate = value; });
+            bool weatherShown = RunDaily(daily,
+                new DateTimeOffset(date, TimeSpan.FromHours(8)));
+            string expectedWeather = WeatherWordingCatalog.Select(
+                WeatherMeaning.RainLater, date, location.StableKey).Text;
+            result.DailyCoordinatorWeatherOk = weatherShown &&
+                dailyForecastCalls == 1 && dailyShowCount == 1 &&
+                shownText.Contains(expectedWeather) && lastDate == "20260901";
+
+            lastDate = String.Empty;
+            shownText = null;
+            dailyForecastCalls = 0;
+            PetDailyContentCoordinator unavailable =
+                new PetDailyContentCoordinator(
+                    delegate { return lastDate; },
+                    delegate { return false; }, delegate { return true; },
+                    delegate { return false; }, delegate { return true; },
+                    delegate { return location; },
+                    delegate
+                    {
+                        dailyForecastCalls++;
+                        return Task.FromResult<WeatherForecastWindow>(null);
+                    },
+                    delegate { return ZodiacSign.None; },
+                    delegate(string text)
+                    {
+                        shownText = text;
+                        return true;
+                    },
+                    delegate(string value) { lastDate = value; });
+            bool fallbackShown = RunDaily(unavailable,
+                new DateTimeOffset(date, TimeSpan.FromHours(8)));
+            result.DailyCoordinatorFailureFallbackOk = fallbackShown &&
+                dailyForecastCalls == 1 &&
+                !String.IsNullOrWhiteSpace(shownText) &&
+                !shownText.Contains(expectedWeather) &&
+                lastDate == "20260901";
+
+            result.DailyCoordinatorInFlightOk = Task.Run(delegate
+            {
+                string pendingDate = String.Empty;
+                int pendingFetches = 0;
+                int pendingShows = 0;
+                TaskCompletionSource<WeatherForecastWindow> pending =
+                    new TaskCompletionSource<WeatherForecastWindow>();
+                PetDailyContentCoordinator pendingDaily =
+                    new PetDailyContentCoordinator(
+                        delegate { return pendingDate; },
+                        delegate { return false; },
+                        delegate { return true; },
+                        delegate { return false; },
+                        delegate { return true; },
+                        delegate { return location; },
+                        delegate
+                        {
+                            pendingFetches++;
+                            return pending.Task;
+                        },
+                        delegate { return ZodiacSign.None; },
+                        delegate { pendingShows++; return true; },
+                        delegate(string value) { pendingDate = value; });
+                DateTimeOffset pendingNow = new DateTimeOffset(date,
+                    TimeSpan.FromHours(8));
+                Task<bool> firstAttempt = pendingDaily.HandlePetPokedAsync(
+                    pendingNow);
+                Task<bool> secondAttempt = pendingDaily.HandlePetPokedAsync(
+                    pendingNow.AddMinutes(1));
+                bool secondConsumed = secondAttempt.GetAwaiter().GetResult();
+                pending.SetResult(rainLater);
+                bool firstShown = firstAttempt.GetAwaiter().GetResult();
+                return secondConsumed && firstShown && pendingFetches == 1 &&
+                    pendingShows == 1 && pendingDate == "20260901";
+            }).GetAwaiter().GetResult();
+
+            result.RejectedBubbleReusesForecastOk = Task.Run(delegate
+            {
+                WeatherFixtureHandler retryHandler =
+                    new WeatherFixtureHandler(fixture, false);
+                using (PetWeatherSource retrySource = new PetWeatherSource(
+                    new HttpClient(retryHandler), delegate
+                    {
+                        return new DateTimeOffset(2026, 9, 1, 0, 0, 0,
+                            TimeSpan.Zero);
+                    }))
+                {
+                    string retryDate = String.Empty;
+                    bool accept = false;
+                    int attempts = 0;
+                    PetDailyContentCoordinator retryDaily =
+                        new PetDailyContentCoordinator(
+                            delegate { return retryDate; },
+                            delegate { return false; },
+                            delegate { return true; },
+                            delegate { return false; },
+                            delegate { return true; },
+                            delegate { return location; },
+                            delegate(WeatherLocation target,
+                                DateTime localDate)
+                            {
+                                return retrySource.GetForecastAsync(target,
+                                    localDate);
+                            },
+                            delegate { return ZodiacSign.None; },
+                            delegate { attempts++; return accept; },
+                            delegate(string value) { retryDate = value; });
+                    DateTimeOffset retryNow = new DateTimeOffset(date,
+                        TimeSpan.FromHours(8));
+                    bool rejected = !RunDaily(retryDaily, retryNow);
+                    accept = true;
+                    bool accepted = RunDaily(retryDaily,
+                        retryNow.AddMinutes(1));
+                    return rejected && accepted && attempts == 2 &&
+                        retryHandler.ForecastCount == 1 &&
+                        retryDate == "20260901";
+                }
+            }).GetAwaiter().GetResult();
             return result;
+        }
+
+        private static string ReadWeatherFixture(string fileName)
+        {
+            string resourceName = "PennyPet.Tests.Fixtures." + fileName;
+            using (Stream stream = Assembly.GetExecutingAssembly()
+                .GetManifestResourceStream(resourceName))
+            {
+                if (stream == null)
+                    throw new InvalidOperationException(
+                        "Missing weather fixture: " + resourceName);
+                using (StreamReader reader = new StreamReader(stream,
+                    Encoding.UTF8)) return reader.ReadToEnd();
+            }
         }
 
         private static BubbleCheckResult RunBubbleChecks()
@@ -2847,10 +3039,10 @@ namespace PennyPet
                     });
             DateTimeOffset morning = new DateTimeOffset(2035, 6, 15, 8, 30, 0,
                 TimeSpan.FromHours(8));
-            bool firstPoke = daily.HandlePetPoked(morning);
-            bool secondPoke = daily.HandlePetPoked(morning.AddHours(1));
+            bool firstPoke = RunDaily(daily, morning);
+            bool secondPoke = RunDaily(daily, morning.AddHours(1));
             lastBriefingDate = "20350614";
-            bool nextDay = daily.HandlePetPoked(morning.AddHours(6.5));
+            bool nextDay = RunDaily(daily, morning.AddHours(6.5));
             result.DailyFirstPokeOk = firstPoke && !secondPoke && nextDay &&
                 greetingCount == 2 && recordCount == 2 &&
                 greetingText.StartsWith("下午好～今天过得怎么样？\n",
@@ -2860,12 +3052,12 @@ namespace PennyPet
             greetingCount = 0;
             recordCount = 0;
             silent = true;
-            bool silentPoke = daily.HandlePetPoked(morning);
+            bool silentPoke = RunDaily(daily, morning);
             silent = false;
             acceptGreeting = false;
-            bool rejectedPoke = daily.HandlePetPoked(morning);
+            bool rejectedPoke = RunDaily(daily, morning);
             acceptGreeting = true;
-            bool retriedPoke = daily.HandlePetPoked(morning);
+            bool retriedPoke = RunDaily(daily, morning);
             result.DailyRejectedRetryOk = !silentPoke && !rejectedPoke &&
                 retriedPoke && greetingCount == 2 && recordCount == 1 &&
                 lastBriefingDate == "20350615";
@@ -2873,10 +3065,10 @@ namespace PennyPet
             greetingCount = 0;
             recordCount = 0;
             dailyContentEnabled = false;
-            bool disabledPoke = daily.HandlePetPoked(morning);
+            bool disabledPoke = RunDaily(daily, morning);
             dailyContentEnabled = true;
-            bool enabledLaterPoke = daily.HandlePetPoked(morning);
-            bool enabledSameDayPoke = daily.HandlePetPoked(
+            bool enabledLaterPoke = RunDaily(daily, morning);
+            bool enabledSameDayPoke = RunDaily(daily,
                 morning.AddHours(1));
             lastBriefingDate = String.Empty;
             greetingCount = 0;
@@ -2884,14 +3076,14 @@ namespace PennyPet
             solarTermEnabled = false;
             DateTimeOffset whiteDewDate = new DateTimeOffset(
                 2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(8));
-            bool solarOffPoke = daily.HandlePetPoked(whiteDewDate);
+            bool solarOffPoke = RunDaily(daily, whiteDewDate);
             bool plainGreeting = greetingText.IndexOf("白露",
                 StringComparison.Ordinal) < 0;
             solarTermEnabled = true;
-            bool solarEnabledSameDayPoke = daily.HandlePetPoked(
+            bool solarEnabledSameDayPoke = RunDaily(daily,
                 whiteDewDate.AddHours(1));
             lastBriefingDate = String.Empty;
-            bool solarOnPoke = daily.HandlePetPoked(whiteDewDate);
+            bool solarOnPoke = RunDaily(daily, whiteDewDate);
             result.DailyContentPreferencesOk = !disabledPoke &&
                 enabledLaterPoke && !enabledSameDayPoke && solarOffPoke &&
                 plainGreeting && !solarEnabledSameDayPoke && solarOnPoke &&
@@ -3033,16 +3225,25 @@ namespace PennyPet
             string afternoonGreeting = DailyContentRules.GreetingFor(
                 DayPart.Afternoon);
             const string almanacText = "黄历内容。";
+            const string weatherText = "天气内容。";
             DailyBriefingContent caseA = new DailyBriefingContent(whiteDew,
-                almanacText, selectedCurated, selectedScorpio);
+                null, almanacText, selectedCurated, selectedScorpio);
             DailyBriefingContent caseB = new DailyBriefingContent(whiteDew,
-                null, selectedCurated, selectedScorpio);
+                null, null, selectedCurated, selectedScorpio);
             DailyBriefingContent caseC = new DailyBriefingContent(null,
-                almanacText, selectedCurated, selectedScorpio);
+                null, almanacText, selectedCurated, selectedScorpio);
             DailyBriefingContent caseD = new DailyBriefingContent(null,
-                null, selectedCurated, null);
+                null, null, selectedCurated, null);
             DailyBriefingContent caseE = new DailyBriefingContent(null,
-                null, selectedCurated, selectedScorpio);
+                null, null, selectedCurated, selectedScorpio);
+            DailyBriefingContent solarWeatherAlmanac =
+                new DailyBriefingContent(whiteDew, weatherText, almanacText,
+                    selectedCurated, selectedScorpio);
+            DailyBriefingContent weatherAlmanac =
+                new DailyBriefingContent(null, weatherText, almanacText,
+                    selectedCurated, selectedScorpio);
+            DailyBriefingContent weatherOnly = new DailyBriefingContent(null,
+                weatherText, null, selectedCurated, selectedScorpio);
             result.DailyBriefingBudgetOk = whiteDew.HasValue &&
                 DailyBriefingComposer.Compose(DayPart.Afternoon, caseA) ==
                     afternoonGreeting + "\n今天是白露哦。\n" + almanacText &&
@@ -3055,11 +3256,26 @@ namespace PennyPet
                 DailyBriefingComposer.Compose(DayPart.Afternoon, caseE) ==
                     afternoonGreeting + "\n" + selectedCurated.Text +
                         "\n" + selectedScorpio.Text &&
+                DailyBriefingComposer.Compose(DayPart.Afternoon,
+                    solarWeatherAlmanac) == afternoonGreeting +
+                        "\n今天是白露哦。\n" + weatherText &&
+                DailyBriefingComposer.Compose(DayPart.Afternoon,
+                    weatherAlmanac) == afternoonGreeting + "\n" +
+                        weatherText + "\n" + almanacText &&
+                DailyBriefingComposer.Compose(DayPart.Afternoon,
+                    weatherOnly) == afternoonGreeting + "\n" + weatherText &&
                 DailyBriefingComposer.SelectSupplementary(caseA).Length <= 2 &&
                 DailyBriefingComposer.SelectSupplementary(caseB).Length <= 2 &&
                 DailyBriefingComposer.SelectSupplementary(caseC).Length <= 2 &&
                 DailyBriefingComposer.SelectSupplementary(caseD).Length <= 2 &&
                 DailyBriefingComposer.SelectSupplementary(caseE).Length <= 2;
+            result.DailyBriefingBudgetOk = result.DailyBriefingBudgetOk &&
+                DailyBriefingComposer.SelectSupplementary(
+                    solarWeatherAlmanac).Length <= 2 &&
+                DailyBriefingComposer.SelectSupplementary(
+                    weatherAlmanac).Length <= 2 &&
+                DailyBriefingComposer.SelectSupplementary(
+                    weatherOnly).Length <= 2;
 
             lastBriefingDate = String.Empty;
             silent = false;
@@ -3069,17 +3285,17 @@ namespace PennyPet
             acceptGreeting = true;
             greetingCount = 0;
             recordCount = 0;
-            bool zodiacShown = daily.HandlePetPoked(briefingDate);
+            bool zodiacShown = RunDaily(daily, briefingDate);
             string expectedZodiacText = DailyBriefingComposer.Compose(
                 DailyContentRules.ResolveDayPart(briefingDate),
                 new DailyBriefingContent(null,
-                    actualAlmanac == null ? null : actualAlmanac.Text,
+                    null, actualAlmanac == null ? null : actualAlmanac.Text,
                     selectedCurated,
                     selectedScorpio));
             bool zodiacTextOk = greetingText == expectedZodiacText &&
                 recordCount == 1;
             zodiacSign = ZodiacSign.Pisces;
-            bool changedSignSameDay = daily.HandlePetPoked(
+            bool changedSignSameDay = RunDaily(daily,
                 briefingDate.AddHours(1));
             result.DailyBriefingSameDaySwitchOk = zodiacShown &&
                 !changedSignSameDay && recordCount == 1;
@@ -3089,7 +3305,7 @@ namespace PennyPet
             zodiacSign = ZodiacSign.Scorpio;
             greetingCount = 0;
             recordCount = 0;
-            bool solarZodiacShown = daily.HandlePetPoked(whiteDewDate);
+            bool solarZodiacShown = RunDaily(daily, whiteDewDate);
             AlmanacDayInfo whiteDewAlmanacDay = AlmanacCalculator.Calculate(
                 whiteDewDate);
             AlmanacDailySelection whiteDewAlmanac = whiteDewAlmanacDay == null
@@ -3098,7 +3314,7 @@ namespace PennyPet
             string solarZodiacExpected = DailyBriefingComposer.Compose(
                 DailyContentRules.ResolveDayPart(whiteDewDate),
                 new DailyBriefingContent(whiteDew,
-                    whiteDewAlmanac == null ? null : whiteDewAlmanac.Text,
+                    null, whiteDewAlmanac == null ? null : whiteDewAlmanac.Text,
                     CuratedDailyLineSelector.Select(whiteDewDate),
                     ZodiacDailySelector.Select(ZodiacSign.Scorpio,
                         whiteDewDate)));
@@ -3111,10 +3327,10 @@ namespace PennyPet
             acceptGreeting = false;
             greetingCount = 0;
             recordCount = 0;
-            bool zodiacRejected = !daily.HandlePetPoked(briefingDate);
+            bool zodiacRejected = !RunDaily(daily, briefingDate);
             string rejectedZodiacText = greetingText;
             acceptGreeting = true;
-            bool zodiacRetried = daily.HandlePetPoked(
+            bool zodiacRetried = RunDaily(daily,
                 briefingDate.AddMinutes(1));
             result.DailyBriefingRejectedRetryOk = zodiacRejected &&
                 zodiacRetried &&
@@ -3161,6 +3377,13 @@ namespace PennyPet
                 PetMessagePolicy.ShouldSuppress(
                     PetMessageKind.SmallTalk, true);
             return result;
+        }
+
+        private static bool RunDaily(PetDailyContentCoordinator coordinator,
+            DateTimeOffset localNow)
+        {
+            return coordinator.HandlePetPokedAsync(localNow).GetAwaiter()
+                .GetResult();
         }
 
         private sealed class WindowShellCheckResult
@@ -4645,6 +4868,17 @@ namespace PennyPet
                     weatherChecks.BoundedCacheInvalidationOk) + ",\n" +
                 "  \"weather_failure_cooldown_ok\": " + Bool(
                     weatherChecks.FailureCooldownOk) + ",\n" +
+                "  \"weather_meaning_and_wording_ok\": " + Bool(
+                    weatherChecks.MeaningAndWordingOk) + ",\n" +
+                "  \"weather_daily_coordinator_integration_ok\": " + Bool(
+                    weatherChecks.DailyCoordinatorWeatherOk) + ",\n" +
+                "  \"weather_failure_daily_fallback_ok\": " + Bool(
+                    weatherChecks.DailyCoordinatorFailureFallbackOk) +
+                    ",\n" +
+                "  \"weather_daily_inflight_coalescing_ok\": " + Bool(
+                    weatherChecks.DailyCoordinatorInFlightOk) + ",\n" +
+                "  \"weather_rejected_bubble_reuses_forecast_ok\": " + Bool(
+                    weatherChecks.RejectedBubbleReusesForecastOk) + ",\n" +
                 "  \"zodiac_preference_settings_ui_ok\": " + Bool(
                     shellChecks.ZodiacPreferenceSettingsUiOk) + ",\n" +
                 "  \"scale_50_to_200_step_10_ok\": " + Bool(

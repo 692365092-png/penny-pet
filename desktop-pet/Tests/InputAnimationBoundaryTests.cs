@@ -328,7 +328,7 @@ namespace PennyPet.Tests
             int mouseUp = animation.IndexOf("private void PetMouseUp",
                 StringComparison.Ordinal);
             int nextMethod = animation.IndexOf(
-                "private void HandlePetPoked", mouseUp,
+                "private async void HandlePetPoked", mouseUp,
                 StringComparison.Ordinal);
             string body = animation.Substring(mouseUp, nextMethod - mouseUp);
             int poke = body.IndexOf("HandlePetPoked()",
@@ -350,15 +350,18 @@ namespace PennyPet.Tests
             string form = ReadSource("PetForm.cs");
             string animation = ReadSource("PetAnimationRuntime.cs");
             string coordinator = ReadSource("PetSmallTalkCoordinator.cs");
-            string poke = Between(animation, "private void HandlePetPoked",
+            string poke = Between(animation,
+                "private async void HandlePetPoked",
                 "private void StartOrdinaryPokeAnimation");
 
             Assert.IsTrue(form.Contains(
                     "private readonly PetSmallTalkCoordinator") &&
-                poke.Contains("_dailyContentCoordinator.HandlePetPoked") &&
+                poke.Contains("StartOrdinaryPokeAnimation(nowUtc)") &&
+                poke.Contains("_dailyContentCoordinator") &&
+                poke.Contains(".HandlePetPokedAsync") &&
                 poke.Contains("if (!dailyShown)") &&
                 poke.Contains("_smallTalkCoordinator.HandlePetPoked(nowUtc)") &&
-                poke.Contains("StartOrdinaryPokeAnimation(nowUtc)"),
+                !poke.Contains(".Wait(") && !poke.Contains(".Result"),
                 "PetForm must preserve Easter, Daily, SmallTalk, animation order.");
             Assert.IsFalse(form.Contains("SmallTalkPhrases") ||
                 form.Contains("_smallTalkRandom") ||
@@ -446,11 +449,77 @@ namespace PennyPet.Tests
             Assert.IsTrue(commands.Contains("--almanac-probe=") &&
                 commands.Contains("--daily-briefing-probe="),
                 "Both pure diagnostic seams must remain available.");
-            Assert.IsFalse(content.Contains("Weather") ||
+            Assert.IsFalse(
                 form.Contains("Almanac") || settings.Contains("Almanac") ||
                 semantic.Contains("Provider") ||
                 selector.Contains("Manager") || selector.Contains("Engine"),
-                "No setting, Weather field or speculative framework is allowed.");
+                "Almanac must remain setting-free and avoid speculative framework.");
+        }
+
+        [TestMethod]
+        public void WeatherDailyContent_UsesOptInAsyncBoundedInfrastructure()
+        {
+            string meaning = ReadSource(
+                "Core/DailyContent/Weather/WeatherMeaningRules.cs");
+            string wording = ReadSource(
+                "Core/DailyContent/Weather/WeatherWordingCatalog.cs");
+            string source = ReadSource(
+                "Infrastructure/Weather/PetWeatherSource.cs");
+            string client = ReadSource(
+                "Infrastructure/Weather/OpenMeteoForecastClient.cs");
+            string coordinator = ReadSource("PetDailyContentCoordinator.cs");
+            string animation = ReadSource("PetAnimationRuntime.cs");
+            string startup = ReadSource("PetStartupCoordinator.cs");
+            string commands = ReadSource(
+                "Infrastructure/SelfTestCommandRouter.cs");
+            string coreProject = ReadSource("PennyPet.Core.csproj");
+            string resolver = ReadSource(
+                "Infrastructure/EmbeddedAssemblyResolver.cs");
+
+            Assert.IsFalse(meaning.Contains("HttpClient") ||
+                meaning.Contains("https://") || wording.Contains("Random") ||
+                wording.Contains("GetHashCode"),
+                "Weather meaning and wording must remain deterministic Core rules.");
+            Assert.IsTrue(source.Contains("new HttpClient(") &&
+                source.Contains("TimeSpan.FromSeconds(3)") &&
+                source.Contains("FailureCooldown") &&
+                source.Contains("TimeSpan.FromMinutes(15)") &&
+                source.Contains("Queue<string>") &&
+                source.Contains("_cacheOrder.Count >= 3") &&
+                source.Contains("_inFlightKey == key"),
+                "Weather transport must own one bounded cache/in-flight/cooldown.");
+            Assert.IsTrue(client.Contains("past_days=1") &&
+                client.Contains("forecast_days=2") &&
+                client.Contains("temperature_2m") &&
+                client.Contains("apparent_temperature") &&
+                client.Contains("precipitation_probability") &&
+                client.Contains("precipitation\"") &&
+                client.Contains("snowfall") &&
+                client.Contains("weather_code") &&
+                client.Contains("wind_speed_10m") &&
+                client.Contains("wind_gusts_10m") &&
+                !client.Contains("apikey"),
+                "Forecast request must keep the reviewed eight-variable shape.");
+            string poke = Between(animation,
+                "private async void HandlePetPoked",
+                "private void StartOrdinaryPokeAnimation");
+            Assert.IsTrue(poke.IndexOf("StartOrdinaryPokeAnimation(nowUtc)",
+                    StringComparison.Ordinal) <
+                poke.IndexOf(".HandlePetPokedAsync", StringComparison.Ordinal) &&
+                coordinator.Contains("await _weatherForecast") &&
+                coordinator.Contains("WeatherMeaningRules.Select") &&
+                coordinator.Contains("WeatherWordingCatalog.Select") &&
+                !poke.Contains(".Wait(") && !poke.Contains(".Result") &&
+                !coordinator.Contains(".Wait(") &&
+                !coordinator.Contains(".Result"),
+                "Poke animation must start before the asynchronous weather path.");
+            Assert.IsFalse(startup.Contains("GetForecastAsync") ||
+                startup.Contains("SearchLocationsAsync"),
+                "Startup must make zero weather requests.");
+            Assert.IsTrue(commands.Contains("--weather-api-probe=") &&
+                !coreProject.Contains("System.Net.Http") &&
+                !resolver.Contains("System.Net.Http"),
+                "Live probing stays explicit and no new managed dependency is embedded.");
         }
 
         [TestMethod]
