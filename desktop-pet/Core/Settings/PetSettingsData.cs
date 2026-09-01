@@ -17,6 +17,7 @@ namespace PennyPet
         public bool KeyboardPrivacyNoticeAccepted;
         public int KeyOverlayScalePercent = 100;
         public bool SilentMode;
+        public string LastDailyBriefingDate = String.Empty;
         public readonly List<ReminderItem> Reminders =
             new List<ReminderItem>();
 
@@ -53,6 +54,7 @@ namespace PennyPet
                 source.KeyboardPrivacyNoticeAccepted;
             KeyOverlayScalePercent = source.KeyOverlayScalePercent;
             SilentMode = source.SilentMode;
+            LastDailyBriefingDate = source.LastDailyBriefingDate;
             SetReminders(source.Reminders);
         }
     }

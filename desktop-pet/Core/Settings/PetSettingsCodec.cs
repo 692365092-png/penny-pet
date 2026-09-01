@@ -82,6 +82,12 @@ namespace PennyPet
                     settings.SilentMode = value == "1";
                     recognized = true;
                 }
+                else if (key == "LastDailyBriefingDate")
+                {
+                    settings.LastDailyBriefingDate =
+                        DailyContentRules.NormalizeDateKey(value);
+                    recognized = true;
+                }
                 else if (key == "KeyOverlayScalePercent" &&
                     Int32.TryParse(value, out intValue))
                 {
@@ -167,6 +173,8 @@ namespace PennyPet
             lines.Add("KeyboardPrivacyNoticeAccepted=" +
                 (settings.KeyboardPrivacyNoticeAccepted ? "1" : "0"));
             lines.Add("SilentMode=" + (settings.SilentMode ? "1" : "0"));
+            lines.Add("LastDailyBriefingDate=" + DailyContentRules
+                .NormalizeDateKey(settings.LastDailyBriefingDate));
             lines.Add("KeyOverlayScalePercent=" + PetSettingRules
                 .NormalizeKeyboardTextScalePercent(
                     settings.KeyOverlayScalePercent));

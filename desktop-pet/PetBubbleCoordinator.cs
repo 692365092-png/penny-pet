@@ -39,6 +39,13 @@ namespace PennyPet
                 fontFamilyName, fontSizePoints, 2000, true);
         }
 
+        internal static PetBubbleRequest DailyGreeting(string text,
+            string fontFamilyName, float fontSizePoints)
+        {
+            return new PetBubbleRequest(PetMessageKind.DailyGreeting, text,
+                fontFamilyName, fontSizePoints, 20000, false);
+        }
+
         internal static PetBubbleRequest Hover(string text,
             string fontFamilyName, float fontSizePoints)
         {

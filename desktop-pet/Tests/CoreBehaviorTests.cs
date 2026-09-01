@@ -747,6 +747,45 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void DailyContentRules_ShowOncePerLocalDate()
+        {
+            DateTime today = new DateTime(2035, 9, 8, 14, 30, 0,
+                DateTimeKind.Local);
+            Assert.IsTrue(DailyContentRules.ShouldShow(String.Empty, today));
+            Assert.IsFalse(DailyContentRules.ShouldShow("20350908", today));
+            Assert.IsTrue(DailyContentRules.ShouldShow("20350907", today));
+            Assert.IsTrue(DailyContentRules.ShouldShow("invalid", today));
+            Assert.AreEqual("20350908", DailyContentRules.DateKey(today));
+        }
+
+        [TestMethod]
+        public void DailyContentRules_ResolveEveryDayPartBoundary()
+        {
+            Assert.AreEqual(DayPart.LateNight, DailyContentRules.ResolveDayPart(
+                new DateTime(2035, 1, 1, 4, 59, 0)));
+            Assert.AreEqual(DayPart.Morning, DailyContentRules.ResolveDayPart(
+                new DateTime(2035, 1, 1, 5, 0, 0)));
+            Assert.AreEqual(DayPart.Morning, DailyContentRules.ResolveDayPart(
+                new DateTime(2035, 1, 1, 10, 59, 0)));
+            Assert.AreEqual(DayPart.Midday, DailyContentRules.ResolveDayPart(
+                new DateTime(2035, 1, 1, 11, 0, 0)));
+            Assert.AreEqual(DayPart.Midday, DailyContentRules.ResolveDayPart(
+                new DateTime(2035, 1, 1, 13, 59, 0)));
+            Assert.AreEqual(DayPart.Afternoon,
+                DailyContentRules.ResolveDayPart(
+                    new DateTime(2035, 1, 1, 14, 0, 0)));
+            Assert.AreEqual(DayPart.Afternoon,
+                DailyContentRules.ResolveDayPart(
+                    new DateTime(2035, 1, 1, 17, 59, 0)));
+            Assert.AreEqual(DayPart.Evening, DailyContentRules.ResolveDayPart(
+                new DateTime(2035, 1, 1, 18, 0, 0)));
+            Assert.AreEqual(DayPart.Evening, DailyContentRules.ResolveDayPart(
+                new DateTime(2035, 1, 1, 23, 59, 0)));
+            Assert.AreEqual("下午好～今天过得怎么样？",
+                DailyContentRules.GreetingFor(DayPart.Afternoon));
+        }
+
+        [TestMethod]
         public void KeyDisplayAccumulator_AggregatesOnlyWithinItsTimeWindows()
         {
             KeyDisplayAccumulator accumulator = new KeyDisplayAccumulator();
@@ -781,14 +820,19 @@ namespace PennyPet.Tests
                 ShowKeyOverlay = true,
                 KeyboardPrivacyNoticeAccepted = true,
                 KeyOverlayScalePercent = 150,
-                SilentMode = true
+                SilentMode = true,
+                LastDailyBriefingDate = "20350405"
             };
             source.Reminders.Add(new ReminderItem(
                 new DateTime(2035, 4, 5, 6, 7, 8, DateTimeKind.Utc),
                 "喝水", "note-42", 24F, true));
 
-            PetSettingsData restored = PetSettingsCodec.Parse(
-                PetSettingsCodec.Serialize(source));
+            List<string> serialized = PetSettingsCodec.Serialize(source);
+            PetSettingsData restored = PetSettingsCodec.Parse(serialized);
+            int dailyDateLines = 0;
+            foreach (string line in serialized)
+                if (line.StartsWith("LastDailyBriefingDate=",
+                    StringComparison.Ordinal)) dailyDateLines++;
 
             Assert.IsTrue(restored.HasLocation);
             Assert.AreEqual(-120, restored.X);
@@ -799,6 +843,8 @@ namespace PennyPet.Tests
             Assert.IsTrue(restored.KeyboardPrivacyNoticeAccepted);
             Assert.AreEqual(150, restored.KeyOverlayScalePercent);
             Assert.IsTrue(restored.SilentMode);
+            Assert.AreEqual("20350405", restored.LastDailyBriefingDate);
+            Assert.AreEqual(1, dailyDateLines);
             Assert.AreEqual(1, restored.Reminders.Count);
             Assert.AreEqual("喝水", restored.Reminders[0].Text);
             Assert.AreEqual("note-42", restored.Reminders[0].SourceNoteId);

@@ -174,6 +174,7 @@ namespace PennyPet
             internal bool ReminderMemoryOk;
             internal bool KeyboardPrivacyNoticePersistenceOk;
             internal bool SilentModePersistenceOk;
+            internal bool DailyBriefingDatePersistenceOk;
             internal bool FailureDirtyRetryOk;
             internal bool BackupRecoveryOk;
         }
@@ -227,6 +228,7 @@ namespace PennyPet
             memorySettings.KeyboardPrivacyNoticeAccepted = true;
             memorySettings.KeyOverlayScalePercent = 150;
             memorySettings.SilentMode = true;
+            memorySettings.LastDailyBriefingDate = "20350908";
             memorySettings.SaveToFile(persistenceTestPath);
             PetSettings diskSettings = PetSettings.LoadFromFile(
                 persistenceTestPath);
@@ -245,6 +247,8 @@ namespace PennyPet
             result.KeyboardPrivacyNoticePersistenceOk =
                 diskSettings.KeyboardPrivacyNoticeAccepted;
             result.SilentModePersistenceOk = diskSettings.SilentMode;
+            result.DailyBriefingDatePersistenceOk =
+                diskSettings.LastDailyBriefingDate == "20350908";
 
             string settingsRetryPath = outputPath +
                 ".settings-retry-test.ini";
@@ -2150,6 +2154,9 @@ namespace PennyPet
             internal bool SingleRestoreAfterCloseOk;
             internal bool AdaptiveSizingOk;
             internal bool UpdateTextRelayoutOk;
+            internal bool DailyFirstPokeOk;
+            internal bool DailyRejectedRetryOk;
+            internal bool DailyGreetingRequestOk;
         }
 
         private static BubbleCheckResult RunBubbleChecks()
@@ -2307,6 +2314,57 @@ namespace PennyPet
                 result.UpdateTextRelayoutOk = longSize != shortSize &&
                     shortChinese.ClientSize == shortSize;
             }
+            string lastBriefingDate = String.Empty;
+            bool silent = false;
+            bool acceptGreeting = true;
+            int greetingCount = 0;
+            int recordCount = 0;
+            string greetingText = null;
+            PetDailyContentCoordinator daily =
+                new PetDailyContentCoordinator(
+                    delegate { return lastBriefingDate; },
+                    delegate { return silent; },
+                    delegate(string text)
+                    {
+                        greetingCount++;
+                        greetingText = text;
+                        return acceptGreeting;
+                    },
+                    delegate(string date)
+                    {
+                        recordCount++;
+                        lastBriefingDate = date;
+                    });
+            DateTime morning = new DateTime(2035, 9, 8, 8, 30, 0,
+                DateTimeKind.Local);
+            bool firstPoke = daily.HandlePetPoked(morning);
+            bool secondPoke = daily.HandlePetPoked(morning.AddHours(1));
+            lastBriefingDate = "20350907";
+            bool nextDay = daily.HandlePetPoked(new DateTime(
+                2035, 9, 8, 15, 0, 0, DateTimeKind.Local));
+            result.DailyFirstPokeOk = firstPoke && !secondPoke && nextDay &&
+                greetingCount == 2 && recordCount == 2 &&
+                greetingText == "下午好～今天过得怎么样？" &&
+                lastBriefingDate == "20350908";
+            lastBriefingDate = String.Empty;
+            greetingCount = 0;
+            recordCount = 0;
+            silent = true;
+            bool silentPoke = daily.HandlePetPoked(morning);
+            silent = false;
+            acceptGreeting = false;
+            bool rejectedPoke = daily.HandlePetPoked(morning);
+            acceptGreeting = true;
+            bool retriedPoke = daily.HandlePetPoked(morning);
+            result.DailyRejectedRetryOk = !silentPoke && !rejectedPoke &&
+                retriedPoke && greetingCount == 2 && recordCount == 1 &&
+                lastBriefingDate == "20350908";
+            PetBubbleRequest dailyRequest = PetBubbleRequest.DailyGreeting(
+                "早上好", KeyboardOverlayForm.TextFontFamilyName, 15F);
+            result.DailyGreetingRequestOk = dailyRequest.Kind ==
+                PetMessageKind.DailyGreeting &&
+                dailyRequest.AutoCloseMilliseconds == 20000 &&
+                !dailyRequest.DeferWhileDragging;
             return result;
         }
 
@@ -3190,6 +3248,8 @@ namespace PennyPet
                     settingsChecks.BackupRecoveryOk) + ",\n" +
                 "  \"settings_failure_dirty_retry_ok\": " + Bool(
                     settingsChecks.FailureDirtyRetryOk) + ",\n" +
+                "  \"daily_briefing_date_persistence_ok\": " + Bool(
+                    settingsChecks.DailyBriefingDatePersistenceOk) + ",\n" +
                 "  \"multiple_reminders_per_note_ok\": " + Bool(
                     reminderCoordinatorChecks.MultipleLinkedReminderOk) + ",\n" +
                 "  \"sticky_note_persistence_ok\": " + Bool(
@@ -3623,6 +3683,12 @@ namespace PennyPet
                     bubbleChecks.AdaptiveSizingOk) + ",\n" +
                 "  \"bubble_update_text_relayout_ok\": " + Bool(
                     bubbleChecks.UpdateTextRelayoutOk) + ",\n" +
+                "  \"daily_content_first_poke_once_ok\": " + Bool(
+                    bubbleChecks.DailyFirstPokeOk) + ",\n" +
+                "  \"daily_content_rejected_retry_ok\": " + Bool(
+                    bubbleChecks.DailyRejectedRetryOk) + ",\n" +
+                "  \"daily_greeting_typed_request_ok\": " + Bool(
+                    bubbleChecks.DailyGreetingRequestOk) + ",\n" +
                 "  \"scale_50_to_200_step_10_ok\": " + Bool(
                     shellChecks.ScaleRangeOk) + ",\n" +
                 "  \"keyboard_text_scale_choices_ok\": " + Bool(

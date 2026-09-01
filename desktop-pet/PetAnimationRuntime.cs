@@ -186,6 +186,7 @@ namespace PennyPet
             else
             {
                 Location = _dragWindowOrigin;
+                _dailyContentCoordinator.HandlePetPoked(DateTime.Now);
                 AdvanceManualAnimation();
             }
             ShowNextPendingBubble();

@@ -39,6 +39,7 @@ namespace PennyPet
         private readonly PetReminderCoordinator _reminderCoordinator =
             new PetReminderCoordinator();
         private readonly PetBubbleCoordinator _bubbleCoordinator;
+        private readonly PetDailyContentCoordinator _dailyContentCoordinator;
         private long _lastReminderBannerSecond
             { get { return _reminderCoordinator.LastBannerSecond; }
                 set { _reminderCoordinator.LastBannerSecond = value; } }
@@ -204,6 +205,22 @@ namespace PennyPet
                 RestoreAmbientBubble);
 
             _settings = preloadedSettings ?? PetSettings.Load();
+            _dailyContentCoordinator = new PetDailyContentCoordinator(
+                delegate { return _settings.LastDailyBriefingDate; },
+                delegate { return _settings.SilentMode; },
+                delegate(string text)
+                {
+                    return _bubbleCoordinator.Show(
+                        PetBubbleRequest.DailyGreeting(text,
+                            KeyboardOverlayForm.TextFontFamilyName,
+                            KeyboardOverlayForm.TextFontSizePoints(
+                                _settings.KeyOverlayScalePercent)));
+                },
+                delegate(string date)
+                {
+                    _settings.LastDailyBriefingDate = date;
+                    _settings.Save();
+                });
             _settings.SaveFailed += PersistenceSaveFailed;
             if (PetKeyboardPrivacyPolicy.ShouldDisableUnacknowledgedLegacyOptIn(
                 _settings.ShowKeyOverlay,
