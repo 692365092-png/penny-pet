@@ -889,8 +889,12 @@ namespace PennyPet
             DockWindowFacts lower;
             if (!facts.TryGetValue(ordered[sourceIndex + 1].Id, out lower))
                 return false;
+            StickyNoteData upperData = ordered[sourceIndex];
+            StickyNoteData lowerData = ordered[sourceIndex + 1];
+            int pairTotal = CalculateDockDividerHeight(upperData.Height) +
+                CalculateDockDividerHeight(lowerData.Height);
             List<DockLayoutTarget> adjusted = CalculateDockDividerTargets(
-                snapshot, lower);
+                snapshot, lower, pairTotal);
             facts[snapshot.NoteId] = DockWindowFacts.FromTarget(adjusted[0]);
             facts[lower.NoteId] = DockWindowFacts.FromTarget(adjusted[1]);
             DockWindowFacts root;
@@ -906,14 +910,56 @@ namespace PennyPet
             return true;
         }
 
+        private bool ResizeHostedStickyDockDivider(DockWindowFacts snapshot)
+        {
+            if (_synchronizingDockLayout || _movingDockGroup ||
+                _activeNoteDragId != null || snapshot == null) return false;
+            StickyNoteData seed = _notes.Find(snapshot.NoteId);
+            if (seed == null) return false;
+            List<StickyNoteData> ordered = BuildDockChainOrder(seed);
+            int sourceIndex = ordered.FindIndex(
+                delegate(StickyNoteData note)
+                {
+                    return String.Equals(note.Id, snapshot.NoteId,
+                        StringComparison.OrdinalIgnoreCase);
+                });
+            if (sourceIndex < 0 || sourceIndex >= ordered.Count - 1)
+                return false;
+
+            StickyNoteData upperData = ordered[sourceIndex];
+            StickyNoteData lowerData = ordered[sourceIndex + 1];
+            int originalUpper = CalculateDockDividerHeight(upperData.Height);
+            int originalLower = CalculateDockDividerHeight(lowerData.Height);
+            int pairTotal = originalUpper + originalLower;
+            int requestedUpper = CalculateDockDividerHeight(snapshot.Height);
+            int minimumUpper = Math.Max(220, pairTotal - 700);
+            int maximumUpper = Math.Min(700, pairTotal - 220);
+            int upperHeight = Math.Max(minimumUpper,
+                Math.Min(maximumUpper, requestedUpper));
+            int lowerHeight = pairTotal - upperHeight;
+            int lowerY = upperData.Y + upperHeight;
+
+            ApplyDockTarget(new DockLayoutTarget(upperData.Id, upperData.X,
+                upperData.Y, upperData.Width, upperHeight, true,
+                upperData.AlwaysOnTop), null);
+            ApplyDockTarget(new DockLayoutTarget(lowerData.Id, lowerData.X,
+                lowerY, lowerData.Width, lowerHeight, true,
+                lowerData.AlwaysOnTop), null);
+            RefreshDockResizeRoles();
+            return true;
+        }
+
         internal static List<DockLayoutTarget> CalculateDockDividerTargets(
-            DockWindowFacts upper, DockWindowFacts lower)
+            DockWindowFacts upper, DockWindowFacts lower,
+            int pairTotal = -1)
         {
             List<DockLayoutTarget> targets = new List<DockLayoutTarget>();
             if (upper == null || lower == null) return targets;
             int requestedUpper = CalculateDockDividerHeight(upper.Height);
             int originalLower = CalculateDockDividerHeight(lower.Height);
-            int total = requestedUpper + originalLower;
+            int total = pairTotal > 0
+                ? pairTotal
+                : requestedUpper + originalLower;
             int minimumUpper = Math.Max(220, total - 700);
             int maximumUpper = Math.Min(700, total - 220);
             int upperHeight = Math.Max(minimumUpper,
@@ -1022,9 +1068,21 @@ namespace PennyPet
                 for (int index = 0; index < ordered.Count; index++)
                 {
                     bool internalDivider = index < ordered.Count - 1;
+                    int dividerMinimum = 220;
+                    int dividerMaximum = 700;
+                    if (internalDivider)
+                    {
+                        int upperHeight = CalculateDockDividerHeight(
+                            ordered[index].Height);
+                        int lowerHeight = CalculateDockDividerHeight(
+                            ordered[index + 1].Height);
+                        int pairTotal = upperHeight + lowerHeight;
+                        dividerMinimum = Math.Max(220, pairTotal - 700);
+                        dividerMaximum = Math.Min(700, pairTotal - 220);
+                    }
                     ApplyDockResizeRole(ordered[index], true,
                         index == 0, true, internalDivider,
-                        220, 700);
+                        dividerMinimum, dividerMaximum);
                     handled.Add(ordered[index].Id);
                 }
             }

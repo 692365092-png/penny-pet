@@ -1173,6 +1173,7 @@ namespace PennyPet
             internal bool RootAnchorPreservedOk;
             internal bool DividerMovesFollowingChainOk;
             internal bool DividerIndependentRangeOk;
+            internal bool DividerReallocatesPairOk;
             internal bool WideNarrowDockingOk;
             internal bool LongCoordinateGuardOk;
             internal bool FirstDragRecoveryOk;
@@ -1217,6 +1218,28 @@ namespace PennyPet
                 PetForm.CalculateDockDividerHeight(50) == 220 &&
                 PetForm.CalculateDockDividerHeight(500) == 500 &&
                 PetForm.CalculateDockDividerHeight(900) == 700;
+            List<DockLayoutTarget> reallocatedDivider =
+                PetForm.CalculateDockDividerTargets(
+                    new DockWindowFacts("upper", 120, 80, 420, 350,
+                        true, true),
+                    new DockWindowFacts("lower", 120, 380, 420, 300,
+                        true, true),
+                    600);
+            List<DockLayoutTarget> clampedDivider =
+                PetForm.CalculateDockDividerTargets(
+                    new DockWindowFacts("upper", 120, 80, 420, 500,
+                        true, true),
+                    new DockWindowFacts("lower", 120, 380, 420, 300,
+                        true, true),
+                    600);
+            result.DividerReallocatesPairOk =
+                reallocatedDivider.Count == 2 &&
+                reallocatedDivider[0].Height == 350 &&
+                reallocatedDivider[1].Y == 430 &&
+                reallocatedDivider[1].Height == 250 &&
+                clampedDivider.Count == 2 &&
+                clampedDivider[0].Height == 380 &&
+                clampedDivider[1].Height == 220;
             result.WideNarrowDockingOk = PetForm.CanDockBelow(
                 new Rectangle(80, 400, 900, 300),
                 new Rectangle(400, 100, 280, 300), 20) &&
@@ -4344,6 +4367,8 @@ namespace PennyPet
                     dockChecks.Geometry.DividerMovesFollowingChainOk) + ",\n" +
                 "  \"sticky_internal_divider_independent_range_ok\": " + Bool(
                     dockChecks.Geometry.DividerIndependentRangeOk) + ",\n" +
+                "  \"sticky_internal_divider_reallocates_pair_ok\": " + Bool(
+                    dockChecks.Geometry.DividerReallocatesPairOk) + ",\n" +
                 "  \"sticky_long_group_coordinate_guard_ok\": " + Bool(
                     dockChecks.Geometry.LongCoordinateGuardOk) + ",\n" +
                 "  \"sticky_root_close_collapses_group_ok\": " + Bool(
