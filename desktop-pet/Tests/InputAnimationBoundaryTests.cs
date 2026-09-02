@@ -1075,8 +1075,9 @@ namespace PennyPet.Tests
         [TestMethod]
         public void StickyRecovery_ExpandsAllThroughOwnedEffectBoundaries()
         {
-            string form = ReadSource("PetForm.cs");
             string menu = ReadSource("PetContextMenu.cs");
+            string manager = ReadSource(
+                "Features/StickyNotes/StickyNotes.cs");
             string coordinator = ReadSource(
                 "Features/StickyNotes/PetStickyWindowCoordinator.cs");
             string action = Between(coordinator,
@@ -1086,9 +1087,13 @@ namespace PennyPet.Tests
                 "PrepareStickyExpandAndTileTargets(IList<StickyNoteData> notes,",
                 "internal static List<Rectangle> CalculateStickyRecoveryLayout");
 
-            Assert.IsTrue(menu.Contains("展开全部并平铺到此屏幕") &&
-                form.Contains("ExpandAndTileAllStickyNotesToPetScreen"),
-                "The menu must expose the new expand-and-tile product action.");
+            Assert.IsTrue(manager.Contains("桌面整理") &&
+                manager.Contains("收起全部") &&
+                manager.Contains("展开全部") &&
+                manager.Contains("平铺到当前屏幕") &&
+                coordinator.Contains("ExpandAndTileAllStickyNotesToPetScreen") &&
+                !menu.Contains("Menu.Items.Add(RecoverWindowsItem)"),
+                "Desktop recovery actions must live in the management console.");
             Assert.IsTrue(action.Contains("ShowHostedSticky(note, false, false)") &&
                 action.Contains("ApplyDockTarget(target, null)") &&
                 !action.Contains("ShowStickyNote("),

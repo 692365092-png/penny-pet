@@ -52,17 +52,6 @@ namespace PennyPet
                 ReminderSchedule.MaximumItems + "）";
             _manageNotesItem.Text = "便利贴管理…（" + _notes.GetAll().Count + "张）";
             _silentItem.Checked = _settings.SilentMode;
-            int visibleNotes = 0;
-            int hiddenNotes = 0;
-            foreach (StickyNoteData note in _notes.GetAll())
-            {
-                if (note.Visible) visibleNotes++;
-                else hiddenNotes++;
-            }
-            _collapseNotesItem.Text = "收起全部便利贴到页签（" + visibleNotes + "张）";
-            _collapseNotesItem.Enabled = visibleNotes > 0;
-            _expandTabsItem.Text = "展开全部侧边页签（" + hiddenNotes + "张）";
-            _expandTabsItem.Enabled = hiddenNotes > 0;
             _scaleItem.Text = "调整大小…（桌宠 " + _scalePercent + "% / 按键" +
                 KeyTextSizeName(_settings.KeyOverlayScalePercent) + "）";
             RefreshKeyboardMenuText();

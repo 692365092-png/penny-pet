@@ -1041,10 +1041,23 @@ namespace PennyPet
             StickyNoteData showRequested = null;
             using (StickyNotesManagerForm manager = new StickyNotesManagerForm(
                 delegate { return _notes.GetAll(); },
-                delegate { CreateStickyNote(String.Empty); },
-                delegate(StickyNoteData note) { ShowHostedSticky(note, true); },
-                delegate(StickyNoteData note) { HideStickyNote(note); },
-                delegate(StickyNoteData note) { DeleteStickyNote(note); }))
+                new StickyNotesManagerCommands
+                {
+                    HideNote = delegate(StickyNoteData note)
+                    { HideStickyNote(note); },
+                    DeleteNote = delegate(StickyNoteData note)
+                    { DeleteStickyNote(note); },
+                    CollapseAll = CollapseAllStickyNotes,
+                    ExpandAll = ExpandAllStickyNoteTabs,
+                    TileAll = delegate
+                    {
+                        QueueStickyWindowAction(
+                            ExpandAndTileAllStickyNotesToPetScreen,
+                            "sticky-manager-expand-and-tile");
+                    },
+                    ExportBackup = ExportStickyNotesBackup,
+                    ImportBackup = ImportStickyNotesBackup
+                }))
             {
                 _windowLayers.ShowModal(this, manager);
                 createRequested = manager.CreateRequested;

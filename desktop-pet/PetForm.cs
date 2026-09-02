@@ -57,10 +57,6 @@ namespace PennyPet
             { get { return _petContextMenu.CancelItem; } }
         private ToolStripMenuItem _manageNotesItem
             { get { return _petContextMenu.ManageNotesItem; } }
-        private ToolStripMenuItem _collapseNotesItem
-            { get { return _petContextMenu.CollapseNotesItem; } }
-        private ToolStripMenuItem _expandTabsItem
-            { get { return _petContextMenu.ExpandTabsItem; } }
         private ToolStripMenuItem _scaleItem
             { get { return _petContextMenu.ScaleItem; } }
         private ToolStripMenuItem _startupItem
@@ -361,13 +357,6 @@ namespace PennyPet
             menuCommands.BackupNotes = ExportStickyNotesBackup;
             menuCommands.ImportNotes = ImportStickyNotesBackup;
             menuCommands.RestoreNotes = RestoreStickyNotesBackup;
-            menuCommands.CollapseNotes = CollapseAllStickyNotes;
-            menuCommands.ExpandTabs = ExpandAllStickyNoteTabs;
-            menuCommands.RecoverWindows = delegate
-            {
-                QueueStickyWindowAction(ExpandAndTileAllStickyNotesToPetScreen,
-                    "sticky-window-expand-and-tile");
-            };
             menuCommands.ShowDailyContentSettings =
                 ShowDailyContentSettingsDialog;
             menuCommands.ShowScale = ShowScaleDialog;

@@ -2018,10 +2018,8 @@ namespace PennyPet
                     "中文ｃｔｒｌＥｎｇｌｉｓｈ１２３") ==
                     "中文ctrlEnglish123";
             using (StickyNotesManagerForm manager = new StickyNotesManagerForm(
-                delegate { return repository.GetAll(); }, delegate { },
-                delegate(StickyNoteData note) { },
-                delegate(StickyNoteData note) { },
-                delegate(StickyNoteData note) { }))
+                delegate { return repository.GetAll(); },
+                new StickyNotesManagerCommands()))
                 result.ManagerMarqueeBatchDeleteOk =
                     manager.SupportsMarqueeBatchDelete;
             long styleWithMaximize = 0x00040000L | 0x00010000L;

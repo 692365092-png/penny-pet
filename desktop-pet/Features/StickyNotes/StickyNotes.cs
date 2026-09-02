@@ -304,13 +304,23 @@ namespace PennyPet
         }
     }
 
+    // Concrete command bundle for the management surface. It keeps the form
+    // as a UI command aggregator without introducing a generic service layer.
+    internal sealed class StickyNotesManagerCommands
+    {
+        internal Action<StickyNoteData> HideNote;
+        internal Action<StickyNoteData> DeleteNote;
+        internal Action CollapseAll;
+        internal Action ExpandAll;
+        internal Action TileAll;
+        internal Action ExportBackup;
+        internal Action ImportBackup;
+    }
+
     internal sealed class StickyNotesManagerForm : Form
     {
         private readonly Func<List<StickyNoteData>> _getNotes;
-        private readonly Action _createNote;
-        private readonly Action<StickyNoteData> _showNote;
-        private readonly Action<StickyNoteData> _hideNote;
-        private readonly Action<StickyNoteData> _deleteNote;
+        private readonly StickyNotesManagerCommands _commands;
         private readonly TextBox _search;
         private readonly ListView _list;
         private readonly Button _deleteButton;
@@ -319,14 +329,12 @@ namespace PennyPet
         internal StickyNoteData ShowRequested { get; private set; }
 
         public StickyNotesManagerForm(Func<List<StickyNoteData>> getNotes,
-            Action createNote, Action<StickyNoteData> showNote,
-            Action<StickyNoteData> hideNote, Action<StickyNoteData> deleteNote)
+            StickyNotesManagerCommands commands)
         {
+            if (getNotes == null) throw new ArgumentNullException("getNotes");
+            if (commands == null) throw new ArgumentNullException("commands");
             _getNotes = getNotes;
-            _createNote = createNote;
-            _showNote = showNote;
-            _hideNote = hideNote;
-            _deleteNote = deleteNote;
+            _commands = commands;
             Text = "便利贴管理";
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.SizableToolWindow;
@@ -368,7 +376,8 @@ namespace PennyPet
             Button hide = Button("收起", 620, delegate
             {
                 StickyNoteData note = SelectedNote();
-                if (note != null) _hideNote(note);
+                if (note != null && _commands.HideNote != null)
+                    _commands.HideNote(note);
                 RefreshList();
             });
             hide.Anchor = AnchorStyles.Top | AnchorStyles.Right;
@@ -380,10 +389,10 @@ namespace PennyPet
             _list.GridLines = true;
             _list.HideSelection = false;
             _list.Location = new Point(16, 54);
-            _list.Size = new Size(668, 350);
-            _list.Anchor = AnchorStyles.Top | AnchorStyles.Bottom |
-                AnchorStyles.Left | AnchorStyles.Right;
-            _list.Columns.Add("内容摘要", 310);
+            _list.Size = new Size(668, 290);
+            _list.Anchor = AnchorStyles.Top | AnchorStyles.Left |
+                AnchorStyles.Right;
+            _list.Columns.Add("名称 / 摘要", 310);
             _list.Columns.Add("状态", 80);
             _list.Columns.Add("提醒", 150);
             _list.Columns.Add("修改时间", 120);
@@ -428,12 +437,59 @@ namespace PennyPet
             multiHint.AutoSize = false;
             multiHint.AutoEllipsis = true;
             multiHint.Location = new Point(210, 429);
-            multiHint.Size = new Size(380, 24);
+            multiHint.Size = new Size(180, 24);
             multiHint.Anchor = AnchorStyles.Left | AnchorStyles.Right |
                 AnchorStyles.Bottom;
             Button close = Button("关闭", 604, delegate { Close(); });
             close.Top = 420;
             close.Anchor = AnchorStyles.Right | AnchorStyles.Bottom;
+
+            GroupBox desktop = new GroupBox();
+            desktop.Text = "桌面整理";
+            desktop.Location = new Point(16, 350);
+            desktop.Size = new Size(568, 62);
+            Button collapseAll = Button("收起全部", 10, delegate
+            {
+                if (_commands.CollapseAll != null) _commands.CollapseAll();
+                RefreshList();
+            });
+            collapseAll.Top = 23;
+            collapseAll.Width = 100;
+            Button expandAll = Button("展开全部", 120, delegate
+            {
+                if (_commands.ExpandAll != null) _commands.ExpandAll();
+                RefreshList();
+            });
+            expandAll.Top = 23;
+            expandAll.Width = 100;
+            Button tileAll = Button("平铺到当前屏幕", 230, delegate
+            {
+                if (_commands.TileAll != null) _commands.TileAll();
+            });
+            tileAll.Top = 23;
+            tileAll.Width = 130;
+            desktop.Controls.Add(collapseAll);
+            desktop.Controls.Add(expandAll);
+            desktop.Controls.Add(tileAll);
+
+            Button export = Button("导出备份…", 400, delegate
+            {
+                if (_commands.ExportBackup != null)
+                    _commands.ExportBackup();
+                RefreshList();
+            });
+            export.Top = 420;
+            export.Width = 90;
+            export.Anchor = AnchorStyles.Right | AnchorStyles.Bottom;
+            Button import = Button("导入…", 495, delegate
+            {
+                if (_commands.ImportBackup != null)
+                    _commands.ImportBackup();
+                RefreshList();
+            });
+            import.Top = 420;
+            import.Width = 90;
+            import.Anchor = AnchorStyles.Right | AnchorStyles.Bottom;
 
             Controls.Add(searchLabel);
             Controls.Add(_search);
@@ -444,6 +500,9 @@ namespace PennyPet
             Controls.Add(_deleteButton);
             Controls.Add(selectAll);
             Controls.Add(multiHint);
+            Controls.Add(desktop);
+            Controls.Add(export);
+            Controls.Add(import);
             Controls.Add(close);
             Shown += delegate { RefreshList(); };
         }
@@ -504,7 +563,8 @@ namespace PennyPet
             if (MessageBox.Show(this, message, "批量删除便利贴",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Warning) !=
                 DialogResult.Yes) return;
-            foreach (StickyNoteData note in selected) _deleteNote(note);
+            foreach (StickyNoteData note in selected)
+                if (_commands.DeleteNote != null) _commands.DeleteNote(note);
             RefreshList();
         }
 
