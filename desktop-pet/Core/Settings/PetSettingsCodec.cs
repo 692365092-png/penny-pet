@@ -146,6 +146,18 @@ namespace PennyPet
                         : ZodiacSign.None;
                     recognized = true;
                 }
+                else if (key == "UserBirthdayMonth" &&
+                    Int32.TryParse(value, out intValue))
+                {
+                    settings.UserBirthdayMonth = intValue;
+                    recognized = true;
+                }
+                else if (key == "UserBirthdayDay" &&
+                    Int32.TryParse(value, out intValue))
+                {
+                    settings.UserBirthdayDay = intValue;
+                    recognized = true;
+                }
                 else if (key == "LastDailyBriefingDate")
                 {
                     settings.LastDailyBriefingDate =
@@ -284,6 +296,8 @@ namespace PennyPet
                 EncodeText(settings.WeatherTimezone));
             lines.Add("ZodiacSign=" + (int)PetSettingRules
                 .NormalizeZodiacSign(settings.ZodiacSign));
+            lines.Add("UserBirthdayMonth=" + settings.UserBirthdayMonth);
+            lines.Add("UserBirthdayDay=" + settings.UserBirthdayDay);
             lines.Add("LastDailyBriefingDate=" + DailyContentRules
                 .NormalizeDateKey(settings.LastDailyBriefingDate));
             lines.Add("DailyLedgerDate=" + DailyContentRules

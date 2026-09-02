@@ -13,6 +13,8 @@ namespace PennyPet
         private readonly Label _weatherLocationLabel;
         private readonly Button _weatherLocationButton;
         private readonly ComboBox _zodiac;
+        private readonly ComboBox _birthdayMonth;
+        private readonly ComboBox _birthdayDay;
         private readonly PetWeatherSource _weatherSource;
         private readonly PetWindowLayerCoordinator _windowLayers;
         private WeatherLocation _weatherLocation;
@@ -20,6 +22,7 @@ namespace PennyPet
         internal DailyContentSettingsForm(bool dailyContentEnabled,
             bool solarTermEnabled, bool almanacEnabled, bool weatherEnabled,
             WeatherLocation weatherLocation, ZodiacSign zodiacSign,
+            int userBirthdayMonth, int userBirthdayDay,
             PetWeatherSource weatherSource,
             PetWindowLayerCoordinator windowLayers = null)
         {
@@ -33,7 +36,7 @@ namespace PennyPet
             MinimizeBox = false;
             ShowInTaskbar = false;
             TopMost = true;
-            ClientSize = new Size(450, 355);
+            ClientSize = new Size(450, 420);
             Font = SystemFonts.MessageBoxFont;
 
             Label title = new Label();
@@ -84,15 +87,40 @@ namespace PennyPet
             attribution.ForeColor = SystemColors.GrayText;
             attribution.Location = new Point(75, 201);
 
+            Label birthdayLabel = new Label();
+            birthdayLabel.Text = "生日（可选）：";
+            birthdayLabel.AutoSize = true;
+            birthdayLabel.Location = new Point(54, 237);
+
+            _birthdayMonth = new ComboBox();
+            _birthdayMonth.DropDownStyle = ComboBoxStyle.DropDownList;
+            _birthdayMonth.Location = new Point(136, 232);
+            _birthdayMonth.Size = new Size(68, 28);
+            _birthdayMonth.Items.Add(0);
+            for (int month = 1; month <= 12; month++)
+                _birthdayMonth.Items.Add(month);
+            _birthdayMonth.SelectedItem =
+                Math.Max(0, Math.Min(12, userBirthdayMonth));
+
+            _birthdayDay = new ComboBox();
+            _birthdayDay.DropDownStyle = ComboBoxStyle.DropDownList;
+            _birthdayDay.Location = new Point(212, 232);
+            _birthdayDay.Size = new Size(68, 28);
+            _birthdayDay.Items.Add(0);
+            for (int day = 1; day <= 31; day++)
+                _birthdayDay.Items.Add(day);
+            _birthdayDay.SelectedItem =
+                Math.Max(0, Math.Min(31, userBirthdayDay));
+
             Label zodiacLabel = new Label();
             zodiacLabel.Text = "我的星座：";
             zodiacLabel.AutoSize = true;
-            zodiacLabel.Location = new Point(54, 237);
+            zodiacLabel.Location = new Point(54, 277);
 
             _zodiac = new ComboBox();
             _zodiac.DropDownStyle = ComboBoxStyle.DropDownList;
             _zodiac.FormattingEnabled = true;
-            _zodiac.Location = new Point(136, 232);
+            _zodiac.Location = new Point(136, 272);
             _zodiac.Size = new Size(180, 28);
             _zodiac.Format += delegate(object sender,
                 ListControlConvertEventArgs e)
@@ -104,10 +132,12 @@ namespace PennyPet
                 _zodiac.Items.Add(sign);
             _zodiac.SelectedItem = PetSettingRules.NormalizeZodiacSign(
                 zodiacSign);
+            _birthdayMonth.SelectedIndexChanged += BirthdaySelectionChanged;
+            _birthdayDay.SelectedIndexChanged += BirthdaySelectionChanged;
 
             Button ok = new Button();
             ok.Text = "确定";
-            ok.Location = new Point(279, 307);
+            ok.Location = new Point(279, 357);
             ok.Size = new Size(72, 30);
             ok.Click += delegate
             {
@@ -118,13 +148,31 @@ namespace PennyPet
                         MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
+                int birthdayMonth = SelectedBirthdayMonth;
+                int birthdayDay = SelectedBirthdayDay;
+                if ((birthdayMonth == 0) != (birthdayDay == 0))
+                {
+                    MessageBox.Show(this, "生日需要同时选择月份和日期。",
+                        "每日内容", MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                    return;
+                }
+                if (birthdayMonth != 0 &&
+                    !PetBirthdayRule.IsValidBirthday(birthdayMonth,
+                        birthdayDay))
+                {
+                    MessageBox.Show(this, "生日日期无效。",
+                        "每日内容", MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                    return;
+                }
                 DialogResult = DialogResult.OK;
             };
 
             Button cancel = new Button();
             cancel.Text = "取消";
             cancel.DialogResult = DialogResult.Cancel;
-            cancel.Location = new Point(359, 307);
+            cancel.Location = new Point(359, 357);
             cancel.Size = new Size(72, 30);
 
             Controls.Add(title);
@@ -135,6 +183,9 @@ namespace PennyPet
             Controls.Add(_weatherLocationLabel);
             Controls.Add(_weatherLocationButton);
             Controls.Add(attribution);
+            Controls.Add(birthdayLabel);
+            Controls.Add(_birthdayMonth);
+            Controls.Add(_birthdayDay);
             Controls.Add(zodiacLabel);
             Controls.Add(_zodiac);
             Controls.Add(ok);
@@ -179,6 +230,24 @@ namespace PennyPet
             }
         }
 
+        internal int SelectedBirthdayMonth
+        {
+            get
+            {
+                return _birthdayMonth.SelectedItem is int
+                    ? (int)_birthdayMonth.SelectedItem : 0;
+            }
+        }
+
+        internal int SelectedBirthdayDay
+        {
+            get
+            {
+                return _birthdayDay.SelectedItem is int
+                    ? (int)_birthdayDay.SelectedItem : 0;
+            }
+        }
+
         internal bool ApplyIfAccepted(PetSettingsData settings,
             DialogResult result)
         {
@@ -191,7 +260,9 @@ namespace PennyPet
                 settings.AlmanacEnabled != AlmanacEnabled ||
                 settings.WeatherEnabled != WeatherEnabled ||
                 !HasSameWeatherLocation(settings, _weatherLocation) ||
-                settings.ZodiacSign != SelectedZodiacSign;
+                settings.ZodiacSign != SelectedZodiacSign ||
+                settings.UserBirthdayMonth != SelectedBirthdayMonth ||
+                settings.UserBirthdayDay != SelectedBirthdayDay;
             settings.DailyContentEnabled = DailyContentEnabled;
             settings.SolarTermEnabled = SolarTermEnabled;
             settings.AlmanacEnabled = AlmanacEnabled;
@@ -206,6 +277,8 @@ namespace PennyPet
                 settings.WeatherTimezone = _weatherLocation.Timezone;
             }
             settings.ZodiacSign = SelectedZodiacSign;
+            settings.UserBirthdayMonth = SelectedBirthdayMonth;
+            settings.UserBirthdayDay = SelectedBirthdayDay;
             return changed;
         }
 
@@ -273,6 +346,16 @@ namespace PennyPet
             _weatherLocationButton.Enabled = _dailyContent.Checked &&
                 _weatherSource != null;
             _zodiac.Enabled = _dailyContent.Checked;
+        }
+
+        private void BirthdaySelectionChanged(object sender, EventArgs e)
+        {
+            int month = SelectedBirthdayMonth;
+            int day = SelectedBirthdayDay;
+            ZodiacSign suggested;
+            if (PetBirthdayRule.TryDeriveZodiac(month, day,
+                out suggested))
+                _zodiac.SelectedItem = suggested;
         }
 
         private void SetWeatherLocation(object sender, EventArgs e)

@@ -3872,10 +3872,11 @@ namespace PennyPet
             using (PetWeatherSource weatherSource = new PetWeatherSource())
             using (DailyContentSettingsForm dailySettings =
                 new DailyContentSettingsForm(false, true, true, true,
-                    testWeatherLocation, ZodiacSign.Scorpio, weatherSource))
+                    testWeatherLocation, ZodiacSign.Scorpio, 0, 0,
+                    weatherSource))
             using (DailyContentSettingsForm unsetDailySettings =
                 new DailyContentSettingsForm(true, true, true, false, null,
-                    ZodiacSign.None, weatherSource))
+                    ZodiacSign.None, 0, 0, weatherSource))
             {
                 PetSettingsData stored = new PetSettingsData
                 {

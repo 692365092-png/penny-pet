@@ -28,6 +28,8 @@ namespace PennyPet
         public double WeatherLongitude;
         public string WeatherTimezone = String.Empty;
         public ZodiacSign ZodiacSign = ZodiacSign.None;
+        public int UserBirthdayMonth;
+        public int UserBirthdayDay;
         public string LastDailyBriefingDate = String.Empty;
         public string DailyLedgerDate = String.Empty;
         public int DailyLedgerDaypartsMask;
@@ -80,6 +82,8 @@ namespace PennyPet
             WeatherTimezone = source.WeatherTimezone;
             ZodiacSign = PetSettingRules.NormalizeZodiacSign(
                 source.ZodiacSign);
+            UserBirthdayMonth = source.UserBirthdayMonth;
+            UserBirthdayDay = source.UserBirthdayDay;
             LastDailyBriefingDate = source.LastDailyBriefingDate;
             DailyLedgerDate = source.DailyLedgerDate;
             DailyLedgerDaypartsMask = Math.Max(0,

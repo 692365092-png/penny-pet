@@ -84,7 +84,10 @@ namespace PennyPet
                     _settings.SolarTermEnabled,
                     _settings.AlmanacEnabled,
                     _settings.WeatherEnabled, currentLocation,
-                    _settings.ZodiacSign, _weatherSource, _windowLayers))
+                    _settings.ZodiacSign,
+                    _settings.UserBirthdayMonth,
+                    _settings.UserBirthdayDay,
+                    _weatherSource, _windowLayers))
             {
                 DialogResult result = _windowLayers.ShowModal(this, dialog);
                 if (!dialog.ApplyIfAccepted(_settings, result)) return;
