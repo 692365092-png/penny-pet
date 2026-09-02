@@ -81,9 +81,6 @@ namespace PennyPet
         private readonly StickyNoteTabsForm _leftNoteTabs;
         private readonly StickyNoteTabsForm _rightNoteTabs;
         internal static int HostedStickyWindowCreatedCount;
-        internal static int LegacyStickyWindowCreatedCount;
-        private readonly Dictionary<string, StickyNoteWindow> _noteWindows =
-            new Dictionary<string, StickyNoteWindow>(StringComparer.OrdinalIgnoreCase);
         private readonly Random _random = new Random();
         private readonly object _keyboardQueueGate = new object();
         private readonly ArtPreloadReservations _artPreloads =
@@ -142,7 +139,6 @@ namespace PennyPet
         private bool _positioningNoteTabs;
         private string _noteTabsSignature = String.Empty;
         private string _activeNoteDragId;
-        private bool _activeNoteDragHosted;
         private readonly List<string> _activeDockGroupIds =
             new List<string>();
         private readonly Dictionary<string, DockWindowFacts>
@@ -286,7 +282,7 @@ namespace PennyPet
                 delegate(string noteId)
                 {
                     StickyNoteData note = _notes.Find(noteId);
-                    if (note != null) ShowStickyNote(note, true);
+                    if (note != null) ShowHostedSticky(note, true);
                 },
                 delegate(string noteId)
                 {
@@ -302,7 +298,7 @@ namespace PennyPet
                 delegate(string noteId)
                 {
                     StickyNoteData note = _notes.Find(noteId);
-                    if (note != null) ShowStickyNote(note, true);
+                    if (note != null) ShowHostedSticky(note, true);
                 },
                 delegate(string noteId)
                 {
@@ -488,12 +484,6 @@ namespace PennyPet
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             SaveLocation();
-            foreach (StickyNoteWindow noteWindow in
-                new List<StickyNoteWindow>(_noteWindows.Values))
-            {
-                if (!noteWindow.IsDisposed) noteWindow.CloseForApplicationExit();
-            }
-            _noteWindows.Clear();
             ClearHostedDockResizeSession();
             _stickyUiHost.BeginShutdown();
             _notes.Save();

@@ -82,15 +82,21 @@ namespace PennyPet.Tests
         public void Autosave_DoesNotRefreshSideTabs()
         {
             string source = ReadSource("Features/StickyNotes/PetStickyWindowCoordinator.cs");
-            string handler = Between(source, "form.NoteChanged += delegate",
-                "form.HeaderDragStarted");
+            string handler = Between(source,
+                "if (value.Kind == StickyUiEventKind.SnapshotChanged)",
+                "if (value.Kind == StickyUiEventKind.Closed)");
+            string apply = Between(source,
+                "private bool ApplyHostedStickySnapshot",
+                "private void ClearHostedDockResizeSession");
 
-            Assert.IsTrue(handler.Contains("_notes.SaveAsync();"),
+            Assert.IsTrue(handler.Contains("ApplyHostedStickySnapshot(") &&
+                apply.Contains("if (persist) _notes.SaveAsync();"),
                 "NoteChanged must persist note data.");
-            Assert.IsTrue(handler.Contains("RefreshMenuText();"),
+            Assert.IsTrue(apply.Contains("RefreshMenuText();"),
                 "NoteChanged must refresh menu text.");
-            Assert.IsFalse(handler.Contains("RefreshNoteTabs();"),
-                "Content autosave must not refresh side tabs.");
+            Assert.IsTrue(apply.Contains("if (visibilityChanged ||") &&
+                apply.Contains("RefreshNoteTabs();"),
+                "Content autosave must refresh tabs only for visibility or hidden-title changes.");
         }
 
         [TestMethod]
@@ -133,8 +139,9 @@ namespace PennyPet.Tests
         public void OwnNoteTyping_StillTriggersAnimation()
         {
             string source = ReadSource("Features/StickyNotes/PetStickyWindowCoordinator.cs");
-            string handler = Between(source, "form.TypingActivity += delegate",
-                "form.CancelReminderRequested");
+            string handler = Between(source,
+                "if (value.Kind == StickyUiEventKind.TypingActivity)",
+                "if (value.Kind == StickyUiEventKind.InputFocusChanged)");
 
             Assert.IsTrue(handler.Contains("TriggerTypingAnimation();"),
                 "Own-note typing should restore the typing animation.");
@@ -682,23 +689,34 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void StickyUiCanary_LeavesStartupLoadingAndExcludedTypesOnLegacyPath()
+        public void StickyUiHostedClosure_RemovesPetOwnedWindowExecutor()
         {
             string startup = ReadSource("PetStartupCoordinator.cs");
+            string form = ReadSource("PetForm.cs");
             string coordinator = ReadSource(
                 "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string dock = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string session = ReadSource("StickyWindowSession.cs");
+            string codec = ReadSource("Core/StickyNotes/StickyNoteCodec.cs");
 
-            Assert.IsFalse(startup.Contains("HostedSticky") ||
-                startup.Contains("StickyUiHost"),
-                "Step 1 must not change startup restore or loading readiness.");
-            Assert.IsTrue(coordinator.Contains("String.IsNullOrEmpty(note.DockGroupId)") &&
-                coordinator.Contains("String.IsNullOrEmpty(note.DockParentId)") &&
-                coordinator.Contains("_noteWindows.TryGetValue(note.Id"),
-                "Dock notes must remain on legacy UI.");
+            Assert.IsTrue(startup.Contains("ShowHostedSticky(") &&
+                coordinator.Contains("StartHostedSticky(") &&
+                session.Contains("new StickyNoteWindow("),
+                "Startup and creation must route through the hosted session executor.");
+            Assert.IsFalse(form.Contains("_noteWindows") ||
+                coordinator.Contains("GetOrCreateStickyNoteWindow") ||
+                coordinator.Contains("FallBackHostedStickyToLegacy") ||
+                dock.Contains("RestoreStickyDockComponent") ||
+                dock.Contains("StickyNoteWindow"),
+                "PetForm must not retain a legacy Sticky Window executor.");
+            Assert.IsTrue(codec.Contains("versionOne") &&
+                codec.Contains("versionNine"),
+                "Removing the executor must retain legacy persistence readers.");
         }
 
         [TestMethod]
-        public void LegacyDock_UsesDetachedFactsAndTypedTargetEffectBoundary()
+        public void StickyDock_UsesDetachedFactsAndTypedHostedEffectBoundary()
         {
             string coordinator = ReadSource(
                 "Features/StickyNotes/PetStickyDockCoordinator.cs");
@@ -792,20 +810,21 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void HostedCreateFallback_AdjustsReadinessSets()
+        public void HostedCreateFailure_PreservesDataWithoutLegacyFallback()
         {
             string coordinator =
                 ReadSource("Features/StickyNotes/PetStickyWindowCoordinator.cs");
             string fallback = Between(coordinator,
-                "private void FallBackHostedStickyToLegacy",
+                "private void HandleHostedStickyFailure",
                 "private static void ReportHostedStickyCommandFailure");
 
-            Assert.IsTrue(fallback.Contains(
-                "_renderedFirstRenderNoteIds.Remove(noteId)"),
-                "Fallback must remove the failed hosted id from rendered.");
-            Assert.IsTrue(fallback.Contains(
-                "_expectedFirstRenderNoteIds.Add(noteId)"),
-                "Fallback must keep the note expected on the legacy path.");
+            Assert.IsTrue(fallback.Contains("note.Visible = false") &&
+                fallback.Contains("_notes.SaveAsync();") &&
+                fallback.Contains("RefreshNoteTabs();"),
+                "A failed hosted window must keep canonical content accessible in Side Tabs.");
+            Assert.IsFalse(fallback.Contains("GetOrCreateStickyNoteWindow") ||
+                fallback.Contains("ShowStickyNote("),
+                "Hosted failure must not silently reintroduce the legacy executor.");
         }
 
         [TestMethod]
@@ -972,8 +991,8 @@ namespace PennyPet.Tests
                 "Features/StickyNotes/PetStickyDockCoordinator.cs");
 
             Assert.IsTrue(windowCoordinator.Contains(
-                "BeginStickyDockDrag(facts, null)") &&
-                windowCoordinator.Contains("MoveStickyDockDrag(facts, null)") &&
+                "BeginStickyDockDrag(facts)") &&
+                windowCoordinator.Contains("MoveStickyDockDrag(facts)") &&
                 windowCoordinator.Contains("CompleteStickyDockDrag(facts)"),
                 "Hosted drag facts must enter the existing Dock session.");
             Assert.IsTrue(dockCoordinator.Contains(
@@ -981,11 +1000,12 @@ namespace PennyPet.Tests
                 dockCoordinator.Contains("StickyUiCommand.SetTopMost(") &&
                 dockCoordinator.Contains("ApplyDockTargets") &&
                 dockCoordinator.Contains("ResizeStickyDockGroup") &&
-                dockCoordinator.Contains("ResizeStickyDockDivider") &&
+                dockCoordinator.Contains("ResizeHostedStickyDockDivider") &&
                 dockCoordinator.Contains("CalculateDockDividerTargets") &&
                 dockCoordinator.Contains("CloseStickyDockNote") &&
-                dockCoordinator.Contains("_noteWindows.TryGetValue"),
-                "Hosted and legacy effects must share ApplyDockTarget(s).");
+                !dockCoordinator.Contains("_noteWindows") &&
+                !dockCoordinator.Contains("StickyNoteWindow"),
+                "Dock effects must terminate at the hosted typed boundary.");
             Assert.IsFalse(windowCoordinator.Contains("DockMergeRequested") ||
                 windowCoordinator.Contains("DockAttached") ||
                 windowCoordinator.Contains("DockCompleted") ||
@@ -994,36 +1014,35 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void DockVisualFeedback_UsesDetachedFactsForEveryExecutor()
+        public void DockVisualFeedback_UsesDetachedFactsOnHostedPath()
         {
             string form = ReadSource("PetForm.cs");
             string coordinator = ReadSource(
                 "Features/StickyNotes/PetStickyDockCoordinator.cs");
             string begin = Between(coordinator,
                 "private void BeginStickyDockDrag",
-                "private void StickyNoteHeaderDragMoved");
+                "private void MoveStickyDockDrag");
             string moveVisuals = Between(coordinator,
                 "RememberActiveDockFacts(moveTargets);",
-                "private void StickyNoteHeaderDragCompleted");
+                "private void CompleteStickyDockDrag");
             string mergeVisuals = Between(coordinator,
                 "List<StickyNoteData> mergedSnapshot",
-                "else if (!_activeNoteDragHosted)");
+                "CommitVisibleDockOrder(seed);");
             string helpers = Between(coordinator,
                 "private void ShowSplitGuide",
                 "private DockTarget FindDockTarget");
 
             Assert.IsTrue(begin.Contains("ShowSplitGuide(seed, groupFacts)") &&
-                !begin.Contains("_activeNoteSplitEligible && " +
-                    "!_activeNoteDragHosted"),
-                "Hosted split candidates must receive the same guide.");
+                !begin.Contains("StickyNoteWindow"),
+                "Hosted split candidates must receive a detached guide.");
             Assert.IsTrue(moveVisuals.Contains(
                     "UpdateSplitGuide(seed, _activeDockCurrentFacts)") &&
                 moveVisuals.Contains("UpdateDockPreview(seed, previewFacts)") &&
                 !moveVisuals.Contains("_activeNoteDragHosted"),
-                "Hosted drag must not be gated out of preview updates.");
+                "Hosted drag must update previews from detached facts.");
             Assert.IsTrue(mergeVisuals.Contains("ShowTransientDockPulse") &&
                 !mergeVisuals.Contains("if (!_activeNoteDragHosted)"),
-                "Merge pulse must be independent of the source executor.");
+                "Hosted merge must publish the detached seam pulse.");
             Assert.IsTrue(helpers.Contains(
                     "CalculateDockVisualSeam(parentFacts)") &&
                 helpers.Contains("IDictionary<string, DockWindowFacts>") &&
@@ -1055,11 +1074,10 @@ namespace PennyPet.Tests
             Assert.IsTrue(menu.Contains("展开全部并平铺到此屏幕") &&
                 form.Contains("ExpandAndTileAllStickyNotesToPetScreen"),
                 "The menu must expose the new expand-and-tile product action.");
-            Assert.IsTrue(action.Contains("IsHostedSticky(note)") &&
-                action.Contains("StickyUiCommand.Show(note.Id, false)") &&
+            Assert.IsTrue(action.Contains("ShowHostedSticky(note, false, false)") &&
                 action.Contains("ApplyDockTarget(target, null)") &&
-                action.Contains("ShowStickyNote(note, false, false, false)"),
-                "Hosted and legacy notes must use their owned effect edges.");
+                !action.Contains("ShowStickyNote("),
+                "Every note must use the hosted effect edge.");
             Assert.IsFalse(action.Contains("GetOrCreateStickyNoteWindow") ||
                 action.Contains("seed.Visible"),
                 "Recovery must neither skip hidden notes nor use a universal legacy route.");
@@ -1075,6 +1093,10 @@ namespace PennyPet.Tests
         {
             string coordinator = ReadSource(
                 "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string operations = ReadSource(
+                "Core/StickyNotes/StickyDockOperations.cs");
+            string geometry = ReadSource(
+                "Core/StickyNotes/StickyDockGeometry.cs");
             string gate = Between(coordinator,
                 "private bool IsDockParticipant",
                 "private string FindDockChild");
@@ -1086,9 +1108,14 @@ namespace PennyPet.Tests
                 gate.Contains("!note.IsSchedule"),
                 "Todo and Schedule must be allowed to dock with ordinary notes.");
             Assert.IsFalse(gate.Contains("IsHostedSticky"),
-                "Dock participant eligibility must not depend on hosted/legacy ownership.");
+                "Dock participant eligibility must not depend on live session membership.");
             Assert.IsFalse(gate.Contains("ReminderUtcTicks"),
                 "Reminder is not a sticky subtype and must not affect Dock eligibility.");
+            Assert.IsFalse(operations.Contains("IsTodoList") ||
+                operations.Contains("IsSchedule") ||
+                geometry.Contains("IsTodoList") ||
+                geometry.Contains("IsSchedule"),
+                "Core Dock rules must remain independent of Sticky content mode.");
         }
 
         private static string ReadSource(string relativePath)

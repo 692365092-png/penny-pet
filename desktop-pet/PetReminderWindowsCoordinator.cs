@@ -46,10 +46,6 @@ namespace PennyPet
         {
             System.Collections.Generic.List<ReminderItem> reminders =
                 _reminders.GetItems();
-            foreach (StickyNoteWindow form in _noteWindows.Values)
-            {
-                if (!form.IsDisposed) form.UpdateReminderBanner(reminders);
-            }
             foreach (StickyNoteData note in _notes.GetAll())
             {
                 if (note == null || !_hostedRuntime.ContainsNote(note.Id))
@@ -81,19 +77,6 @@ namespace PennyPet
             if (changed) _notes.Save();
         }
 
-        private void PreviewReminderDraft(StickyNoteWindow form,
-            ReminderDialog dialog, string noteId)
-        {
-            if (form == null || form.IsDisposed || dialog == null) return;
-            System.Collections.Generic.List<ReminderItem> preview =
-                _reminders.GetItems();
-            preview.Add(new ReminderItem(
-                dialog.DeadlineLocal.ToUniversalTime(), dialog.ReminderText,
-                noteId, dialog.ReminderFontSizePoints,
-                dialog.PreAlertEnabled));
-            form.UpdateReminderBanner(preview);
-        }
-
         private void EditReminder(ReminderItem existing)
         {
             if (existing == null || !_reminders.GetItems().Contains(existing)) return;
@@ -101,17 +84,13 @@ namespace PennyPet
                 existing.FontSizeTwips / 20F, existing.PreAlertEnabled,
                 existing.DeadlineUtc.ToLocalTime()))
             {
-                StickyNoteWindow linkedForm = null;
-                if (!String.IsNullOrEmpty(existing.SourceNoteId))
-                    _noteWindows.TryGetValue(existing.SourceNoteId,
-                        out linkedForm);
-                if (linkedForm != null && !linkedForm.IsDisposed)
+                if (!String.IsNullOrEmpty(existing.SourceNoteId) &&
+                    _hostedRuntime.ContainsNote(existing.SourceNoteId))
                 {
                     dialog.ReminderFontSizePreviewChanged += delegate
                     {
-                        if (!linkedForm.IsDisposed)
-                            linkedForm.PreviewReminderFontSize(existing,
-                                dialog.ReminderFontSizePoints);
+                        PreviewHostedReminderFontSize(existing,
+                            dialog.ReminderFontSizePoints);
                     };
                 }
                 if (_windowLayers.ShowModal(this, dialog) !=
@@ -135,9 +114,6 @@ namespace PennyPet
                 {
                     RefreshLinkedNoteReminderState(note);
                     _notes.Save();
-                    StickyNoteWindow noteForm;
-                    if (_noteWindows.TryGetValue(note.Id, out noteForm) &&
-                        !noteForm.IsDisposed) noteForm.RefreshReminderState();
                 }
                 SaveReminders();
                 RefreshMenuText();
@@ -158,9 +134,6 @@ namespace PennyPet
             if (closePreAlert) CloseCurrentBubbleWithoutRestoringHover(true);
             _notes.Save();
             SaveReminders();
-            StickyNoteWindow form;
-            if (_noteWindows.TryGetValue(note.Id, out form) && !form.IsDisposed)
-                form.RefreshReminderState();
             RefreshMenuText();
             if (announce) ShowBubble(removed == 0
                 ? "这张便利贴当前没有提醒。" : "这张便利贴的提醒已经全部取消。");
@@ -270,7 +243,7 @@ namespace PennyPet
                     _settings.KeyOverlayScalePercent));
             System.Media.SystemSounds.Asterisk.Play();
             if (linkedNote != null)
-                ShowStickyNote(linkedNote, !HasFocusedOwnNoteTextInput());
+                ShowHostedSticky(linkedNote, !HasFocusedOwnNoteTextInput());
         }
 
         private void RequestReminderAttentionAnimation()
@@ -332,10 +305,24 @@ namespace PennyPet
             RefreshLinkedNoteReminderState(note);
             if (makeVisible) note.Visible = true;
             _notes.Save();
-            StickyNoteWindow form;
-            if (_noteWindows.TryGetValue(note.Id, out form) && !form.IsDisposed)
-                form.RefreshReminderState();
             return note;
+        }
+
+        private void PreviewHostedReminderFontSize(ReminderItem existing,
+            float fontSizePoints)
+        {
+            if (existing == null ||
+                String.IsNullOrEmpty(existing.SourceNoteId)) return;
+            System.Collections.Generic.List<ReminderItem> preview =
+                _reminders.GetItems();
+            int index = preview.IndexOf(existing);
+            if (index < 0) return;
+            preview[index] = new ReminderItem(existing.DeadlineUtc,
+                existing.Text, existing.SourceNoteId, fontSizePoints,
+                existing.PreAlertEnabled);
+            PostHostedStickyCommand(StickyUiCommand.UpdateReminders(
+                existing.SourceNoteId, preview),
+                delegate(StickyUiCommandResult result) { });
         }
 
         private void RefreshLinkedNoteReminderState(StickyNoteData note)

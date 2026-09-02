@@ -43,11 +43,6 @@ namespace PennyPet
 
         private bool FlushPersistenceBeforeExit()
         {
-            foreach (StickyNoteWindow form in
-                new List<StickyNoteWindow>(_noteWindows.Values))
-                if (form != null && !form.IsDisposed)
-                    form.FlushPendingChanges();
-
             _notes.WaitForPendingSaves();
             while (true)
             {

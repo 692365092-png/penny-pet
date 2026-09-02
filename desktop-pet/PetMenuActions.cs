@@ -259,13 +259,7 @@ namespace PennyPet
 
         private bool HasFocusedOwnNoteTextInput()
         {
-            if (_hostedRuntime.HasInputFocus) return true;
-            foreach (StickyNoteWindow form in _noteWindows.Values)
-            {
-                if (form != null && !form.IsDisposed &&
-                    form.HasFocusedTextInput) return true;
-            }
-            return false;
+            return _hostedRuntime.HasInputFocus;
         }
 
         internal static string FormatRemaining(TimeSpan value)

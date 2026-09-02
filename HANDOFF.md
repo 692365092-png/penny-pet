@@ -50,17 +50,17 @@
 - Weather 默认关闭，启动零请求，不轮询，不读取系统/IP 定位；Daily Poke 网络失败必须静默回退到 Solar/Almanac/filler。
 - 普通 SelfTests 只能读取 embedded fixture。真实调用只允许通过显式 `--weather-api-probe=<path>`，且网络失败不得使 gate 或本地功能失败。
 
-## 当前 hosted / legacy 双路径
+## 当前 Sticky hosted 单执行器
 
 - `PetForm` 在 WinForms STA 持有 canonical `StickyNoteData`、`StickyHostedRuntime` 和 Side Tabs。
 - `StickyUiThreadHost` 只管理 STA Thread / Dispatcher / async Post / Shutdown，不拥有 WPF Window。
-- `StickyUiHost` 是 hosted session facade，管理 session registry、命令路由和 CloseAll。
-- `StickyWindowSession` 是唯一持有 `StickyNoteWindow` 的 hosted 会话对象。
+- `StickyUiHost` 是唯一 production Sticky window executor，管理 session registry、命令路由和 CloseAll；`PetForm` 不再直接持有窗口表或 silent legacy fallback。
+- `StickyWindowSession` 是唯一持有 `StickyNoteWindow` 的运行时会话对象；窗口内数据是 detached working copy，canonical ownership 仍在 Pet thread。
 - Reminder 是所有便利贴共享的 capability/UI，不是独立 Sticky subtype 或第四种 Dock participant；设置或未设置提醒的 ordinary / Todo / Schedule 均可正常参与 mixed Dock。
-- hosted 与 legacy executor 可以混合进入同一 Dock group；两者共用 detached facts、Dock session/Core rules、`DockLayoutTarget` 和 visual feedback，只在最终 effect edge 执行各自窗口副作用。
-- hosted/mixed preview、merge pulse、split guide，以及 group move、TopMost、horizontal/divider resize、collapse-reopen、middle split 和多成员 insertion 已完成。
-- persisted docked notes 重启后仍可能由 legacy executor 恢复；canonical Dock relation/order/geometry 不因此改变。
-- “展开全部并平铺到此屏幕”会展开全部 note、真正清除 Dock relation，并通过 hosted/legacy owned effect path 平铺。
+- Ordinary、Todo、Schedule 是同一个 Sticky window system 的三种 content mode；Dock grouping type-agnostic，任意 mixed-type group 共用 detached facts、Core rules、`DockLayoutTarget` 和 hosted effect boundary。
+- Preview、merge pulse、split guide，以及 group move、TopMost、horizontal/divider resize、collapse-reopen、middle split 和多成员 insertion 已完成。
+- persisted standalone 与 Dock component 都通过 hosted session 恢复；v1-v9 codec 和旧文件迁移继续保留，persisted data 不记录 executor 类型。
+- “展开全部并平铺到此屏幕”会展开全部 note、真正清除 Dock relation，并通过唯一 hosted effect path 平铺。
 - Side Tabs 是不激活的 TopMost Pet chrome；monitor、work area 或 Pet scale 改变时会重新验证左右 split，仅在分配变化时 rebuild。
 - Side Tabs 继续由 WinForms Pet STA 承载；`SideTabSnapshot.ToDisplayData()` 保留为 compatibility adapter。
 - Pet-owned WinForms Form modal 统一经过 `PetWindowLayerCoordinator` 的内存栈；Keyboard Overlay、Bubble 和 Side Tabs 保持 no-activate，并位于嵌套 modal chain 之后。键盘提示始终跟随 Pet，不因 modal 改变位置。密码/凭据检测仍由原隐私链独立 fail closed。

@@ -10,7 +10,7 @@
 
 - `PennyPet.Core` 目标为 `netstandard2.0`，保存平台无关模型与纯规则。
 - `PennyPet.Windows.Core`、`PennyPet.App`、`PennyPet.Windows` 和 `PennyPet.SelfTests` 仍是 Windows 实现或宿主。
-- `PetForm` 和 `StickyNoteWindow` 已按职责拆成 partial 文件，但仍共享窗口状态；这是一条代码定位边界，不是假装独立的服务层。
+- `PetForm` 与 `StickyNoteWindow` 各自按职责拆成 partial 文件；partial 只是同一类型内部的代码定位边界，不是假装独立的服务层。
 - 高风险 IME、WPF/WinForms 消息桥、Window Message、Keyboard Hook、UI Automation、GDI、Shell、Registry 和真实窗口副作用继续留在 Windows 实现。
 - Dock 组关系、统一置顶数据、页签拖放会话和纯数值几何已进入 Core；启动 Core 当前只包含 loading readiness 纯判定。
 - HTTP(S) 与 Windows 路径/UNC 链接识别、危险扩展名、确认文案、文件探测和 Shell 打开位于 `Features/StickyNotes`。
@@ -28,10 +28,12 @@ PennyPet.App / PennyPet.Windows
        -> Core 动画、提醒、设置、键盘隐私规则
        -> Windows Hook、UIA、GDI、Registry、Screen 与窗口副作用
 
-StickyNoteWindow（WPF）
-  -> Sticky Editor / Todo / Schedule / Reminder / Link / Dock partial
-  -> Core StickyNote 模型、codec、Dock 关系与几何规则
-  -> Windows 文件系统、路径、Shell 与原生窗口适配
+Pet Sticky coordination
+  -> canonical StickyNoteData / Core Dock rules
+  -> StickyUiCommand / StickyUiEvent / detached snapshots
+  -> StickyUiHost session registry（Sticky WPF STA）
+       -> StickyWindowSession
+            -> StickyNoteWindow（Editor / Todo / Schedule / Reminder / Link）
 
 PennyPet.Tests -> PennyPet.Core
 PennyPet.SelfTests -> Windows 产品程序集与真实资源/平台探针
@@ -118,13 +120,13 @@ Open-Meteo Forecast 请求固定为昨天、今天、明天和 8 个小时变量
 | `Features/StickyNotes/StickyNoteRepository.cs` | Windows 文件保存、备份、损坏恢复、dirty 和重试 | Windows 文件系统适配 |
 | `Features/StickyNotes/StickyLinkService.cs` | 盘符/UNC、扩展名风险、确认、文件探测和 Shell 打开 | Windows-only 路径策略 |
 | `Features/StickyNotes/StickyLinkCoordinator.cs` | WPF 链接格式、点击和光标 | Windows-only UI |
-| `Features/StickyNotes/PetStickyDockCoordinator.cs` | 屏幕/DPI/原生几何转换、真实窗口移动和同步 | Windows-only 副作用适配 |
+| `Features/StickyNotes/PetStickyDockCoordinator.cs` | 屏幕/DPI/原生几何转换、canonical Dock 协调和 typed hosted effects | Windows-only 副作用适配 |
 | `Features/StickyNotes/StickyEditorCoordinator.cs` | RichText、焦点和 IME | Windows-only，高风险 |
 | `Features/StickyNotes/StickyNativeWindowBehavior.cs` | Win32 消息、拖拽、resize 和最大化拦截 | Windows-only，高风险 |
 
 Windows Coordinator 把 `Point`、`Size`、`Rectangle` 等平台对象转换为 Core 的 `DockPoint`、`DockSize`、`DockRect`，调用纯规则后再执行 WPF/Win32 窗口副作用。`DockCoordinateSafetyLimit = 30000` 是 Win32 安全范围，由 Windows 层作为参数提供给 Core 计算；它不是 Penny 业务规则，也不能成为 macOS 常量。
 
-当前 Dock participant eligibility 与窗口 executor 解耦：Ordinary、Todo、Schedule 可以任意 mixed Dock；Reminder 是所有便利贴共享的 capability/UI，不是独立 Sticky subtype 或第四种 Dock participant。eligibility 不依赖 `IsTodoList / IsSchedule / IsHostedSticky / ReminderUtcTicks`。hosted 与 legacy executor 可以进入同一 Dock component。两条输入路径共用 `DockWindowFacts`、同一 Dock session/Core rules 和 `DockLayoutTarget`，只在最终 owned effect edge 分别落到 legacy Window 或 `StickyUiHost`。Hosted/mixed preview、merge pulse 和 split guide 已接入这条共享流程。
+Ordinary、Todo、Schedule 属于同一个 Sticky window system，内容模式不同但 Dock grouping 完全 type-agnostic，任意组合都可进入同一 Dock group。Reminder 是所有便利贴共享的 capability/UI，不是独立 Sticky subtype 或第四种 Dock participant；eligibility 不依赖 `IsTodoList / IsSchedule / ReminderUtcTicks`。`StickyUiHost` 是唯一 production window executor：Pet 端以 `DockWindowFacts` 进入同一 Dock session/Core rules，得到 `DockLayoutTarget` 后只通过 typed command effect 落到 Sticky STA。Preview、merge pulse 和 split guide 同样使用 detached geometry。
 
 ### 提醒、设置、启动与键盘隐私
 
@@ -179,7 +181,7 @@ Windows Coordinator 把 `Point`、`Size`、`Rectangle` 等平台对象转换为 
 
 UI ownership 按 framework / message-loop 划分，而不是要求同一 feature 的所有窗口必须位于同一个线程。WPF `StickyNoteWindow` 可以继续由 `StickyUiHost` 的 WPF Dispatcher STA 承载；WinForms Side Tabs 可以留在 Pet/WinForms UI thread，只要它们只消费 typed snapshot，并只产生 typed user-action，不直接访问 hosted WPF 窗口。
 
-Side Tabs 是附着于 Pet chrome 的 no-activate TopMost UI；存在 tab controls 时不因普通或 hosted note 可见而降出 TopMost band。Pet monitor、working area 或 scale 改变时会重新验证 desired left/right split；分配不变时只 reposition，分配改变时才 rebuild controls。
+Side Tabs 是附着于 Pet chrome 的 no-activate TopMost UI；存在 tab controls 时不因其他 Sticky window 可见而降出 TopMost band。Pet monitor、working area 或 scale 改变时会重新验证 desired left/right split；分配不变时只 reposition，分配改变时才 rebuild controls。
 
 ## 7. 当前 Windows UI ownership
 
@@ -218,13 +220,13 @@ Sticky WPF STA
 - `DockLayoutTarget`：pure desired effect target。
 - `SideTabSnapshot`：read-only side-tab projection。
 
-当前 hosted/legacy 双路径：
+当前单一 hosted executor：
 
-- Ordinary、Todo、Schedule 可任意 mixed Dock；设置或未设置提醒的 ordinary / Todo / Schedule 均可正常参与 mixed Dock，eligibility 不依赖 Reminder 状态。
-- hosted 与 legacy executor 可混合进入同一 Dock group，并共享 Dock session、Core merge/split/layout rules、typed targets 和 visual feedback。
-- hosted/mixed Dock 已覆盖 merge、group move、TopMost、horizontal resize、vertical divider、collapse-reopen、split、3-note insertion、preview、merge pulse 和 split guide。
-- persisted docked notes 在重启恢复时仍可能走 legacy path，因为当前 hosted eligibility 排除已有 `DockGroupId / DockParentId` 的 note；这不是数据丢失。
-- “展开全部并平铺到此屏幕”会展开所有 note、清除 canonical Dock membership，并通过各自 owned effect path 将 hosted/legacy 窗口平铺到 Pet 当前屏幕。
+- Ordinary、Todo、Schedule 可任意 mixed Dock；设置或未设置提醒均不改变 participant eligibility、group order 或 geometry。
+- 新建、独立恢复、persisted Dock component 恢复、SideTab 展开及 Dock/TopMost/resize/hide/close effects 全部由 `StickyUiHost` 执行；`PetForm` 不再持有 `StickyNoteWindow` registry 或 legacy fallback。
+- Hosted Dock 覆盖 merge、group move、TopMost、horizontal resize、vertical divider、collapse-reopen、split、多成员 insertion、preview、merge pulse 和 split guide。
+- “展开全部并平铺到此屏幕”会展开所有 note、清除 canonical Dock membership，并通过唯一 hosted effect path 平铺到 Pet 当前屏幕。
+- v1-v9 Sticky persistence codec 继续保留；旧数据先转换为 canonical `StickyNoteData`，运行时 executor 信息不写入用户数据。
 - Side Tabs 始终保持 no-activate TopMost chrome，并在 monitor/work-area/scale 改变时按需重新验证左右布局。
 - Side Tabs 仍在 WinForms Pet STA；`SideTabSnapshot.ToDisplayData()` compatibility adapter 当前仍存在，direct snapshot consumption 是已知债务。
 

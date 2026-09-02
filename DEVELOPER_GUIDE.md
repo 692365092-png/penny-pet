@@ -66,12 +66,13 @@ dotnet test '.\desktop-pet\PennyPet.Tests.csproj' --configuration Release
 - `Core/Startup/PetStartupRules.cs`：UI/美术 readiness 纯门禁；不是完整启动状态机。
 - `Core/DailyNote/DailyNoteFeature.cs`：已经落地的三十日进度、同日幂等、断签和完成判定；后续 UI、内容来源和持久化按真实需求设计。
 - `Features/StickyNotes/StickyNoteRepository.cs`：Windows 文件读取、迁移、备份、原子保存、dirty、重试和紧急导出。
-- `Features/StickyNotes/StickyNoteWpf.cs`：WPF 窗口构造、总体生命周期、持久化和外观接线。
+- `Features/StickyNotes/StickyNoteWpf.cs`：WPF 窗口构造、总体生命周期和外观接线；窗口数据是 hosted working copy，不直接保存 repository。
+- `StickyUiThreadHost.cs` / `StickyUiHost.cs` / `StickyWindowSession.cs`：Sticky WPF STA、唯一 session registry/command executor，以及唯一持有 `StickyNoteWindow` 的会话边界。
 - `Features/StickyNotes/StickyEditorCoordinator.cs`：RichText、字体、焦点和 IME；最高风险。
 - `Features/StickyNotes/StickyTodoCoordinator.cs` / `StickyScheduleCoordinator.cs`：待办和日程 UI。
 - `Features/StickyNotes/StickyReminderCoordinator.cs` / `StickyAppearanceCoordinator.cs`：提醒条和外观 UI。
 - `Features/StickyNotes/StickyNativeWindowBehavior.cs`：Win32 消息、拖拽、resize 和最大化拦截。
-- `Features/StickyNotes/PetStickyDockCoordinator.cs`：Windows 屏幕/DPI/窗口事实采集、原生几何转换和真实窗口副作用。
+- `Features/StickyNotes/PetStickyDockCoordinator.cs`：Windows 屏幕/DPI facts、canonical Dock 协调、原生几何转换和 typed hosted effects。
 - `Features/StickyNotes/StickyNoteTabs.cs`：侧边页签和隐藏/恢复 UI。
 
 `StickyDockGeometry` 持有平台无关几何，Windows Coordinator 负责把 `Point`、`Size`、`Rectangle` 转成 `DockPoint`、`DockSize`、`DockRect`，调用 Core 后再移动或缩放窗口。`DockCoordinateSafetyLimit = 30000` 是 Win32 限制，由 Windows 层传入，不能下沉成跨平台业务常量。
@@ -81,8 +82,10 @@ Dock 修改必须同时检查：组关系、组内顺序、持久化快照、统
 当前 Dock 行为边界：
 
 - Reminder 是所有便利贴共享的 capability/UI，不是独立 Sticky subtype 或第四种 Dock participant；设置或未设置提醒的 ordinary / Todo / Schedule 均可正常参与 mixed Dock。eligibility 不依赖 `IsTodoList / IsSchedule / IsHostedSticky / ReminderUtcTicks`。
-- hosted 与 legacy executor 可以位于同一 group，共用 `DockWindowFacts`、同一 session/Core rules、`DockLayoutTarget`、preview、merge pulse 和 split guide；executor 差异只留在 owned effect edge。
-- “展开全部并平铺到此屏幕”会展开全部 note、清除 canonical Dock relation，再分别通过 hosted/legacy effect path 平铺；不要把它退化成只移动可见窗口。
+- Ordinary、Todo、Schedule 是同一 Sticky window system 的 content modes；Dock 不得按 `IsTodoList` 或 `IsSchedule` 拆 group、重排或选择不同规则。
+- `StickyUiHost` 是唯一 production executor。新建、startup restore、persisted mixed Dock、SideTab 展开和窗口 effects 都使用 `StickyUiCommand`；禁止重新引入 Pet-owned `Dictionary<string, StickyNoteWindow>` 或 silent legacy fallback。
+- “展开全部并平铺到此屏幕”会展开全部 note、清除 canonical Dock relation，再通过 hosted effect path 平铺；不要把它退化成只移动可见窗口。
+- `StickyNoteCodec` 的 v1-v9 compatibility readers 是用户数据兼容层，不属于已删除的 legacy runtime executor，必须保留。
 - Side Tabs 始终保持 no-activate TopMost chrome。monitor、working area 或 Pet scale 改变时会重新验证 desired left/right split；split 不变只 reposition，改变才 rebuild controls。
 
 ### 链接边界

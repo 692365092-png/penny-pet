@@ -1318,7 +1318,7 @@ namespace PennyPet
                 recoveredSecondary.Y <= 1008;
             result.ExecutorNeutralDockVisualSeamOk =
                 PetForm.CalculateDockVisualSeam(new DockWindowFacts(
-                    "hosted-or-legacy", -860, 140, 420, 310, true, true)) ==
+                    "hosted-note", -860, 140, 420, 310, true, true)) ==
                     new Rectangle(-860, 447, 420, 6) &&
                 PetForm.CalculateDockVisualSeam(null).IsEmpty;
             return result;
