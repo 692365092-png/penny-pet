@@ -18,7 +18,6 @@
 - `DockCoordinateSafetyLimit = 30000` 是 Win32 平台约束，由 Windows 层作为输入提供给 Core 计算，不是 Penny 业务规则或跨平台常量。
 - `Core/Startup/PetStartupRules.cs` 只保存 UI/美术均完成后释放 Loading 的纯门禁。Windows 的 `PetStartupCoordinator` 保留 Timer、注册表、窗口创建、首帧等待和事件触发；这不是完整的跨平台启动状态机。
 - HTTP(S)、盘符、UNC、危险扩展名、确认文案、文件探测和 Shell 打开属于 Windows `Features/StickyNotes/StickyNoteLinks.cs`、`StickyLinkPolicy.cs` 与 `StickyLinkService.cs`；macOS 文件目标必须按自身路径和安全语义实现。
-- `Core/DailyNote/DailyNoteFeature.cs` 已保存三十日进度的纯日期判定；后续 UI、内容来源和持久化仍由真实产品需求决定。
 - `StickyNoteWindow`、IME、Win32 窗口消息、全局键盘 Hook、GDI 渲染、Shell 与 Registry 都是 Windows-only；未来 macOS 应重写平台实现，不要为形式统一而抽象高风险事件时序。
 - 键盘隐私 Core 只接收 `sensitiveTargetDetected` 与 `inspectionAvailable`。UIA、Win32 密码样式、凭据窗口或未来 macOS Accessibility / Secure Input 的证据合并都属于平台检测器。
 - “代码没有 Windows using”只证明编译依赖边界；盘符、UNC、窗口坐标限制和权限模型等语义上的 Windows 特有规则仍需人工检查。

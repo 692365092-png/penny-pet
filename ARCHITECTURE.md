@@ -14,7 +14,6 @@
 - 高风险 IME、WPF/WinForms 消息桥、Window Message、Keyboard Hook、UI Automation、GDI、Shell、Registry 和真实窗口副作用继续留在 Windows 实现。
 - Dock 组关系、统一置顶数据、页签拖放会话和纯数值几何已进入 Core；启动 Core 当前只包含 loading readiness 纯判定。
 - HTTP(S) 与 Windows 路径/UNC 链接识别、危险扩展名、确认文案、文件探测和 Shell 打开位于 `Features/StickyNotes`。
-- `Core/DailyNote/DailyNoteFeature.cs` 已包含三十日每日便利贴的纯进度判定；当前文档只记录已落地规则，不预设后续 UI、内容来源或持久化结构。
 - 当前没有 `PennyPet.Mac`、完整跨平台 Application 层、网络服务或完整平台无关启动状态机。
 
 `CoreArchitectureTests` 会检查编译后 Core 的程序集引用，阻止 Drawing、WinForms、WPF、Registry 和 UI Automation 进入共享层。这个门禁只证明代码依赖；盘符、UNC、Win32 坐标限制、键码和权限模型等语义上的平台假设仍需人工审查。
@@ -115,7 +114,6 @@ Open-Meteo Forecast 请求固定为昨天、今天、明天和 8 个小时变量
 | `Core/StickyNotes/StickyTabDropSession.cs` | 页签拖放事务 | 平台无关；窗口来源是不透明身份 |
 | `Core/StickyNotes/StickyDockGeometry.cs` | `DockPoint`、`DockSize`、`DockRect` 及 Dock、divider、header 可达性、恢复、新建、页签、弹窗和异常拖拽恢复几何 | 平台无关纯数值规则 |
 | `Core/Startup/PetStartupRules.cs` | UI/美术 readiness 门禁 | 平台无关的小范围启动判定，不是完整启动框架 |
-| `Core/DailyNote/DailyNoteFeature.cs` | 三十日进度、同日幂等、断签与完成判定 | 平台无关纯规则；不预设 UI 和存储 |
 | `Features/StickyNotes/StickyNoteLinks.cs` / `StickyLinkPolicy.cs` | HTTP(S)、Windows 路径和危险目标策略 | Windows-only 链接策略 |
 | `Features/StickyNotes/StickyNoteRepository.cs` | Windows 文件保存、备份、损坏恢复、dirty 和重试 | Windows 文件系统适配 |
 | `Features/StickyNotes/StickyLinkService.cs` | 盘符/UNC、扩展名风险、确认、文件探测和 Shell 打开 | Windows-only 路径策略 |
@@ -153,7 +151,6 @@ Ordinary、Todo、Schedule 属于同一个 Sticky window system，内容模式�
 | 桌宠交互 | 动画选择和部分拖拽语义 | 鼠标事件、透明窗口、Space 和 Z-order |
 | 便利贴 | 数据、codec、Todo/Schedule、Dock 关系和纯几何 | AppKit 编辑器、窗口、文件路径和恢复副作用 |
 | Dock | `StickyDockGeometry` 与组不变量 | `NSScreen` 坐标、DPI/Retina、窗口移动和吸附反馈 |
-| 每日便利贴 | 三十日进度和日期判定 | 产品 UI、内容来源、平台通知与持久化接线 |
 | 提醒 | 模型和时间规则 | macOS 调度、唤醒和 UI |
 | 键盘隐私 | 标准化 fail-closed 判定 | Event Tap、Accessibility、Secure Input 和权限引导 |
 | 登录启动 | `StartAtLogin` 设置语义 | Login Item / ServiceManagement |
