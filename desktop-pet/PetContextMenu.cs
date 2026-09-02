@@ -33,7 +33,7 @@ namespace PennyPet
             NewScheduleItem.Click += delegate { _commands.CreateSchedule(); };
             ManageNotesItem = new ToolStripMenuItem("便利贴管理…");
             ManageNotesItem.Click += delegate { _commands.ManageNotes(); };
-            DailyContentItem = new ToolStripMenuItem("每日内容…");
+            DailyContentItem = new ToolStripMenuItem("个性化每日内容…");
             DailyContentItem.Click += delegate
             {
                 _commands.ShowDailyContentSettings();

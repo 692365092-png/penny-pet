@@ -3962,7 +3962,7 @@ namespace PennyPet
                 contextMenu.DailyContentItem.PerformClick();
                 result.DailyContentSettingsUiOk =
                     result.DailyContentSettingsUiOk &&
-                    contextMenu.DailyContentItem.Text == "每日内容…" &&
+                    contextMenu.DailyContentItem.Text == "个性化每日内容…" &&
                     contextMenu.Menu.Items.IndexOf(
                         contextMenu.DailyContentItem) <
                     contextMenu.Menu.Items.IndexOf(contextMenu.ScaleItem) &&
