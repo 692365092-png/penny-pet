@@ -41,6 +41,13 @@
 
 每次只迁移一组可在无窗口环境验证的规则；Windows Coordinator 继续负责平台事实、类型转换和副作用。完整 Windows SelfTest 与发布验证留给 CI/发布阶段。
 
+## Daily Briefing copy ownership
+
+- Daily Briefing 的硬上限是三条用户实际读到的 semantic sentence；Greeting 计入预算，每个 supplementary 最多一条。Solar/Weather/Almanac 任一存在后不为填满位置而补 Curated/Zodiac。
+- Weather catalog 只保留一个直说事实和至多一个行动；Almanac 一句内完成内容与必要现实降权。Bubble 不负责靠加宽、缩字或换行掩盖内容冗余。
+- `DailyBriefingSentence` 只携带 Body、ContentKind、显式 Intent 与稳定内容 ID。Composer 分配 `Single / Opening / Middle / Closing`，`PetSentenceEndingPolicy` 最后统一决定标点和语气词。
+- Ending 是确定性派生展示结果：同日同内容稳定，不使用 `GetHashCode`，不写设置、不留历史、不建立 Cache；Reminder 与现有 SmallTalk 暂不接入。
+
 ## Daily Weather ownership
 
 - `Core/DailyContent/Weather` 只接收 detached 三日摘要并做语义与确定性 wording；不得引用 HTTP、Open-Meteo URL 或网络 DTO。

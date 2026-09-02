@@ -77,7 +77,7 @@ PennyPet.Tools -> 美术发布包和启动缓存生成
 
 | 文件/目录 | 当前职责 | 边界 |
 |---|---|---|
-| `Core/DailyContent/DailyContentRules.cs` | 日期键、每日一次和 DayPart 纯规则 | 平台无关 |
+| `Core/DailyContent/DailyContentRules.cs` | 日期键、每日一次、DayPart 与 semantic greeting 纯规则 | 平台无关 |
 | `Core/DailyContent/DailyLineEntry.cs` | 有稳定 ID 的内置每日短句值 | 平台无关 |
 | `Core/DailyContent/CuratedDailyLineCatalog.cs` / `CuratedDailyLineSelector.cs` | 96 条有限精选目录及当地日期确定性选择 | 平台无关纯规则 |
 | `Core/DailyContent/ZodiacSign.cs` | 用户星座偏好的稳定业务身份 | 平台无关 |
@@ -88,13 +88,16 @@ PennyPet.Tools -> 美术发布包和启动缓存生成
 | `Core/DailyContent/Weather` | detached 地点/三日摘要、显式天气语义优先级和确定性 wording | 平台无关纯规则；无 HTTP、URL 或网络 DTO |
 | `Infrastructure/Weather/OpenMeteo*` | 手动城市搜索、固定 8 变量预报请求与 JSON → Core 摘要转换 | Windows 网络适配边界 |
 | `Infrastructure/Weather/PetWeatherSource.cs` | 单一 `HttpClient`、同地点日 in-flight、最多 3 键进程 Cache 与 15 分钟失败冷却 | Windows runtime；不持久化预报 |
-| `Core/DailyContent/DailyBriefingContent.cs` | Solar、Weather、Almanac、Curated、Zodiac 候选值 | 平台无关 |
-| `Core/DailyContent/DailyBriefingComposer.cs` | DayPart、候选优先级与两条 supplementary budget | 平台无关纯规则 |
+| `Core/DailyContent/DailyBriefingContent.cs` | Solar、Weather、Almanac、Curated、Zodiac 候选值及短生命周期 sentence DTO | 平台无关；不持久化 |
+| `Core/DailyContent/DailyBriefingComposer.cs` | 候选优先级、最多三条 semantic sentence、Role 分配与最终 join | 平台无关纯规则 |
+| `Core/Messaging/PetSentenceEndingPolicy.cs` | Role、显式 Intent、ContentKind、稳定内容 ID 与当地日期驱动的句末标点/语气 | 平台无关确定性纯规则；无 NLP、历史或设置 |
 | `Core/Calendar/SolarTerm*` | 二十四节气天文事实 | 平台无关 |
 | `PetDailyContentCoordinator.cs` | 首次有效 Poke eligibility、异步天气收集、compose、Bubble accepted 后消费日期 | Windows 产品协调 |
 | `DailyContentSettingsForm.cs` / `WeatherLocationDialog.cs` | Daily、节气、天气城市和星座偏好；搜索只由明确按钮/Enter 触发 | Windows-only |
 
-`DailyBriefing` 固定为 greeting 加至多两条 supplementary，事实优先级为 `SolarTerm → Weather → Almanac → filler`。Solar 与 Weather 同时存在时输出两者；没有 Solar 时 Weather 可与 Almanac 同时输出。任一高新鲜度事实存在后不机械补 Curated/Zodiac；三者都不存在才进入 filler layer。Weather 语义和 wording 是当天可重算的派生值；两个 filler 目录分别固定上限为 96 和 72 条。
+`DailyBriefing` 按用户实际读到的 semantic sentence 计数：Greeting 也占一条，总数最多三条，每个 supplementary 最多贡献一条。事实优先级为 `SolarTerm → Weather → Almanac → filler`；Solar 与 Weather 同时存在时输出两者，没有 Solar 时 Weather 可与 Almanac 同时输出。任一高新鲜度事实存在后不机械补 Curated/Zodiac，三者都不存在才进入 filler layer。Weather 固定为一个直说事实加至多一个行动提醒，Almanac 在同一句内完成信息与必要降权。两个 filler 目录分别固定上限为 96 和 72 条。
+
+Daily 文案先以 `Body + ContentKind + StableContentId + Intent` 进入 Composer；Composer 根据一句/首句/中句/末句分配 `Single / Opening / Middle / Closing`，再由 `PetSentenceEndingPolicy` 统一添加终止标点或轻量语气。Middle 默认使用普通标点，Closing 才是主要柔化点，Question 由显式 Intent 决定，严肃天气不会获得 cheerful ending。同日同内容使用 FNV-1a 稳定选择，不保存 Ending history，也不进入 Bubble UI、Reminder 或 `settings.ini`。
 
 Almanac 的边界固定为 `lunar-csharp → raw traditional Yi/Ji → Penny exact semantic whitelist → modern conversational copy`。原始宜忌绝不直接成为 DailyBriefing 输出；现代化只改变表达，不改变传统术语含义。医疗、法律、财务、丧葬、宗教、施工及其他不适合的传统术语不进入 v1 建议；Yi/Ji 对同一 Topic 冲突时该 Topic 当天直接抑制。Penny v1 采用日粒度、sect 1 的黄历语义以保证同一当地民用日内稳定，这不代表其比其他民俗流派更权威。
 

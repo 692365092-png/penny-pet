@@ -115,6 +115,13 @@ Dock 修改必须同时检查：组关系、组内顺序、持久化快照、统
 
 现有 `_startupUiReady + _startupArtReady`、`_startupDisplaySuppressed` 和 warm-row preload 语义保持在 Windows 启动流程。当前 Core 只有 `PetStartupRules` 的 readiness 纯门禁，不得将其描述为完整跨平台 startup framework。
 
+### Daily Briefing 内容与句末
+
+- `DailyBriefingComposer` 按 semantic sentence 而不是 provider 数量计预算：Greeting 也占一条，总数最多三条，每个 supplementary 最多一条；有 Weather 或 Almanac 时不为填位补 Curated/Zodiac。
+- Weather body 必须直说一个天气事实，最多附带一个行动；Almanac body 必须单句完成内容与必要降权。长度靠人工精简，不得运行时截断、摘要或通过 Bubble 换行掩盖。
+- 普通 Daily body 保留句内标点，不负责最终终止符。`PetSentenceEndingPolicy` 只根据 Role、显式 Intent、ContentKind、稳定 ID 和当地日期添加句末；禁止在 Bubble、Weather、Almanac 或 Windows Coordinator 各自拼语气词。
+- Ending 是不持久化的派生展示结果，不需要历史或 Cache。同一输入必须稳定，不得使用 `string.GetHashCode()`；Middle 保持克制，Question 不靠文本猜测，Serious Weather 不得使用 cheerful ending。
+
 ### Daily Weather 与数据寿命
 
 - 新数据先分类：用户偏好长期保存当前值；必要运行状态只保存最小值并覆盖；Cache 必须有 TTL、数量上限或覆盖策略；只有用户真正创造的内容才允许长期累积。
