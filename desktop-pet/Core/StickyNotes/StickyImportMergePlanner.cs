@@ -99,6 +99,10 @@ namespace PennyPet
             foreach (StickyNoteData incoming in imported)
             {
                 StickyNoteData effectiveIncoming = incoming.CloneForPersistence();
+                // Import visibility is a runtime placement policy, not an
+                // identity difference. New and conflict copies always start
+                // hidden, while an existing note keeps its current visibility.
+                effectiveIncoming.Visible = false;
                 if (partialImportedIds.Contains(incoming.Id))
                     StickyDockGroups.ClearMembership(effectiveIncoming);
                 StickyNoteData existing;
@@ -146,8 +150,9 @@ namespace PennyPet
             if (left == null || right == null) return left == right;
             if (!String.Equals(left.Id, right.Id,
                 StringComparison.OrdinalIgnoreCase)) return false;
-            return String.Equals(CanonicalLine(left, true),
-                CanonicalLine(right, true), StringComparison.Ordinal);
+            return String.Equals(CanonicalImportIdentityLine(left, true),
+                CanonicalImportIdentityLine(right, true),
+                StringComparison.Ordinal);
         }
 
         private static HashSet<string> FindPartialImportedIds(
@@ -207,6 +212,15 @@ namespace PennyPet
         private static string CanonicalLine(StickyNoteData note, bool includeId)
         {
             StickyNoteData copy = note.CloneForPersistence();
+            if (!includeId) copy.Id = String.Empty;
+            return StickyNoteCodec.SerializeLine(copy);
+        }
+
+        private static string CanonicalImportIdentityLine(
+            StickyNoteData note, bool includeId)
+        {
+            StickyNoteData copy = note.CloneForPersistence();
+            copy.Visible = false;
             if (!includeId) copy.Id = String.Empty;
             return StickyNoteCodec.SerializeLine(copy);
         }

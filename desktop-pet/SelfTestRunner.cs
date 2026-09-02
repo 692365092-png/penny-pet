@@ -472,6 +472,7 @@ namespace PennyPet
                     reopenedMerge.Find(currentVersion.Id).Text ==
                         "current-version" &&
                     reopenedMerge.Find("imported-new") != null &&
+                    !reopenedMerge.Find("imported-new").Visible &&
                     preMergeBackup.Find(currentVersion.Id) != null &&
                     preMergeBackup.Find(currentVersion.Id).Text ==
                         "current-version";
@@ -1981,6 +1982,7 @@ namespace PennyPet
             internal bool FullWidthNormalizationOk;
             internal bool ManagerMarqueeBatchDeleteOk;
             internal bool ManagerSortingOk;
+            internal bool ManagerImportPreviewOk;
             internal bool NativeSnapDisabledOk;
             internal bool SteadyDockGuideOk;
             internal bool OrdinaryLinkDetectionOk;
@@ -2075,6 +2077,69 @@ namespace PennyPet
                     modifiedAsc[2] == "Gamma" &&
                     manager.SortIndicatorForTest(3).EndsWith("▲",
                         StringComparison.Ordinal);
+            }
+            StickyNoteData previewCurrent = new StickyNoteData
+            {
+                Id = "manager-preview-current",
+                Title = "当前版本",
+                Text = "current"
+            };
+            StickyNoteData previewConflict = previewCurrent.CloneForPersistence();
+            previewConflict.Text = "imported";
+            StickyNoteData previewNew = new StickyNoteData
+            {
+                Id = "manager-preview-new",
+                Title = "待导入",
+                Text = "new"
+            };
+            StickyNoteData previewExisting = new StickyNoteData
+            {
+                Id = "manager-preview-existing",
+                Title = "已存在",
+                Text = "same"
+            };
+            StickyNoteData previewExistingBackup =
+                previewExisting.CloneForPersistence();
+            List<StickyNoteData> previewCurrentNotes =
+                new List<StickyNoteData> { previewCurrent, previewExisting };
+            List<StickyNoteData> previewImportedNotes =
+                new List<StickyNoteData> { previewConflict, previewNew,
+                    previewExistingBackup };
+            StickyImportMergeResult previewPlan =
+                StickyImportMergePlanner.Calculate(previewCurrentNotes,
+                    previewImportedNotes);
+            using (StickyNotesManagerForm manager = new StickyNotesManagerForm(
+                delegate { return previewCurrentNotes; },
+                new StickyNotesManagerCommands
+                {
+                    PrepareImport = delegate
+                    {
+                        return new StickyNotesImportPreview(previewPlan,
+                            previewImportedNotes);
+                    },
+                    ConfirmImport = delegate { return false; }
+                }))
+            {
+                manager.BeginImportPreviewForTest(
+                    new StickyNotesImportPreview(previewPlan,
+                        previewImportedNotes));
+                manager.SortColumnForTest(0);
+                List<string> previewTitles = manager.DisplayedTitlesForTest();
+                manager.SortColumnForTest(1);
+                List<string> previewStatuses = manager.DisplayedStatusesForTest();
+                result.ManagerImportPreviewOk =
+                    manager.IsImportPreviewForTest &&
+                    previewPlan.AddedCount == 2 &&
+                    previewPlan.ConflictCount == 1 &&
+                    previewTitles.Count == 3 &&
+                    previewTitles.Contains("待导入") &&
+                    previewTitles.Contains("当前版本") &&
+                    previewStatuses.Count == 3 &&
+                    previewStatuses[0] == "待导入" &&
+                    previewStatuses[1] == "已存在" &&
+                    previewStatuses[2] == "冲突副本" &&
+                    previewCurrentNotes.Count == 2 &&
+                    previewCurrentNotes[0].Text == "current";
             }
             long styleWithMaximize = 0x00040000L | 0x00010000L;
             result.NativeSnapDisabledOk =
@@ -4888,6 +4953,8 @@ namespace PennyPet
                     windowPolicyChecks.ManagerMarqueeBatchDeleteOk) + ",\n" +
                 "  \"manager_sorting_ok\": " + Bool(
                     windowPolicyChecks.ManagerSortingOk) + ",\n" +
+                "  \"manager_import_preview_ok\": " + Bool(
+                    windowPolicyChecks.ManagerImportPreviewOk) + ",\n" +
                 "  \"held_key_overlay_stays_constant_ok\": " + Bool(
                     keyboardOverlayChecks.HeldKeyStableOk) + ",\n" +
                 "  \"keyboard_hook_captures_own_process_ok\": " + Bool(

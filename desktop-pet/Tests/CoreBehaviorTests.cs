@@ -86,6 +86,7 @@ namespace PennyPet.Tests
             CollectionAssert.AreEqual(new[] { "A", "B", "C" },
                 result.MergedSnapshot.Select(note => note.Id).ToArray());
             Assert.AreNotSame(backup[0], result.MergedSnapshot[0]);
+            Assert.IsFalse(result.MergedSnapshot[0].Visible);
         }
 
         [TestMethod]
@@ -109,6 +110,27 @@ namespace PennyPet.Tests
             Assert.AreEqual(1, result.MergedSnapshot.Count);
             Assert.AreEqual(44, current.X);
             Assert.AreEqual(310, current.Height);
+        }
+
+        [TestMethod]
+        public void StickyImportMergePlanner_PreservesCurrentVisibilityOnSameContent()
+        {
+            StickyNoteData current = new StickyNoteData
+            {
+                Id = "visibility",
+                Text = "same",
+                Visible = true
+            };
+            StickyNoteData backup = current.CloneForPersistence();
+            backup.Visible = false;
+
+            StickyImportMergeResult result =
+                StickyImportMergePlanner.Calculate(
+                    new[] { current }, new[] { backup });
+
+            Assert.AreEqual(0, result.AddedCount);
+            Assert.AreEqual(1, result.SkippedIdenticalCount);
+            Assert.IsTrue(result.MergedSnapshot[0].Visible);
         }
 
         [TestMethod]
@@ -142,6 +164,7 @@ namespace PennyPet.Tests
                 note => !String.Equals(note.Id, "same",
                     StringComparison.OrdinalIgnoreCase));
             Assert.AreEqual("imported", firstCopy.Text);
+            Assert.IsFalse(firstCopy.Visible);
 
             StickyImportMergeResult second =
                 StickyImportMergePlanner.Calculate(first.MergedSnapshot,

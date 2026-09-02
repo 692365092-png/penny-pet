@@ -1056,7 +1056,8 @@ namespace PennyPet
                             "sticky-manager-expand-and-tile");
                     },
                     ExportBackup = ExportStickyNotesBackup,
-                    ImportBackup = ImportStickyNotesBackup
+                    PrepareImport = PrepareStickyNotesImport,
+                    ConfirmImport = CommitStickyNotesImport
                 }))
             {
                 _windowLayers.ShowModal(this, manager);

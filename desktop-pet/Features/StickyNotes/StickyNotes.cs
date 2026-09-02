@@ -314,7 +314,21 @@ namespace PennyPet
         internal Action ExpandAll;
         internal Action TileAll;
         internal Action ExportBackup;
-        internal Action ImportBackup;
+        internal Func<StickyNotesImportPreview> PrepareImport;
+        internal Func<StickyNotesImportPreview, bool> ConfirmImport;
+    }
+
+    internal sealed class StickyNotesImportPreview
+    {
+        internal StickyNotesImportPreview(StickyImportMergeResult merge,
+            List<StickyNoteData> importedNotes)
+        {
+            Merge = merge;
+            ImportedNotes = importedNotes ?? new List<StickyNoteData>();
+        }
+
+        internal StickyImportMergeResult Merge { get; private set; }
+        internal List<StickyNoteData> ImportedNotes { get; private set; }
     }
 
     internal sealed class StickyNotesManagerForm : Form
@@ -324,8 +338,35 @@ namespace PennyPet
         private readonly TextBox _search;
         private readonly ListView _list;
         private readonly Button _deleteButton;
+        private readonly Button _createButton;
+        private readonly Button _showButton;
+        private readonly Button _hideButton;
+        private readonly Button _selectAllButton;
+        private readonly Button _closeButton;
+        private readonly Button _exportButton;
+        private readonly Button _importButton;
+        private readonly GroupBox _desktopGroup;
+        private readonly Label _multiHint;
+        private readonly Button _confirmImportButton;
+        private ManagerMode _mode;
+        private StickyImportMergeResult _importPlan;
+        private List<StickyNoteData> _importedNotes;
         private int _sortColumn = -1;
         private bool _sortAscending = true;
+
+        private enum ManagerMode
+        {
+            Normal,
+            ImportPreview,
+            Busy
+        }
+
+        private sealed class ManagerRow
+        {
+            internal StickyNoteData Note;
+            internal string StatusText;
+            internal StickyImportActionKind PreviewKind;
+        }
 
         internal bool CreateRequested { get; private set; }
         internal StickyNoteData ShowRequested { get; private set; }
@@ -358,31 +399,34 @@ namespace PennyPet
             _search.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             _search.TextChanged += delegate { RefreshList(); };
 
-            Button create = Button("新建", 446, delegate
+            _createButton = Button("新建", 446, delegate
             {
+                if (_mode != ManagerMode.Normal) return;
                 CreateRequested = true;
                 DialogResult = DialogResult.OK;
                 Close();
             });
-            create.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            Button show = Button("显示/编辑", 526, delegate
+            _createButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            _showButton = Button("显示/编辑", 526, delegate
             {
+                if (_mode != ManagerMode.Normal) return;
                 StickyNoteData note = SelectedNote();
                 if (note == null) return;
                 ShowRequested = note;
                 DialogResult = DialogResult.OK;
                 Close();
             });
-            show.Width = 88;
-            show.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            Button hide = Button("收起", 620, delegate
+            _showButton.Width = 88;
+            _showButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            _hideButton = Button("收起", 620, delegate
             {
+                if (_mode != ManagerMode.Normal) return;
                 StickyNoteData note = SelectedNote();
                 if (note != null && _commands.HideNote != null)
                     _commands.HideNote(note);
                 RefreshList();
             });
-            hide.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            _hideButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
 
             _list = new MarqueeListView();
             _list.View = View.Details;
@@ -401,6 +445,7 @@ namespace PennyPet
             _list.ColumnClick += ManagerColumnClick;
             _list.DoubleClick += delegate
             {
+                if (_mode != ManagerMode.Normal) return;
                 StickyNoteData note = SelectedNote();
                 if (note == null) return;
                 ShowRequested = note;
@@ -424,33 +469,34 @@ namespace PennyPet
 
             _deleteButton = Button("删除所选", 16, delegate
             {
+                if (_mode != ManagerMode.Normal) return;
                 DeleteSelectedNotes();
             });
             _deleteButton.Width = 100;
             _deleteButton.Top = 420;
             _deleteButton.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
-            Button selectAll = Button("全选", 124, delegate
+            _selectAllButton = Button("全选", 124, delegate
             {
                 foreach (ListViewItem item in _list.Items) item.Selected = true;
             });
-            selectAll.Top = 420;
-            selectAll.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
-            Label multiHint = new Label();
-            multiHint.Text = "在空白处按住鼠标拖拽可框选多张；也支持 Ctrl/Shift 多选和 Delete。";
-            multiHint.AutoSize = false;
-            multiHint.AutoEllipsis = true;
-            multiHint.Location = new Point(210, 429);
-            multiHint.Size = new Size(180, 24);
-            multiHint.Anchor = AnchorStyles.Left | AnchorStyles.Right |
+            _selectAllButton.Top = 420;
+            _selectAllButton.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
+            _multiHint = new Label();
+            _multiHint.Text = "在空白处按住鼠标拖拽可框选多张；也支持 Ctrl/Shift 多选和 Delete。";
+            _multiHint.AutoSize = false;
+            _multiHint.AutoEllipsis = true;
+            _multiHint.Location = new Point(210, 429);
+            _multiHint.Size = new Size(180, 24);
+            _multiHint.Anchor = AnchorStyles.Left | AnchorStyles.Right |
                 AnchorStyles.Bottom;
-            Button close = Button("关闭", 604, delegate { Close(); });
-            close.Top = 420;
-            close.Anchor = AnchorStyles.Right | AnchorStyles.Bottom;
+            _closeButton = Button("关闭", 604, delegate { Close(); });
+            _closeButton.Top = 420;
+            _closeButton.Anchor = AnchorStyles.Right | AnchorStyles.Bottom;
 
-            GroupBox desktop = new GroupBox();
-            desktop.Text = "桌面整理";
-            desktop.Location = new Point(16, 350);
-            desktop.Size = new Size(568, 62);
+            _desktopGroup = new GroupBox();
+            _desktopGroup.Text = "桌面整理";
+            _desktopGroup.Location = new Point(16, 350);
+            _desktopGroup.Size = new Size(568, 62);
             Button collapseAll = Button("收起全部", 10, delegate
             {
                 if (_commands.CollapseAll != null) _commands.CollapseAll();
@@ -471,43 +517,72 @@ namespace PennyPet
             });
             tileAll.Top = 23;
             tileAll.Width = 130;
-            desktop.Controls.Add(collapseAll);
-            desktop.Controls.Add(expandAll);
-            desktop.Controls.Add(tileAll);
+            _desktopGroup.Controls.Add(collapseAll);
+            _desktopGroup.Controls.Add(expandAll);
+            _desktopGroup.Controls.Add(tileAll);
 
-            Button export = Button("导出备份…", 400, delegate
+            _exportButton = Button("导出备份…", 400, delegate
             {
+                if (_mode != ManagerMode.Normal) return;
                 if (_commands.ExportBackup != null)
                     _commands.ExportBackup();
                 RefreshList();
             });
-            export.Top = 420;
-            export.Width = 90;
-            export.Anchor = AnchorStyles.Right | AnchorStyles.Bottom;
-            Button import = Button("导入…", 495, delegate
+            _exportButton.Top = 420;
+            _exportButton.Width = 90;
+            _exportButton.Anchor = AnchorStyles.Right | AnchorStyles.Bottom;
+            _importButton = Button("导入…", 495, delegate
             {
-                if (_commands.ImportBackup != null)
-                    _commands.ImportBackup();
-                RefreshList();
+                if (_mode != ManagerMode.Normal) return;
+                StickyNotesImportPreview preview = _commands.PrepareImport == null
+                    ? null : _commands.PrepareImport();
+                if (preview != null) BeginImportPreview(preview);
+                return;
             });
-            import.Top = 420;
-            import.Width = 90;
-            import.Anchor = AnchorStyles.Right | AnchorStyles.Bottom;
+            _importButton.Top = 420;
+            _importButton.Width = 90;
+            _importButton.Anchor = AnchorStyles.Right | AnchorStyles.Bottom;
+            _confirmImportButton = Button("确认导入", 526, delegate
+            {
+                if (_mode != ManagerMode.ImportPreview || _importPlan == null ||
+                    _commands.ConfirmImport == null) return;
+                _mode = ManagerMode.Busy;
+                UpdateModeControls();
+                bool succeeded = _commands.ConfirmImport(
+                    new StickyNotesImportPreview(_importPlan, _importedNotes));
+                if (succeeded)
+                {
+                    _mode = ManagerMode.Normal;
+                    _importPlan = null;
+                    _importedNotes = null;
+                    Text = "便利贴管理";
+                    RefreshList();
+                }
+                else _mode = ManagerMode.ImportPreview;
+                UpdateModeControls();
+            });
+            _confirmImportButton.Top = 420;
+            _confirmImportButton.Width = 74;
+            _confirmImportButton.Anchor = AnchorStyles.Right | AnchorStyles.Bottom;
+            _confirmImportButton.Visible = false;
 
             Controls.Add(searchLabel);
             Controls.Add(_search);
-            Controls.Add(create);
-            Controls.Add(show);
-            Controls.Add(hide);
+            Controls.Add(_createButton);
+            Controls.Add(_showButton);
+            Controls.Add(_hideButton);
             Controls.Add(_list);
             Controls.Add(_deleteButton);
-            Controls.Add(selectAll);
-            Controls.Add(multiHint);
-            Controls.Add(desktop);
-            Controls.Add(export);
-            Controls.Add(import);
-            Controls.Add(close);
+            Controls.Add(_selectAllButton);
+            Controls.Add(_multiHint);
+            Controls.Add(_desktopGroup);
+            Controls.Add(_exportButton);
+            Controls.Add(_importButton);
+            Controls.Add(_confirmImportButton);
+            Controls.Add(_closeButton);
             Shown += delegate { RefreshList(); };
+            FormClosing += ManagerFormClosing;
+            UpdateModeControls();
         }
 
         private Button Button(string text, int left, EventHandler click)
@@ -523,40 +598,26 @@ namespace PennyPet
         private void RefreshList()
         {
             string query = (_search.Text ?? String.Empty).Trim();
-            List<StickyNoteData> visibleNotes = new List<StickyNoteData>();
-            List<StickyNoteData> notes = _getNotes() ??
-                new List<StickyNoteData>();
-            foreach (StickyNoteData note in notes)
+            List<ManagerRow> visibleRows = new List<ManagerRow>();
+            foreach (ManagerRow row in BuildRows())
             {
-                if (note == null) continue;
-                if (query.Length > 0 && note.SearchText.IndexOf(query,
+                if (query.Length > 0 && row.Note.SearchText.IndexOf(query,
                     StringComparison.CurrentCultureIgnoreCase) < 0) continue;
-                visibleNotes.Add(note);
+                visibleRows.Add(row);
             }
             if (_sortColumn >= 0)
-                visibleNotes.Sort(CompareNotesForView);
+                visibleRows.Sort(CompareRowsForView);
             UpdateSortIndicators();
             _list.BeginUpdate();
             _list.Items.Clear();
-            foreach (StickyNoteData note in visibleNotes)
+            foreach (ManagerRow row in visibleRows)
             {
+                StickyNoteData note = row.Note;
                 DateTime? reminder = note.ReminderUtc;
                 string reminderText = reminder.HasValue && reminder.Value > DateTime.UtcNow
                     ? reminder.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "—";
-                ListViewItem item = new ListViewItem(note.Summary);
-                string status = note.Visible ? "显示中" : "已收起";
-                if (note.IsTodoList)
-                {
-                    int completed = 0;
-                    foreach (StickyTodoItem todo in note.TodoItems)
-                    {
-                        if (todo.Completed) completed++;
-                    }
-                    status = "待办 " + completed + "/" + note.TodoItems.Count;
-                }
-                else if (note.IsSchedule)
-                    status = "日程 " + note.ScheduleItems.Count + "项";
-                item.SubItems.Add(status);
+                ListViewItem item = new ListViewItem(note.DisplayTitle);
+                item.SubItems.Add(row.StatusText);
                 item.SubItems.Add(reminderText);
                 item.SubItems.Add(note.ModifiedUtc.ToLocalTime().ToString("MM-dd HH:mm"));
                 item.Tag = note;
@@ -564,6 +625,86 @@ namespace PennyPet
             }
             _list.EndUpdate();
             RefreshSelectionState();
+        }
+
+        private List<ManagerRow> BuildRows()
+        {
+            List<ManagerRow> rows = new List<ManagerRow>();
+            if (_mode == ManagerMode.ImportPreview && _importPlan != null)
+            {
+                Dictionary<string, StickyNoteData> current = new Dictionary<
+                    string, StickyNoteData>(StringComparer.OrdinalIgnoreCase);
+                foreach (StickyNoteData note in _getNotes() ??
+                    new List<StickyNoteData>())
+                    if (note != null && !current.ContainsKey(note.Id))
+                        current.Add(note.Id, note);
+                Dictionary<string, StickyNoteData> imported = new Dictionary<
+                    string, StickyNoteData>(StringComparer.OrdinalIgnoreCase);
+                foreach (StickyNoteData note in _importedNotes ??
+                    new List<StickyNoteData>())
+                    if (note != null && !imported.ContainsKey(note.Id))
+                        imported.Add(note.Id, note);
+                foreach (StickyImportAction action in _importPlan.Actions)
+                {
+                    StickyNoteData note;
+                    if (action.Kind == StickyImportActionKind.SkipIdentical)
+                        current.TryGetValue(action.ImportedNoteId,
+                            out note);
+                    else imported.TryGetValue(action.ImportedNoteId,
+                        out note);
+                    if (note == null) continue;
+                    rows.Add(new ManagerRow
+                    {
+                        Note = note,
+                        StatusText = PreviewStatus(action.Kind),
+                        PreviewKind = action.Kind
+                    });
+                }
+                return rows;
+            }
+
+            foreach (StickyNoteData note in _getNotes() ??
+                new List<StickyNoteData>())
+            {
+                if (note == null) continue;
+                rows.Add(new ManagerRow
+                {
+                    Note = note,
+                    StatusText = NormalStatus(note),
+                    PreviewKind = StickyImportActionKind.Add
+                });
+            }
+            return rows;
+        }
+
+        private static string NormalStatus(StickyNoteData note)
+        {
+            string status = note.Visible ? "显示中" : "已收起";
+            if (note.IsTodoList)
+                status = "待办 " + CompletedTodoCount(note) + "/" +
+                    note.TodoItems.Count;
+            else if (note.IsSchedule)
+                status = "日程 " + note.ScheduleItems.Count + "项";
+            return status;
+        }
+
+        private static int CompletedTodoCount(StickyNoteData note)
+        {
+            int completed = 0;
+            foreach (StickyTodoItem todo in note.TodoItems)
+                if (todo != null && todo.Completed) completed++;
+            return completed;
+        }
+
+        private static string PreviewStatus(StickyImportActionKind kind)
+        {
+            switch (kind)
+            {
+                case StickyImportActionKind.SkipIdentical: return "已存在";
+                case StickyImportActionKind.PreserveConflictCopy:
+                    return "冲突副本";
+                default: return "待导入";
+            }
         }
 
         private void ManagerColumnClick(object sender, ColumnClickEventArgs e)
@@ -588,33 +729,34 @@ namespace PennyPet
             }
         }
 
-        private int CompareNotesForView(StickyNoteData left,
-            StickyNoteData right)
+        private int CompareRowsForView(ManagerRow left, ManagerRow right)
         {
             int result;
             switch (_sortColumn)
             {
                 case 0:
                     result = StringComparer.CurrentCultureIgnoreCase.Compare(
-                        left.DisplayTitle, right.DisplayTitle);
+                        left.Note.DisplayTitle, right.Note.DisplayTitle);
                     break;
                 case 1:
-                    result = CompareStatus(left, right);
+                    result = _mode == ManagerMode.ImportPreview
+                        ? left.PreviewKind.CompareTo(right.PreviewKind)
+                        : CompareStatus(left.Note, right.Note);
                     break;
                 case 2:
-                    result = CompareReminder(left, right);
+                    result = CompareReminder(left.Note, right.Note);
                     break;
                 case 3:
-                    result = DateTime.Compare(left.ModifiedUtc,
-                        right.ModifiedUtc);
+                    result = DateTime.Compare(left.Note.ModifiedUtc,
+                        right.Note.ModifiedUtc);
                     break;
                 default:
                     result = 0;
                     break;
             }
             if (result == 0)
-                result = StringComparer.OrdinalIgnoreCase.Compare(left.Id,
-                    right.Id);
+                result = StringComparer.OrdinalIgnoreCase.Compare(
+                    left.Note.Id, right.Note.Id);
             return _sortAscending ? result : -result;
         }
 
@@ -644,14 +786,6 @@ namespace PennyPet
         private static int ContentKind(StickyNoteData note)
         {
             return note.IsTodoList ? 1 : note.IsSchedule ? 2 : 0;
-        }
-
-        private static int CompletedTodoCount(StickyNoteData note)
-        {
-            int completed = 0;
-            foreach (StickyTodoItem item in note.TodoItems)
-                if (item != null && item.Completed) completed++;
-            return completed;
         }
 
         private static int CompareReminder(StickyNoteData left,
@@ -687,10 +821,91 @@ namespace PennyPet
             return titles;
         }
 
+        internal List<string> DisplayedStatusesForTest()
+        {
+            List<string> statuses = new List<string>();
+            foreach (ListViewItem item in _list.Items)
+                statuses.Add(item.SubItems.Count > 1
+                    ? item.SubItems[1].Text : String.Empty);
+            return statuses;
+        }
+
         internal string SortIndicatorForTest(int columnIndex)
         {
             return columnIndex >= 0 && columnIndex < _list.Columns.Count
                 ? _list.Columns[columnIndex].Text : String.Empty;
+        }
+
+        private void BeginImportPreview(StickyNotesImportPreview preview)
+        {
+            if (preview == null || preview.Merge == null ||
+                preview.Merge.Actions == null) return;
+            _importPlan = preview.Merge;
+            _importedNotes = new List<StickyNoteData>(
+                preview.ImportedNotes ?? new List<StickyNoteData>());
+            _mode = ManagerMode.ImportPreview;
+            _sortColumn = -1;
+            _sortAscending = true;
+            Text = "便利贴管理 — 导入预览";
+            UpdateModeControls();
+            RefreshList();
+        }
+
+        internal void BeginImportPreviewForTest(StickyNotesImportPreview preview)
+        {
+            BeginImportPreview(preview);
+        }
+
+        internal bool IsImportPreviewForTest
+        {
+            get { return _mode == ManagerMode.ImportPreview; }
+        }
+
+        private void ManagerFormClosing(object sender, FormClosingEventArgs e)
+        {
+            if (_mode == ManagerMode.Busy)
+            {
+                e.Cancel = true;
+                return;
+            }
+            if (_mode == ManagerMode.ImportPreview)
+            {
+                _mode = ManagerMode.Normal;
+                _importPlan = null;
+                _importedNotes = null;
+            }
+        }
+
+        private void UpdateModeControls()
+        {
+            bool normal = _mode == ManagerMode.Normal;
+            bool preview = _mode == ManagerMode.ImportPreview;
+            bool busy = _mode == ManagerMode.Busy;
+            _search.Enabled = !busy;
+            _list.Enabled = !busy;
+            _createButton.Enabled = normal;
+            _showButton.Enabled = normal;
+            _hideButton.Enabled = normal;
+            _selectAllButton.Enabled = normal;
+            _desktopGroup.Enabled = normal;
+            _exportButton.Enabled = normal;
+            _importButton.Enabled = normal;
+            _confirmImportButton.Visible = preview;
+            _confirmImportButton.Enabled = preview && _importPlan != null &&
+                _importPlan.AddedCount > 0;
+            _closeButton.Enabled = !busy;
+            _closeButton.Text = preview ? "取消" : "关闭";
+            if (busy)
+                _multiHint.Text = "正在导入…";
+            else if (preview)
+            {
+                _multiHint.Text = "新增 " + _importPlan.AddedCount +
+                    " · 跳过 " + _importPlan.SkippedIdenticalCount +
+                    " · 冲突副本 " + _importPlan.ConflictCount;
+            }
+            else
+                _multiHint.Text = "在空白处按住鼠标拖拽可框选多张；也支持 Ctrl/Shift 多选和 Delete。";
+            RefreshSelectionState();
         }
 
         private void DeleteSelectedNotes()
@@ -724,7 +939,7 @@ namespace PennyPet
         {
             if (_deleteButton == null) return;
             int count = _list.SelectedItems.Count;
-            _deleteButton.Enabled = count > 0;
+            _deleteButton.Enabled = _mode == ManagerMode.Normal && count > 0;
             _deleteButton.Text = count > 1
                 ? "删除所选（" + count + "）" : "删除所选";
         }

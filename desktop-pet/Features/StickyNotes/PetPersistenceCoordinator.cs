@@ -123,7 +123,19 @@ namespace PennyPet
 
         private void ImportStickyNotesBackup()
         {
-            if (_exiting || IsDisposed || Disposing) return;
+            StickyNotesImportPreview preview = PrepareStickyNotesImport();
+            if (preview == null) return;
+            if (preview.Merge.AddedCount == 0)
+            {
+                ShowBubble("备份中的便利贴都已存在，当前内容没有修改。");
+                return;
+            }
+            CommitStickyNotesImport(preview);
+        }
+
+        private StickyNotesImportPreview PrepareStickyNotesImport()
+        {
+            if (_exiting || IsDisposed || Disposing) return null;
             using (OpenFileDialog dialog = new OpenFileDialog())
             {
                 dialog.Title = "导入并合并便利贴";
@@ -131,19 +143,19 @@ namespace PennyPet
                     "*.pennysticky;*.dat|所有文件 (*.*)|*.*";
                 dialog.InitialDirectory = Environment.GetFolderPath(
                     Environment.SpecialFolder.DesktopDirectory);
-                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                if (dialog.ShowDialog(this) != DialogResult.OK) return null;
 
                 StickyImportValidationResult validation =
                     StickyBackupFileReader.Read(dialog.FileName);
                 if (validation == null || !validation.Succeeded)
                 {
                     ShowStickyImportFailure("这个备份无法读取。\n当前便利贴没有被修改。");
-                    return;
+                    return null;
                 }
                 if (validation.Notes.Count == 0)
                 {
                     ShowBubble("备份中没有可导入的便利贴，当前内容没有修改。");
-                    return;
+                    return null;
                 }
 
                 StickyImportMergeResult merge;
@@ -157,30 +169,78 @@ namespace PennyPet
                     ApplicationDiagnostics.ReportNonFatal(
                         "sticky-notes-import-plan", error);
                     ShowStickyImportFailure("导入未完成。\n当前便利贴没有被修改。");
-                    return;
+                    return null;
                 }
                 if (merge == null || merge.Actions == null ||
                     merge.Actions.Count == 0)
                 {
                     ShowBubble("备份中没有可导入的便利贴，当前内容没有修改。");
-                    return;
+                    return null;
                 }
-                if (merge.AddedCount == 0)
-                {
-                    ShowBubble("备份中的便利贴都已存在，当前内容没有修改。");
-                    return;
-                }
-
-                PersistenceResult committed = _notes.CommitImportedMerge(merge);
-                if (committed == null || !committed.Succeeded)
-                {
-                    ShowStickyImportFailure("导入未完成。\n当前便利贴没有被修改。");
-                    return;
-                }
-
-                ReloadImportedStickyRuntime(merge);
-                ShowBubble(BuildStickyImportSummary(merge));
+                return new StickyNotesImportPreview(merge, validation.Notes);
             }
+        }
+
+        private bool CommitStickyNotesImport(StickyNotesImportPreview preview)
+        {
+            if (preview == null || preview.Merge == null ||
+                preview.ImportedNotes == null || preview.ImportedNotes.Count == 0)
+                return false;
+
+            StickyImportMergeResult currentPlan;
+            try
+            {
+                currentPlan = StickyImportMergePlanner.Calculate(
+                    _notes.GetAll(), preview.ImportedNotes);
+            }
+            catch (Exception error)
+            {
+                ApplicationDiagnostics.ReportNonFatal(
+                    "sticky-notes-import-replan", error);
+                ShowStickyImportFailure("导入未完成。\n当前便利贴没有被修改。");
+                return false;
+            }
+            if (!ImportPlansMatch(preview.Merge, currentPlan))
+            {
+                ShowBubble("当前内容已变化，请重新导入。\n当前便利贴没有被修改。");
+                return false;
+            }
+            if (currentPlan.AddedCount == 0)
+            {
+                ShowBubble("备份中的便利贴都已存在，当前内容没有修改。");
+                return false;
+            }
+
+            PersistenceResult committed = _notes.CommitImportedMerge(currentPlan);
+            if (committed == null || !committed.Succeeded)
+            {
+                ShowStickyImportFailure("导入未完成。\n当前便利贴没有被修改。");
+                return false;
+            }
+
+            ReloadImportedStickyRuntime(currentPlan);
+            ShowBubble(BuildStickyImportSummary(currentPlan));
+            return true;
+        }
+
+        private static bool ImportPlansMatch(StickyImportMergeResult left,
+            StickyImportMergeResult right)
+        {
+            if (left == null || right == null || left.Actions == null ||
+                right.Actions == null || left.Actions.Count != right.Actions.Count)
+                return false;
+            for (int i = 0; i < left.Actions.Count; i++)
+            {
+                StickyImportAction a = left.Actions[i];
+                StickyImportAction b = right.Actions[i];
+                if (a == null || b == null || a.Kind != b.Kind ||
+                    !String.Equals(a.ImportedNoteId, b.ImportedNoteId,
+                        StringComparison.OrdinalIgnoreCase) ||
+                    !String.Equals(a.ResultNoteId, b.ResultNoteId,
+                        StringComparison.OrdinalIgnoreCase) ||
+                    a.Added != b.Added) return false;
+            }
+            return true;
         }
 
         private void RestoreStickyNotesBackup()
