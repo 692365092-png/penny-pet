@@ -96,21 +96,37 @@ namespace PennyPet
             _birthdayMonth.DropDownStyle = ComboBoxStyle.DropDownList;
             _birthdayMonth.Location = new Point(150, 232);
             _birthdayMonth.Size = new Size(64, 28);
-            _birthdayMonth.Items.Add(0);
+            _birthdayMonth.Items.Add("月");
             for (int month = 1; month <= 12; month++)
-                _birthdayMonth.Items.Add(month);
-            _birthdayMonth.SelectedItem =
-                Math.Max(0, Math.Min(12, userBirthdayMonth));
+                _birthdayMonth.Items.Add(month.ToString());
 
             _birthdayDay = new ComboBox();
             _birthdayDay.DropDownStyle = ComboBoxStyle.DropDownList;
             _birthdayDay.Location = new Point(222, 232);
             _birthdayDay.Size = new Size(64, 28);
-            _birthdayDay.Items.Add(0);
-            for (int day = 1; day <= 31; day++)
-                _birthdayDay.Items.Add(day);
-            _birthdayDay.SelectedItem =
-                Math.Max(0, Math.Min(31, userBirthdayDay));
+            _birthdayDay.Items.Add("日");
+            _birthdayDay.Enabled = false;
+
+            if (userBirthdayMonth >= 1 && userBirthdayMonth <= 12)
+                _birthdayMonth.SelectedIndex = userBirthdayMonth;
+            else
+                _birthdayMonth.SelectedIndex = 0;
+
+            if (_birthdayMonth.SelectedIndex > 0)
+            {
+                PopulateBirthdayDays(userBirthdayMonth);
+                if (userBirthdayDay >= 1 &&
+                    userBirthdayDay <= _birthdayDay.Items.Count - 1)
+                    _birthdayDay.SelectedIndex = userBirthdayDay;
+                else
+                    _birthdayDay.SelectedIndex = 0;
+                _birthdayDay.Enabled = true;
+            }
+            else
+            {
+                _birthdayDay.SelectedIndex = 0;
+                _birthdayDay.Enabled = false;
+            }
 
             Label zodiacLabel = new Label();
             zodiacLabel.Text = "我的星座：";
@@ -234,8 +250,11 @@ namespace PennyPet
         {
             get
             {
-                return _birthdayMonth.SelectedItem is int
-                    ? (int)_birthdayMonth.SelectedItem : 0;
+                int value;
+                return _birthdayMonth.SelectedIndex > 0 &&
+                    Int32.TryParse(Convert.ToString(
+                        _birthdayMonth.SelectedItem), out value)
+                    ? value : 0;
             }
         }
 
@@ -243,8 +262,11 @@ namespace PennyPet
         {
             get
             {
-                return _birthdayDay.SelectedItem is int
-                    ? (int)_birthdayDay.SelectedItem : 0;
+                int value;
+                return _birthdayDay.SelectedIndex > 0 &&
+                    Int32.TryParse(Convert.ToString(
+                        _birthdayDay.SelectedItem), out value)
+                    ? value : 0;
             }
         }
 
@@ -352,10 +374,45 @@ namespace PennyPet
         {
             int month = SelectedBirthdayMonth;
             int day = SelectedBirthdayDay;
+            if (Object.ReferenceEquals(sender, _birthdayMonth))
+            {
+                if (month == 0)
+                {
+                    ClearBirthdayDay();
+                    return;
+                }
+                PopulateBirthdayDays(month);
+                _birthdayDay.SelectedIndex = 0;
+                return;
+            }
+            if (month == 0)
+            {
+                ClearBirthdayDay();
+                return;
+            }
+            if (day == 0) return;
             ZodiacSign suggested;
             if (PetBirthdayRule.TryDeriveZodiac(month, day,
                 out suggested))
                 _zodiac.SelectedItem = suggested;
+        }
+
+        private void ClearBirthdayDay()
+        {
+            _birthdayDay.Items.Clear();
+            _birthdayDay.Items.Add("日");
+            _birthdayDay.SelectedIndex = 0;
+            _birthdayDay.Enabled = false;
+        }
+
+        private void PopulateBirthdayDays(int month)
+        {
+            _birthdayDay.Items.Clear();
+            _birthdayDay.Items.Add("日");
+            int days = DateTime.DaysInMonth(2000, month);
+            for (int day = 1; day <= days; day++)
+                _birthdayDay.Items.Add(day.ToString());
+            _birthdayDay.Enabled = true;
         }
 
         private void SetWeatherLocation(object sender, EventArgs e)
