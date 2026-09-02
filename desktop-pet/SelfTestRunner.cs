@@ -1980,6 +1980,7 @@ namespace PennyPet
             internal bool SoftPaletteOk;
             internal bool FullWidthNormalizationOk;
             internal bool ManagerMarqueeBatchDeleteOk;
+            internal bool ManagerSortingOk;
             internal bool NativeSnapDisabledOk;
             internal bool SteadyDockGuideOk;
             internal bool OrdinaryLinkDetectionOk;
@@ -2022,6 +2023,59 @@ namespace PennyPet
                 new StickyNotesManagerCommands()))
                 result.ManagerMarqueeBatchDeleteOk =
                     manager.SupportsMarqueeBatchDelete;
+            StickyNoteData sortAlpha = new StickyNoteData
+            {
+                Id = "manager-sort-alpha",
+                Title = "Alpha",
+                ModifiedUtcTicks = 100
+            };
+            StickyNoteData sortBeta = new StickyNoteData
+            {
+                Id = "manager-sort-beta",
+                Title = "Beta",
+                IsTodoList = true,
+                ModifiedUtcTicks = 200,
+                ReminderUtcTicks = DateTime.UtcNow.AddHours(2).Ticks
+            };
+            StickyNoteData sortGamma = new StickyNoteData
+            {
+                Id = "manager-sort-gamma",
+                Title = "Gamma",
+                IsSchedule = true,
+                ModifiedUtcTicks = 300,
+                ReminderUtcTicks = DateTime.UtcNow.AddHours(1).Ticks
+            };
+            List<StickyNoteData> sortNotes = new List<StickyNoteData>
+                { sortGamma, sortAlpha, sortBeta };
+            using (StickyNotesManagerForm manager = new StickyNotesManagerForm(
+                delegate { return sortNotes; },
+                new StickyNotesManagerCommands()))
+            {
+                manager.RefreshForTest();
+                manager.SortColumnForTest(0);
+                List<string> nameAsc = manager.DisplayedTitlesForTest();
+                manager.SortColumnForTest(0);
+                List<string> nameDesc = manager.DisplayedTitlesForTest();
+                manager.SortColumnForTest(1);
+                List<string> statusAsc = manager.DisplayedTitlesForTest();
+                manager.SortColumnForTest(2);
+                List<string> reminderAsc = manager.DisplayedTitlesForTest();
+                manager.SortColumnForTest(3);
+                List<string> modifiedAsc = manager.DisplayedTitlesForTest();
+                result.ManagerSortingOk =
+                    nameAsc.Count == 3 && nameAsc[0] == "Alpha" &&
+                    nameAsc[2] == "Gamma" && nameDesc[0] == "Gamma" &&
+                    nameDesc[2] == "Alpha" &&
+                    statusAsc[0] == "Alpha" && statusAsc[1] == "Beta" &&
+                    statusAsc[2] == "Gamma" &&
+                    reminderAsc[0] == "Gamma" &&
+                    reminderAsc[1] == "Beta" &&
+                    reminderAsc[2] == "Alpha" &&
+                    modifiedAsc[0] == "Alpha" &&
+                    modifiedAsc[2] == "Gamma" &&
+                    manager.SortIndicatorForTest(3).EndsWith("▲",
+                        StringComparison.Ordinal);
+            }
             long styleWithMaximize = 0x00040000L | 0x00010000L;
             result.NativeSnapDisabledOk =
                 StickyNoteWindow.RemoveMaximizeStyle(styleWithMaximize) ==
@@ -4832,6 +4886,8 @@ namespace PennyPet
                     windowPolicyChecks.SteadyDockGuideOk) + ",\n" +
                 "  \"manager_marquee_batch_delete_ok\": " + Bool(
                     windowPolicyChecks.ManagerMarqueeBatchDeleteOk) + ",\n" +
+                "  \"manager_sorting_ok\": " + Bool(
+                    windowPolicyChecks.ManagerSortingOk) + ",\n" +
                 "  \"held_key_overlay_stays_constant_ok\": " + Bool(
                     keyboardOverlayChecks.HeldKeyStableOk) + ",\n" +
                 "  \"keyboard_hook_captures_own_process_ok\": " + Bool(

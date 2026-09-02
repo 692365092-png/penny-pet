@@ -324,6 +324,8 @@ namespace PennyPet
         private readonly TextBox _search;
         private readonly ListView _list;
         private readonly Button _deleteButton;
+        private int _sortColumn = -1;
+        private bool _sortAscending = true;
 
         internal bool CreateRequested { get; private set; }
         internal StickyNoteData ShowRequested { get; private set; }
@@ -396,6 +398,7 @@ namespace PennyPet
             _list.Columns.Add("状态", 80);
             _list.Columns.Add("提醒", 150);
             _list.Columns.Add("修改时间", 120);
+            _list.ColumnClick += ManagerColumnClick;
             _list.DoubleClick += delegate
             {
                 StickyNoteData note = SelectedNote();
@@ -520,12 +523,23 @@ namespace PennyPet
         private void RefreshList()
         {
             string query = (_search.Text ?? String.Empty).Trim();
-            _list.BeginUpdate();
-            _list.Items.Clear();
-            foreach (StickyNoteData note in _getNotes())
+            List<StickyNoteData> visibleNotes = new List<StickyNoteData>();
+            List<StickyNoteData> notes = _getNotes() ??
+                new List<StickyNoteData>();
+            foreach (StickyNoteData note in notes)
             {
+                if (note == null) continue;
                 if (query.Length > 0 && note.SearchText.IndexOf(query,
                     StringComparison.CurrentCultureIgnoreCase) < 0) continue;
+                visibleNotes.Add(note);
+            }
+            if (_sortColumn >= 0)
+                visibleNotes.Sort(CompareNotesForView);
+            UpdateSortIndicators();
+            _list.BeginUpdate();
+            _list.Items.Clear();
+            foreach (StickyNoteData note in visibleNotes)
+            {
                 DateTime? reminder = note.ReminderUtc;
                 string reminderText = reminder.HasValue && reminder.Value > DateTime.UtcNow
                     ? reminder.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "—";
@@ -550,6 +564,133 @@ namespace PennyPet
             }
             _list.EndUpdate();
             RefreshSelectionState();
+        }
+
+        private void ManagerColumnClick(object sender, ColumnClickEventArgs e)
+        {
+            if (_sortColumn == e.Column) _sortAscending = !_sortAscending;
+            else
+            {
+                _sortColumn = e.Column;
+                _sortAscending = true;
+            }
+            RefreshList();
+        }
+
+        private void UpdateSortIndicators()
+        {
+            string[] headings = { "名称 / 摘要", "状态", "提醒", "修改时间" };
+            for (int i = 0; i < headings.Length && i < _list.Columns.Count; i++)
+            {
+                string indicator = _sortColumn == i
+                    ? (_sortAscending ? " ▲" : " ▼") : String.Empty;
+                _list.Columns[i].Text = headings[i] + indicator;
+            }
+        }
+
+        private int CompareNotesForView(StickyNoteData left,
+            StickyNoteData right)
+        {
+            int result;
+            switch (_sortColumn)
+            {
+                case 0:
+                    result = StringComparer.CurrentCultureIgnoreCase.Compare(
+                        left.DisplayTitle, right.DisplayTitle);
+                    break;
+                case 1:
+                    result = CompareStatus(left, right);
+                    break;
+                case 2:
+                    result = CompareReminder(left, right);
+                    break;
+                case 3:
+                    result = DateTime.Compare(left.ModifiedUtc,
+                        right.ModifiedUtc);
+                    break;
+                default:
+                    result = 0;
+                    break;
+            }
+            if (result == 0)
+                result = StringComparer.OrdinalIgnoreCase.Compare(left.Id,
+                    right.Id);
+            return _sortAscending ? result : -result;
+        }
+
+        private static int CompareStatus(StickyNoteData left,
+            StickyNoteData right)
+        {
+            int kind = ContentKind(left).CompareTo(ContentKind(right));
+            if (kind != 0) return kind;
+            int result;
+            if (left.IsTodoList)
+            {
+                result = CompletedTodoCount(left).CompareTo(
+                    CompletedTodoCount(right));
+                if (result != 0) return result;
+                result = left.TodoItems.Count.CompareTo(right.TodoItems.Count);
+                if (result != 0) return result;
+            }
+            else if (left.IsSchedule)
+            {
+                result = left.ScheduleItems.Count.CompareTo(
+                    right.ScheduleItems.Count);
+                if (result != 0) return result;
+            }
+            return left.Visible.CompareTo(right.Visible);
+        }
+
+        private static int ContentKind(StickyNoteData note)
+        {
+            return note.IsTodoList ? 1 : note.IsSchedule ? 2 : 0;
+        }
+
+        private static int CompletedTodoCount(StickyNoteData note)
+        {
+            int completed = 0;
+            foreach (StickyTodoItem item in note.TodoItems)
+                if (item != null && item.Completed) completed++;
+            return completed;
+        }
+
+        private static int CompareReminder(StickyNoteData left,
+            StickyNoteData right)
+        {
+            DateTime? leftReminder = left.ReminderUtc;
+            DateTime? rightReminder = right.ReminderUtc;
+            if (!leftReminder.HasValue || !rightReminder.HasValue)
+            {
+                if (leftReminder.HasValue == rightReminder.HasValue) return 0;
+                return leftReminder.HasValue ? -1 : 1;
+            }
+            return DateTime.Compare(leftReminder.Value, rightReminder.Value);
+        }
+
+        // Focused runtime hooks keep sorting tests independent of canonical
+        // order. They only operate on the form's view list.
+        internal void RefreshForTest()
+        {
+            RefreshList();
+        }
+
+        internal void SortColumnForTest(int columnIndex)
+        {
+            ManagerColumnClick(this, new ColumnClickEventArgs(columnIndex));
+        }
+
+        internal List<string> DisplayedTitlesForTest()
+        {
+            List<string> titles = new List<string>();
+            foreach (ListViewItem item in _list.Items)
+                titles.Add(item.Text);
+            return titles;
+        }
+
+        internal string SortIndicatorForTest(int columnIndex)
+        {
+            return columnIndex >= 0 && columnIndex < _list.Columns.Count
+                ? _list.Columns[columnIndex].Text : String.Empty;
         }
 
         private void DeleteSelectedNotes()
