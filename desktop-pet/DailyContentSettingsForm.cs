@@ -94,8 +94,8 @@ namespace PennyPet
 
             _birthdayMonth = new ComboBox();
             _birthdayMonth.DropDownStyle = ComboBoxStyle.DropDownList;
-            _birthdayMonth.Location = new Point(136, 232);
-            _birthdayMonth.Size = new Size(68, 28);
+            _birthdayMonth.Location = new Point(150, 232);
+            _birthdayMonth.Size = new Size(64, 28);
             _birthdayMonth.Items.Add(0);
             for (int month = 1; month <= 12; month++)
                 _birthdayMonth.Items.Add(month);
@@ -104,8 +104,8 @@ namespace PennyPet
 
             _birthdayDay = new ComboBox();
             _birthdayDay.DropDownStyle = ComboBoxStyle.DropDownList;
-            _birthdayDay.Location = new Point(212, 232);
-            _birthdayDay.Size = new Size(68, 28);
+            _birthdayDay.Location = new Point(222, 232);
+            _birthdayDay.Size = new Size(64, 28);
             _birthdayDay.Items.Add(0);
             for (int day = 1; day <= 31; day++)
                 _birthdayDay.Items.Add(day);
@@ -121,7 +121,7 @@ namespace PennyPet
             _zodiac.DropDownStyle = ComboBoxStyle.DropDownList;
             _zodiac.FormattingEnabled = true;
             _zodiac.Location = new Point(136, 272);
-            _zodiac.Size = new Size(180, 28);
+            _zodiac.Size = new Size(120, 28);
             _zodiac.Format += delegate(object sender,
                 ListControlConvertEventArgs e)
             {
