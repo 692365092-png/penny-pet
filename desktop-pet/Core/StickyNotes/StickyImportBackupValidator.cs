@@ -95,7 +95,14 @@ namespace PennyPet
             RequirePositiveInt64(fields, 10);
             RequireNonNegativeInt64(fields, 11);
 
-            if (version == 1) return;
+            if (version == 1)
+            {
+                // v1 stores the body in the final Base64 field too.  Do not
+                // let the codec's fail-soft decoder turn corrupted content
+                // into an apparently valid empty note.
+                RequireBase64(fields[12]);
+                return;
+            }
 
             RequireBoolean(fields[12]);
             RequireBase64(fields[13]);
