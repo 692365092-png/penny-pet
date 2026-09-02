@@ -61,6 +61,7 @@ dotnet test '.\desktop-pet\PennyPet.Tests.csproj' --configuration Release
   - `StickyDockGroups`：组顺序、父子关系、规范化和快照恢复。
 - `Core/StickyNotes/StickyNoteCodec.cs`：v1-v9 数据行编解码、内容限制和旧格式兼容。
 - `Core/StickyNotes/StickyDockOperations.cs`：组插入、抽离、隐藏槽位、快照、统一置顶数据和长按拆分判定。
+- `Core/StickyNotes/SideTabSnapshot.cs`：Side Tabs 直接消费的 detached 轻量显示投影；不是 canonical 或 persistence owner。
 - `Core/StickyNotes/StickyTabDropSession.cs`：跨 OLE 嵌套消息循环的页签拖放事务。
 - `Core/StickyNotes/StickyDockGeometry.cs`：`DockPoint`、`DockSize`、`DockRect`，以及 Dock 统一布局、divider、header 可达性、恢复、新建、页签、弹窗和异常拖拽恢复的纯数值规则。
 - `Core/Startup/PetStartupRules.cs`：UI/美术 readiness 纯门禁；不是完整启动状态机。
@@ -86,6 +87,7 @@ Dock 修改必须同时检查：组关系、组内顺序、持久化快照、统
 - “展开全部并平铺到此屏幕”会展开全部 note、清除 canonical Dock relation，再通过 hosted effect path 平铺；不要把它退化成只移动可见窗口。
 - `StickyNoteCodec` 的 v1-v9 compatibility readers 是用户数据兼容层，不属于已删除的 legacy runtime executor，必须保留。
 - Side Tabs 始终保持 no-activate TopMost chrome。monitor、working area 或 Pet scale 改变时会重新验证 desired left/right split；split 不变只 reposition，改变才 rebuild controls。
+- Side Tabs 直接消费 `SideTabSnapshot`；业务 note identity 使用稳定 `NoteId`，拖拽 source identity 才使用平台 UI object reference。OLE nested-loop、透明 canvas、BringToFront timing 等 workaround 是 Windows-only，不应复制成 macOS UI 框架。
 
 ### 链接边界
 

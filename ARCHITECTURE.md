@@ -111,6 +111,7 @@ Open-Meteo Forecast 请求固定为昨天、今天、明天和 8 个小时变量
 | `Core/StickyNotes/StickyNoteModels.cs` | 便利贴、三态 Todo、Schedule 和 Dock 持久化模型 | 平台无关 |
 | `Core/StickyNotes/StickyNoteCodec.cs` | v1-v9 数据行编解码、兼容和内容限制 | 平台无关 |
 | `Core/StickyNotes/StickyDockOperations.cs` | Dock 组插入、抽离、隐藏槽位、快照和统一置顶数据 | 平台无关 |
+| `Core/StickyNotes/SideTabSnapshot.cs` | Side Tabs 所需的 detached 轻量显示投影 | 平台无关；不是 canonical/persistence owner |
 | `Core/StickyNotes/StickyTabDropSession.cs` | 页签拖放事务 | 平台无关；窗口来源是不透明身份 |
 | `Core/StickyNotes/StickyDockGeometry.cs` | `DockPoint`、`DockSize`、`DockRect` 及 Dock、divider、header 可达性、恢复、新建、页签、弹窗和异常拖拽恢复几何 | 平台无关纯数值规则 |
 | `Core/Startup/PetStartupRules.cs` | UI/美术 readiness 门禁 | 平台无关的小范围启动判定，不是完整启动框架 |
@@ -225,7 +226,7 @@ Sticky WPF STA
 - “展开全部并平铺到此屏幕”会展开所有 note、清除 canonical Dock membership，并通过唯一 hosted effect path 平铺到 Pet 当前屏幕。
 - v1-v9 Sticky persistence codec 继续保留；旧数据先转换为 canonical `StickyNoteData`，运行时 executor 信息不写入用户数据。
 - Side Tabs 始终保持 no-activate TopMost chrome，并在 monitor/work-area/scale 改变时按需重新验证左右布局。
-- Side Tabs 仍在 WinForms Pet STA；`SideTabSnapshot.ToDisplayData()` compatibility adapter 当前仍存在，direct snapshot consumption 是已知债务。
+- Side Tabs 仍在 WinForms Pet STA，直接消费 detached `SideTabSnapshot`；便利贴业务身份使用稳定 `NoteId`，拖拽来源 UI identity 保持平台本地 opaque object。OLE nested-loop、TransparencyKey canvas、BringToFront timing 等 workaround 是 Windows-only，不是未来 macOS UI 的复用契约。
 
 启动 loading ownership：
 
