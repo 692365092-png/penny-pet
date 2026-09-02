@@ -247,7 +247,7 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void StickyUiCanary_UsesDetachedTypedOwnershipBoundary()
+        public void StickyUiHosted_UsesDetachedTypedOwnershipBoundary()
         {
             string commands = ReadSource(
                 "Features/StickyNotes/StickyUiCommand.cs");
@@ -278,7 +278,7 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void StickyUiCanary_DoesNotSynchronouslyWaitAcrossUiThreads()
+        public void StickyUiHosted_DoesNotSynchronouslyWaitAcrossUiThreads()
         {
             string threadHost = ReadSource("StickyUiThreadHost.cs");
             string posted = Between(threadHost, "internal void Post(",
@@ -293,11 +293,11 @@ namespace PennyPet.Tests
                 coordinator.Contains("Dispatcher.Invoke") ||
                 coordinator.Contains("Task.Wait") ||
                 coordinator.Contains("Task.Result"),
-                "Pet-side Canary coordination must stay fully asynchronous.");
+                "Pet-side hosted coordination must stay fully asynchronous.");
         }
 
         [TestMethod]
-        public void StickyUiCanary_ReportsInputFocusForOverlayPrivacy()
+        public void StickyUiHosted_ReportsInputFocusForOverlayPrivacy()
         {
             string commands = ReadSource(
                 "Features/StickyNotes/StickyUiCommand.cs");
@@ -625,7 +625,7 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void StickyUiCanary_ExternalCloseUsesAsyncFinalSnapshotProtocol()
+        public void StickyUiHosted_ExternalCloseUsesAsyncFinalSnapshotProtocol()
         {
             string form = ReadSource("PetForm.cs");
             string closing = Between(form,
@@ -689,7 +689,7 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void StickyUiHostedClosure_RemovesPetOwnedWindowExecutor()
+        public void StickyUiHosted_FinalArchitectureHasSingleWindowExecutor()
         {
             string startup = ReadSource("PetStartupCoordinator.cs");
             string form = ReadSource("PetForm.cs");
@@ -697,19 +697,30 @@ namespace PennyPet.Tests
                 "Features/StickyNotes/PetStickyWindowCoordinator.cs");
             string dock = ReadSource(
                 "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string persistence = ReadSource(
+                "Features/StickyNotes/PetPersistenceCoordinator.cs");
+            string reminder = ReadSource("PetReminderWindowsCoordinator.cs");
+            string menu = ReadSource("PetMenuActions.cs");
+            string host = ReadSource("StickyUiHost.cs");
             string session = ReadSource("StickyWindowSession.cs");
             string codec = ReadSource("Core/StickyNotes/StickyNoteCodec.cs");
+            string petOwned = startup + form + coordinator + dock +
+                persistence + reminder + menu;
 
             Assert.IsTrue(startup.Contains("ShowHostedSticky(") &&
                 coordinator.Contains("StartHostedSticky(") &&
+                host.Contains("Dictionary<string, StickyWindowSession> _sessions") &&
                 session.Contains("new StickyNoteWindow("),
                 "Startup and creation must route through the hosted session executor.");
-            Assert.IsFalse(form.Contains("_noteWindows") ||
-                coordinator.Contains("GetOrCreateStickyNoteWindow") ||
-                coordinator.Contains("FallBackHostedStickyToLegacy") ||
-                dock.Contains("RestoreStickyDockComponent") ||
-                dock.Contains("StickyNoteWindow"),
+            Assert.IsFalse(petOwned.Contains("_noteWindows") ||
+                petOwned.Contains("GetOrCreateStickyNoteWindow") ||
+                petOwned.Contains("FallBackHostedStickyToLegacy") ||
+                petOwned.Contains("RestoreStickyDockComponent") ||
+                petOwned.Contains("new StickyNoteWindow("),
                 "PetForm must not retain a legacy Sticky Window executor.");
+            Assert.IsFalse(host.Contains("StickyNoteRepository") ||
+                host.Contains("IsTodoList") || host.Contains("IsSchedule"),
+                "The host must own sessions, not canonical persistence or content modes.");
             Assert.IsTrue(codec.Contains("versionOne") &&
                 codec.Contains("versionNine"),
                 "Removing the executor must retain legacy persistence readers.");

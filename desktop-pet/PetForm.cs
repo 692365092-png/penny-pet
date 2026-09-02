@@ -437,7 +437,7 @@ namespace PennyPet
             _petUiContext =
                 SynchronizationContext.Current as WindowsFormsSynchronizationContext
                 ?? new WindowsFormsSynchronizationContext();
-            _stickyUiHost.ConfigureCanary(HostedStickyEventReceived,
+            _stickyUiHost.Configure(HostedStickyEventReceived,
                 _petUiContext);
 
             Shown += delegate

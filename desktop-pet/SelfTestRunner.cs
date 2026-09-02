@@ -3454,7 +3454,7 @@ namespace PennyPet
             internal bool StartupDefaultOk;
             internal bool StartupLoadingReadinessGateOk;
             internal bool StickyUiHostOk;
-            internal StickyCanaryCheckResult StickyCanary;
+            internal StickyHostedCheckResult StickyHosted;
             internal bool ScaleRangeOk;
             internal bool DailyContentSettingsUiOk;
             internal bool ZodiacPreferenceSettingsUiOk;
@@ -3468,7 +3468,7 @@ namespace PennyPet
             internal StickyTodoWindowCheckResult TodoChecks;
         }
 
-        private sealed class StickyCanaryCheckResult
+        private sealed class StickyHostedCheckResult
         {
             internal bool LifecycleOk;
             internal bool PerNoteSequenceOk;
@@ -3549,7 +3549,7 @@ namespace PennyPet
                     shutdownCompleted && afterShutdown != null &&
                     afterShutdown.Status == StickyUiCommandStatus.NotAccepted;
             }
-            result.StickyCanary = RunStickyCanaryLifecycleCheck();
+            result.StickyHosted = RunStickyHostedLifecycleCheck();
             result.ScaleRangeOk =
                 PetForm.NormalizeScalePercent(47) == 50 &&
                 PetForm.NormalizeScalePercent(104) == 100 &&
@@ -3673,9 +3673,9 @@ namespace PennyPet
             return result;
         }
 
-        private static StickyCanaryCheckResult RunStickyCanaryLifecycleCheck()
+        private static StickyHostedCheckResult RunStickyHostedLifecycleCheck()
         {
-            StickyCanaryCheckResult check = new StickyCanaryCheckResult();
+            StickyHostedCheckResult check = new StickyHostedCheckResult();
             int petThread = Thread.CurrentThread.ManagedThreadId;
             int eventThread = 0;
             StickyUiEvent lastEvent = null;
@@ -3734,7 +3734,7 @@ namespace PennyPet
             using (StickyUiHost host = new StickyUiHost())
             {
                 host.Start();
-                host.ConfigureCanary(delegate(StickyUiEvent value)
+                host.Configure(delegate(StickyUiEvent value)
                 {
                     eventThread = Thread.CurrentThread.ManagedThreadId;
                     lastEvent = value;
@@ -4718,33 +4718,33 @@ namespace PennyPet
                     shellChecks.StartupDefaultOk) + ",\n" +
                 "  \"sticky_ui_host_ok\": " + Bool(
                     shellChecks.StickyUiHostOk) + ",\n" +
-                "  \"sticky_canary_lifecycle_ok\": " + Bool(
-                    shellChecks.StickyCanary.LifecycleOk) + ",\n" +
+                "  \"sticky_hosted_lifecycle_ok\": " + Bool(
+                    shellChecks.StickyHosted.LifecycleOk) + ",\n" +
                 "  \"sticky_hosted_sequence_rejection_ok\": " + Bool(
-                    shellChecks.StickyCanary.PerNoteSequenceOk) + ",\n" +
+                    shellChecks.StickyHosted.PerNoteSequenceOk) + ",\n" +
                 "  \"sticky_hosted_close_all_batch_ok\": " + Bool(
-                    shellChecks.StickyCanary.CloseAllBatchOk) + ",\n" +
+                    shellChecks.StickyHosted.CloseAllBatchOk) + ",\n" +
                 "  \"sticky_hosted_two_note_dock_effect_ok\": " + Bool(
-                    shellChecks.StickyCanary.HostedDockEffectOk) + ",\n" +
+                    shellChecks.StickyHosted.HostedDockEffectOk) + ",\n" +
                 "  \"sticky_hosted_group_move_ok\": " + Bool(
-                    shellChecks.StickyCanary.HostedGroupMoveOk) + ",\n" +
+                    shellChecks.StickyHosted.HostedGroupMoveOk) + ",\n" +
                 "  \"sticky_hosted_topmost_ok\": " + Bool(
-                    shellChecks.StickyCanary.HostedTopMostOk) + ",\n" +
+                    shellChecks.StickyHosted.HostedTopMostOk) + ",\n" +
                 "  \"sticky_hosted_horizontal_resize_ok\": " + Bool(
-                    shellChecks.StickyCanary.HostedHorizontalResizeOk) +
+                    shellChecks.StickyHosted.HostedHorizontalResizeOk) +
                     ",\n" +
                 "  \"sticky_hosted_divider_resize_ok\": " + Bool(
-                    shellChecks.StickyCanary.HostedDividerResizeOk) +
+                    shellChecks.StickyHosted.HostedDividerResizeOk) +
                     ",\n" +
                 "  \"sticky_hosted_hide_reopen_ok\": " + Bool(
-                    shellChecks.StickyCanary.HostedHideReopenOk) + ",\n" +
+                    shellChecks.StickyHosted.HostedHideReopenOk) + ",\n" +
                 "  \"sticky_hosted_middle_split_ok\": " + Bool(
-                    shellChecks.StickyCanary.HostedMiddleSplitOk) + ",\n" +
+                    shellChecks.StickyHosted.HostedMiddleSplitOk) + ",\n" +
                 "  \"sticky_hosted_three_note_insertion_ok\": " + Bool(
-                    shellChecks.StickyCanary.HostedThreeNoteInsertionOk) +
+                    shellChecks.StickyHosted.HostedThreeNoteInsertionOk) +
                     ",\n" +
                 "  \"sticky_hosted_dock_restore_ok\": " + Bool(
-                    shellChecks.StickyCanary.DockRestoreOk) + ",\n" +
+                    shellChecks.StickyHosted.DockRestoreOk) + ",\n" +
                 "  \"keyboard_hook_opt_in_and_default_off_ok\": " + Bool(
                     keyboardOverlayChecks.HookOptInDefaultOk) + ",\n" +
                 "  \"keyboard_privacy_notice_persistence_ok\": " + Bool(

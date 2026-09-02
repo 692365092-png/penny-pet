@@ -29,7 +29,7 @@ namespace PennyPet
             lock (_configurationGate) _commandHandler = handler;
         }
 
-        internal void ConfigureCanary(Action<StickyUiEvent> handler,
+        internal void Configure(Action<StickyUiEvent> handler,
             SynchronizationContext eventContext)
         {
             if (handler == null) throw new ArgumentNullException(nameof(handler));
@@ -39,7 +39,7 @@ namespace PennyPet
             {
                 _eventHandler = handler;
                 _eventContext = eventContext;
-                _commandHandler = HandleCanaryCommand;
+                _commandHandler = HandleCommand;
             }
         }
 
@@ -58,7 +58,7 @@ namespace PennyPet
             _threadHost.Post(command, handler, completed, completionContext);
         }
 
-        private StickyUiCommandResult HandleCanaryCommand(
+        private StickyUiCommandResult HandleCommand(
             StickyUiCommand command)
         {
             StickyWindowSession session = null;
