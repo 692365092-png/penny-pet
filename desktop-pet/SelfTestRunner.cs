@@ -1174,6 +1174,7 @@ namespace PennyPet
             internal bool DividerMovesFollowingChainOk;
             internal bool DividerIndependentRangeOk;
             internal bool DividerPreservesDownstreamHeightsOk;
+            internal bool DividerLiveSessionTargetsOk;
             internal bool WideNarrowDockingOk;
             internal bool LongCoordinateGuardOk;
             internal bool FirstDragRecoveryOk;
@@ -1237,6 +1238,29 @@ namespace PennyPet
                     beforeDividerLayout[1].Top + 50 &&
                 afterDividerLayout[2].Top ==
                     beforeDividerLayout[2].Top + 50;
+            List<DockWindowFacts> liveResizeStart =
+                new List<DockWindowFacts>
+                {
+                    new DockWindowFacts("a", 100, 100, 420, 300, true, true),
+                    new DockWindowFacts("b", 100, 400, 420, 300, true, true),
+                    new DockWindowFacts("c", 100, 700, 420, 300, true, true),
+                    new DockWindowFacts("d", 100, 1000, 420, 300, true, true)
+                };
+            int liveSourceHeight = 0;
+            List<DockLayoutTarget> liveTargets = null;
+            int[] liveCycle = { 450, 250, 600, 300 };
+            for (int repeat = 0; repeat < 50; repeat++)
+                foreach (int requested in liveCycle)
+                    liveTargets = PetForm.CalculateDockMemberResizeTargets(
+                        liveResizeStart, "b", requested,
+                        out liveSourceHeight);
+            result.DividerLiveSessionTargetsOk =
+                liveSourceHeight == 300 && liveTargets.Count == 2 &&
+                liveTargets.TrueForAll(target => target.NoteId != "b" &&
+                    target.Height == 300 && target.X == 100 &&
+                    target.Width == 420 && target.TopMost) &&
+                liveTargets[0].NoteId == "c" && liveTargets[0].Y == 700 &&
+                liveTargets[1].NoteId == "d" && liveTargets[1].Y == 1000;
             result.WideNarrowDockingOk = PetForm.CanDockBelow(
                 new Rectangle(80, 400, 900, 300),
                 new Rectangle(400, 100, 280, 300), 20) &&
@@ -4367,6 +4391,9 @@ namespace PennyPet
                 "  \"sticky_internal_divider_preserves_downstream_heights_ok\": " +
                     Bool(dockChecks.Geometry
                         .DividerPreservesDownstreamHeightsOk) + ",\n" +
+                "  \"sticky_hosted_divider_stable_live_targets_ok\": " +
+                    Bool(dockChecks.Geometry
+                        .DividerLiveSessionTargetsOk) + ",\n" +
                 "  \"sticky_long_group_coordinate_guard_ok\": " + Bool(
                     dockChecks.Geometry.LongCoordinateGuardOk) + ",\n" +
                 "  \"sticky_root_close_collapses_group_ok\": " + Bool(

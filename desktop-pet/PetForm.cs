@@ -175,7 +175,7 @@ namespace PennyPet
         private bool _startupUiReady;
         private bool _startupArtReady;
         private bool _startupReadyRaised;
-        private Dictionary<string, DockWindowFacts>
+        private List<DockWindowFacts>
             _activeHostedDockResizeFacts;
         private string _activeHostedDockResizeSourceId;
         // The loading window is the only startup visual.  Keep the layered pet
@@ -494,6 +494,7 @@ namespace PennyPet
                 if (!noteWindow.IsDisposed) noteWindow.CloseForApplicationExit();
             }
             _noteWindows.Clear();
+            ClearHostedDockResizeSession();
             _stickyUiHost.BeginShutdown();
             _notes.Save();
             _notes.SaveFailed -= PersistenceSaveFailed;

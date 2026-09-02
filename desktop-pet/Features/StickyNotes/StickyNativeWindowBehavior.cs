@@ -243,13 +243,18 @@ namespace PennyPet
                 _resizeStartWidth = Width;
                 _dockDividerResizeActive = _dockSplitBottom &&
                     _lastResizeHitTest == HtBottom;
+                if (_dockDividerResizeActive)
+                    RaiseDockDividerResize(DockDividerResizeStarted, Height);
                 return IntPtr.Zero;
             }
             if (message == WmExitSizeMove)
             {
+                bool dividerResize = _dockDividerResizeActive;
                 _windowResizeActive = false;
                 _dockDividerResizeActive = false;
                 _lastResizeHitTest = 0;
+                if (dividerResize)
+                    RaiseDockDividerResize(DockDividerResizeCompleted, Height);
                 return IntPtr.Zero;
             }
             if (message == WmSizing && _dockSplitBottom &&
@@ -269,6 +274,8 @@ namespace PennyPet
                     maximumPixels, requested));
                 sizing.Bottom = sizing.Top + requested;
                 Marshal.StructureToPtr(sizing, lParam, false);
+                RaiseDockDividerResize(DockDividerResizing,
+                    (int)Math.Round(requested / scale));
                 handled = true;
                 return new IntPtr(1);
             }
@@ -332,13 +339,18 @@ namespace PennyPet
             else if (top) result = HtTop;
             else if (bottom) result = HtBottom;
             _lastResizeHitTest = result;
-            if (_dockSplitBottom && result == HtBottom)
-                _dockDividerResizeActive = true;
-            else if (!_windowResizeActive)
+            if (!_windowResizeActive)
                 _dockDividerResizeActive = false;
             if (result == 0) return IntPtr.Zero;
             handled = true;
             return new IntPtr(result);
+        }
+
+        private void RaiseDockDividerResize(
+            EventHandler<DockDividerResizeEventArgs> handler, int height)
+        {
+            if (handler != null)
+                handler(this, new DockDividerResizeEventArgs(height));
         }
 
         private double DeviceScaleY()

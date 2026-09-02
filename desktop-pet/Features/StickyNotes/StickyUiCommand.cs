@@ -327,7 +327,9 @@ namespace PennyPet
         HeaderDragMoved,
         HeaderDragCompleted,
         DockHorizontalResizing,
+        DockDividerResizeStarted,
         DockDividerResizing,
+        DockDividerResizeCompleted,
         CancelReminderRequested,
         ModifyReminderRequested,
         DeleteReminderRequested,
@@ -344,7 +346,8 @@ namespace PennyPet
         // Kept internal for focused self-tests; sessions use payload factories.
         internal StickyUiEvent(StickyUiEventKind kind, string noteId,
             StickyNoteUiSnapshot snapshot, bool flag, long sequence,
-            ReminderItem reminder = null, int left = 0, int width = 0)
+            ReminderItem reminder = null, int left = 0, int width = 0,
+            int height = 0)
         {
             Kind = kind;
             NoteId = noteId ?? String.Empty;
@@ -354,6 +357,7 @@ namespace PennyPet
             Reminder = reminder;
             Left = left;
             Width = width;
+            Height = height;
         }
 
         internal static StickyUiEvent Signal(StickyUiEventKind kind,
@@ -388,6 +392,19 @@ namespace PennyPet
                 snapshot, false, sequence, null, left, width);
         }
 
+        internal static StickyUiEvent DividerResize(StickyUiEventKind kind,
+            StickyNoteUiSnapshot snapshot, long sequence, int height)
+        {
+            if (snapshot == null)
+                throw new ArgumentNullException(nameof(snapshot));
+            if (kind != StickyUiEventKind.DockDividerResizeStarted &&
+                kind != StickyUiEventKind.DockDividerResizing &&
+                kind != StickyUiEventKind.DockDividerResizeCompleted)
+                throw new ArgumentOutOfRangeException(nameof(kind));
+            return new StickyUiEvent(kind, snapshot.NoteId, snapshot, false,
+                sequence, null, 0, 0, height);
+        }
+
         internal StickyUiEventKind Kind { get; private set; }
         internal string NoteId { get; private set; }
         internal StickyNoteUiSnapshot Snapshot { get; private set; }
@@ -396,6 +413,7 @@ namespace PennyPet
         internal ReminderItem Reminder { get; private set; }
         internal int Left { get; private set; }
         internal int Width { get; private set; }
+        internal int Height { get; private set; }
     }
 
     internal enum StickyUiCommandStatus

@@ -184,6 +184,9 @@ namespace PennyPet
             _window.HeaderDragMoved += HeaderDragMoved;
             _window.HeaderDragCompleted += HeaderDragCompleted;
             _window.DockHorizontalResizing += DockHorizontalResizing;
+            _window.DockDividerResizeStarted += DockDividerResizeStarted;
+            _window.DockDividerResizing += DockDividerResizing;
+            _window.DockDividerResizeCompleted += DockDividerResizeCompleted;
             _window.CancelReminderRequested += CancelReminderRequested;
             _window.ModifyReminderRequested += ModifyReminderRequested;
             _window.DeleteReminderRequested += DeleteReminderRequested;
@@ -208,6 +211,9 @@ namespace PennyPet
             _window.HeaderDragMoved -= HeaderDragMoved;
             _window.HeaderDragCompleted -= HeaderDragCompleted;
             _window.DockHorizontalResizing -= DockHorizontalResizing;
+            _window.DockDividerResizeStarted -= DockDividerResizeStarted;
+            _window.DockDividerResizing -= DockDividerResizing;
+            _window.DockDividerResizeCompleted -= DockDividerResizeCompleted;
             _window.CancelReminderRequested -= CancelReminderRequested;
             _window.ModifyReminderRequested -= ModifyReminderRequested;
             _window.DeleteReminderRequested -= DeleteReminderRequested;
@@ -259,11 +265,8 @@ namespace PennyPet
         private void BoundsChanged(object sender, EventArgs e)
         {
             if (_applyingBounds) return;
-            bool dividerInput = e is System.Windows.SizeChangedEventArgs &&
-                _window.DockDividerResizeActive;
-            EmitSnapshot(dividerInput
-                ? StickyUiEventKind.DockDividerResizing
-                : StickyUiEventKind.BoundsChanged);
+            if (_window.DockDividerResizeActive) return;
+            EmitSnapshot(StickyUiEventKind.BoundsChanged);
         }
 
         private void HeaderDragStarted(object sender, EventArgs e)
@@ -289,6 +292,37 @@ namespace PennyPet
             _sequence++;
             Raise(StickyUiEvent.HorizontalResize(snapshot, _sequence,
                 e == null ? 0 : e.Left, e == null ? 0 : e.Width));
+        }
+
+        private void DockDividerResizeStarted(object sender,
+            DockDividerResizeEventArgs e)
+        {
+            EmitDockDividerResize(StickyUiEventKind.DockDividerResizeStarted,
+                e);
+        }
+
+        private void DockDividerResizing(object sender,
+            DockDividerResizeEventArgs e)
+        {
+            EmitDockDividerResize(StickyUiEventKind.DockDividerResizing, e);
+        }
+
+        private void DockDividerResizeCompleted(object sender,
+            DockDividerResizeEventArgs e)
+        {
+            EmitDockDividerResize(
+                StickyUiEventKind.DockDividerResizeCompleted, e);
+        }
+
+        private void EmitDockDividerResize(StickyUiEventKind kind,
+            DockDividerResizeEventArgs e)
+        {
+            if (_eventsSuppressed || !IsAvailable) return;
+            StickyNoteUiSnapshot snapshot = CaptureSnapshot();
+            _lastSnapshot = snapshot;
+            _sequence++;
+            Raise(StickyUiEvent.DividerResize(kind, snapshot, _sequence,
+                e == null ? snapshot.Height : e.Height));
         }
 
         private void CancelReminderRequested(object sender, EventArgs e)

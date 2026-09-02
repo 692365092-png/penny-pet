@@ -169,6 +169,61 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyDockGeometry_LiveMemberResizeUsesStableStartBounds()
+        {
+            List<DockRect> start = new List<DockRect>
+            {
+                new DockRect(100, 100, 420, 300),
+                new DockRect(100, 400, 420, 300),
+                new DockRect(100, 700, 420, 300),
+                new DockRect(100, 1000, 420, 300)
+            };
+            int sourceHeight;
+            List<DockRect> firstGrow = StickyDockGeometry
+                .CalculateDockMemberResizeTargets(start, 0, 350,
+                    out sourceHeight);
+            Assert.AreEqual(350, sourceHeight);
+            Assert.AreEqual(3, firstGrow.Count);
+            Assert.AreEqual(450, firstGrow[0].Top);
+            Assert.AreEqual(750, firstGrow[1].Top);
+            Assert.AreEqual(1050, firstGrow[2].Top);
+            Assert.IsTrue(firstGrow.All(bounds => bounds.Height == 300));
+
+            List<DockRect> middleGrow = StickyDockGeometry
+                .CalculateDockMemberResizeTargets(start, 1, 380,
+                    out sourceHeight);
+            Assert.AreEqual(380, sourceHeight);
+            Assert.AreEqual(2, middleGrow.Count);
+            Assert.AreEqual(780, middleGrow[0].Top);
+            Assert.AreEqual(1080, middleGrow[1].Top);
+            Assert.IsTrue(middleGrow.All(bounds => bounds.Height == 300));
+
+            List<DockRect> middleShrink = StickyDockGeometry
+                .CalculateDockMemberResizeTargets(start, 1, 240,
+                    out sourceHeight);
+            Assert.AreEqual(240, sourceHeight);
+            Assert.AreEqual(640, middleShrink[0].Top);
+            Assert.AreEqual(940, middleShrink[1].Top);
+            StickyDockGeometry.CalculateDockMemberResizeTargets(start, 1, 50,
+                out sourceHeight);
+            Assert.AreEqual(220, sourceHeight);
+            StickyDockGeometry.CalculateDockMemberResizeTargets(start, 1, 900,
+                out sourceHeight);
+            Assert.AreEqual(700, sourceHeight);
+
+            List<DockRect> final = null;
+            int[] cycle = { 450, 250, 600, 300 };
+            for (int repeat = 0; repeat < 50; repeat++)
+                foreach (int requested in cycle)
+                    final = StickyDockGeometry.CalculateDockMemberResizeTargets(
+                        start, 1, requested, out sourceHeight);
+            Assert.AreEqual(300, sourceHeight);
+            Assert.AreEqual(700, final[0].Top);
+            Assert.AreEqual(1000, final[1].Top);
+            Assert.IsTrue(final.All(bounds => bounds.Height == 300));
+        }
+
+        [TestMethod]
         public void StickyDockGeometry_HeaderTranslationMatchesWindowsResults()
         {
             DockPoint delta = StickyDockGeometry

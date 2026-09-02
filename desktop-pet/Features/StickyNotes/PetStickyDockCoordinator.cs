@@ -657,8 +657,13 @@ namespace PennyPet
                             StickyUiCommandStatus.Handled)
                             ApplyHostedStickySnapshot(result.Snapshot,
                                 result.Sequence, false);
-                        else ReportHostedStickyCommandFailure(
-                            "sticky-hosted-dock-bounds", result);
+                        else
+                        {
+                            ClearHostedDockResizeSessionIfMember(
+                                target.NoteId);
+                            ReportHostedStickyCommandFailure(
+                                "sticky-hosted-dock-bounds", result);
+                        }
                     });
                 return;
             }
@@ -906,7 +911,7 @@ namespace PennyPet
             return true;
         }
 
-        private bool ResizeHostedStickyDockDivider(DockWindowFacts snapshot)
+        private bool BeginHostedStickyDockDivider(DockWindowFacts snapshot)
         {
             if (_synchronizingDockLayout || _movingDockGroup ||
                 _activeNoteDragId != null || snapshot == null) return false;
@@ -919,39 +924,74 @@ namespace PennyPet
                     return String.Equals(note.Id, snapshot.NoteId,
                         StringComparison.OrdinalIgnoreCase);
                 });
-            if (sourceIndex < 0) return false;
-
-            if (_activeHostedDockResizeFacts == null ||
-                !String.Equals(_activeHostedDockResizeSourceId,
-                    snapshot.NoteId, StringComparison.OrdinalIgnoreCase))
+            if (sourceIndex < 0 || sourceIndex >= ordered.Count - 1)
+                return false;
+            List<DockWindowFacts> startFacts =
+                new List<DockWindowFacts>();
+            foreach (StickyNoteData note in ordered)
             {
-                _activeHostedDockResizeSourceId = snapshot.NoteId;
-                _activeHostedDockResizeFacts =
-                    new Dictionary<string, DockWindowFacts>(
-                        StringComparer.OrdinalIgnoreCase);
-                foreach (StickyNoteData note in ordered)
-                {
-                    if (note == null || !note.Visible) continue;
-                    _activeHostedDockResizeFacts[note.Id] =
-                        DockWindowFacts.FromData(note);
-                }
+                if (note == null || !note.Visible) continue;
+                startFacts.Add(String.Equals(note.Id, snapshot.NoteId,
+                    StringComparison.OrdinalIgnoreCase)
+                    ? snapshot : DockWindowFacts.FromData(note));
             }
-            Dictionary<string, DockWindowFacts> facts =
-                new Dictionary<string, DockWindowFacts>(
-                    _activeHostedDockResizeFacts,
-                    StringComparer.OrdinalIgnoreCase);
-            facts[snapshot.NoteId] = snapshot;
+            if (startFacts.Count != ordered.Count) return false;
+            _activeHostedDockResizeSourceId = snapshot.NoteId;
+            _activeHostedDockResizeFacts = startFacts;
+            return true;
+        }
 
-            DockWindowFacts root;
-            if (!facts.TryGetValue(ordered[0].Id, out root)) return false;
+        private bool ResizeHostedStickyDockDivider(string sourceNoteId,
+            int requestedHeight)
+        {
+            if (_synchronizingDockLayout || _movingDockGroup ||
+                _activeNoteDragId != null ||
+                _activeHostedDockResizeFacts == null ||
+                !String.Equals(_activeHostedDockResizeSourceId,
+                    sourceNoteId, StringComparison.OrdinalIgnoreCase))
+                return false;
+            StickyNoteData source = _notes.Find(sourceNoteId);
+            if (source == null) return false;
+            List<StickyNoteData> ordered = BuildDockChainOrder(source);
+            if (!MatchesHostedDockResizeSession(ordered)) return false;
+            int sourceHeight;
+            List<DockLayoutTarget> targets =
+                CalculateDockMemberResizeTargets(
+                    _activeHostedDockResizeFacts, sourceNoteId,
+                    requestedHeight, out sourceHeight);
+            source.Height = sourceHeight;
+            List<DockLayoutTarget> changed = new List<DockLayoutTarget>();
+            foreach (DockLayoutTarget target in targets)
+            {
+                StickyNoteData note = _notes.Find(target.NoteId);
+                if (note == null) return false;
+                if (note.X != target.X || note.Y != target.Y ||
+                    note.Width != target.Width || note.Height != target.Height ||
+                    note.Visible != target.Visible ||
+                    note.AlwaysOnTop != target.TopMost)
+                    changed.Add(target);
+            }
             _synchronizingDockLayout = true;
             try
             {
-                LayoutDockChain(ordered, facts, root.X, root.Y,
-                    root.Width);
+                ApplyDockTargets(changed, sourceNoteId);
             }
             finally { _synchronizingDockLayout = false; }
-            RefreshDockResizeRoles();
+            return true;
+        }
+
+        private bool MatchesHostedDockResizeSession(
+            List<StickyNoteData> ordered)
+        {
+            if (ordered == null || _activeHostedDockResizeFacts == null ||
+                ordered.Count != _activeHostedDockResizeFacts.Count)
+                return false;
+            for (int index = 0; index < ordered.Count; index++)
+                if (ordered[index] == null || !ordered[index].Visible ||
+                    !String.Equals(ordered[index].Id,
+                        _activeHostedDockResizeFacts[index].NoteId,
+                        StringComparison.OrdinalIgnoreCase))
+                    return false;
             return true;
         }
 
@@ -966,6 +1006,40 @@ namespace PennyPet
             targets.Add(new DockLayoutTarget(lower.NoteId, lower.X,
                 upper.Y + upperHeight, lower.Width, lower.Height,
                 lower.Visible, lower.TopMost));
+            return targets;
+        }
+
+        internal static List<DockLayoutTarget>
+            CalculateDockMemberResizeTargets(
+                IList<DockWindowFacts> startFacts, string sourceNoteId,
+                int requestedSourceHeight, out int sourceHeight)
+        {
+            sourceHeight = CalculateDockDividerHeight(requestedSourceHeight);
+            List<DockLayoutTarget> targets = new List<DockLayoutTarget>();
+            if (startFacts == null) return targets;
+            int sourceIndex = -1;
+            List<DockRect> startBounds = new List<DockRect>();
+            for (int index = 0; index < startFacts.Count; index++)
+            {
+                DockWindowFacts facts = startFacts[index];
+                if (facts == null) return new List<DockLayoutTarget>();
+                startBounds.Add(new DockRect(facts.X, facts.Y,
+                    facts.Width, facts.Height));
+                if (String.Equals(facts.NoteId, sourceNoteId,
+                    StringComparison.OrdinalIgnoreCase)) sourceIndex = index;
+            }
+            List<DockRect> layout =
+                StickyDockGeometry.CalculateDockMemberResizeTargets(
+                    startBounds, sourceIndex, requestedSourceHeight,
+                    out sourceHeight);
+            for (int index = 0; index < layout.Count; index++)
+            {
+                DockWindowFacts facts = startFacts[sourceIndex + index + 1];
+                DockRect bounds = layout[index];
+                targets.Add(new DockLayoutTarget(facts.NoteId, bounds.Left,
+                    bounds.Top, bounds.Width, bounds.Height, facts.Visible,
+                    facts.TopMost));
+            }
             return targets;
         }
 

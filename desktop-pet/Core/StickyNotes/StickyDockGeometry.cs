@@ -87,6 +87,25 @@ namespace PennyPet
                 requestedUpperHeight));
         }
 
+        internal static List<DockRect> CalculateDockMemberResizeTargets(
+            IList<DockRect> startBounds, int sourceIndex,
+            int requestedSourceHeight, out int sourceHeight)
+        {
+            sourceHeight = CalculateDockDividerHeight(requestedSourceHeight);
+            List<DockRect> targets = new List<DockRect>();
+            if (startBounds == null || sourceIndex < 0 ||
+                sourceIndex >= startBounds.Count) return targets;
+            int delta = sourceHeight - startBounds[sourceIndex].Height;
+            for (int index = sourceIndex + 1;
+                index < startBounds.Count; index++)
+            {
+                DockRect start = startBounds[index];
+                targets.Add(new DockRect(start.Left, start.Top + delta,
+                    start.Width, start.Height));
+            }
+            return targets;
+        }
+
         internal static DockPoint CalculateHeaderReachableTranslation(
             DockRect header, DockRect work)
         {

@@ -125,6 +125,16 @@ namespace PennyPet
         public int Width { get; private set; }
     }
 
+    internal sealed class DockDividerResizeEventArgs : EventArgs
+    {
+        public DockDividerResizeEventArgs(int height)
+        {
+            Height = height;
+        }
+
+        public int Height { get; private set; }
+    }
+
     internal sealed class NoteTitleDialog : Form
     {
         private readonly TextBox _title;

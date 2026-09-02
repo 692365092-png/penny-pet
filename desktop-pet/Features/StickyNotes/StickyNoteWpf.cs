@@ -545,6 +545,12 @@ namespace PennyPet
         public event EventHandler PinStateChanged;
         public event EventHandler<DockHorizontalResizeEventArgs>
             DockHorizontalResizing;
+        public event EventHandler<DockDividerResizeEventArgs>
+            DockDividerResizeStarted;
+        public event EventHandler<DockDividerResizeEventArgs>
+            DockDividerResizing;
+        public event EventHandler<DockDividerResizeEventArgs>
+            DockDividerResizeCompleted;
         public event WF.FormClosedEventHandler FormClosed;
 
         public bool IsDisposed { get { return _disposed; } }

@@ -878,7 +878,8 @@ namespace PennyPet.Tests
                 protocol.Contains("StickyUiCommand SetDockResizeRole(") &&
                 protocol.Contains("StickyUiEvent FromSnapshot(") &&
                 protocol.Contains("StickyUiEvent Signal(") &&
-                protocol.Contains("StickyUiEvent HorizontalResize("),
+                protocol.Contains("StickyUiEvent HorizontalResize(") &&
+                protocol.Contains("StickyUiEvent DividerResize("),
                 "Protocol must expose factories for its payload shapes.");
             Assert.IsFalse(windowCoordinator.Contains(
                     "new StickyUiCommand(") ||
@@ -899,7 +900,9 @@ namespace PennyPet.Tests
                 commands.Contains("HeaderDragMoved") &&
                 commands.Contains("HeaderDragCompleted") &&
                 commands.Contains("DockHorizontalResizing") &&
+                commands.Contains("DockDividerResizeStarted") &&
                 commands.Contains("DockDividerResizing") &&
+                commands.Contains("DockDividerResizeCompleted") &&
                 commands.Contains("SetDockResizeRole") &&
                 commands.Contains("CloseRequested"),
                 "Dock protocol must expose header drag and resize event kinds.");
@@ -907,6 +910,9 @@ namespace PennyPet.Tests
                 session.Contains("_window.HeaderDragMoved +=") &&
                 session.Contains("_window.HeaderDragCompleted +=") &&
                 session.Contains("_window.DockHorizontalResizing +=") &&
+                session.Contains("_window.DockDividerResizeStarted +=") &&
+                session.Contains("_window.DockDividerResizing +=") &&
+                session.Contains("_window.DockDividerResizeCompleted +=") &&
                 session.Contains("EmitSnapshot(") &&
                 host.Contains("StickyUiCommandKind.SetDockResizeRole") &&
                 session.Contains("role.SplitBottom") &&
@@ -916,6 +922,45 @@ namespace PennyPet.Tests
                 session.Contains("if (_applyingBounds) return;") &&
                 session.Contains("StickyUiEventKind.CloseRequested"),
                 "StickyUiHost must forward dock drag/resize events.");
+        }
+
+        [TestMethod]
+        public void HostedDividerLiveResize_UsesExplicitLeanLifecycle()
+        {
+            string native = ReadSource(
+                "Features/StickyNotes/StickyNativeWindowBehavior.cs");
+            string windowCoordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string dockCoordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string liveResize = Between(dockCoordinator,
+                "private bool ResizeHostedStickyDockDivider",
+                "private bool MatchesHostedDockResizeSession");
+            string progress = Between(windowCoordinator,
+                "if (value.Kind == StickyUiEventKind.DockDividerResizing)",
+                "if (value.Kind == StickyUiEventKind.DockDividerResizeCompleted)");
+
+            Assert.IsTrue(native.Contains("WmEnterSizeMove") &&
+                native.Contains("WmSizing") &&
+                native.Contains("WmExitSizeMove") &&
+                native.Contains("DockDividerResizeStarted") &&
+                native.Contains("DockDividerResizing") &&
+                native.Contains("DockDividerResizeCompleted"),
+                "Native sizing must publish an explicit divider lifecycle.");
+            Assert.IsTrue(liveResize.Contains(
+                    "CalculateDockMemberResizeTargets") &&
+                liveResize.Contains("ApplyDockTargets(changed, sourceNoteId)") &&
+                !liveResize.Contains("LayoutDockChain") &&
+                !liveResize.Contains("RefreshDockResizeRoles"),
+                "Live ticks must move only changed followers from stable facts.");
+            Assert.IsFalse(progress.Contains("SaveAsync") ||
+                progress.Contains("RefreshDockResizeRoles"),
+                "Live progress must not save or refresh resize roles.");
+            Assert.IsTrue(windowCoordinator.Contains(
+                "CompleteHostedStickyDockDivider(value)") &&
+                windowCoordinator.Contains("finally { ClearHostedDockResizeSession(); }") &&
+                windowCoordinator.Contains("_notes.SaveAsync();"),
+                "Completion must save once and clear the transient session.");
         }
 
         [TestMethod]

@@ -616,21 +616,33 @@ namespace PennyPet
             }
             if (value.Kind == StickyUiEventKind.BoundsChanged)
             {
-                if (String.Equals(_activeHostedDockResizeSourceId,
-                    value.NoteId, StringComparison.OrdinalIgnoreCase))
-                    ClearHostedDockResizeSession();
                 ApplyHostedStickySnapshot(value.Snapshot, value.Sequence, false);
+                return;
+            }
+            if (value.Kind == StickyUiEventKind.DockDividerResizeStarted)
+            {
+                ClearHostedDockResizeSession();
+                if (!ApplyHostedStickySnapshot(value.Snapshot,
+                    value.Sequence, false) ||
+                    !BeginHostedStickyDockDivider(
+                        DockWindowFacts.FromSnapshot(value.Snapshot)))
+                    ClearHostedDockResizeSession();
                 return;
             }
             if (value.Kind == StickyUiEventKind.DockDividerResizing)
             {
                 if (!_hostedRuntime.CanApplySequence(value.NoteId,
                     value.Sequence)) return;
-                if (ResizeHostedStickyDockDivider(
-                    DockWindowFacts.FromSnapshot(value.Snapshot)))
-                {
-                    _notes.SaveAsync();
-                }
+                if (!ResizeHostedStickyDockDivider(value.NoteId,
+                    value.Height))
+                    ClearHostedDockResizeSession();
+                else _hostedRuntime.RecordSequence(value.NoteId,
+                    value.Sequence);
+                return;
+            }
+            if (value.Kind == StickyUiEventKind.DockDividerResizeCompleted)
+            {
+                CompleteHostedStickyDockDivider(value);
                 return;
             }
             if (value.Kind == StickyUiEventKind.DockHorizontalResizing)
@@ -745,6 +757,42 @@ namespace PennyPet
             _activeHostedDockResizeSourceId = null;
         }
 
+        private void ClearHostedDockResizeSessionIfMember(string noteId)
+        {
+            if (_activeHostedDockResizeFacts == null) return;
+            if (_activeHostedDockResizeFacts.Exists(
+                delegate(DockWindowFacts facts)
+                {
+                    return facts != null && String.Equals(facts.NoteId,
+                        noteId, StringComparison.OrdinalIgnoreCase);
+                })) ClearHostedDockResizeSession();
+        }
+
+        private void CompleteHostedStickyDockDivider(StickyUiEvent value)
+        {
+            try
+            {
+                if (value == null || value.Snapshot == null ||
+                    !_hostedRuntime.CanApplySequence(value.NoteId,
+                        value.Sequence)) return;
+                if (!ResizeHostedStickyDockDivider(value.NoteId,
+                    value.Height))
+                {
+                    ApplyHostedStickySnapshot(value.Snapshot,
+                        value.Sequence);
+                    return;
+                }
+                StickyNoteData canonical = _notes.Find(value.NoteId);
+                if (canonical == null) return;
+                value.Snapshot.ApplyTo(canonical);
+                canonical.Height = CalculateDockDividerHeight(value.Height);
+                _hostedRuntime.RecordSequence(value.NoteId, value.Sequence);
+                _notes.SaveAsync();
+                RefreshMenuText();
+            }
+            finally { ClearHostedDockResizeSession(); }
+        }
+
         internal static bool ShouldApplyHostedSequence(long sequence,
             long appliedSequence)
         {
@@ -755,6 +803,7 @@ namespace PennyPet
             bool focusEditor, string context, StickyUiCommandResult result)
         {
             if (!_hostedRuntime.ContainsNote(noteId)) return;
+            ClearHostedDockResizeSessionIfMember(noteId);
             _hostedRuntime.RemoveNote(noteId);
             ReportHostedStickyCommandFailure(context, result);
             _renderedFirstRenderNoteIds.Remove(noteId);
@@ -786,6 +835,7 @@ namespace PennyPet
             if (_hostedRuntime.NoteCount == 0 ||
                 _hostedRuntime.ExitPrepared)
                 return false;
+            ClearHostedDockResizeSession();
             _hostedRuntime.RequestExit();
             TryCloseAllHostedStickies();
             return true;
