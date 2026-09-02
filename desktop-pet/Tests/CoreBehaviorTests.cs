@@ -836,6 +836,70 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyImportBackupValidator_AcceptsHistoricalCodecFixtures()
+        {
+            for (int version = 1; version <= 9; version++)
+            {
+                string fixture = Path.Combine(AppContext.BaseDirectory,
+                    "Tests", "Fixtures", "sticky-v" + version + ".txt");
+                StickyImportValidationResult result =
+                    StickyImportBackupValidator.Validate(new[]
+                    {
+                        File.ReadAllText(fixture, Encoding.UTF8).Trim()
+                    });
+                Assert.IsTrue(result.Succeeded,
+                    "Fixture v" + version + " should validate: " +
+                    result.ErrorMessage);
+                Assert.AreEqual(1, result.Notes.Count);
+            }
+        }
+
+        [TestMethod]
+        public void StickyImportBackupValidator_RejectsMalformedAndDuplicateBackup()
+        {
+            StickyNoteData note = new StickyNoteData { Id = "backup-note" };
+            string valid = StickyNoteCodec.SerializeLine(note);
+            string[] fields = valid.Split('|');
+
+            string missingId = String.Join("|", fields.Select(
+                (value, index) => index == 1 ? String.Empty : value));
+            StickyImportValidationResult missing =
+                StickyImportBackupValidator.Validate(new[] { missingId });
+            Assert.IsFalse(missing.Succeeded);
+            Assert.AreEqual(0, missing.Notes.Count);
+
+            string badNumber = String.Join("|", fields.Select(
+                (value, index) => index == 7 ? "not-a-number" : value));
+            StickyImportValidationResult malformed =
+                StickyImportBackupValidator.Validate(new[] { badNumber });
+            Assert.IsFalse(malformed.Succeeded);
+            Assert.AreEqual(0, malformed.Notes.Count);
+
+            StickyImportValidationResult duplicate =
+                StickyImportBackupValidator.Validate(new[] { valid, valid });
+            Assert.IsFalse(duplicate.Succeeded);
+            Assert.AreEqual(0, duplicate.Notes.Count);
+
+            string[] unsupportedFields = (string[])fields.Clone();
+            unsupportedFields[0] = "42";
+            StickyImportValidationResult unsupported =
+                StickyImportBackupValidator.Validate(new[]
+                {
+                    String.Join("|", unsupportedFields)
+                });
+            Assert.IsFalse(unsupported.Succeeded);
+
+            string[] encodedFields = (string[])fields.Clone();
+            encodedFields[26] = "%%%";
+            StickyImportValidationResult badEncoding =
+                StickyImportBackupValidator.Validate(new[]
+                {
+                    String.Join("|", encodedFields)
+                });
+            Assert.IsFalse(badEncoding.Succeeded);
+        }
+
+        [TestMethod]
         public void AnimationController_ResolvesStatePriorityWithoutAWindow()
         {
             PetAnimationController controller = new PetAnimationController();
