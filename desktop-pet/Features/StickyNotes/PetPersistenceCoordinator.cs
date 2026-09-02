@@ -288,6 +288,10 @@ namespace PennyPet
                             "恢复未完成。\n当前便利贴没有被修改。");
                         return;
                     }
+                    // Reminder records are persisted in settings, not in the
+                    // portable sticky backup.  Reconcile note-side display
+                    // ticks and remove linked reminders whose notes vanished.
+                    ReconcileNoteReminders();
                     ReloadAllHostedStickyRuntime();
                     ShowBubble("完整恢复完成，共 " +
                         restoredSnapshot.Count + " 张便利贴。");

@@ -66,15 +66,22 @@ namespace PennyPet
         private void ReconcileNoteReminders()
         {
             bool changed = false;
+            System.Collections.Generic.HashSet<string> noteIds =
+                new System.Collections.Generic.HashSet<string>(
+                    StringComparer.OrdinalIgnoreCase);
             foreach (StickyNoteData note in _notes.GetAll())
             {
+                if (note == null) continue;
+                noteIds.Add(note.Id);
                 ReminderItem linked = _reminders.FindBySourceNoteId(note.Id);
                 long nextTicks = linked == null ? 0 : linked.DeadlineUtc.Ticks;
                 if (note.ReminderUtcTicks == nextTicks) continue;
                 note.ReminderUtcTicks = nextTicks;
                 changed = true;
             }
+            int removedOrphans = _reminders.RemoveLinkedNotesNotIn(noteIds);
             if (changed) _notes.Save();
+            if (removedOrphans > 0) SaveReminders();
         }
 
         private void EditReminder(ReminderItem existing)

@@ -308,6 +308,21 @@ namespace PennyPet
             return removed;
         }
 
+        public int RemoveLinkedNotesNotIn(ISet<string> existingNoteIds)
+        {
+            int removed = 0;
+            for (int index = _items.Count - 1; index >= 0; index--)
+            {
+                string sourceNoteId = _items[index].SourceNoteId;
+                if (String.IsNullOrEmpty(sourceNoteId) ||
+                    (existingNoteIds != null &&
+                    existingNoteIds.Contains(sourceNoteId))) continue;
+                _items.RemoveAt(index);
+                removed++;
+            }
+            return removed;
+        }
+
         public void Cancel()
         {
             _items.Clear();
