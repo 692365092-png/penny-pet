@@ -64,6 +64,15 @@
 - Side Tabs 继续由 WinForms Pet STA 承载，直接消费 Core 中 detached `SideTabSnapshot`；业务 note identity 使用稳定 `NoteId`，平台 UI source identity 保持本地 opaque object。OLE nested-loop、透明 canvas 和 WinForms z-order workaround 属于 Windows 实现，不要求 macOS 复制。
 - Pet-owned WinForms Form modal 统一经过 `PetWindowLayerCoordinator` 的内存栈；Keyboard Overlay、Bubble 和 Side Tabs 保持 no-activate，并位于嵌套 modal chain 之后。键盘提示始终跟随 Pet，不因 modal 改变位置。密码/凭据检测仍由原隐私链独立 fail closed。
 
+## Sticky 管理与备份
+
+- `StickyNotesManagerForm` 是唯一管理入口，保留表格 UI；桌面整理、导出和 Import & Merge 都只调用现有 owner 提供的具体命令。
+- 四列表头排序、搜索和 Import Preview 都是 view state，不得改动 repository、SideTab order 或 Dock order。
+- Import & Merge 在同一 Manager 中执行完整 read/validate/plan 后进入 Preview；取消/关闭零修改，确认时重新规划，再经 rolling pre-import backup、atomic commit 和 hosted/SideTab refresh。
+- 新增和 conflict copy 默认隐藏进 Side Tabs；已有 NoteId 保留 current geometry、visibility 和 Dock state。完整新 mixed Dock 可保留，碰到 current member 的 partial group 保守解除 imported member 的旧关系。
+- `.pennysticky` v1 只携带 Sticky dataset。完整 reminder records 仍在 `settings.ini`，linked/standalone reminder 都不属于当前 portable contract；未来若扩展必须重映射 conflict copy 的 `SourceNoteId`。
+- macOS 可复用 `StickyNoteData`、codec、validator、merge planner、Dock pure rules 和 `SideTabSnapshot`；WinForms Manager、Open/Save dialogs、Windows 文件路径/原子替换及 Hosted runtime reconcile 必须由平台侧实现。
+
 ## Startup loading ownership
 
 - `StartupLoadingForm` 直接读取 embedded `PennyPet.Startup.Loading`，在 Pet-size transparent canvas 内等比、水平居中、底部对齐；它不依赖 `PetArtPackage` 或 Sticky runtime。

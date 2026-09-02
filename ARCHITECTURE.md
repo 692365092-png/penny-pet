@@ -110,6 +110,7 @@ Open-Meteo Forecast 请求固定为昨天、今天、明天和 8 个小时变量
 |---|---|---|
 | `Core/StickyNotes/StickyNoteModels.cs` | 便利贴、三态 Todo、Schedule 和 Dock 持久化模型 | 平台无关 |
 | `Core/StickyNotes/StickyNoteCodec.cs` | v1-v9 数据行编解码、兼容和内容限制 | 平台无关 |
+| `Core/StickyNotes/StickyImportBackupValidator.cs` / `StickyImportMergePlanner.cs` | 完整备份校验、稳定 NoteId 合并、冲突副本、Dock 保守降级 | 平台无关纯规则；不读文件、不修改 live repository |
 | `Core/StickyNotes/StickyDockOperations.cs` | Dock 组插入、抽离、隐藏槽位、快照和统一置顶数据 | 平台无关 |
 | `Core/StickyNotes/SideTabSnapshot.cs` | Side Tabs 所需的 detached 轻量显示投影 | 平台无关；不是 canonical/persistence owner |
 | `Core/StickyNotes/StickyTabDropSession.cs` | 页签拖放事务 | 平台无关；窗口来源是不透明身份 |
@@ -117,6 +118,7 @@ Open-Meteo Forecast 请求固定为昨天、今天、明天和 8 个小时变量
 | `Core/Startup/PetStartupRules.cs` | UI/美术 readiness 门禁 | 平台无关的小范围启动判定，不是完整启动框架 |
 | `Features/StickyNotes/StickyNoteLinks.cs` / `StickyLinkPolicy.cs` | HTTP(S)、Windows 路径和危险目标策略 | Windows-only 链接策略 |
 | `Features/StickyNotes/StickyNoteRepository.cs` | Windows 文件保存、备份、损坏恢复、dirty 和重试 | Windows 文件系统适配 |
+| `Features/StickyNotes/StickyNotes.cs` / `PetPersistenceCoordinator.cs` / `StickyBackupFileReader.cs` | Manager、导入预览、文件选择、pre-import backup、原子 commit 和 hosted reconcile | Windows-only UI/文件副作用 |
 | `Features/StickyNotes/StickyLinkService.cs` | 盘符/UNC、扩展名风险、确认、文件探测和 Shell 打开 | Windows-only 路径策略 |
 | `Features/StickyNotes/StickyLinkCoordinator.cs` | WPF 链接格式、点击和光标 | Windows-only UI |
 | `Features/StickyNotes/PetStickyDockCoordinator.cs` | 屏幕/DPI/原生几何转换、canonical Dock 协调和 typed hosted effects | Windows-only 副作用适配 |
@@ -126,6 +128,10 @@ Open-Meteo Forecast 请求固定为昨天、今天、明天和 8 个小时变量
 Windows Coordinator 把 `Point`、`Size`、`Rectangle` 等平台对象转换为 Core 的 `DockPoint`、`DockSize`、`DockRect`，调用纯规则后再执行 WPF/Win32 窗口副作用。`DockCoordinateSafetyLimit = 30000` 是 Win32 安全范围，由 Windows 层作为参数提供给 Core 计算；它不是 Penny 业务规则，也不能成为 macOS 常量。
 
 Ordinary、Todo、Schedule 属于同一个 Sticky window system，内容模式不同但 Dock grouping 完全 type-agnostic，任意组合都可进入同一 Dock group。Reminder 是所有便利贴共享的 capability/UI，不是独立 Sticky subtype 或第四种 Dock participant；eligibility 不依赖 `IsTodoList / IsSchedule / ReminderUtcTicks`。`StickyUiHost` 是唯一 production window executor：Pet 端以 `DockWindowFacts` 进入同一 Dock session/Core rules，得到 `DockLayoutTarget` 后只通过 typed command effect 落到 Sticky STA。Preview、merge pulse 和 split guide 同样使用 detached geometry。
+
+`StickyNotesManagerForm` 是现有 Sticky repository 的 Windows 管理视图，不是 persistence owner。表头排序只改变当前表格顺序，不修改 canonical、SideTab 或 Dock order。Import & Merge 固定走 `Read → Parse → Validate → Plan → Preview → Confirm → Commit`；Preview 只保留在当前 Form 生命周期内，取消或关闭即丢弃。确认时 Pet 端重新计算计划，再由 `StickyNoteRepository` 使用单个轮转 pre-import backup 和原子写入提交；既有 NoteId 的空间/可见状态保留，新 note 与 conflict copy 默认 `Visible=false` 进入 Side Tabs。
+
+Sticky Backup v1 的 portable dataset 是 `sticky-notes.dat` 中的 Sticky 模型。`StickyNoteData.ReminderUtcTicks` 只是便于 Sticky UI 显示的下一次提醒投影；真正的 reminder records（文本、时间、预提醒和 `SourceNoteId`）由 `settings.ini` / `ReminderSchedule` 持有，当前 `.pennysticky` 不包含它们。因此 v1 不宣称 linked reminder 可跨电脑迁移，standalone reminder 也明确不属于 Sticky Backup；若以后支持，必须同时迁移并在 conflict copy 时重映射 `SourceNoteId`，不能只复制时间戳。
 
 ### 提醒、设置、启动与键盘隐私
 
@@ -150,7 +156,7 @@ Ordinary、Todo、Schedule 属于同一个 Sticky window system，内容模式�
 |---|---|---|
 | 动画 | manifest、状态、概率、时长和冷却 | AppKit 窗口、ImageIO/CGImage 解码和帧提交 |
 | 桌宠交互 | 动画选择和部分拖拽语义 | 鼠标事件、透明窗口、Space 和 Z-order |
-| 便利贴 | 数据、codec、Todo/Schedule、Dock 关系和纯几何 | AppKit 编辑器、窗口、文件路径和恢复副作用 |
+| 便利贴 | 数据、codec、Todo/Schedule、Dock 关系、纯几何、backup validation 和 merge planning | AppKit 编辑器、窗口、Manager、文件选择/路径、原子写入和 runtime reconcile |
 | Dock | `StickyDockGeometry` 与组不变量 | `NSScreen` 坐标、DPI/Retina、窗口移动和吸附反馈 |
 | 提醒 | 模型和时间规则 | macOS 调度、唤醒和 UI |
 | 键盘隐私 | 标准化 fail-closed 判定 | Event Tap、Accessibility、Secure Input 和权限引导 |
@@ -217,6 +223,7 @@ Sticky WPF STA
 - `DockWindowFacts`：detached geometry/runtime facts。
 - `DockLayoutTarget`：pure desired effect target。
 - `SideTabSnapshot`：read-only side-tab projection。
+- `StickyNotesImportPreview`：当前 Manager 生命周期内的有界 plan state；取消、关闭或提交后清除，不持久化、不追加历史。
 
 当前单一 hosted executor：
 

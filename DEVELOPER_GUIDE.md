@@ -60,12 +60,14 @@ dotnet test '.\desktop-pet\PennyPet.Tests.csproj' --configuration Release
   - 便利贴、三态 Todo、Schedule 和 Dock 持久化模型。
   - `StickyDockGroups`：组顺序、父子关系、规范化和快照恢复。
 - `Core/StickyNotes/StickyNoteCodec.cs`：v1-v9 数据行编解码、内容限制和旧格式兼容。
+- `Core/StickyNotes/StickyImportBackupValidator.cs` / `StickyImportMergePlanner.cs`：完整校验、稳定 NoteId 合并、幂等 conflict copy 和 partial Dock 保守降级；都是无文件副作用的纯规则。
 - `Core/StickyNotes/StickyDockOperations.cs`：组插入、抽离、隐藏槽位、快照、统一置顶数据和长按拆分判定。
 - `Core/StickyNotes/SideTabSnapshot.cs`：Side Tabs 直接消费的 detached 轻量显示投影；不是 canonical 或 persistence owner。
 - `Core/StickyNotes/StickyTabDropSession.cs`：跨 OLE 嵌套消息循环的页签拖放事务。
 - `Core/StickyNotes/StickyDockGeometry.cs`：`DockPoint`、`DockSize`、`DockRect`，以及 Dock 统一布局、divider、header 可达性、恢复、新建、页签、弹窗和异常拖拽恢复的纯数值规则。
 - `Core/Startup/PetStartupRules.cs`：UI/美术 readiness 纯门禁；不是完整启动状态机。
 - `Features/StickyNotes/StickyNoteRepository.cs`：Windows 文件读取、迁移、备份、原子保存、dirty、重试和紧急导出。
+- `Features/StickyNotes/StickyNotes.cs` / `PetPersistenceCoordinator.cs`：WinForms Manager 的 Normal/ImportPreview/Busy、具体导入命令、pre-import backup、commit 与 hosted reconcile。
 - `Features/StickyNotes/StickyNoteWpf.cs`：WPF 窗口构造、总体生命周期和外观接线；窗口数据是 hosted working copy，不直接保存 repository。
 - `StickyUiThreadHost.cs` / `StickyUiHost.cs` / `StickyWindowSession.cs`：Sticky WPF STA、唯一 session registry/command executor，以及唯一持有 `StickyNoteWindow` 的会话边界。
 - `Features/StickyNotes/StickyEditorCoordinator.cs`：RichText、字体、焦点和 IME；最高风险。
@@ -88,6 +90,8 @@ Dock 修改必须同时检查：组关系、组内顺序、持久化快照、统
 - `StickyNoteCodec` 的 v1-v9 compatibility readers 是用户数据兼容层，不属于已删除的 legacy runtime executor，必须保留。
 - Side Tabs 始终保持 no-activate TopMost chrome。monitor、working area 或 Pet scale 改变时会重新验证 desired left/right split；split 不变只 reposition，改变才 rebuild controls。
 - Side Tabs 直接消费 `SideTabSnapshot`；业务 note identity 使用稳定 `NoteId`，拖拽 source identity 才使用平台 UI object reference。OLE nested-loop、透明 canvas、BringToFront timing 等 workaround 是 Windows-only，不应复制成 macOS UI 框架。
+- Manager 排序与搜索只改变表格视图。Import & Merge 必须先完整 read/parse/validate/plan，在同一个 Manager 预览；取消或关闭不得修改 repository，确认时重新规划后才允许原子 commit。Preview 是 Form 生命周期内的有界运行状态，不写磁盘、不留历史。
+- 新导入及 conflict copy 默认 `Visible=false`；current NoteId 的 geometry、visibility 和 Dock relation 优先。不得为导入创建另一套 window creator 或 Dock engine。
 
 ### 链接边界
 
@@ -150,6 +154,8 @@ Dock 修改必须同时检查：组关系、组内顺序、持久化快照、统
 - `settings.ini` / `.bak`：位置、大小、启动偏好、键盘显示和提醒。
 - `sticky-notes.dat` / `.bak`：便利贴、待办、日程、显示状态和 Dock。
 - `diagnostics.log`：本地异常诊断。
+
+`.pennysticky` v1 导出的是 Sticky dataset，不是整个 Penny 数据目录。完整 reminder records（包含文本、deadline、pre-alert 和 `SourceNoteId`）由 `settings.ini` 持有；Sticky 内的 `ReminderUtcTicks` 只是下一次提醒投影。因此当前 Sticky Backup 不承诺 linked reminder 或 standalone reminder 跨设备迁移。未来若增加 linked reminder portability，必须单独设计有界格式，并在 conflict copy 时重映射目标 NoteId。
 
 兼容逻辑仍会从旧品牌目录导入数据。读取失败时先尝试 `.bak`，无法读取的源文件会保留为损坏备份。写入失败时保持 dirty 并重试；退出前仍失败时允许重试、导出快照或取消退出。不要用默认值覆盖尚未安全保留的旧数据。
 
