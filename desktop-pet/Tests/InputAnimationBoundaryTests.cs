@@ -661,6 +661,7 @@ namespace PennyPet.Tests
                 "private void PetMouseMove");
             string bubble = ReadSource("PetBubbleCoordinator.cs");
             string form = ReadSource("PetForm.cs");
+            string hover = ReadSource("PetHoverRuntime.cs");
 
             Assert.IsTrue(mouseDown.Contains(
                     "_hoverSuppressedUntilStableLeave = true") &&
@@ -669,9 +670,9 @@ namespace PennyPet.Tests
             Assert.IsFalse(mouseDown.Contains(
                 "CloseCurrentBubbleWithoutRestoringHover"),
                 "Mouse-down must not close foreground user messages.");
-            Assert.IsTrue(form.Contains(
+            Assert.IsTrue(hover.Contains(
                     "_hoverSuppressedUntilStableLeave = false") &&
-                form.Contains("CommitStableLeave") &&
+                hover.Contains("CommitStableLeave") &&
                 bubble.Contains(
                     "PetHoverStabilityRules.ShouldSuppressHover"),
                 "Stable leave must release the latch and Hover requests must honor it.");

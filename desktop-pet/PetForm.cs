@@ -43,8 +43,6 @@ namespace PennyPet
         private readonly PetWeatherSource _weatherSource;
         private readonly PetSmallTalkCoordinator _smallTalkCoordinator;
         private readonly PetDaypartCheckInCoordinator _daypartCheckInCoordinator;
-        private readonly PetDailyInteractionLedger _dailyLedger =
-            new PetDailyInteractionLedger();
         private readonly PetPokeBurstTracker _pokeBurstTracker =
             new PetPokeBurstTracker();
         private long _lastReminderBannerSecond
@@ -108,11 +106,6 @@ namespace PennyPet
             { get { return _animation.Frame; } set { _animation.Frame = value; } }
         private bool _dragging;
         private bool _dragMoved;
-        private bool _stableMouseInside;
-        private bool _hoverSuppressedUntilStableLeave;
-        private DateTime _hoverEnterCandidateUtc;
-        private DateTime _hoverLeaveCandidateUtc;
-        private System.Windows.Forms.Timer _hoverStabilityTimer;
         private Point _dragMouseOrigin;
         private Point _dragWindowOrigin;
         private bool _typingSession { get { return _animation.TypingSession; }
@@ -458,126 +451,6 @@ namespace PennyPet
             };
         }
 
-        private void InitializeDailyLedger()
-        {
-            string today = DailyContentRules.DateKey(DateTimeOffset.Now);
-            string stored = DailyContentRules.NormalizeDateKey(
-                _settings.DailyLedgerDate);
-            if (String.Equals(stored, today, StringComparison.Ordinal))
-            {
-                _dailyLedger.LocalDateKey = today;
-                _dailyLedger.ConsumedDaypartsMask = Math.Max(0,
-                    _settings.DailyLedgerDaypartsMask);
-                foreach (string id in PetDailyInteractionLedger.DecodeUsedIds(
-                    _settings.DailyLedgerUsedMeaningfulIds))
-                    _dailyLedger.TryUseMeaningful(id);
-            }
-            else
-            {
-                _dailyLedger.ResetForDate(today);
-            }
-            RefreshLedgerOpeningMarker();
-        }
-
-        private PetDailyInteractionLedger LedgerSnapshot()
-        {
-            RefreshLedgerOpeningMarker();
-            return _dailyLedger;
-        }
-
-        private void RefreshLedgerOpeningMarker()
-        {
-            _dailyLedger.DailyOpeningConsumed = String.Equals(
-                DailyContentRules.NormalizeDateKey(
-                    _settings.LastDailyBriefingDate),
-                _dailyLedger.LocalDateKey, StringComparison.Ordinal);
-        }
-
-        private void PersistDailyLedger()
-        {
-            _settings.DailyLedgerDate = _dailyLedger.LocalDateKey;
-            _settings.DailyLedgerDaypartsMask =
-                _dailyLedger.ConsumedDaypartsMask;
-            _settings.DailyLedgerUsedMeaningfulIds =
-                PetDailyInteractionLedger.EncodeUsedIds(
-                    _dailyLedger.UsedMeaningfulIds());
-            _settings.Save();
-        }
-
-        private void OnRawMouseEnter()
-        {
-            _hoverLeaveCandidateUtc = default(DateTime);
-            _hoverEnterCandidateUtc = DateTime.UtcNow;
-            EnsureHoverStabilityTimer();
-        }
-
-        private void OnRawMouseLeave()
-        {
-            _hoverEnterCandidateUtc = default(DateTime);
-            if (!Bounds.Contains(Cursor.Position))
-            {
-                CommitStableLeave();
-                return;
-            }
-            _hoverLeaveCandidateUtc = DateTime.UtcNow;
-            EnsureHoverStabilityTimer();
-        }
-
-        private void EnsureHoverStabilityTimer()
-        {
-            if (_hoverStabilityTimer == null)
-            {
-                _hoverStabilityTimer = new System.Windows.Forms.Timer();
-                _hoverStabilityTimer.Interval = 40;
-                _hoverStabilityTimer.Tick += HoverStabilityTick;
-            }
-            if (!_hoverStabilityTimer.Enabled) _hoverStabilityTimer.Start();
-        }
-
-        private void HoverStabilityTick(object sender, EventArgs e)
-        {
-            DateTime nowUtc = DateTime.UtcNow;
-            bool pending = false;
-            if (_hoverEnterCandidateUtc != default(DateTime))
-            {
-                if (PetHoverStabilityRules.ShouldCommitEnter(
-                    _hoverEnterCandidateUtc, nowUtc))
-                    CommitStableEnter();
-                else
-                    pending = true;
-            }
-            if (_hoverLeaveCandidateUtc != default(DateTime))
-            {
-                if (PetHoverStabilityRules.ShouldCommitLeave(
-                    _hoverLeaveCandidateUtc, nowUtc))
-                    CommitStableLeave();
-                else
-                    pending = true;
-            }
-            if (!pending && _hoverStabilityTimer != null)
-                _hoverStabilityTimer.Stop();
-        }
-
-        private void CommitStableEnter()
-        {
-            _hoverEnterCandidateUtc = default(DateTime);
-            if (_stableMouseInside) return;
-            _stableMouseInside = true;
-            QueueArtPreload(HoverRow);
-            if (!_hoverSuppressedUntilStableLeave)
-                ShowOrUpdateHoverBubble();
-        }
-
-        private void CommitStableLeave()
-        {
-            _stableMouseInside = false;
-            _hoverEnterCandidateUtc = default(DateTime);
-            _hoverLeaveCandidateUtc = default(DateTime);
-            if (_hoverStabilityTimer != null) _hoverStabilityTimer.Stop();
-            HideHoverBubble();
-            _hoverSuppressedUntilStableLeave = false;
-        }
-
         protected override CreateParams CreateParams
         {
             get
@@ -621,12 +494,7 @@ namespace PennyPet
             _keyboard.Dispose();
             _windowLayers.LayerChanged -= PetWindowLayerChanged;
             _keyOverlay.Dispose();
-            _stableMouseInside = false;
-            if (_hoverStabilityTimer != null)
-            {
-                _hoverStabilityTimer.Stop();
-                _hoverStabilityTimer.Dispose();
-            }
+            DisposeHoverRuntime();
             _bubbleCoordinator.Dispose();
             _weatherSource.Dispose();
             if (_contactAuthorForm != null && !_contactAuthorForm.IsDisposed)
