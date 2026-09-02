@@ -11,8 +11,6 @@ namespace PennyPet
         private const int FullWordingSalt = 131;
         private const int FramingSalt = 211;
         private const int CoreSalt = 307;
-        private const int EndingEligibilitySalt = 401;
-        private const int EndingSalt = 503;
 
         internal static AlmanacDailySelection Select(AlmanacDayInfo day,
             DateTimeOffset localNow)
@@ -147,7 +145,7 @@ namespace PennyPet
                     Mix(seed, FullWordingSalt));
                 return new AlmanacDailySelection(candidate.Topic,
                     candidate.SourceTerm, candidate.IsYi, wording.Id,
-                    wording.FramingId, wording.Id, null, wording.Text);
+                    wording.FramingId, wording.Id, wording.Text);
             }
 
             DailyLineEntry framing = SelectStable(framings,
@@ -155,20 +153,10 @@ namespace PennyPet
             DailyLineEntry core = SelectStable(cores, Mix(seed, CoreSalt));
             string text = String.Format(CultureInfo.InvariantCulture,
                 framing.Text, core.Text);
-            string endingId = null;
-            if (PositiveModulo(Mix(seed, EndingEligibilitySalt), 100) < 35)
-            {
-                DailyLineEntry ending = SelectStable(
-                    AlmanacWordingCatalog.GetEndings(),
-                    Mix(seed, EndingSalt));
-                endingId = ending.Id;
-                text += "\n" + ending.Text;
-            }
-            string variantId = framing.Id + "+" + core.Id +
-                (endingId == null ? String.Empty : "+" + endingId);
+            string variantId = framing.Id + "+" + core.Id;
             return new AlmanacDailySelection(candidate.Topic,
                 candidate.SourceTerm, candidate.IsYi, variantId,
-                framing.Id, core.Id, endingId, text);
+                framing.Id, core.Id, text);
         }
 
         private static AlmanacWordingVariant SelectStable(

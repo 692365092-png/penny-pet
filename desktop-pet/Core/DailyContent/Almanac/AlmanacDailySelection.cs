@@ -4,8 +4,7 @@ namespace PennyPet
     {
         internal AlmanacDailySelection(AlmanacTopic topic,
             string sourceTerm, bool isYi, string variantId,
-            string framingId, string wordingId, string endingId,
-            string text)
+            string framingId, string wordingId, string text)
         {
             Topic = topic;
             SourceTerm = sourceTerm;
@@ -13,7 +12,6 @@ namespace PennyPet
             VariantId = variantId;
             FramingId = framingId;
             WordingId = wordingId;
-            EndingId = endingId;
             Text = text;
         }
 
@@ -23,7 +21,6 @@ namespace PennyPet
         internal string VariantId { get; private set; }
         internal string FramingId { get; private set; }
         internal string WordingId { get; private set; }
-        internal string EndingId { get; private set; }
         internal string Text { get; private set; }
     }
 }

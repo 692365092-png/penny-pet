@@ -1030,16 +1030,16 @@ namespace PennyPet
             AlmanacDailySelection almanac = almanacDay == null ? null :
                 AlmanacDailySelector.Select(almanacDay, localDate);
             DailyBriefingContent content = new DailyBriefingContent(solar,
-                null, almanac == null ? null : almanac.Text, curated, zodiac);
-            string[] selected = DailyBriefingComposer.SelectSupplementary(
-                content);
+                null, almanac, curated, zodiac);
+            DailyBriefingSentence[] selected =
+                DailyBriefingComposer.SelectSupplementary(content);
             string finalText = DailyBriefingComposer.Compose(dayPart,
-                content);
+                localDate.Date, content);
             StringBuilder selectedJson = new StringBuilder();
             for (int i = 0; i < selected.Length; i++)
             {
                 if (i > 0) selectedJson.Append(", ");
-                selectedJson.Append(JsonString(selected[i]));
+                selectedJson.Append(JsonString(selected[i].Body));
             }
             bool deterministic = curated.Id == CuratedDailyLineSelector
                 .Select(localDate).Id && ((zodiac == null &&
@@ -1098,7 +1098,6 @@ namespace PennyPet
                 ", \"variantId\": " + JsonString(selection.VariantId) +
                 ", \"framingId\": " + JsonString(selection.FramingId) +
                 ", \"wordingId\": " + JsonString(selection.WordingId) +
-                ", \"endingId\": " + JsonString(selection.EndingId) +
                 ", \"text\": " + JsonString(selection.Text) + " }";
         }
 

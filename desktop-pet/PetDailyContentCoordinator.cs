@@ -85,7 +85,7 @@ namespace PennyPet
                         almanac = AlmanacDailySelector.Select(
                             almanacDay, localNow);
                 }
-                string weatherLine = null;
+                WeatherDailySelection weather = null;
                 WeatherLocation location = _weatherEnabled()
                     ? _weatherLocation() : null;
                 if (location != null)
@@ -95,19 +95,18 @@ namespace PennyPet
                     WeatherMeaning? meaning = WeatherMeaningRules.Select(
                         forecast);
                     if (meaning.HasValue)
-                        weatherLine = WeatherWordingCatalog.Select(
+                        weather = WeatherWordingCatalog.Select(
                             meaning.Value, localNow.Date,
-                            location.StableKey).Text;
+                            location.StableKey);
                 }
                 DailyLineEntry curatedLine = CuratedDailyLineSelector.Select(
                     localNow);
                 DailyLineEntry zodiacLine = ZodiacDailySelector.Select(
                     _zodiacSign(), localNow);
                 DailyBriefingContent content = new DailyBriefingContent(
-                    solarTerm, weatherLine,
-                    almanac == null ? null : almanac.Text, curatedLine,
-                    zodiacLine);
-                string text = DailyBriefingComposer.Compose(dayPart, content);
+                    solarTerm, weather, almanac, curatedLine, zodiacLine);
+                string text = DailyBriefingComposer.Compose(dayPart,
+                    localNow.Date, content);
                 if (!_showDailyGreeting(text)) return false;
                 _recordBriefingDate(DailyContentRules.DateKey(localNow));
                 return true;

@@ -432,8 +432,8 @@ namespace PennyPet.Tests
             Assert.IsTrue(semantic.Contains("TryGetValue") &&
                 selector.Contains("YiJiConflict") &&
                 selector.Contains("StringComparer.Ordinal") &&
-                content.Contains("AlmanacLine") &&
-                composer.Contains("content.AlmanacLine") &&
+                content.Contains("AlmanacDailySelection Almanac") &&
+                composer.Contains("content.Almanac") &&
                 coordinator.Contains("AlmanacCalculator.Calculate") &&
                 coordinator.Contains("AlmanacDailySelector.Select"),
                 "Raw terms must cross the whitelist before the shared budget.");
@@ -466,6 +466,39 @@ namespace PennyPet.Tests
                 settings.Contains("AlmanacEnabled") &&
                 settingsForm.Contains("传统黄历（民俗）"),
                 "Almanac preference must be wired into settings and UI.");
+        }
+
+        [TestMethod]
+        public void DailyBriefing_UsesCoreSentenceBudgetAndEndingPolicy()
+        {
+            string ending = ReadSource(
+                "Core/Messaging/PetSentenceEndingPolicy.cs");
+            string content = ReadSource(
+                "Core/DailyContent/DailyBriefingContent.cs");
+            string composer = ReadSource(
+                "Core/DailyContent/DailyBriefingComposer.cs");
+            string coordinator = ReadSource("PetDailyContentCoordinator.cs");
+            string bubble = ReadSource("PetBubbleCoordinator.cs");
+
+            Assert.IsTrue(content.Contains("DailyBriefingSentence") &&
+                content.Contains("PetSentenceIntent") &&
+                composer.Contains("selected.Count == 3") &&
+                composer.Contains("PetSentenceEndingPolicy.Apply") &&
+                coordinator.Contains("localNow.Date, content"),
+                "Daily content must carry explicit semantic sentence facts.");
+            Assert.IsTrue(ending.Contains("PetSentenceRole") &&
+                ending.Contains("PetSentenceIntent") &&
+                ending.Contains("PetSentenceContentKind") &&
+                ending.Contains("2166136261") &&
+                ending.Contains("16777619") &&
+                !ending.Contains("GetHashCode") &&
+                !ending.Contains("System.Windows") &&
+                !ending.Contains("PetSettings") &&
+                !ending.Contains("History"),
+                "Sentence endings must remain deterministic stateless Core rules.");
+            Assert.IsFalse(bubble.Contains("PetSentenceEndingPolicy") ||
+                coordinator.Contains("呢～") || coordinator.Contains("喔～"),
+                "Bubble and Windows coordination must not construct endings.");
         }
 
         [TestMethod]

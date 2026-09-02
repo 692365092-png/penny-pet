@@ -57,21 +57,27 @@ namespace PennyPet
             return DayPart.Evening;
         }
 
-        internal static string GreetingFor(DayPart dayPart)
+        internal static string GreetingBodyFor(DayPart dayPart)
         {
             switch (dayPart)
             {
                 case DayPart.Morning:
-                    return "早上好～今天也要加油呀。";
+                    return "早上好，今天也要加油";
                 case DayPart.Midday:
-                    return "中午好～休息一下再继续吧。";
+                    return "中午好，休息一下再继续";
                 case DayPart.Afternoon:
-                    return "下午好～今天过得怎么样？";
+                    return "下午好，今天过得怎么样";
                 case DayPart.Evening:
-                    return "晚上好～今天辛苦啦。";
+                    return "晚上好，今天辛苦了";
                 default:
-                    return "这么晚还没睡呀～";
+                    return "这么晚还没睡";
             }
+        }
+
+        internal static PetSentenceIntent GreetingIntentFor(DayPart dayPart)
+        {
+            return dayPart == DayPart.Afternoon || dayPart == DayPart.LateNight
+                ? PetSentenceIntent.Question : PetSentenceIntent.Gentle;
         }
     }
 }

@@ -2560,6 +2560,7 @@ namespace PennyPet
             internal bool CuratedCatalogOk;
             internal bool DailySelectorBudgetOk;
             internal bool DailyBriefingBudgetOk;
+            internal bool SentenceEndingPolicyOk;
             internal bool DailyBriefingCoordinatorOk;
             internal bool DailyBriefingRejectedRetryOk;
             internal bool DailyBriefingSameDaySwitchOk;
@@ -3374,7 +3375,7 @@ namespace PennyPet
             bool nextDay = RunDaily(daily, morning.AddHours(6.5));
             result.DailyFirstPokeOk = firstPoke && !secondPoke && nextDay &&
                 greetingCount == 2 && recordCount == 2 &&
-                greetingText.StartsWith("下午好～今天过得怎么样？\n",
+                greetingText.StartsWith("下午好，今天过得怎么样",
                     StringComparison.Ordinal) &&
                 lastBriefingDate == "20350615";
             lastBriefingDate = String.Empty;
@@ -3416,7 +3417,7 @@ namespace PennyPet
             result.DailyContentPreferencesOk = !disabledPoke &&
                 enabledLaterPoke && !enabledSameDayPoke && solarOffPoke &&
                 plainGreeting && !solarEnabledSameDayPoke && solarOnPoke &&
-                greetingText.IndexOf("今天是白露哦。",
+                greetingText.IndexOf("今天是白露",
                     StringComparison.Ordinal) >= 0;
 
             DailyLineEntry[] curatedEntries =
@@ -3534,7 +3535,11 @@ namespace PennyPet
                     !first.Text.Contains("今天一定") &&
                     !first.Text.Contains("必须") &&
                     !first.Text.Contains("千万不要") &&
-                    !first.Text.Contains("绝对不能");
+                    !first.Text.Contains("绝对不能") &&
+                    !first.Text.Contains("\n") &&
+                    !first.Text.Contains("。") &&
+                    !first.Text.Contains("！") &&
+                    !first.Text.Contains("？");
                 if (first != null) tidyVariants.Add(first.VariantId);
             }
             result.AlmanacWordingOk = wordingStable &&
@@ -3551,10 +3556,13 @@ namespace PennyPet
                 whiteDew.Value.ChineseName == "白露" &&
                 whiteDew.Value.LongitudeDegrees == 165 &&
                 !nonTerm.HasValue;
-            string afternoonGreeting = DailyContentRules.GreetingFor(
-                DayPart.Afternoon);
-            const string almanacText = "黄历内容。";
-            const string weatherText = "天气内容。";
+            WeatherDailySelection weatherText = new WeatherDailySelection(
+                WeatherMeaning.Windy, "WEATHER-WINDY-TEST",
+                "今天风比较大，出门注意一下");
+            AlmanacDailySelection almanacText = new AlmanacDailySelection(
+                AlmanacTopic.MovingHome, "入宅", true, "MOVING-TEST",
+                "F-TEST", "W-TEST",
+                "传统日历今天提到搬家，没计划的话看看就好");
             DailyBriefingContent caseA = new DailyBriefingContent(whiteDew,
                 null, almanacText, selectedCurated, selectedScorpio);
             DailyBriefingContent caseB = new DailyBriefingContent(whiteDew,
@@ -3573,26 +3581,32 @@ namespace PennyPet
                     selectedCurated, selectedScorpio);
             DailyBriefingContent weatherOnly = new DailyBriefingContent(null,
                 weatherText, null, selectedCurated, selectedScorpio);
+            DateTime briefingLocalDate = briefingDate.Date;
+            DailyBriefingSentence[] solarWeatherSentences =
+                DailyBriefingComposer.SelectSentences(DayPart.Afternoon,
+                    solarWeatherAlmanac);
+            DailyBriefingSentence[] weatherOnlySentences =
+                DailyBriefingComposer.SelectSentences(DayPart.Afternoon,
+                    weatherOnly);
             result.DailyBriefingBudgetOk = whiteDew.HasValue &&
-                DailyBriefingComposer.Compose(DayPart.Afternoon, caseA) ==
-                    afternoonGreeting + "\n今天是白露哦。\n" + almanacText &&
-                DailyBriefingComposer.Compose(DayPart.Afternoon, caseB) ==
-                    afternoonGreeting + "\n今天是白露哦。" &&
-                DailyBriefingComposer.Compose(DayPart.Afternoon, caseC) ==
-                    afternoonGreeting + "\n" + almanacText &&
-                DailyBriefingComposer.Compose(DayPart.Afternoon, caseD) ==
-                    afternoonGreeting + "\n" + selectedCurated.Text &&
-                DailyBriefingComposer.Compose(DayPart.Afternoon, caseE) ==
-                    afternoonGreeting + "\n" + selectedCurated.Text +
-                        "\n" + selectedScorpio.Text &&
+                solarWeatherSentences.Length == 3 &&
+                solarWeatherSentences[1].Kind ==
+                    PetSentenceContentKind.Solar &&
+                solarWeatherSentences[2].Kind ==
+                    PetSentenceContentKind.Weather &&
+                weatherOnlySentences.Length == 2 &&
+                weatherOnlySentences[1].Kind ==
+                    PetSentenceContentKind.Weather &&
                 DailyBriefingComposer.Compose(DayPart.Afternoon,
-                    solarWeatherAlmanac) == afternoonGreeting +
-                        "\n今天是白露哦。\n" + weatherText &&
+                    briefingLocalDate, caseA).Split('\n').Length <= 3 &&
                 DailyBriefingComposer.Compose(DayPart.Afternoon,
-                    weatherAlmanac) == afternoonGreeting + "\n" +
-                        weatherText + "\n" + almanacText &&
+                    briefingLocalDate, caseB).Split('\n').Length <= 3 &&
                 DailyBriefingComposer.Compose(DayPart.Afternoon,
-                    weatherOnly) == afternoonGreeting + "\n" + weatherText &&
+                    briefingLocalDate, caseC).Split('\n').Length <= 3 &&
+                DailyBriefingComposer.Compose(DayPart.Afternoon,
+                    briefingLocalDate, caseD).Split('\n').Length <= 3 &&
+                DailyBriefingComposer.Compose(DayPart.Afternoon,
+                    briefingLocalDate, caseE).Split('\n').Length <= 3 &&
                 DailyBriefingComposer.SelectSupplementary(caseA).Length <= 2 &&
                 DailyBriefingComposer.SelectSupplementary(caseB).Length <= 2 &&
                 DailyBriefingComposer.SelectSupplementary(caseC).Length <= 2 &&
@@ -3605,6 +3619,26 @@ namespace PennyPet
                     weatherAlmanac).Length <= 2 &&
                 DailyBriefingComposer.SelectSupplementary(
                     weatherOnly).Length <= 2;
+            PetSentenceEndingContext endingContext =
+                new PetSentenceEndingContext(PetSentenceRole.Closing,
+                    PetSentenceIntent.Gentle,
+                    PetSentenceContentKind.Almanac,
+                    "ALMANAC-BATH-03", briefingLocalDate);
+            string ending = PetSentenceEndingPolicy.Apply(
+                "传统日历今天也说到沐浴", endingContext);
+            result.SentenceEndingPolicyOk =
+                ending == "传统日历今天也说到沐浴啦～" &&
+                ending == PetSentenceEndingPolicy.Apply(
+                    "传统日历今天也说到沐浴", endingContext) &&
+                PetSentenceEndingPolicy.Apply(
+                    "忙完早点洗个澡，剩下的明天再管",
+                    new PetSentenceEndingContext(PetSentenceRole.Middle,
+                        PetSentenceIntent.Gentle,
+                        PetSentenceContentKind.Almanac, "BATH-MIDDLE",
+                        briefingLocalDate)) ==
+                    "忙完早点洗个澡，剩下的明天再管。" &&
+                PetSentenceEndingPolicy.ApplyEnding("今天辛苦了", "啦～") ==
+                    "今天辛苦啦～";
 
             lastBriefingDate = String.Empty;
             silent = false;
@@ -3617,10 +3651,9 @@ namespace PennyPet
             bool zodiacShown = RunDaily(daily, briefingDate);
             string expectedZodiacText = DailyBriefingComposer.Compose(
                 DailyContentRules.ResolveDayPart(briefingDate),
+                briefingDate.Date,
                 new DailyBriefingContent(null,
-                    null, actualAlmanac == null ? null : actualAlmanac.Text,
-                    selectedCurated,
-                    selectedScorpio));
+                    null, actualAlmanac, selectedCurated, selectedScorpio));
             bool zodiacTextOk = greetingText == expectedZodiacText &&
                 recordCount == 1;
             zodiacSign = ZodiacSign.Pisces;
@@ -3642,8 +3675,9 @@ namespace PennyPet
                     whiteDewDate);
             string solarZodiacExpected = DailyBriefingComposer.Compose(
                 DailyContentRules.ResolveDayPart(whiteDewDate),
+                whiteDewDate.Date,
                 new DailyBriefingContent(whiteDew,
-                    null, whiteDewAlmanac == null ? null : whiteDewAlmanac.Text,
+                    null, whiteDewAlmanac,
                     CuratedDailyLineSelector.Select(whiteDewDate),
                     ZodiacDailySelector.Select(ZodiacSign.Scorpio,
                         whiteDewDate)));
@@ -5190,6 +5224,8 @@ namespace PennyPet
                     Bool(bubbleChecks.DailySelectorBudgetOk) + ",\n" +
                 "  \"daily_briefing_supplementary_budget_ok\": " + Bool(
                     bubbleChecks.DailyBriefingBudgetOk) + ",\n" +
+                "  \"sentence_ending_policy_ok\": " + Bool(
+                    bubbleChecks.SentenceEndingPolicyOk) + ",\n" +
                 "  \"daily_briefing_coordinator_integration_ok\": " + Bool(
                     bubbleChecks.DailyBriefingCoordinatorOk) + ",\n" +
                 "  \"daily_briefing_rejected_show_retry_ok\": " + Bool(

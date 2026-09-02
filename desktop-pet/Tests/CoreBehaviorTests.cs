@@ -1242,8 +1242,10 @@ namespace PennyPet.Tests
                 new DateTime(2035, 1, 1, 18, 0, 0)));
             Assert.AreEqual(DayPart.Evening, DailyContentRules.ResolveDayPart(
                 new DateTime(2035, 1, 1, 23, 59, 0)));
-            Assert.AreEqual("下午好～今天过得怎么样？",
-                DailyContentRules.GreetingFor(DayPart.Afternoon));
+            Assert.AreEqual("下午好，今天过得怎么样",
+                DailyContentRules.GreetingBodyFor(DayPart.Afternoon));
+            Assert.AreEqual(PetSentenceIntent.Question,
+                DailyContentRules.GreetingIntentFor(DayPart.Afternoon));
         }
 
         [TestMethod]
@@ -1585,13 +1587,18 @@ namespace PennyPet.Tests
                     Assert.AreEqual(selected.VariantId, retry.VariantId);
                     Assert.AreEqual(selected.FramingId, retry.FramingId);
                     Assert.AreEqual(selected.WordingId, retry.WordingId);
-                    Assert.AreEqual(selected.EndingId, retry.EndingId);
                     Assert.AreEqual(selected.Text, retry.Text);
                     Assert.IsFalse(selected.Text.Contains("今天一定") ||
                         selected.Text.Contains("必须") ||
                         selected.Text.Contains("千万不要") ||
                         selected.Text.Contains("绝对不能"));
                     Assert.IsFalse(selected.Text.Contains("老黄历"));
+                    Assert.IsFalse(selected.Text.Contains("\n") ||
+                        selected.Text.Contains("。") ||
+                        selected.Text.Contains("！") ||
+                        selected.Text.Contains("？"), selected.Text);
+                    Assert.IsTrue(selected.Text.Length <= 36,
+                        selected.Text);
                     if (selected.Text.Contains("宜忌")) yiJiTermCount++;
                     sawTraditionalCalendar |= selected.Text.Contains(
                         "传统日历");
@@ -1705,11 +1712,20 @@ namespace PennyPet.Tests
                         meaning, date, "30.5928,114.3055|Asia/Shanghai");
                     Assert.AreEqual(first.Text, retry.Text);
                     Assert.AreEqual(meaning, first.Meaning);
-                    Assert.IsTrue(first.Text.Length >= 20 &&
-                        first.Text.Length <= 60, first.Text);
+                    Assert.IsTrue(first.Text.Length >= 8 &&
+                        first.Text.Length <= 28, first.Text);
+                    Assert.IsFalse(first.Text.Contains("\n") ||
+                        first.Text.EndsWith("。", StringComparison.Ordinal) ||
+                        first.Text.EndsWith("！", StringComparison.Ordinal) ||
+                        first.Text.EndsWith("？", StringComparison.Ordinal),
+                        first.Text);
+                    Assert.IsTrue(first.Text.Count(character =>
+                        character == '，') <= 1, first.Text);
                     Assert.IsFalse(first.Text.Contains("预警"));
                     Assert.IsFalse(first.Text.Contains("一定"));
                     Assert.IsFalse(first.Text.Contains("保证"));
+                    Assert.IsFalse(first.Text.Contains("空气今天跑得挺快") ||
+                        first.Text.Contains("风会比较有存在感"), first.Text);
                     selected.Add(first.Text);
                     string compact = first.Text.Replace("\n", "");
                     if (compact.StartsWith("今天",
@@ -1726,21 +1742,81 @@ namespace PennyPet.Tests
             }
             Assert.IsTrue(todayPrefixes * 100D / textCount <= 25D);
             Assert.IsTrue(prefixes.Values.Max() * 100D / textCount < 25D);
+            CollectionAssert.Contains(
+                WeatherWordingCatalog.GetVariantsForTest(
+                    WeatherMeaning.Windy),
+                "今天风比较大，出门注意一下");
+            CollectionAssert.Contains(
+                WeatherWordingCatalog.GetVariantsForTest(
+                    WeatherMeaning.HeavyRain),
+                "今天雨可能不小，低洼路段尽量绕开");
         }
 
         [TestMethod]
-        public void DailyBriefingComposer_EnforcesSupplementaryBudget()
+        public void SentenceEndingPolicy_IsRoleAwareDeterministicAndSafe()
         {
-            string greeting = DailyContentRules.GreetingFor(
-                DayPart.Afternoon);
-            DailyLineEntry curated = new DailyLineEntry("C-TEST", "精选。");
-            DailyLineEntry zodiac = new DailyLineEntry("Z-TEST", "星座。");
+            DateTime date = new DateTime(2026, 9, 3);
+            string middle = PetSentenceEndingPolicy.Apply(
+                "忙完早点洗个澡，剩下的明天再管",
+                new PetSentenceEndingContext(PetSentenceRole.Middle,
+                    PetSentenceIntent.Gentle,
+                    PetSentenceContentKind.Almanac, "BATH-MIDDLE", date));
+            Assert.AreEqual("忙完早点洗个澡，剩下的明天再管。", middle);
+            string closing = PetSentenceEndingPolicy.Apply(
+                "传统日历今天也说到沐浴",
+                new PetSentenceEndingContext(PetSentenceRole.Closing,
+                    PetSentenceIntent.Gentle,
+                    PetSentenceContentKind.Almanac,
+                    "ALMANAC-BATH-03", date));
+            Assert.AreEqual("传统日历今天也说到沐浴啦～", closing);
+            string question = PetSentenceEndingPolicy.Apply(
+                "今天过得怎么样",
+                new PetSentenceEndingContext(PetSentenceRole.Single,
+                    PetSentenceIntent.Question,
+                    PetSentenceContentKind.SmallTalk, "QUESTION", date));
+            Assert.IsTrue(question.EndsWith("？", StringComparison.Ordinal));
+            string cheerful = PetSentenceEndingPolicy.Apply(
+                "终于做完了",
+                new PetSentenceEndingContext(PetSentenceRole.Closing,
+                    PetSentenceIntent.Cheerful,
+                    PetSentenceContentKind.Curated, "CHEERFUL", date));
+            Assert.IsFalse(cheerful.EndsWith("喔～",
+                StringComparison.Ordinal));
+            string seriousWeather = PetSentenceEndingPolicy.Apply(
+                "低洼路段尽量绕开",
+                new PetSentenceEndingContext(PetSentenceRole.Closing,
+                    PetSentenceIntent.Serious,
+                    PetSentenceContentKind.Weather, "HEAVY-RAIN", date));
+            Assert.IsFalse(seriousWeather.EndsWith("耶～",
+                StringComparison.Ordinal) || seriousWeather.EndsWith("呀～",
+                StringComparison.Ordinal));
+            for (int i = 0; i < 100; i++)
+                Assert.AreEqual(closing, PetSentenceEndingPolicy.Apply(
+                    "传统日历今天也说到沐浴",
+                    new PetSentenceEndingContext(PetSentenceRole.Closing,
+                        PetSentenceIntent.Gentle,
+                        PetSentenceContentKind.Almanac,
+                        "ALMANAC-BATH-03", date)));
+            Assert.AreEqual("今天辛苦啦～",
+                PetSentenceEndingPolicy.ApplyEnding("今天辛苦了", "啦～"));
+        }
 
+        [TestMethod]
+        public void DailyBriefingComposer_EnforcesSemanticSentenceBudget()
+        {
+            DateTime date = new DateTime(2026, 9, 7);
+            DailyLineEntry curated = new DailyLineEntry("C-TEST", "精选。 ");
+            DailyLineEntry zodiac = new DailyLineEntry("Z-TEST", "星座。 ");
             SolarTermInfo? whiteDew = new SolarTermInfo(SolarTerm.WhiteDew,
                 "白露", 165, new DateTimeOffset(2026, 9, 7, 12, 0, 0,
                     TimeSpan.FromHours(8)));
-            const string almanac = "黄历内容。";
-            const string weather = "天气内容。";
+            WeatherDailySelection weather = new WeatherDailySelection(
+                WeatherMeaning.Windy, "WEATHER-WINDY-TEST",
+                "今天风比较大，出门注意一下");
+            AlmanacDailySelection almanac = new AlmanacDailySelection(
+                AlmanacTopic.MovingHome, "入宅", true, "MOVING-TEST",
+                "F-TEST", "W-TEST",
+                "传统日历今天提到搬家，没计划的话看看就好");
             DailyBriefingContent solarWeatherAlmanac =
                 new DailyBriefingContent(whiteDew, weather, almanac,
                     curated, zodiac);
@@ -1758,34 +1834,93 @@ namespace PennyPet.Tests
                 null, null, almanac, curated, zodiac);
             DailyBriefingContent fallback = new DailyBriefingContent(null,
                 null, null, curated, zodiac);
-            Assert.AreEqual(greeting + "\n今天是白露哦。\n天气内容。",
-                DailyBriefingComposer.Compose(DayPart.Afternoon,
-                    solarWeatherAlmanac));
-            Assert.AreEqual(greeting + "\n今天是白露哦。\n天气内容。",
-                DailyBriefingComposer.Compose(DayPart.Afternoon,
-                    solarWeather));
-            Assert.AreEqual(greeting + "\n今天是白露哦。\n黄历内容。",
-                DailyBriefingComposer.Compose(DayPart.Afternoon,
-                    solarAlmanac));
-            Assert.AreEqual(greeting + "\n今天是白露哦。",
-                DailyBriefingComposer.Compose(DayPart.Afternoon, solarOnly));
-            Assert.AreEqual(greeting + "\n天气内容。\n黄历内容。",
-                DailyBriefingComposer.Compose(DayPart.Afternoon,
-                    weatherAlmanac));
-            Assert.AreEqual(greeting + "\n天气内容。",
-                DailyBriefingComposer.Compose(DayPart.Afternoon,
-                    weatherOnly));
-            Assert.AreEqual(greeting + "\n黄历内容。",
-                DailyBriefingComposer.Compose(DayPart.Afternoon,
-                    almanacOnly));
-            Assert.AreEqual(greeting + "\n精选。\n星座。",
-                DailyBriefingComposer.Compose(DayPart.Afternoon, fallback));
+            CollectionAssert.AreEqual(new[]
+            {
+                PetSentenceContentKind.Greeting,
+                PetSentenceContentKind.Solar,
+                PetSentenceContentKind.Weather
+            }, DailyBriefingComposer.SelectSentences(DayPart.Afternoon,
+                solarWeatherAlmanac).Select(sentence => sentence.Kind)
+                .ToArray());
+            CollectionAssert.AreEqual(new[]
+            {
+                PetSentenceContentKind.Greeting,
+                PetSentenceContentKind.Weather
+            }, DailyBriefingComposer.SelectSentences(DayPart.Afternoon,
+                weatherOnly).Select(sentence => sentence.Kind).ToArray());
+            CollectionAssert.AreEqual(new[]
+            {
+                PetSentenceContentKind.Greeting,
+                PetSentenceContentKind.Almanac
+            }, DailyBriefingComposer.SelectSentences(DayPart.Afternoon,
+                almanacOnly).Select(sentence => sentence.Kind).ToArray());
+            CollectionAssert.AreEqual(new[]
+            {
+                PetSentenceContentKind.Greeting,
+                PetSentenceContentKind.Curated,
+                PetSentenceContentKind.Zodiac
+            }, DailyBriefingComposer.SelectSentences(DayPart.Afternoon,
+                fallback).Select(sentence => sentence.Kind).ToArray());
+            string[] cases =
+            {
+                DailyBriefingComposer.Compose(DayPart.Afternoon, date,
+                    solarWeatherAlmanac),
+                DailyBriefingComposer.Compose(DayPart.Afternoon, date,
+                    solarWeather),
+                DailyBriefingComposer.Compose(DayPart.Afternoon, date,
+                    solarAlmanac),
+                DailyBriefingComposer.Compose(DayPart.Afternoon, date,
+                    solarOnly),
+                DailyBriefingComposer.Compose(DayPart.Afternoon, date,
+                    weatherAlmanac),
+                DailyBriefingComposer.Compose(DayPart.Afternoon, date,
+                    weatherOnly),
+                DailyBriefingComposer.Compose(DayPart.Afternoon, date,
+                    almanacOnly),
+                DailyBriefingComposer.Compose(DayPart.Afternoon, date,
+                    fallback)
+            };
+            Assert.IsTrue(cases.All(text => text.Split('\n').Length <= 3));
             Assert.IsTrue(new[] { solarWeatherAlmanac, solarWeather,
                 solarAlmanac, solarOnly, weatherAlmanac, weatherOnly,
                 almanacOnly, fallback }.All(
                 content =>
                 DailyBriefingComposer.SelectSupplementary(content).Length <=
                     2));
+            string single = DailyBriefingComposer.ComposeSentences(date,
+                new[]
+                {
+                    new DailyBriefingSentence("今天是白露",
+                        PetSentenceContentKind.Solar,
+                        PetSentenceIntent.Gentle, "SOLAR-WHITE-DEW")
+                });
+            Assert.IsFalse(single.Contains("\n"));
+            string two = DailyBriefingComposer.ComposeSentences(date,
+                new[]
+                {
+                    new DailyBriefingSentence("早上好",
+                        PetSentenceContentKind.Greeting,
+                        PetSentenceIntent.Gentle, "GREETING"),
+                    new DailyBriefingSentence("今天风比较大",
+                        PetSentenceContentKind.Weather,
+                        PetSentenceIntent.Gentle, "WEATHER")
+                });
+            Assert.AreEqual(2, two.Split('\n').Length);
+            string three = DailyBriefingComposer.ComposeSentences(date,
+                new[]
+                {
+                    new DailyBriefingSentence("晚上好",
+                        PetSentenceContentKind.Greeting,
+                        PetSentenceIntent.Gentle, "GREETING"),
+                    new DailyBriefingSentence("忙完早点洗个澡",
+                        PetSentenceContentKind.Almanac,
+                        PetSentenceIntent.Gentle, "BATH-1"),
+                    new DailyBriefingSentence("传统日历今天也说到沐浴",
+                        PetSentenceContentKind.Almanac,
+                        PetSentenceIntent.Gentle, "BATH-2")
+                });
+            Assert.IsTrue(three.Split('\n')[1].EndsWith("。",
+                StringComparison.Ordinal));
         }
 
         private static WeatherMeaning? SelectWeather(
