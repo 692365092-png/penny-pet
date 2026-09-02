@@ -183,6 +183,69 @@ namespace PennyPet
             }
         }
 
+        private void RestoreStickyNotesBackup()
+        {
+            if (_exiting || IsDisposed || Disposing) return;
+            using (OpenFileDialog dialog = new OpenFileDialog())
+            {
+                dialog.Title = "从备份完整恢复便利贴";
+                dialog.Filter = "Penny 便利贴备份 (*.pennysticky;*.dat)|" +
+                    "*.pennysticky;*.dat|所有文件 (*.*)|*.*";
+                dialog.InitialDirectory = Environment.GetFolderPath(
+                    Environment.SpecialFolder.DesktopDirectory);
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+                StickyImportValidationResult validation =
+                    StickyBackupFileReader.Read(dialog.FileName);
+                if (validation == null || !validation.Succeeded)
+                {
+                    ShowStickyImportFailure("这个备份无法读取。\n当前便利贴没有被修改。");
+                    return;
+                }
+                string warning = validation.Notes.Count == 0
+                    ? "这个备份为空，完整恢复会清空当前全部便利贴。"
+                    : "完整恢复会替换当前全部便利贴，并先保留一份当前内容。";
+                if (MessageBox.Show(this, warning + "\n\n确定继续吗？",
+                    "从备份完整恢复", MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning) != DialogResult.Yes) return;
+
+                BeginFullStickyRestore(validation.Notes);
+            }
+        }
+
+        private void BeginFullStickyRestore(
+            List<StickyNoteData> restoredSnapshot)
+        {
+            CloseHostedStickyRuntimeForReload(
+                delegate(StickyUiCommandResult closeResult)
+                {
+                    if (closeResult == null || closeResult.Status !=
+                        StickyUiCommandStatus.Handled)
+                    {
+                        if (closeResult != null && closeResult.Status ==
+                            StickyUiCommandStatus.NotAccepted)
+                            ShowBubble("请先结束便利贴输入，再进行完整恢复。");
+                        else
+                            ShowStickyImportFailure(
+                                "恢复未完成。\n当前便利贴没有被修改。");
+                        return;
+                    }
+
+                    PersistenceResult committed = _notes.CommitFullRestore(
+                        restoredSnapshot);
+                    if (committed == null || !committed.Succeeded)
+                    {
+                        ReloadAllHostedStickyRuntime();
+                        ShowStickyImportFailure(
+                            "恢复未完成。\n当前便利贴没有被修改。");
+                        return;
+                    }
+                    ReloadAllHostedStickyRuntime();
+                    ShowBubble("完整恢复完成，共 " +
+                        restoredSnapshot.Count + " 张便利贴。");
+                });
+        }
+
         private void ShowStickyImportFailure(string message)
         {
             MessageBox.Show(this,

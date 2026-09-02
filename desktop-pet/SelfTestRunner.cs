@@ -344,6 +344,7 @@ namespace PennyPet
             internal bool FailureDirtyRetryOk;
             internal bool GenerationMonotonicOk;
             internal bool ImportMergeCommitOk;
+            internal bool FullRestoreCommitOk;
             internal bool MultilingualOk;
             internal bool RichTextOk;
             internal bool RichTextNoSilentTruncationOk;
@@ -525,6 +526,47 @@ namespace PennyPet
                     mergePath, mergePath + ".bak", mergeBackupPath,
                     mergeBackupPath + ".bak" })
                     if (File.Exists(mergeFile)) File.Delete(mergeFile);
+            }
+
+            string restorePath = outputPath + ".sticky-full-restore-test.dat";
+            string restoreBackupPath = restorePath + ".before-restore.pennysticky";
+            try
+            {
+                StickyNoteRepository restoreRepository =
+                    StickyNoteRepository.LoadFromFile(restorePath);
+                StickyNoteData restoreCurrent = restoreRepository.Create(
+                    "restore-current", Point.Empty);
+                restoreRepository.SaveToFile(restorePath);
+                StickyNoteData replacement = new StickyNoteData
+                {
+                    Id = "restored-only",
+                    Text = "restored-content"
+                };
+                PersistenceResult restoreCommit =
+                    restoreRepository.CommitFullRestore(
+                        new[] { replacement }, restoreBackupPath);
+                StickyNoteRepository reopenedRestore =
+                    StickyNoteRepository.LoadFromFile(restorePath);
+                StickyNoteRepository preRestore =
+                    StickyNoteRepository.LoadFromFile(restoreBackupPath);
+                result.FullRestoreCommitOk = restoreCommit.Succeeded &&
+                    reopenedRestore.Count == 1 &&
+                    reopenedRestore.Find("restored-only") != null &&
+                    reopenedRestore.Find(restoreCurrent.Id) == null &&
+                    preRestore.Find(restoreCurrent.Id) != null &&
+                    preRestore.Find(restoreCurrent.Id).Text ==
+                        "restore-current";
+            }
+            catch
+            {
+                result.FullRestoreCommitOk = false;
+            }
+            finally
+            {
+                foreach (string restoreFile in new string[] {
+                    restorePath, restorePath + ".bak", restoreBackupPath,
+                    restoreBackupPath + ".bak" })
+                    if (File.Exists(restoreFile)) File.Delete(restoreFile);
             }
 
             result.PersistenceOk = restoredNotes.Count == 1 &&
@@ -4528,6 +4570,8 @@ namespace PennyPet
                     stickyChecks.PersistenceOk) + ",\n" +
                 "  \"sticky_import_merge_commit_ok\": " + Bool(
                     stickyChecks.ImportMergeCommitOk) + ",\n" +
+                "  \"sticky_full_restore_commit_ok\": " + Bool(
+                    stickyChecks.FullRestoreCommitOk) + ",\n" +
                 "  \"sticky_pin_action_text_ok\": " + Bool(
                     shellChecks.PinActionTextOk) + ",\n" +
                 "  \"todo_sticky_pin_action_text_ok\": " + Bool(

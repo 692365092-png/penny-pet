@@ -661,6 +661,60 @@ namespace PennyPet
                 });
         }
 
+        private void CloseHostedStickyRuntimeForReload(
+            Action<StickyUiCommandResult> completed)
+        {
+            if (completed == null) return;
+            if (_hostedRuntime.NoteCount == 0)
+            {
+                completed(StickyUiCommandResult.Handled(
+                    new StickyUiFinalSnapshot[0]));
+                return;
+            }
+            PostHostedStickyCommand(StickyUiCommand.CloseAll(),
+                delegate(StickyUiCommandResult result)
+                {
+                    if (result == null ||
+                        result.Status != StickyUiCommandStatus.Handled)
+                    {
+                        completed(result);
+                        return;
+                    }
+                    if (result.FinalSnapshots != null)
+                        foreach (StickyUiFinalSnapshot finalSnapshot in
+                            result.FinalSnapshots)
+                        {
+                            if (finalSnapshot == null) continue;
+                            ApplyHostedStickySnapshot(
+                                finalSnapshot.Snapshot,
+                                finalSnapshot.Sequence, false);
+                            _hostedRuntime.RemoveNote(finalSnapshot.NoteId);
+                        }
+                    ClearHostedDockResizeSession();
+                    completed(result);
+                });
+        }
+
+        private void ReloadAllHostedStickyRuntime()
+        {
+            HashSet<string> restored = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+            foreach (StickyNoteData note in _notes.GetAll())
+            {
+                if (note == null || !note.Visible ||
+                    restored.Contains(note.Id)) continue;
+                List<StickyNoteData> group =
+                    BuildDockChainOrderIncludingHidden(note);
+                if (group.Count == 0) group.Add(note);
+                foreach (StickyNoteData member in group)
+                    if (member != null) restored.Add(member.Id);
+                ShowHostedSticky(note, false, false);
+            }
+            RefreshDockResizeRoles();
+            RefreshNoteTabs();
+            RefreshMenuText();
+        }
+
         private void ConfirmHostedStickyDelete(string noteId)
         {
             StickyNoteData note = _notes.Find(noteId);

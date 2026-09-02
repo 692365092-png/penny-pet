@@ -462,13 +462,6 @@ namespace PennyPet
                 return PersistenceResult.Failure(new InvalidOperationException(
                     "Sticky-note data was not loaded safely; refusing to merge."));
 
-            string primaryPath = Path.GetFullPath(_filePath);
-            string automaticBackupPath = Path.GetFullPath(backupPath);
-            if (String.Equals(primaryPath, automaticBackupPath,
-                StringComparison.OrdinalIgnoreCase))
-                return PersistenceResult.Failure(new InvalidOperationException(
-                    "Automatic backup path must differ from the data file."));
-
             List<StickyNoteData> committed;
             try
             {
@@ -479,6 +472,52 @@ namespace PennyPet
             {
                 return PersistenceResult.Failure(error);
             }
+            return CommitPreparedSnapshot(committed, backupPath,
+                "sticky-notes-import-merge");
+        }
+
+        internal PersistenceResult CommitFullRestore(
+            IEnumerable<StickyNoteData> restoredSnapshot, string backupPath)
+        {
+            if (restoredSnapshot == null || String.IsNullOrWhiteSpace(backupPath))
+                return PersistenceResult.Failure(new ArgumentException(
+                    "A restore snapshot and automatic backup path are required."));
+            if (!_loadSucceeded)
+                return PersistenceResult.Failure(new InvalidOperationException(
+                    "Sticky-note data was not loaded safely; refusing to restore."));
+
+            List<StickyNoteData> committed;
+            try
+            {
+                committed = CloneAndValidateMergeSnapshot(restoredSnapshot);
+            }
+            catch (Exception error)
+            {
+                return PersistenceResult.Failure(error);
+            }
+            return CommitPreparedSnapshot(committed, backupPath,
+                "sticky-notes-full-restore");
+        }
+
+        internal PersistenceResult CommitFullRestore(
+            IEnumerable<StickyNoteData> restoredSnapshot)
+        {
+            // Keep one rolling rollback snapshot so repeated restores do not
+            // create an unbounded trail of automatic backup files.
+            return CommitFullRestore(restoredSnapshot,
+                _filePath + ".before-restore.pennysticky");
+        }
+
+        private PersistenceResult CommitPreparedSnapshot(
+            List<StickyNoteData> committed, string backupPath,
+            string diagnosticContext)
+        {
+            string primaryPath = Path.GetFullPath(_filePath);
+            string automaticBackupPath = Path.GetFullPath(backupPath);
+            if (String.Equals(primaryPath, automaticBackupPath,
+                StringComparison.OrdinalIgnoreCase))
+                return PersistenceResult.Failure(new InvalidOperationException(
+                    "Automatic backup path must differ from the data file."));
 
             long generation;
             List<StickyNoteData> currentSnapshot;
@@ -496,7 +535,7 @@ namespace PennyPet
             {
                 try
                 {
-                    // One rolling pre-import backup is deliberate: it protects
+                    // One rolling pre-change backup is deliberate: it protects
                     // the current dataset without accumulating unbounded files.
                     AtomicTextFile.WriteAllLines(automaticBackupPath,
                         SerializeSnapshot(currentSnapshot), false);
@@ -505,11 +544,11 @@ namespace PennyPet
                 {
                     backupResult = PersistenceResult.Failure(error);
                     ApplicationDiagnostics.ReportNonFatal(
-                        "sticky-notes-pre-import-backup", error);
+                        diagnosticContext + "-backup", error);
                     return RecordSaveFailure(backupResult.Error);
                 }
                 backupResult = WriteSnapshot(_filePath, committed,
-                    generation, "sticky-notes-import-merge");
+                    generation, diagnosticContext);
             }
             if (!backupResult.Succeeded)
                 return RecordSaveFailure(backupResult.Error);

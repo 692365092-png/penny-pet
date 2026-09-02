@@ -360,6 +360,7 @@ namespace PennyPet
             menuCommands.ManageNotes = ShowStickyNotesManager;
             menuCommands.BackupNotes = ExportStickyNotesBackup;
             menuCommands.ImportNotes = ImportStickyNotesBackup;
+            menuCommands.RestoreNotes = RestoreStickyNotesBackup;
             menuCommands.CollapseNotes = CollapseAllStickyNotes;
             menuCommands.ExpandTabs = ExpandAllStickyNoteTabs;
             menuCommands.RecoverWindows = delegate
