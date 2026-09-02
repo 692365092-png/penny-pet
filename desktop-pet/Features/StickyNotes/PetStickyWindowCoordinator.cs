@@ -1038,6 +1038,7 @@ namespace PennyPet
         private void ShowStickyNotesManager()
         {
             bool createRequested = false;
+            bool fullRestoreRequested = false;
             StickyNoteData showRequested = null;
             using (StickyNotesManagerForm manager = new StickyNotesManagerForm(
                 delegate { return _notes.GetAll(); },
@@ -1064,8 +1065,11 @@ namespace PennyPet
                 _windowLayers.ShowModal(this, manager);
                 createRequested = manager.CreateRequested;
                 showRequested = manager.ShowRequested;
+                fullRestoreRequested = manager.FullRestoreRequested;
             }
-            if (createRequested)
+            if (fullRestoreRequested)
+                RestoreStickyNotesBackup();
+            else if (createRequested)
                 QueueStickyWindowAction(delegate
                 {
                     CreateStickyNote(String.Empty);

@@ -2108,6 +2108,7 @@ namespace PennyPet
             StickyImportMergeResult previewPlan =
                 StickyImportMergePlanner.Calculate(previewCurrentNotes,
                     previewImportedNotes);
+            int previewDeleteCalls = 0;
             using (StickyNotesManagerForm manager = new StickyNotesManagerForm(
                 delegate { return previewCurrentNotes; },
                 new StickyNotesManagerCommands
@@ -2117,12 +2118,19 @@ namespace PennyPet
                         return new StickyNotesImportPreview(previewPlan,
                             previewImportedNotes);
                     },
-                    ConfirmImport = delegate { return false; }
+                    ConfirmImport = delegate { return false; },
+                    DeleteNote = delegate { previewDeleteCalls++; }
                 }))
             {
                 manager.BeginImportPreviewForTest(
                     new StickyNotesImportPreview(previewPlan,
                         previewImportedNotes));
+                List<string> previewBeforeDelete =
+                    manager.DisplayedTitlesForTest();
+                manager.SelectAllForTest();
+                manager.DeleteKeyForTest();
+                List<string> previewAfterDelete =
+                    manager.DisplayedTitlesForTest();
                 manager.SortColumnForTest(0);
                 List<string> previewTitles = manager.DisplayedTitlesForTest();
                 manager.SortColumnForTest(1);
@@ -2136,6 +2144,8 @@ namespace PennyPet
                     !manager.IsImportPreviewForTest &&
                     previewPlan.AddedCount == 2 &&
                     previewPlan.ConflictCount == 1 &&
+                    previewDeleteCalls == 0 &&
+                    previewBeforeDelete.Count == previewAfterDelete.Count &&
                     previewTitles.Count == 3 &&
                     previewTitles.Contains("待导入") &&
                     previewTitles.Contains("当前版本") &&

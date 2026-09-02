@@ -371,6 +371,7 @@ namespace PennyPet
 
         internal bool CreateRequested { get; private set; }
         internal StickyNoteData ShowRequested { get; private set; }
+        internal bool FullRestoreRequested { get; private set; }
 
         public StickyNotesManagerForm(Func<List<StickyNoteData>> getNotes,
             StickyNotesManagerCommands commands)
@@ -454,19 +455,7 @@ namespace PennyPet
                 Close();
             };
             _list.SelectedIndexChanged += delegate { RefreshSelectionState(); };
-            _list.KeyDown += delegate(object sender, KeyEventArgs e)
-            {
-                if (e.Control && e.KeyCode == Keys.A)
-                {
-                    foreach (ListViewItem item in _list.Items) item.Selected = true;
-                    e.SuppressKeyPress = true;
-                }
-                else if (e.KeyCode == Keys.Delete)
-                {
-                    DeleteSelectedNotes();
-                    e.SuppressKeyPress = true;
-                }
-            };
+            _list.KeyDown += ManagerListKeyDown;
 
             _deleteButton = Button("删除所选", 16, delegate
             {
@@ -527,9 +516,7 @@ namespace PennyPet
             fullRestore.Location = new Point(390, 31);
             fullRestore.Click += delegate
             {
-                if (_mode == ManagerMode.Normal &&
-                    _commands.FullRestore != null)
-                    _commands.FullRestore();
+                RequestFullRestore();
             };
             _desktopGroup.Controls.Add(fullRestore);
 
@@ -605,6 +592,31 @@ namespace PennyPet
             button.Size = new Size(74, 32);
             button.Click += click;
             return button;
+        }
+
+        private void ManagerListKeyDown(object sender, KeyEventArgs e)
+        {
+            if (_mode != ManagerMode.Normal) return;
+            if (e.Control && e.KeyCode == Keys.A)
+            {
+                foreach (ListViewItem item in _list.Items) item.Selected = true;
+                e.SuppressKeyPress = true;
+            }
+            else if (e.KeyCode == Keys.Delete)
+            {
+                DeleteSelectedNotes();
+                e.SuppressKeyPress = true;
+            }
+        }
+
+        private void RequestFullRestore()
+        {
+            if (_mode != ManagerMode.Normal || _commands.FullRestore == null)
+                return;
+            FullRestoreRequested = true;
+            // Close first; the Pet owner invokes the command after the modal
+            // form has returned and its stale rows have been disposed.
+            Close();
         }
 
         private void RefreshList()
@@ -830,6 +842,16 @@ namespace PennyPet
             _search.Text = query ?? String.Empty;
         }
 
+        internal void SelectAllForTest()
+        {
+            foreach (ListViewItem item in _list.Items) item.Selected = true;
+        }
+
+        internal void DeleteKeyForTest()
+        {
+            ManagerListKeyDown(this, new KeyEventArgs(Keys.Delete));
+        }
+
         internal List<string> DisplayedTitlesForTest()
         {
             List<string> titles = new List<string>();
@@ -938,6 +960,7 @@ namespace PennyPet
 
         private void DeleteSelectedNotes()
         {
+            if (_mode != ManagerMode.Normal) return;
             List<StickyNoteData> selected = SelectedNotes();
             if (selected.Count == 0) return;
             string message = selected.Count == 1
