@@ -710,6 +710,30 @@ namespace PennyPet
             RefreshNoteTabs();
         }
 
+        private void ReloadImportedStickyRuntime(
+            StickyImportMergeResult merge)
+        {
+            if (merge == null || merge.Actions == null) return;
+            HashSet<string> requested = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+            foreach (StickyImportAction action in merge.Actions)
+            {
+                if (action == null ||
+                    String.IsNullOrEmpty(action.ResultNoteId) ||
+                    !requested.Add(action.ResultNoteId)) continue;
+                StickyNoteData note = _notes.Find(action.ResultNoteId);
+                if (note == null || !note.Visible || IsHostedSticky(note))
+                    continue;
+                // Imported windows use the same restore path as startup and
+                // reopen. Existing hosted sessions remain untouched because
+                // merge planning never replaces current NoteIds.
+                ShowHostedSticky(note, false, false);
+            }
+            RefreshDockResizeRoles();
+            RefreshNoteTabs();
+            RefreshMenuText();
+        }
+
         private bool TryRestoreHostedDockComponent(
             List<StickyNoteData> ordered, StickyNoteData focus,
             bool focusEditor, bool persistVisibility)

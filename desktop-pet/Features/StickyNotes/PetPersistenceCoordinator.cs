@@ -120,5 +120,85 @@ namespace PennyPet
                     MessageBoxIcon.Error);
             }
         }
+
+        private void ImportStickyNotesBackup()
+        {
+            if (_exiting || IsDisposed || Disposing) return;
+            using (OpenFileDialog dialog = new OpenFileDialog())
+            {
+                dialog.Title = "导入并合并便利贴";
+                dialog.Filter = "Penny 便利贴备份 (*.pennysticky;*.dat)|" +
+                    "*.pennysticky;*.dat|所有文件 (*.*)|*.*";
+                dialog.InitialDirectory = Environment.GetFolderPath(
+                    Environment.SpecialFolder.DesktopDirectory);
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+                StickyImportValidationResult validation =
+                    StickyBackupFileReader.Read(dialog.FileName);
+                if (validation == null || !validation.Succeeded)
+                {
+                    ShowStickyImportFailure("这个备份无法读取。\n当前便利贴没有被修改。");
+                    return;
+                }
+                if (validation.Notes.Count == 0)
+                {
+                    ShowBubble("备份中没有可导入的便利贴，当前内容没有修改。");
+                    return;
+                }
+
+                StickyImportMergeResult merge;
+                try
+                {
+                    merge = StickyImportMergePlanner.Calculate(
+                        _notes.GetAll(), validation.Notes);
+                }
+                catch (Exception error)
+                {
+                    ApplicationDiagnostics.ReportNonFatal(
+                        "sticky-notes-import-plan", error);
+                    ShowStickyImportFailure("导入未完成。\n当前便利贴没有被修改。");
+                    return;
+                }
+                if (merge == null || merge.Actions == null ||
+                    merge.Actions.Count == 0)
+                {
+                    ShowBubble("备份中没有可导入的便利贴，当前内容没有修改。");
+                    return;
+                }
+                if (merge.AddedCount == 0)
+                {
+                    ShowBubble("备份中的便利贴都已存在，当前内容没有修改。");
+                    return;
+                }
+
+                PersistenceResult committed = _notes.CommitImportedMerge(merge);
+                if (committed == null || !committed.Succeeded)
+                {
+                    ShowStickyImportFailure("导入未完成。\n当前便利贴没有被修改。");
+                    return;
+                }
+
+                ReloadImportedStickyRuntime(merge);
+                ShowBubble(BuildStickyImportSummary(merge));
+            }
+        }
+
+        private void ShowStickyImportFailure(string message)
+        {
+            MessageBox.Show(this,
+                (message ?? "导入未完成。\n当前便利贴没有被修改。").Trim() +
+                "\n\n" +
+                "请把下面的诊断文件发给作者：\n" +
+                ApplicationDiagnostics.LogFilePath,
+                "Penny pet", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
+        private static string BuildStickyImportSummary(
+            StickyImportMergeResult merge)
+        {
+            return "导入完成：新增 " + merge.AddedCount + " 张；相同版本跳过 " +
+                merge.SkippedIdenticalCount + " 张；不同版本保留副本 " +
+                merge.ConflictCount + " 张。";
+        }
     }
 }
