@@ -2127,8 +2127,13 @@ namespace PennyPet
                 List<string> previewTitles = manager.DisplayedTitlesForTest();
                 manager.SortColumnForTest(1);
                 List<string> previewStatuses = manager.DisplayedStatusesForTest();
+                manager.SearchForTest("待导入");
+                List<string> searchedPreview = manager.DisplayedTitlesForTest();
+                manager.SearchForTest(String.Empty);
+                manager.CancelImportPreviewForTest();
+                List<string> afterCancel = manager.DisplayedTitlesForTest();
                 result.ManagerImportPreviewOk =
-                    manager.IsImportPreviewForTest &&
+                    !manager.IsImportPreviewForTest &&
                     previewPlan.AddedCount == 2 &&
                     previewPlan.ConflictCount == 1 &&
                     previewTitles.Count == 3 &&
@@ -2138,6 +2143,9 @@ namespace PennyPet
                     previewStatuses[0] == "待导入" &&
                     previewStatuses[1] == "已存在" &&
                     previewStatuses[2] == "冲突副本" &&
+                    searchedPreview.Count == 1 &&
+                    searchedPreview[0] == "待导入" &&
+                    afterCancel.Count == 2 &&
                     previewCurrentNotes.Count == 2 &&
                     previewCurrentNotes[0].Text == "current";
             }

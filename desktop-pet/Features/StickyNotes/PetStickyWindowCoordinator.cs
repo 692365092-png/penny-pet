@@ -1057,7 +1057,8 @@ namespace PennyPet
                     },
                     ExportBackup = ExportStickyNotesBackup,
                     PrepareImport = PrepareStickyNotesImport,
-                    ConfirmImport = CommitStickyNotesImport
+                    ConfirmImport = CommitStickyNotesImport,
+                    FullRestore = RestoreStickyNotesBackup
                 }))
             {
                 _windowLayers.ShowModal(this, manager);

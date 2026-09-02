@@ -316,6 +316,7 @@ namespace PennyPet
         internal Action ExportBackup;
         internal Func<StickyNotesImportPreview> PrepareImport;
         internal Func<StickyNotesImportPreview, bool> ConfirmImport;
+        internal Action FullRestore;
     }
 
     internal sealed class StickyNotesImportPreview
@@ -520,6 +521,17 @@ namespace PennyPet
             _desktopGroup.Controls.Add(collapseAll);
             _desktopGroup.Controls.Add(expandAll);
             _desktopGroup.Controls.Add(tileAll);
+            LinkLabel fullRestore = new LinkLabel();
+            fullRestore.Text = "高级：完整恢复…";
+            fullRestore.AutoSize = true;
+            fullRestore.Location = new Point(390, 31);
+            fullRestore.Click += delegate
+            {
+                if (_mode == ManagerMode.Normal &&
+                    _commands.FullRestore != null)
+                    _commands.FullRestore();
+            };
+            _desktopGroup.Controls.Add(fullRestore);
 
             _exportButton = Button("导出备份…", 400, delegate
             {
@@ -813,6 +825,11 @@ namespace PennyPet
             ManagerColumnClick(this, new ColumnClickEventArgs(columnIndex));
         }
 
+        internal void SearchForTest(string query)
+        {
+            _search.Text = query ?? String.Empty;
+        }
+
         internal List<string> DisplayedTitlesForTest()
         {
             List<string> titles = new List<string>();
@@ -869,11 +886,22 @@ namespace PennyPet
                 return;
             }
             if (_mode == ManagerMode.ImportPreview)
-            {
-                _mode = ManagerMode.Normal;
-                _importPlan = null;
-                _importedNotes = null;
-            }
+                ClearImportPreview();
+        }
+
+        private void ClearImportPreview()
+        {
+            _mode = ManagerMode.Normal;
+            _importPlan = null;
+            _importedNotes = null;
+        }
+
+        internal void CancelImportPreviewForTest()
+        {
+            ClearImportPreview();
+            Text = "便利贴管理";
+            UpdateModeControls();
+            RefreshList();
         }
 
         private void UpdateModeControls()

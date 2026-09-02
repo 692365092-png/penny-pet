@@ -121,18 +121,6 @@ namespace PennyPet
             }
         }
 
-        private void ImportStickyNotesBackup()
-        {
-            StickyNotesImportPreview preview = PrepareStickyNotesImport();
-            if (preview == null) return;
-            if (preview.Merge.AddedCount == 0)
-            {
-                ShowBubble("备份中的便利贴都已存在，当前内容没有修改。");
-                return;
-            }
-            CommitStickyNotesImport(preview);
-        }
-
         private StickyNotesImportPreview PrepareStickyNotesImport()
         {
             if (_exiting || IsDisposed || Disposing) return null;

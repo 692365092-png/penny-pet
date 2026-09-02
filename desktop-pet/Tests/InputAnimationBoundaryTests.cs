@@ -1092,7 +1092,10 @@ namespace PennyPet.Tests
                 manager.Contains("展开全部") &&
                 manager.Contains("平铺到当前屏幕") &&
                 coordinator.Contains("ExpandAndTileAllStickyNotesToPetScreen") &&
-                !menu.Contains("Menu.Items.Add(RecoverWindowsItem)"),
+                !menu.Contains("Menu.Items.Add(RecoverWindowsItem)") &&
+                !menu.Contains("Menu.Items.Add(BackupNotesItem)") &&
+                !menu.Contains("Menu.Items.Add(ImportNotesItem)") &&
+                !menu.Contains("Menu.Items.Add(RestoreNotesItem)"),
                 "Desktop recovery actions must live in the management console.");
             Assert.IsTrue(action.Contains("ShowHostedSticky(note, false, false)") &&
                 action.Contains("ApplyDockTarget(target, null)") &&
@@ -1122,6 +1125,7 @@ namespace PennyPet.Tests
                 manager.Contains("ImportPreview") &&
                 manager.Contains("BeginImportPreview") &&
                 manager.Contains("ManagerFormClosing") &&
+                manager.Contains("ClearImportPreview();") &&
                 manager.Contains("PrepareImport") &&
                 manager.Contains("ConfirmImport"),
                 "Manager must keep import planning inside the existing form.");
@@ -1133,7 +1137,9 @@ namespace PennyPet.Tests
                 persistence.Contains("CommitImportedMerge"),
                 "Import must read, plan, revalidate, then use the existing commit owner.");
             Assert.IsTrue(coordinator.Contains("PrepareImport = PrepareStickyNotesImport") &&
-                coordinator.Contains("ConfirmImport = CommitStickyNotesImport"),
+                coordinator.Contains("ConfirmImport = CommitStickyNotesImport") &&
+                coordinator.Contains("FullRestore = RestoreStickyNotesBackup") &&
+                manager.Contains("高级：完整恢复…"),
                 "The manager must receive typed prepare/confirm commands from PetForm.");
         }
 
