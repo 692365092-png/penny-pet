@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -14,6 +16,7 @@ namespace PennyPet
         private readonly ListBox _results;
         private readonly Label _status;
         private readonly Button _ok;
+        private CancellationTokenSource _searchCancellation;
 
         internal WeatherLocationDialog(PetWeatherSource weatherSource)
         {
@@ -37,7 +40,6 @@ namespace PennyPet
             _query = new TextBox();
             _query.Location = new Point(23, 48);
             _query.Size = new Size(274, 27);
-            _query.KeyDown += QueryKeyDown;
 
             _search = new Button();
             _search.Text = "搜索";
@@ -91,6 +93,11 @@ namespace PennyPet
             Controls.Add(cancel);
             AcceptButton = _ok;
             CancelButton = cancel;
+            FormClosing += delegate
+            {
+                CancellationTokenSource pending = _searchCancellation;
+                if (pending != null) pending.Cancel();
+            };
         }
 
         internal WeatherLocation SelectedLocation
@@ -106,48 +113,73 @@ namespace PennyPet
                 _results.GetItemText(location) == location.DisplayName;
         }
 
-        private async void QueryKeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.KeyCode != Keys.Enter) return;
-            e.SuppressKeyPress = true;
-            await SearchAsync();
-        }
-
         private async Task SearchAsync()
         {
-            string query = _query.Text.Trim();
-            if (query.Length < 2)
+            string requestedQuery = _query.Text.Trim();
+            if (requestedQuery.Length < 2)
             {
                 _status.Text = "请输入至少两个字再搜索。";
                 return;
             }
             _search.Enabled = false;
-            _query.Enabled = false;
             _results.Items.Clear();
+            _ok.Enabled = false;
             _status.Text = "正在搜索…";
+            CancellationTokenSource cancellation =
+                new CancellationTokenSource();
+            _searchCancellation = cancellation;
+            Stopwatch timer = Stopwatch.StartNew();
             try
             {
                 IReadOnlyList<WeatherLocation> locations =
-                    await _weatherSource.SearchLocationsAsync(query);
+                    await _weatherSource.SearchLocationsAsync(requestedQuery,
+                        cancellation.Token);
+                if (IsDisposed) return;
+                string currentQuery = _query.Text.Trim();
+                if (!String.Equals(requestedQuery, currentQuery,
+                    StringComparison.Ordinal))
+                {
+                    _status.Text = "搜索内容已变化，请点击搜索。";
+                    return;
+                }
                 foreach (WeatherLocation location in locations)
                     _results.Items.Add(location);
                 _status.Text = locations.Count == 0
                     ? "没有找到匹配城市，请换个名称试试。"
                     : "请选择与你所在地区相符的城市。";
             }
+            catch (TimeoutException error)
+            {
+                ApplicationDiagnostics.ReportNonFatal(
+                    "weather-geocoding-timeout",
+                    new TimeoutException("queryLength=" + requestedQuery.Length +
+                        ";elapsedMs=" + timer.ElapsedMilliseconds, error));
+                if (!IsDisposed) _status.Text =
+                    "城市搜索超时，请再试一次。";
+            }
+            catch (OperationCanceledException)
+            {
+                // Closing the dialog cancels its request; no UI update is
+                // allowed to return after that boundary.
+            }
             catch (Exception error)
             {
-                ApplicationDiagnostics.ReportNonFatal("weather-geocoding",
-                    error);
-                _status.Text = "城市搜索暂时不可用，请稍后再试。";
+                ApplicationDiagnostics.ReportNonFatal(
+                    "weather-geocoding-network", new InvalidOperationException(
+                        "queryLength=" + requestedQuery.Length +
+                        ";elapsedMs=" + timer.ElapsedMilliseconds, error));
+                if (!IsDisposed) _status.Text =
+                    "城市搜索暂时不可用，请稍后再试。";
             }
             finally
             {
+                timer.Stop();
+                if (Object.ReferenceEquals(_searchCancellation, cancellation))
+                    _searchCancellation = null;
+                cancellation.Dispose();
                 if (!IsDisposed)
                 {
-                    _query.Enabled = true;
                     _search.Enabled = true;
-                    _query.Focus();
                 }
             }
         }

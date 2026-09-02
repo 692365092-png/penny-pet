@@ -510,6 +510,8 @@ namespace PennyPet.Tests
                 "Core/DailyContent/Weather/WeatherWordingCatalog.cs");
             string source = ReadSource(
                 "Infrastructure/Weather/PetWeatherSource.cs");
+            string geocoding = ReadSource(
+                "Infrastructure/Weather/OpenMeteoGeocodingClient.cs");
             string client = ReadSource(
                 "Infrastructure/Weather/OpenMeteoForecastClient.cs");
             string coordinator = ReadSource("PetDailyContentCoordinator.cs");
@@ -527,12 +529,18 @@ namespace PennyPet.Tests
                 "Weather meaning and wording must remain deterministic Core rules.");
             Assert.IsTrue(source.Contains("new HttpClient(") &&
                 source.Contains("TimeSpan.FromSeconds(3)") &&
+                source.Contains("TimeSpan.FromSeconds(8)") &&
+                source.Contains("CancellationTokenSource.CreateLinkedTokenSource") &&
                 source.Contains("FailureCooldown") &&
                 source.Contains("TimeSpan.FromMinutes(15)") &&
                 source.Contains("Queue<string>") &&
                 source.Contains("_cacheOrder.Count >= 3") &&
                 source.Contains("_inFlightKey == key"),
                 "Weather transport must own one bounded cache/in-flight/cooldown.");
+            Assert.IsTrue(geocoding.Contains("CancellationToken") &&
+                geocoding.Contains("HttpCompletionOption.ResponseContentRead") &&
+                geocoding.Contains("EnsureSuccessStatusCode"),
+                "Geocoding must accept an explicit per-request cancellation deadline.");
             Assert.IsTrue(client.Contains("past_days=1") &&
                 client.Contains("forecast_days=2") &&
                 client.Contains("temperature_2m") &&
@@ -561,6 +569,16 @@ namespace PennyPet.Tests
             Assert.IsFalse(startup.Contains("GetForecastAsync") ||
                 startup.Contains("SearchLocationsAsync"),
                 "Startup must make zero weather requests.");
+            string locationDialog = ReadSource("WeatherLocationDialog.cs");
+            Assert.IsTrue(locationDialog.Contains("requestedQuery") &&
+                locationDialog.Contains("currentQuery") &&
+                locationDialog.Contains("搜索内容已变化") &&
+                locationDialog.Contains("_searchCancellation"),
+                "Weather location search must snapshot the query and cancel on close.");
+            Assert.IsFalse(locationDialog.Contains("QueryKeyDown") ||
+                locationDialog.Contains("_query.Enabled = false") ||
+                locationDialog.Contains("_query.Focus()"),
+                "Weather search must not steal IME Enter or focus.");
             Assert.IsTrue(commands.Contains("--weather-api-probe=") &&
                 !coreProject.Contains("System.Net.Http") &&
                 !resolver.Contains("System.Net.Http"),
