@@ -381,6 +381,37 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void PetBirthdayRule_ResolvesExclusiveBirthdayKinds()
+        {
+            Assert.AreEqual(PetBirthdayKind.Penny,
+                PetBirthdayRule.Resolve(4, 22, 0, 0));
+            Assert.AreEqual(PetBirthdayKind.User,
+                PetBirthdayRule.Resolve(9, 10, 9, 10));
+            Assert.AreEqual(PetBirthdayKind.Shared,
+                PetBirthdayRule.Resolve(4, 22, 4, 22));
+            Assert.AreEqual(PetBirthdayKind.None,
+                PetBirthdayRule.Resolve(5, 5, 9, 10));
+        }
+
+        [TestMethod]
+        public void PetBirthdayRule_ValidatesAndDerivesZodiac()
+        {
+            Assert.IsFalse(PetBirthdayRule.IsValidBirthday(0, 0));
+            Assert.IsFalse(PetBirthdayRule.IsValidBirthday(13, 1));
+            Assert.IsTrue(PetBirthdayRule.IsValidBirthday(2, 29));
+
+            ZodiacSign sign;
+            Assert.IsTrue(PetBirthdayRule.TryDeriveZodiac(4, 22,
+                out sign));
+            Assert.AreEqual(ZodiacSign.Taurus, sign);
+            Assert.IsTrue(PetBirthdayRule.TryDeriveZodiac(12, 22,
+                out sign));
+            Assert.AreEqual(ZodiacSign.Capricorn, sign);
+            Assert.IsFalse(PetBirthdayRule.TryDeriveZodiac(2, 30,
+                out sign));
+        }
+
+        [TestMethod]
         public void StickyDockOperations_CoordinateGuardUsesClampedHeights()
         {
             Assert.IsTrue(
