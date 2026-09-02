@@ -29,6 +29,9 @@ namespace PennyPet
         public string WeatherTimezone = String.Empty;
         public ZodiacSign ZodiacSign = ZodiacSign.None;
         public string LastDailyBriefingDate = String.Empty;
+        public string DailyLedgerDate = String.Empty;
+        public int DailyLedgerDaypartsMask;
+        public string DailyLedgerUsedMeaningfulIds = String.Empty;
         public readonly List<ReminderItem> Reminders =
             new List<ReminderItem>();
 
@@ -78,6 +81,11 @@ namespace PennyPet
             ZodiacSign = PetSettingRules.NormalizeZodiacSign(
                 source.ZodiacSign);
             LastDailyBriefingDate = source.LastDailyBriefingDate;
+            DailyLedgerDate = source.DailyLedgerDate;
+            DailyLedgerDaypartsMask = Math.Max(0,
+                source.DailyLedgerDaypartsMask);
+            DailyLedgerUsedMeaningfulIds =
+                source.DailyLedgerUsedMeaningfulIds ?? String.Empty;
             SetReminders(source.Reminders);
         }
     }

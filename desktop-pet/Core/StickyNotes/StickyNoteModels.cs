@@ -26,13 +26,18 @@ namespace PennyPet
             ShortItemText.MaximumInputCharacters;
         public const int MaximumTitleCharacters = 50;
         public const long MaximumDataFileBytes = 32L * 1024L * 1024L;
+        public const int MinimumWindowWidth = 280;
+        public const int MaximumWindowWidth = 900;
+        public const int MinimumWindowHeight = 220;
+        public const int MaximumWindowHeight = 700;
     }
 
     internal static class StickyNoteWindowRules
     {
-        internal static bool ShouldKeepSideTabsTopMost(bool hasVisibleNotes)
+        internal static bool ShouldKeepSideTabsTopMost(
+            bool overlapsVisibleSticky)
         {
-            return true;
+            return !overlapsVisibleSticky;
         }
     }
 

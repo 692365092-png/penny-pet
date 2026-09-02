@@ -2,6 +2,7 @@
   "latitude": 30.6,
   "longitude": 114.3,
   "timezone": "Asia/Shanghai",
+  "utc_offset_seconds": 28800,
   "hourly_units": {},
   "hourly": {
     "time": [

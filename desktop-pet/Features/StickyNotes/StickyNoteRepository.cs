@@ -15,6 +15,9 @@ namespace PennyPet
         private readonly List<StickyNoteData> _notes = new List<StickyNoteData>();
         private bool _loadSucceeded = true;
         private bool _recoveredFromLoadFailure;
+        private bool _recoveredFromPartialSalvage;
+        private int _salvagedNoteCount;
+        private int _skippedCorruptLineCount;
         private string _recoveryBackupPath = String.Empty;
         private bool _hasUnsavedChanges;
         private Exception _lastSaveError;
@@ -102,6 +105,42 @@ namespace PennyPet
                 ApplicationDiagnostics.ReportNonFatal("sticky-notes-backup-load",
                     backupError);
 
+            if (!backupLoaded)
+            {
+                int salvagedCount;
+                int skippedCount;
+                bool salvaged = TrySalvageStrict(repository, filePath,
+                    out salvagedCount, out skippedCount);
+                if (!salvaged && File.Exists(backupPath))
+                    salvaged = TrySalvageStrict(repository, backupPath,
+                        out salvagedCount, out skippedCount);
+                if (salvaged)
+                {
+                    try
+                    {
+                        // Preserve both unreadable sources byte-for-byte before
+                        // writing any clean recovered primary.
+                        repository._recoveryBackupPath =
+                            PreserveUnreadableFile(filePath);
+                        PreserveUnreadableFile(backupPath);
+                        repository._recoveredFromPartialSalvage = true;
+                        repository._salvagedNoteCount = salvagedCount;
+                        repository._skippedCorruptLineCount = skippedCount;
+                        repository._recoveredFromLoadFailure = true;
+                        repository._loadSucceeded = true;
+                        repository.SaveToFile(filePath);
+                        return repository;
+                    }
+                    catch (Exception salvageError)
+                    {
+                        repository._notes.Clear();
+                        repository._loadSucceeded = false;
+                        ApplicationDiagnostics.ReportNonFatal(
+                            "sticky-notes-salvage", salvageError);
+                    }
+                }
+            }
+
             try
             {
                 // Preserve the unreadable primary byte-for-byte before a clean
@@ -175,6 +214,53 @@ namespace PennyPet
             repository._notes.Add(note);
         }
 
+        private static bool TrySalvageStrict(StickyNoteRepository repository,
+            string filePath, out int salvagedCount, out int skippedCount)
+        {
+            salvagedCount = 0;
+            skippedCount = 0;
+            if (String.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+                return false;
+            if (new FileInfo(filePath).Length >
+                StickyNoteLimits.MaximumDataFileBytes) return false;
+            List<StickyNoteData> salvaged = new List<StickyNoteData>();
+            HashSet<string> ids = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+            foreach (string line in File.ReadAllLines(filePath, Encoding.UTF8))
+            {
+                if (String.IsNullOrWhiteSpace(line)) continue;
+                if (salvaged.Count >= StickyNoteLimits.MaximumNotes)
+                {
+                    skippedCount++;
+                    continue;
+                }
+                try
+                {
+                    // Strict raw-field validation must run before the codec so
+                    // corrupt Base64 cannot be fail-soft-decoded into empty text.
+                    StickyImportBackupValidator.ValidateRawLine(line);
+                    StickyNoteData note = StickyNoteCodec.ParseLine(line);
+                    if (note == null || String.IsNullOrWhiteSpace(note.Id) ||
+                        !ids.Add(note.Id))
+                        throw new InvalidDataException(
+                            "Salvage line has an invalid or duplicate NoteId.");
+                    salvaged.Add(note);
+                }
+                catch (Exception)
+                {
+                    skippedCount++;
+                }
+            }
+            if (salvaged.Count == 0) return false;
+            repository._notes.Clear();
+            foreach (StickyNoteData note in salvaged)
+                repository._notes.Add(note);
+            repository.NormalizeTabOrders();
+            StickyDockGroups.NormalizeAll(repository._notes);
+            salvagedCount = salvaged.Count;
+            return true;
+        }
+
         private static string PreserveUnreadableFile(string filePath)
         {
             if (!File.Exists(filePath)) return String.Empty;
@@ -196,6 +282,21 @@ namespace PennyPet
         internal bool RecoveredFromLoadFailure
         {
             get { return _recoveredFromLoadFailure; }
+        }
+
+        internal bool RecoveredFromPartialSalvage
+        {
+            get { return _recoveredFromPartialSalvage; }
+        }
+
+        internal int SalvagedNoteCount
+        {
+            get { return _salvagedNoteCount; }
+        }
+
+        internal int SkippedCorruptLineCount
+        {
+            get { return _skippedCorruptLineCount; }
         }
 
         internal string RecoveryBackupPath

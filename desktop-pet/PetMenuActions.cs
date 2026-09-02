@@ -234,7 +234,7 @@ namespace PennyPet
             _typingSession = false;
             _animation.CancelInteractionAnimation();
             _keyOverlay.HideImmediately();
-            _mouseInside = false;
+            _stableMouseInside = false;
             if (_menu.Visible) _menu.Close();
             CloseCurrentBubbleWithoutRestoringHover();
             _row = WavingRow;

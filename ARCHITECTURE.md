@@ -93,7 +93,7 @@ PennyPet.Tools -> 美术发布包和启动缓存生成
 | `Core/Messaging/PetSentenceEndingPolicy.cs` | Role、显式 Intent、ContentKind、稳定内容 ID 与当地日期驱动的句末标点/语气 | 平台无关确定性纯规则；无 NLP、历史或设置 |
 | `Core/Calendar/SolarTerm*` | 二十四节气天文事实 | 平台无关 |
 | `PetDailyContentCoordinator.cs` | 首次有效 Poke eligibility、异步天气收集、compose、Bubble accepted 后消费日期 | Windows 产品协调 |
-| `DailyContentSettingsForm.cs` / `WeatherLocationDialog.cs` | Daily、节气、天气城市和星座偏好；搜索只由明确按钮/Enter 触发 | Windows-only |
+| `DailyContentSettingsForm.cs` / `WeatherLocationDialog.cs` | Daily、节气、天气城市和星座偏好；搜索只由明确按钮触发，Enter 已归还输入法 | Windows-only |
 
 `DailyBriefing` 按用户实际读到的 semantic sentence 计数：Greeting 也占一条，总数最多三条，每个 supplementary 最多贡献一条。事实优先级为 `SolarTerm → Weather → Almanac → filler`；Solar 与 Weather 同时存在时输出两者，没有 Solar 时 Weather 可与 Almanac 同时输出。任一高新鲜度事实存在后不机械补 Curated/Zodiac，三者都不存在才进入 filler layer。Weather 固定为一个直说事实加至多一个行动提醒，Almanac 在同一句内完成信息与必要降权。两个 filler 目录分别固定上限为 96 和 72 条。
 
@@ -101,7 +101,7 @@ Daily 文案先以 `Body + ContentKind + StableContentId + Intent` 进入 Compos
 
 Almanac 的边界固定为 `lunar-csharp → raw traditional Yi/Ji → Penny exact semantic whitelist → modern conversational copy`。原始宜忌绝不直接成为 DailyBriefing 输出；现代化只改变表达，不改变传统术语含义。医疗、法律、财务、丧葬、宗教、施工及其他不适合的传统术语不进入 v1 建议；Yi/Ji 对同一 Topic 冲突时该 Topic 当天直接抑制。Penny v1 采用日粒度、sect 1 的黄历语义以保证同一当地民用日内稳定，这不代表其比其他民俗流派更权威。
 
-每日新鲜度主要来自变化中的事实语境，而不是无限增加固定文案。Weather 仅在用户 opt-in 后由首次 eligible Poke 异步请求；普通动画先启动，网络失败静默回退，启动零请求且没有轮询。成功预报只存在于最多 3 个 `location + local day` 进程 Cache 中，同键并发共享一个 Task；改变城市清空 Cache，失败键 15 分钟内不重试。城市偏好是覆盖保存的用户偏好，预报是有界 Cache，均不产生长期历史。
+每日新鲜度主要来自变化中的事实语境，而不是无限增加固定文案。Weather 仅在用户 opt-in 后由首次 eligible Poke 异步请求；普通动画先启动，网络失败静默回退，启动零请求且没有轮询。Today/Yesterday/Tomorrow 按所选城市本地日期解析（API `utc_offset_seconds` + UTC now），不得用电脑本地日期切日。成功预报只存在于最多 3 个 location 进程 Cache 中，城市本地日期跨日后旧 Today 不再复用；同键并发共享一个 Task，改变城市清空 Cache，失败键 15 分钟内不重试。城市偏好是覆盖保存的用户偏好，预报是有界 Cache，均不产生长期历史。
 
 Open-Meteo Forecast 请求固定为昨天、今天、明天和 8 个小时变量，3 秒超时、零自动重试；Geocoding 只在用户明确搜索时请求最多 5 条中文结果，必须由用户确认，不按键搜索，也不在重启后重新解析已保存城市。实现时（2026-09-01）免费服务页面列出的限制为 600 次/分钟、5,000 次/小时、10,000 次/日、300,000 次/月；这些数字只记录实现时依据，不是运行时契约，发布或商业使用前必须重新核对 [官方定价/限制](https://open-meteo.com/en/pricing) 并评估 customer endpoint。
 
@@ -188,7 +188,7 @@ Sticky Backup v1 的 portable dataset 是 `sticky-notes.dat` 中的 Sticky 模�
 
 UI ownership 按 framework / message-loop 划分，而不是要求同一 feature 的所有窗口必须位于同一个线程。WPF `StickyNoteWindow` 可以继续由 `StickyUiHost` 的 WPF Dispatcher STA 承载；WinForms Side Tabs 可以留在 Pet/WinForms UI thread，只要它们只消费 typed snapshot，并只产生 typed user-action，不直接访问 hosted WPF 窗口。
 
-Side Tabs 是附着于 Pet chrome 的 no-activate TopMost UI；存在 tab controls 时不因其他 Sticky window 可见而降出 TopMost band。Pet monitor、working area 或 scale 改变时会重新验证 desired left/right split；分配不变时只 reposition，分配改变时才 rebuild controls。
+Side Tabs 是附着于 Pet chrome 的 no-activate UI；左右 strip 各自按几何 overlap 决定是否 TopMost，被可见 Sticky 覆盖的 strip 临时降层，移开后恢复。TopMost/BringToFront 与 window-layer 诊断只在 overlap 状态变化时执行。Pet monitor、working area 或 scale 改变时会重新验证 desired left/right split；分配不变时只 reposition，分配改变时才 rebuild controls。
 
 ## 7. 当前 Windows UI ownership
 
@@ -235,7 +235,7 @@ Sticky WPF STA
 - Hosted Dock 覆盖 merge、group move、TopMost、horizontal resize、vertical divider、collapse-reopen、split、多成员 insertion、preview、merge pulse 和 split guide。
 - “展开全部并平铺到此屏幕”会展开所有 note、清除 canonical Dock membership，并通过唯一 hosted effect path 平铺到 Pet 当前屏幕。
 - v1-v9 Sticky persistence codec 继续保留；旧数据先转换为 canonical `StickyNoteData`，运行时 executor 信息不写入用户数据。
-- Side Tabs 始终保持 no-activate TopMost chrome，并在 monitor/work-area/scale 改变时按需重新验证左右布局。
+- Side Tabs 保持 no-activate chrome，并只在真实被可见 Sticky 覆盖时按 strip 降层；monitor/work-area/scale 改变时按需重新验证左右布局。
 - Side Tabs 仍在 WinForms Pet STA，直接消费 detached `SideTabSnapshot`；便利贴业务身份使用稳定 `NoteId`，拖拽来源 UI identity 保持平台本地 opaque object。OLE nested-loop、TransparencyKey canvas、BringToFront timing 等 workaround 是 Windows-only，不是未来 macOS UI 的复用契约。
 
 启动 loading ownership：

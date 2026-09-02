@@ -43,6 +43,22 @@ namespace PennyPet
             }
         }
 
+        internal void SetFaultHandler(Action<Exception> handler)
+        {
+            if (handler == null) return;
+            _threadHost.Faulted += delegate(Exception error)
+            {
+                SynchronizationContext context;
+                lock (_configurationGate) context = _eventContext;
+                if (context != null)
+                {
+                    context.Post(delegate { handler(error); }, null);
+                    return;
+                }
+                ThreadPool.QueueUserWorkItem(delegate { handler(error); });
+            };
+        }
+
         internal void PostCommand(StickyUiCommand command,
             Action<StickyUiCommandResult> completed)
         {

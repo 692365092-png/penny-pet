@@ -75,9 +75,13 @@ namespace PennyPet
             if (Int32.TryParse(fields[5], out number)) note.X = number;
             if (Int32.TryParse(fields[6], out number)) note.Y = number;
             if (Int32.TryParse(fields[7], out number))
-                note.Width = Clamp(number, 200, 900);
+                note.Width = Clamp(number,
+                    StickyNoteLimits.MinimumWindowWidth,
+                    StickyNoteLimits.MaximumWindowWidth);
             if (Int32.TryParse(fields[8], out number))
-                note.Height = Clamp(number, 140, 700);
+                note.Height = Clamp(number,
+                    StickyNoteLimits.MinimumWindowHeight,
+                    StickyNoteLimits.MaximumWindowHeight);
             if (Int64.TryParse(fields[9], out ticks) && ticks > 0)
                 note.CreatedUtcTicks = ticks;
             if (Int64.TryParse(fields[10], out ticks) && ticks > 0)
@@ -169,8 +173,12 @@ namespace PennyPet
                 note.FontFamilyName = family;
                 changed = true;
             }
-            int width = Clamp(note.Width, 280, 900);
-            int height = Clamp(note.Height, 220, 700);
+            int width = Clamp(note.Width,
+                StickyNoteLimits.MinimumWindowWidth,
+                StickyNoteLimits.MaximumWindowWidth);
+            int height = Clamp(note.Height,
+                StickyNoteLimits.MinimumWindowHeight,
+                StickyNoteLimits.MaximumWindowHeight);
             int size = Clamp(note.FontSizeTwips, 120, 1440);
             int opacity = Clamp(note.BackgroundOpacityPercent, 10, 100);
             int textColor = NormalizeTextColor(note.TextColorArgb);
@@ -269,7 +277,7 @@ namespace PennyPet
                     builder.Append((int)item.State).Append('\t')
                         .Append(item.IsPinned ? '1' : '0').Append('\t')
                         .Append((item.Text ?? String.Empty).Replace("\r", " ")
-                            .Replace("\n", " "));
+                            .Replace("\n", " ").Replace("\t", " "));
                 }
             }
             return Encode(builder.ToString());

@@ -7,15 +7,24 @@ namespace PennyPet
 {
     internal sealed class OpenMeteoForecastParser
     {
-        internal WeatherForecastWindow Parse(string json, DateTime localDate)
+        internal WeatherForecastWindow Parse(string json, DateTimeOffset utcNow)
         {
             if (String.IsNullOrWhiteSpace(json))
                 throw new FormatException("Weather response is empty.");
             ForecastResponse response = new JavaScriptSerializer()
                 .Deserialize<ForecastResponse>(json);
+            if (response == null || !response.utc_offset_seconds.HasValue)
+                throw new FormatException(
+                    "Weather response has no timezone offset.");
+            int utcOffsetSeconds = response.utc_offset_seconds.Value;
+            if (utcOffsetSeconds < -43200 || utcOffsetSeconds > 50400)
+                throw new FormatException(
+                    "Weather response has an invalid timezone offset.");
             HourlyData hourly = response == null ? null : response.hourly;
             Validate(hourly);
 
+            DateTime cityLocalDate = utcNow.ToOffset(
+                TimeSpan.FromSeconds(utcOffsetSeconds)).Date;
             Dictionary<DateTime, DayAccumulator> days =
                 new Dictionary<DateTime, DayAccumulator>();
             for (int i = 0; i < hourly.time.Length; i++)
@@ -39,10 +48,15 @@ namespace PennyPet
                     hourly.wind_gusts_10m[i]);
             }
 
+            WeatherDaySummary today = Build(days, cityLocalDate);
+            if (today == null)
+                throw new FormatException(
+                    "Weather response is missing the city's current day.");
             return new WeatherForecastWindow(
-                Build(days, localDate.Date.AddDays(-1)),
-                Build(days, localDate.Date),
-                Build(days, localDate.Date.AddDays(1)));
+                Build(days, cityLocalDate.AddDays(-1)),
+                today,
+                Build(days, cityLocalDate.AddDays(1)),
+                utcOffsetSeconds);
         }
 
         private static WeatherDaySummary Build(
@@ -78,6 +92,7 @@ namespace PennyPet
 
         private sealed class ForecastResponse
         {
+            public int? utc_offset_seconds { get; set; }
             public HourlyData hourly { get; set; }
         }
 

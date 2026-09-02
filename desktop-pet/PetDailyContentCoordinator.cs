@@ -13,7 +13,7 @@ namespace PennyPet
         private readonly Func<bool> _almanacEnabled;
         private readonly Func<bool> _weatherEnabled;
         private readonly Func<WeatherLocation> _weatherLocation;
-        private readonly Func<WeatherLocation, DateTime,
+        private readonly Func<WeatherLocation,
             Task<WeatherForecastWindow>> _weatherForecast;
         private readonly Func<ZodiacSign> _zodiacSign;
         private readonly Func<string, bool> _showDailyGreeting;
@@ -26,7 +26,7 @@ namespace PennyPet
             Func<bool> solarTermEnabled, Func<bool> almanacEnabled,
             Func<bool> weatherEnabled,
             Func<WeatherLocation> weatherLocation,
-            Func<WeatherLocation, DateTime, Task<WeatherForecastWindow>>
+            Func<WeatherLocation, Task<WeatherForecastWindow>>
                 weatherForecast,
             Func<ZodiacSign> zodiacSign,
             Func<string, bool> showDailyGreeting,
@@ -91,7 +91,7 @@ namespace PennyPet
                 if (location != null)
                 {
                     WeatherForecastWindow forecast = await _weatherForecast(
-                        location, localNow.Date);
+                        location);
                     WeatherMeaning? meaning = WeatherMeaningRules.Select(
                         forecast);
                     if (meaning.HasValue)
@@ -115,6 +115,14 @@ namespace PennyPet
             {
                 lock (_attemptGate) _attemptInFlight = false;
             }
+        }
+
+        internal bool IsOpeningEligible(DateTimeOffset localNow)
+        {
+            return _dailyContentEnabled() &&
+                !PetMessagePolicy.ShouldSuppress(
+                    PetMessageKind.DailyGreeting, _silentMode()) &&
+                DailyContentRules.ShouldShow(_lastBriefingDate(), localNow);
         }
     }
 }

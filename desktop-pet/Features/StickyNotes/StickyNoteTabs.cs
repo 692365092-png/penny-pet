@@ -172,9 +172,7 @@ namespace PennyPet
             if (_sourceHorizontallyOffset)
                 _sourceNormalLeft = _side == StickyTabSide.Right
                     ? location.X + DragSourceVisualOffset : location.X;
-            TopMost = true;
             if (!Visible) Show();
-            BringToFront();
         }
 
         internal static int PetOverlapForWidth(int petWidth)

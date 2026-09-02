@@ -39,22 +39,12 @@ namespace PennyPet
 
         internal static DayPart ResolveDayPart(DateTime localTime)
         {
-            int hour = localTime.Hour;
-            if (hour < 5) return DayPart.LateNight;
-            if (hour < 11) return DayPart.Morning;
-            if (hour < 14) return DayPart.Midday;
-            if (hour < 18) return DayPart.Afternoon;
-            return DayPart.Evening;
+            return PetDaypartRule.Resolve(localTime);
         }
 
         internal static DayPart ResolveDayPart(DateTimeOffset localTime)
         {
-            int hour = localTime.Hour;
-            if (hour < 5) return DayPart.LateNight;
-            if (hour < 11) return DayPart.Morning;
-            if (hour < 14) return DayPart.Midday;
-            if (hour < 18) return DayPart.Afternoon;
-            return DayPart.Evening;
+            return PetDaypartRule.Resolve(localTime);
         }
 
         internal static string GreetingBodyFor(DayPart dayPart)

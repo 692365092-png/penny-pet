@@ -86,24 +86,27 @@ namespace PennyPet
         }
 
         internal Task<WeatherForecastWindow> GetForecastAsync(
-            WeatherLocation location, DateTime localDate)
+            WeatherLocation location)
         {
             if (location == null)
                 throw new ArgumentNullException(nameof(location));
             ThrowIfDisposed();
-            string key = location.StableKey + "|" +
-                localDate.Date.ToString("yyyy-MM-dd");
+            string key = location.StableKey;
+            DateTimeOffset utcNow = _utcNow();
             lock (_gate)
             {
                 WeatherForecastWindow cached;
-                if (_cache.TryGetValue(key, out cached))
+                if (_cache.TryGetValue(key, out cached) &&
+                    cached.Today != null &&
+                    cached.Today.Date == CityLocalDate(utcNow,
+                        cached.UtcOffsetSeconds))
                     return Task.FromResult(cached);
                 if (_failedKey == key && _utcNow() < _retryAfterUtc)
                     return Task.FromResult<WeatherForecastWindow>(null);
                 if (_inFlightKey == key && _inFlight != null)
                     return _inFlight;
                 _inFlightKey = key;
-                _inFlight = FetchAndStoreAsync(location, localDate.Date, key);
+                _inFlight = FetchAndStoreAsync(location, key);
                 return _inFlight;
             }
         }
@@ -135,7 +138,7 @@ namespace PennyPet
         }
 
         private async Task<WeatherForecastWindow> FetchAndStoreAsync(
-            WeatherLocation location, DateTime localDate, string key)
+            WeatherLocation location, string key)
         {
             // Ensure the shared task is registered before even an in-memory
             // handler can complete, without returning to a caller's UI context.
@@ -148,7 +151,7 @@ namespace PennyPet
                     new CancellationTokenSource())
                 {
                     timeout.CancelAfter(ForecastRequestTimeout);
-                    value = await _forecast.FetchAsync(location, localDate,
+                    value = await _forecast.FetchAsync(location, _utcNow(),
                         timeout.Token).ConfigureAwait(false);
                 }
                 lock (_gate)
@@ -187,6 +190,13 @@ namespace PennyPet
                     }
                 }
             }
+        }
+
+        private static DateTime CityLocalDate(DateTimeOffset utcNow,
+            int utcOffsetSeconds)
+        {
+            return utcNow.ToOffset(
+                TimeSpan.FromSeconds(utcOffsetSeconds)).Date;
         }
 
         private void ThrowIfDisposed()

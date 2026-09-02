@@ -71,7 +71,7 @@ namespace PennyPet
             }
         }
 
-        private static void ValidateRawLine(string line)
+        internal static void ValidateRawLine(string line)
         {
             string[] fields = line.Split('|');
             int version;
@@ -211,12 +211,20 @@ namespace PennyPet
             foreach (string line in payload.Split('\n'))
             {
                 if (line.Length == 0) continue;
-                string[] fields = line.Split('\t');
+                int first = line.IndexOf('\t');
+                if (first < 0)
+                    throw new InvalidDataException("Malformed Todo field.");
+                int second = line.IndexOf('\t', first + 1);
+                if (second < 0)
+                    throw new InvalidDataException("Malformed Todo field.");
+                string stateField = line.Substring(0, first);
+                string pinnedField = line.Substring(first + 1,
+                    second - first - 1);
                 int state;
-                if (fields.Length != 3 || !Int32.TryParse(fields[0],
+                if (!Int32.TryParse(stateField,
                     NumberStyles.Integer, CultureInfo.InvariantCulture,
                     out state) || state < 0 || state > 2 ||
-                    (fields[1] != "0" && fields[1] != "1"))
+                    (pinnedField != "0" && pinnedField != "1"))
                     throw new InvalidDataException("Malformed Todo field.");
                 if (++count > StickyNoteLimits.MaximumTodoItemsPerNote)
                     throw new InvalidDataException("Todo content exceeds safety limits.");

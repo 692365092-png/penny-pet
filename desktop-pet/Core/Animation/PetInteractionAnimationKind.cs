@@ -4,6 +4,7 @@ namespace PennyPet
     {
         None,
         OrdinaryPoke,
-        EasterEgg
+        EasterEgg,
+        Notification
     }
 }

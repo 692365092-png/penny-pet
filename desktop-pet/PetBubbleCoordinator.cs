@@ -343,8 +343,11 @@ namespace PennyPet
 
         private void ShowOrUpdateHoverBubble()
         {
-            if (!ShouldShowHoverBubble(_mouseInside, _menu.Visible, _dragging,
-                _settings.SilentMode) || IsDisposed || _exiting) return;
+            if (IsDisposed || _exiting ||
+                PetHoverStabilityRules.ShouldSuppressHover(
+                    _stableMouseInside, _menu.Visible, _dragging,
+                    _settings.SilentMode,
+                    _hoverSuppressedUntilStableLeave)) return;
             ReminderItem next = _reminders.Next;
             string text = next != null
                 ? "距离最近提醒还有" + FormatRemaining(next.Remaining) +
@@ -398,7 +401,9 @@ namespace PennyPet
             if (PetReminderCoordinator.ShouldShowPreAlert(next, next == null
                 ? TimeSpan.Zero : next.Remaining))
                 ShowOrUpdatePreAlert(next);
-            else if (_mouseInside && !_menu.Visible)
+            else if (!PetHoverStabilityRules.ShouldSuppressHover(
+                _stableMouseInside, _menu.Visible, _dragging,
+                _settings.SilentMode, _hoverSuppressedUntilStableLeave))
                 ShowOrUpdateHoverBubble();
         }
 

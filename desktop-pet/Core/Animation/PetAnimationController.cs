@@ -79,6 +79,16 @@ namespace PennyPet
             return true;
         }
 
+        internal bool TryStartNotification()
+        {
+            if (ReminderAttentionActive ||
+                InteractionAnimationKind != PetInteractionAnimationKind.None)
+                return false;
+            InteractionAnimationKind = PetInteractionAnimationKind.Notification;
+            InteractionAnimationRow = NotificationRow;
+            return true;
+        }
+
         internal void CompleteInteractionAnimation()
         {
             InteractionAnimationKind = PetInteractionAnimationKind.None;

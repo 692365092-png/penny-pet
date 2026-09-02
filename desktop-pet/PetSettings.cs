@@ -31,7 +31,40 @@ namespace PennyPet
 
         public static PetSettings Load()
         {
-            return LoadFromFile(FilePath);
+            string primary = FilePath;
+            if (File.Exists(primary) || File.Exists(primary + ".bak"))
+                return LoadFromFile(primary);
+            PetSettings migrated = TryMigrateLegacySettings();
+            return migrated ?? new PetSettings();
+        }
+
+        private static PetSettings TryMigrateLegacySettings()
+        {
+            foreach (string legacyPath in LegacySettingsPaths())
+            {
+                if (!File.Exists(legacyPath)) continue;
+                PetSettings legacy;
+                Exception error;
+                if (TryLoadSingleFile(legacyPath, out legacy, out error))
+                {
+                    // One-time copy-forward. The legacy file stays untouched.
+                    legacy.SaveToFile(FilePath);
+                    return legacy;
+                }
+                ApplicationDiagnostics.ReportNonFatal(
+                    "settings-legacy-skip", error);
+            }
+            return null;
+        }
+
+        private static string[] LegacySettingsPaths()
+        {
+            string local = WindowsDataPaths.LocalApplicationDataDirectory;
+            return new string[]
+            {
+                Path.Combine(local, "FishPet", "settings.ini"),
+                Path.Combine(local, "ShanYingPet", "settings.ini")
+            };
         }
 
         internal static PetSettings LoadFromFile(string filePath)

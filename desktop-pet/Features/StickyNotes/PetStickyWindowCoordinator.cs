@@ -355,6 +355,18 @@ namespace PennyPet
             _stickyUiHost.PostCommand(command, completed, _petUiContext);
         }
 
+        private void HostedStickyFaulted(Exception error)
+        {
+            if (error != null)
+                ApplicationDiagnostics.ReportNonFatal(
+                    "hosted-sticky-faulted", error);
+            // Hosted Sticky windows are degraded, but canonical note data stays
+            // untouched and Penny itself can still exit safely.
+            if (_exiting || IsDisposed || Disposing) return;
+            ShowBubble(
+                "便利贴界面遇到问题，已停止使用，数据仍然保留。请重启 Penny 后再试。");
+        }
+
         private void HostedStickyEventReceived(StickyUiEvent value)
         {
             if (value == null || IsDisposed || Disposing ||
@@ -396,13 +408,17 @@ namespace PennyPet
                 if (value.Kind == StickyUiEventKind.HeaderDragStarted)
                     BeginStickyDockDrag(facts);
                 else if (value.Kind == StickyUiEventKind.HeaderDragMoved)
+                {
                     MoveStickyDockDrag(facts);
+                    ApplyNoteTabZOrder();
+                }
                 else CompleteStickyDockDrag(facts);
                 return;
             }
             if (value.Kind == StickyUiEventKind.BoundsChanged)
             {
                 ApplyHostedStickySnapshot(value.Snapshot, value.Sequence, false);
+                ApplyNoteTabZOrder();
                 return;
             }
             if (value.Kind == StickyUiEventKind.DockDividerResizeStarted)
@@ -979,18 +995,48 @@ namespace PennyPet
             ApplyNoteTabZOrder();
         }
 
+        private bool IsStripCoveredByVisibleSticky(StickyNoteTabsForm tabs)
+        {
+            if (tabs == null || tabs.IsDisposed || !tabs.Visible) return false;
+            Rectangle stripBounds = tabs.Bounds;
+            foreach (StickyNoteData note in _notes.GetAll())
+            {
+                if (note == null || !note.Visible) continue;
+                if (note.Width <= 0 || note.Height <= 0) continue;
+                Rectangle noteBounds = new Rectangle(note.X, note.Y,
+                    note.Width, note.Height);
+                if (stripBounds.IntersectsWith(noteBounds)) return true;
+            }
+            return false;
+        }
+
         private void ApplyNoteTabZOrder()
         {
-            ApplicationDiagnostics.WriteWindowLayerEvent("ApplyNoteTabZOrder",
-                "structural");
             if (_leftNoteTabs == null || _rightNoteTabs == null || IsDisposed)
                 return;
-            _leftNoteTabs.TopMost =
-                StickyNoteWindowRules.ShouldKeepSideTabsTopMost(true);
-            _rightNoteTabs.TopMost =
-                StickyNoteWindowRules.ShouldKeepSideTabsTopMost(true);
-            if (_leftNoteTabs.Visible) _leftNoteTabs.BringToFront();
-            if (_rightNoteTabs.Visible) _rightNoteTabs.BringToFront();
+            bool leftCovered = IsStripCoveredByVisibleSticky(_leftNoteTabs);
+            bool rightCovered = IsStripCoveredByVisibleSticky(_rightNoteTabs);
+            if (!_leftTabsCovered.HasValue || _leftTabsCovered.Value != leftCovered)
+            {
+                _leftTabsCovered = leftCovered;
+                _leftNoteTabs.TopMost =
+                    StickyNoteWindowRules.ShouldKeepSideTabsTopMost(leftCovered);
+                if (!leftCovered && _leftNoteTabs.Visible)
+                    _leftNoteTabs.BringToFront();
+                ApplicationDiagnostics.WriteWindowLayerEvent("SideTabsLeft",
+                    leftCovered ? "covered" : "clear");
+            }
+            if (!_rightTabsCovered.HasValue ||
+                _rightTabsCovered.Value != rightCovered)
+            {
+                _rightTabsCovered = rightCovered;
+                _rightNoteTabs.TopMost =
+                    StickyNoteWindowRules.ShouldKeepSideTabsTopMost(rightCovered);
+                if (!rightCovered && _rightNoteTabs.Visible)
+                    _rightNoteTabs.BringToFront();
+                ApplicationDiagnostics.WriteWindowLayerEvent("SideTabsRight",
+                    rightCovered ? "covered" : "clear");
+            }
         }
 
         private void PositionNoteTabs()
@@ -1028,6 +1074,7 @@ namespace PennyPet
                 }
                 _leftNoteTabs.ShowNear(Bounds, work);
                 _rightNoteTabs.ShowNear(Bounds, work);
+                ApplyNoteTabZOrder();
             }
             finally
             {

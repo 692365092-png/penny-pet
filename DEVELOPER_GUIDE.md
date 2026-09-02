@@ -88,7 +88,7 @@ Dock 修改必须同时检查：组关系、组内顺序、持久化快照、统
 - `StickyUiHost` 是唯一 production executor。新建、startup restore、persisted mixed Dock、SideTab 展开和窗口 effects 都使用 `StickyUiCommand`；禁止重新引入 Pet-owned `Dictionary<string, StickyNoteWindow>` 或 silent legacy fallback。
 - “展开全部并平铺到此屏幕”会展开全部 note、清除 canonical Dock relation，再通过 hosted effect path 平铺；不要把它退化成只移动可见窗口。
 - `StickyNoteCodec` 的 v1-v9 compatibility readers 是用户数据兼容层，不属于已删除的 legacy runtime executor，必须保留。
-- Side Tabs 始终保持 no-activate TopMost chrome。monitor、working area 或 Pet scale 改变时会重新验证 desired left/right split；split 不变只 reposition，改变才 rebuild controls。
+- Side Tabs 保持 no-activate chrome；左右 strip 按几何 overlap 独立决定 TopMost，被可见 Sticky 覆盖时该 strip 临时降层。monitor、working area 或 Pet scale 改变时会重新验证 desired left/right split；split 不变只 reposition，改变才 rebuild controls。
 - Side Tabs 直接消费 `SideTabSnapshot`；业务 note identity 使用稳定 `NoteId`，拖拽 source identity 才使用平台 UI object reference。OLE nested-loop、透明 canvas、BringToFront timing 等 workaround 是 Windows-only，不应复制成 macOS UI 框架。
 - Manager 排序与搜索只改变表格视图。Import & Merge 必须先完整 read/parse/validate/plan，在同一个 Manager 预览；取消或关闭不得修改 repository，确认时重新规划后才允许原子 commit。Preview 是 Form 生命周期内的有界运行状态，不写磁盘、不留历史。
 - 新导入及 conflict copy 默认 `Visible=false`；current NoteId 的 geometry、visibility 和 Dock relation 优先。不得为导入创建另一套 window creator 或 Dock engine。
@@ -128,7 +128,7 @@ Dock 修改必须同时检查：组关系、组内顺序、持久化快照、统
 - 天气城市属于用户偏好：`PetSettingsCodec` 只保存当前名称、行政区、国家、经纬度和 IANA 时区，使用 invariant 数字格式；换城市覆盖并使进程 Cache 失效。
 - 预报属于 Cache：`PetWeatherSource` 最多保留 3 个 `location + local day` 成功结果；同键并发复用一个 Task，失败键冷却 15 分钟，退出即丢弃。不得添加 forecast/history 磁盘文件。
 - `Core/DailyContent/Weather` 是纯摘要、语义和 wording；`Infrastructure/Weather` 才能引用 `HttpClient`、Open-Meteo URL 和 JSON DTO。不要为第二个 provider 预建 interface、factory、registry 或 DI。
-- 启动和 Timer 不得调用天气。城市搜索只响应明确 Search/Enter；Daily 预报只响应首个 eligible Poke，3 秒超时、零重试，失败继续组合其他内容。
+- 启动和 Timer 不得调用天气。城市搜索只响应明确 Search 按钮；WeatherLocationDialog 不再用 AcceptButton 抢 Enter。Daily 预报只响应首个 eligible Poke，3 秒超时、零重试，失败继续组合其他内容。
 - fixture 是普通测试的唯一网络输入。需要人工验证实时响应时运行 `PennyPet.SelfTests.exe --weather-api-probe=<output.json>`；该命令不是 CI gate。
 
 ### 键盘显示与隐私

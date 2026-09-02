@@ -1956,7 +1956,7 @@ namespace PennyPet
                 result.DeleteCommandOk = tab.HasDeleteCommand;
             result.ZOrderPolicyOk =
                 StickyNoteWindowRules.ShouldKeepSideTabsTopMost(false) &&
-                StickyNoteWindowRules.ShouldKeepSideTabsTopMost(true);
+                !StickyNoteWindowRules.ShouldKeepSideTabsTopMost(true);
             const int layoutNoteCount = 14;
             int layoutLeftCount = StickyNoteTabsForm.CalculateLeftCount(
                 layoutNoteCount, 208, workArea);
@@ -2650,8 +2650,10 @@ namespace PennyPet
             string fixture = ReadWeatherFixture("weather-rain-later.json");
 
             DateTime date = new DateTime(2026, 9, 1);
+            DateTimeOffset cityNow = new DateTimeOffset(2026, 9, 1, 8, 0, 0,
+                TimeSpan.FromHours(8));
             WeatherForecastWindow parsed = new OpenMeteoForecastParser()
-                .Parse(fixture, date);
+                .Parse(fixture, cityNow);
             result.ForecastFixtureParsingOk = parsed.Yesterday != null &&
                 parsed.Today != null && parsed.Tomorrow != null &&
                 parsed.Today.MinimumTemperatureC == 22D &&
@@ -2687,14 +2689,12 @@ namespace PennyPet
                 forecastUrl.IndexOf("apikey", StringComparison.OrdinalIgnoreCase)
                     < 0;
 
+            DateTimeOffset handlerClock = new DateTimeOffset(2026, 9, 1, 0, 0, 0,
+                TimeSpan.Zero);
             WeatherFixtureHandler handler = new WeatherFixtureHandler(
                 fixture, false);
             using (PetWeatherSource source = new PetWeatherSource(
-                new HttpClient(handler), delegate
-                {
-                    return new DateTimeOffset(2026, 9, 1, 0, 0, 0,
-                        TimeSpan.Zero);
-                }))
+                new HttpClient(handler), delegate { return handlerClock; }))
             {
                 result.NoStartupRequestOk = handler.RequestCount == 0;
                 IReadOnlyList<WeatherLocation> locations = source
@@ -2712,28 +2712,29 @@ namespace PennyPet
                     OpenMeteoGeocodingClient.BuildUri("武汉").Query.IndexOf(
                         "apikey", StringComparison.OrdinalIgnoreCase) < 0;
                 Task<WeatherForecastWindow> first = source.GetForecastAsync(
-                    location, date);
+                    location);
                 Task<WeatherForecastWindow> concurrent =
-                    source.GetForecastAsync(location, date);
+                    source.GetForecastAsync(location);
                 WeatherForecastWindow firstValue = first.GetAwaiter()
                     .GetResult();
                 WeatherForecastWindow cached = source.GetForecastAsync(
-                    location, date).GetAwaiter().GetResult();
+                    location).GetAwaiter().GetResult();
                 result.SameDayCacheAndInFlightOk =
                     Object.ReferenceEquals(first, concurrent) &&
                     Object.ReferenceEquals(firstValue, cached) &&
                     handler.ForecastCount == 1 &&
                     source.ForecastRequestCountForTest == 1;
-                source.GetForecastAsync(location, date.AddDays(1))
-                    .GetAwaiter().GetResult();
-                source.GetForecastAsync(location, date).GetAwaiter()
-                    .GetResult();
-                bool retainedRecentDays = handler.ForecastCount == 2;
+                handlerClock = new DateTimeOffset(2026, 9, 1, 16, 0, 0,
+                    TimeSpan.Zero);
+                source.GetForecastAsync(location).GetAwaiter().GetResult();
+                bool refetchedAfterCityDayChange = handler.ForecastCount == 2;
+                source.GetForecastAsync(location).GetAwaiter().GetResult();
+                bool reusedAfterCityDayChange = handler.ForecastCount == 2;
                 source.InvalidateCache();
-                source.GetForecastAsync(location, date).GetAwaiter()
-                    .GetResult();
-                result.BoundedCacheInvalidationOk = retainedRecentDays &&
-                    handler.ForecastCount == 3;
+                source.GetForecastAsync(location).GetAwaiter().GetResult();
+                result.BoundedCacheInvalidationOk =
+                    refetchedAfterCityDayChange &&
+                    reusedAfterCityDayChange && handler.ForecastCount == 3;
             }
 
             WeatherFixtureHandler failing = new WeatherFixtureHandler(
@@ -2746,9 +2747,9 @@ namespace PennyPet
                 }))
             {
                 WeatherForecastWindow failed = source.GetForecastAsync(
-                    location, date).GetAwaiter().GetResult();
+                    location).GetAwaiter().GetResult();
                 WeatherForecastWindow cooledDown = source.GetForecastAsync(
-                    location, date).GetAwaiter().GetResult();
+                    location).GetAwaiter().GetResult();
                 result.FailureCooldownOk = failed == null &&
                     cooledDown == null && failing.ForecastCount == 1;
             }
@@ -2769,7 +2770,7 @@ namespace PennyPet
             for (int i = 0; i < fixtureNames.Length; i++)
             {
                 WeatherForecastWindow window = new OpenMeteoForecastParser()
-                    .Parse(ReadWeatherFixture(fixtureNames[i]), date);
+                    .Parse(ReadWeatherFixture(fixtureNames[i]), cityNow);
                 meaningsOk &= WeatherMeaningRules.Select(window) ==
                     expectedMeanings[i];
             }
@@ -2797,7 +2798,7 @@ namespace PennyPet
             result.MeaningAndWordingOk = meaningsOk;
 
             WeatherForecastWindow rainLater = new OpenMeteoForecastParser()
-                .Parse(fixture, date);
+                .Parse(fixture, cityNow);
             string lastDate = String.Empty;
             string shownText = null;
             int dailyForecastCalls = 0;
@@ -2922,11 +2923,9 @@ namespace PennyPet
                             delegate { return true; },
                             delegate { return true; },
                             delegate { return location; },
-                            delegate(WeatherLocation target,
-                                DateTime localDate)
+                            delegate(WeatherLocation target)
                             {
-                                return retrySource.GetForecastAsync(target,
-                                    localDate);
+                                return retrySource.GetForecastAsync(target);
                             },
                             delegate { return ZodiacSign.None; },
                             delegate { attempts++; return accept; },
@@ -2976,17 +2975,17 @@ namespace PennyPet
                     if (firstSmallTalk == null) firstSmallTalk = text;
                     else secondSmallTalk = text;
                     return true;
-                }, new SequenceRandom(0, 0, 0, 0, 0));
+                }, null, new SequenceRandom(0, 0, 0, 1));
             bool firstSmallTalkShown = smallTalk.HandlePetPoked(
                 smallTalkStart);
-            bool cooldownBlocked = !smallTalk.HandlePetPoked(
+            bool gapBlocked = !smallTalk.HandlePetPoked(
                 smallTalkStart.AddMilliseconds(
-                    PetSmallTalkPolicy.CooldownMilliseconds - 1));
-            bool cooldownElapsed = smallTalk.HandlePetPoked(
+                    PetSmallTalkPolicy.SuccessfulGapMilliseconds - 1));
+            bool gapElapsed = smallTalk.HandlePetPoked(
                 smallTalkStart.AddMilliseconds(
-                    PetSmallTalkPolicy.CooldownMilliseconds));
+                    PetSmallTalkPolicy.SuccessfulGapMilliseconds));
             result.SmallTalkCoordinatorCooldownOk = firstSmallTalkShown &&
-                cooldownBlocked && cooldownElapsed &&
+                gapBlocked && gapElapsed &&
                 smallTalkShowCount == 2 && firstSmallTalk != secondSmallTalk;
 
             int rejectedShowCount = 0;
@@ -2996,7 +2995,7 @@ namespace PennyPet
                     {
                         rejectedShowCount++;
                         return rejectedShowCount > 1;
-                    }, new SequenceRandom(0, 0, 0, 0));
+                    }, null, new SequenceRandom(0, 0, 0, 0));
             bool rejectedFirst = !rejectedSmallTalk.HandlePetPoked(
                 smallTalkStart);
             bool rejectedRetry = rejectedSmallTalk.HandlePetPoked(
@@ -3013,7 +3012,7 @@ namespace PennyPet
                     {
                         silentShowCount++;
                         return true;
-                    }, new SequenceRandom(0, 0));
+                    }, null, new SequenceRandom(0, 0));
             bool silentBlocked = !silentSmallTalk.HandlePetPoked(
                 smallTalkStart);
             smallTalkSilent = false;
@@ -3030,7 +3029,7 @@ namespace PennyPet
                     {
                         reminderRejectedCount++;
                         return !reminderDue;
-                    }, new SequenceRandom(0, 0, 0, 0));
+                    }, null, new SequenceRandom(0, 0, 0, 0));
             bool reminderRejected = !reminderRejectedSmallTalk.HandlePetPoked(
                 smallTalkStart);
             reminderDue = false;

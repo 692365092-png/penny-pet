@@ -152,6 +152,24 @@ namespace PennyPet
                         DailyContentRules.NormalizeDateKey(value);
                     recognized = true;
                 }
+                else if (key == "DailyLedgerDate")
+                {
+                    settings.DailyLedgerDate =
+                        DailyContentRules.NormalizeDateKey(value);
+                    recognized = true;
+                }
+                else if (key == "DailyLedgerDaypartsMask" &&
+                    Int32.TryParse(value, out intValue))
+                {
+                    settings.DailyLedgerDaypartsMask = Math.Max(0, intValue);
+                    recognized = true;
+                }
+                else if (key == "DailyLedgerUsedMeaningfulIds")
+                {
+                    settings.DailyLedgerUsedMeaningfulIds =
+                        value ?? String.Empty;
+                    recognized = true;
+                }
                 else if (key == "KeyOverlayScalePercent" &&
                     Int32.TryParse(value, out intValue))
                 {
@@ -268,6 +286,12 @@ namespace PennyPet
                 .NormalizeZodiacSign(settings.ZodiacSign));
             lines.Add("LastDailyBriefingDate=" + DailyContentRules
                 .NormalizeDateKey(settings.LastDailyBriefingDate));
+            lines.Add("DailyLedgerDate=" + DailyContentRules
+                .NormalizeDateKey(settings.DailyLedgerDate));
+            lines.Add("DailyLedgerDaypartsMask=" + Math.Max(0,
+                settings.DailyLedgerDaypartsMask));
+            lines.Add("DailyLedgerUsedMeaningfulIds=" +
+                (settings.DailyLedgerUsedMeaningfulIds ?? String.Empty));
             lines.Add("KeyOverlayScalePercent=" + PetSettingRules
                 .NormalizeKeyboardTextScalePercent(
                     settings.KeyOverlayScalePercent));

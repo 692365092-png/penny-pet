@@ -28,7 +28,6 @@ namespace PennyPet
             MaximizeBox = false;
             MinimizeBox = false;
             ShowInTaskbar = false;
-            TopMost = true;
             ClientSize = new Size(410, 255);
             Font = SystemFonts.MessageBoxFont;
 
@@ -91,7 +90,6 @@ namespace PennyPet
             Controls.Add(_status);
             Controls.Add(_ok);
             Controls.Add(cancel);
-            AcceptButton = _ok;
             CancelButton = cancel;
             FormClosing += delegate
             {

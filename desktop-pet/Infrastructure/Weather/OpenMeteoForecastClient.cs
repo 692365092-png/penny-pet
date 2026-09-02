@@ -33,14 +33,14 @@ namespace PennyPet
         }
 
         internal async Task<WeatherForecastWindow> FetchAsync(
-            WeatherLocation location, DateTime localDate)
+            WeatherLocation location, DateTimeOffset utcNow)
         {
-            return await FetchAsync(location, localDate,
+            return await FetchAsync(location, utcNow,
                 CancellationToken.None).ConfigureAwait(false);
         }
 
         internal async Task<WeatherForecastWindow> FetchAsync(
-            WeatherLocation location, DateTime localDate,
+            WeatherLocation location, DateTimeOffset utcNow,
             CancellationToken cancellationToken)
         {
             if (location == null)
@@ -52,7 +52,7 @@ namespace PennyPet
                 response.EnsureSuccessStatusCode();
                 string json = await response.Content.ReadAsStringAsync()
                     .ConfigureAwait(false);
-                return _parser.Parse(json, localDate.Date);
+                return _parser.Parse(json, utcNow);
             }
         }
 

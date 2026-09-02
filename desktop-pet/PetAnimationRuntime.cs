@@ -135,8 +135,10 @@ namespace PennyPet
 
         private int ChooseRow()
         {
+            bool effectiveHover = _stableMouseInside &&
+                !_hoverSuppressedUntilStableLeave;
             return _animation.ChooseRow(_exiting, _dragging && _dragMoved,
-                _mouseInside, _menu.Visible, _art.IsRowLoaded);
+                effectiveHover, _menu.Visible, _art.IsRowLoaded);
         }
 
         internal static float DueReminderBubbleFontSizePoints(
@@ -152,8 +154,10 @@ namespace PennyPet
             _dragging = true;
             _dragMoved = false;
             QueueArtPreload(FailedRow);
-            if (_bubbleCoordinator.IsCurrent(PetMessageKind.Hover))
-                _bubbleCoordinator.CloseIfCurrent(PetMessageKind.Hover);
+            // The current hover session ends here. No Hover request may return
+            // until a stable leave (then a fresh stable enter) occurs.
+            _hoverSuppressedUntilStableLeave = true;
+            HideHoverBubble();
             _keyOverlay.HideImmediately();
             _typingSession = false;
             _dragMouseOrigin = Cursor.Position;
@@ -203,12 +207,62 @@ namespace PennyPet
                 StartPokeEasterEgg(nowUtc);
                 return;
             }
+            DateTimeOffset localNow = DateTimeOffset.Now;
+
+            // Daily Opening: the first successful daypart of the day keeps the
+            // full briefing path and uses the notification talk animation.
+            if (_dailyContentCoordinator.IsOpeningEligible(localNow))
+            {
+                StartNotificationPokeAnimation(nowUtc);
+                bool dailyHandled = await _dailyContentCoordinator
+                    .HandlePetPokedAsync(localNow);
+                if (dailyHandled)
+                {
+                    _dailyLedger.TryConsumeDaypart(
+                        PetDaypartRule.Resolve(localNow));
+                    PersistDailyLedger();
+                    return;
+                }
+                if (_exiting || IsDisposed || Disposing) return;
+            }
+
+            // Light per-daypart check-in for a not-yet-consumed slot.
+            if (_daypartCheckInCoordinator.HandlePetPoked(localNow))
+            {
+                StartNotificationPokeAnimation(nowUtc);
+                PersistDailyLedger();
+                return;
+            }
+
+            // Live SmallTalk under the new rhythm window.
+            if (_smallTalkCoordinator.HandlePetPoked(nowUtc))
+            {
+                if (_smallTalkCoordinator.LastSpokenRepeatClass ==
+                    PetPersonaRepeatClass.Meaningful)
+                    StartNotificationPokeAnimation(nowUtc);
+                else
+                    StartOrdinaryPokeAnimation(nowUtc);
+                PersistDailyLedger();
+                return;
+            }
+
+            // No talk: a random interaction animation is the whole response.
             StartOrdinaryPokeAnimation(nowUtc);
-            bool dailyHandled = await _dailyContentCoordinator
-                .HandlePetPokedAsync(DateTimeOffset.Now);
-            if (_exiting || IsDisposed || Disposing) return;
-            if (!dailyHandled)
-                _smallTalkCoordinator.HandlePetPoked(nowUtc);
+        }
+
+        private void StartNotificationPokeAnimation(DateTime nowUtc)
+        {
+            if (_bubbleCoordinator.CurrentKind.HasValue &&
+                PetMessagePolicy.IsProtectedForegroundMessage(
+                    _bubbleCoordinator.CurrentKind.Value)) return;
+            if (!_animation.TryStartNotification()) return;
+            _typingSession = false;
+            QueueArtPreload(NotificationRow);
+            if (!_art.IsRowLoaded(NotificationRow)) return;
+            _row = NotificationRow;
+            _frame = 0;
+            ScheduleNextFrame(nowUtc);
+            RenderCurrentFrame();
         }
 
         private void StartOrdinaryPokeAnimation(DateTime nowUtc)
@@ -243,6 +297,9 @@ namespace PennyPet
                 _animation.CancelInteractionAnimation();
                 return;
             }
+            // The easter egg shares the reminder notification chime, but keeps
+            // its own dedicated animation and never changes bubble priority.
+            System.Media.SystemSounds.Asterisk.Play();
             _typingSession = false;
             QueueArtPreload(FailedRow);
             if (!_art.IsRowLoaded(FailedRow)) return;

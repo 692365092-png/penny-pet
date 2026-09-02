@@ -2,29 +2,39 @@ using System;
 
 namespace PennyPet
 {
+    // SmallTalk rhythm rules. Speaking windows and budgets are interaction
+    // rules only; they must never be expressed as corpus size limits.
     internal static class PetSmallTalkPolicy
     {
-        internal const int CooldownMilliseconds = 30000;
-        internal const int ChancePercent = 25;
+        internal const int WindowMilliseconds = 60000;
+        // Loopable reflections are high-frequency; meaningful lines stay rare.
+        internal const int LoopableQuota = 7;
+        internal const int MeaningfulBudget = 1;
+        internal const int SuccessfulGapMilliseconds = 3500;
+        internal const int SpeakChancePercent = 60;
 
-        internal static bool ShouldAttempt(DateTime lastShownUtc,
-            DateTime nowUtc, int randomPercent)
+        internal static bool IsWindowExpired(DateTime windowStartUtc,
+            DateTime nowUtc)
         {
-            if (nowUtc < lastShownUtc) return false;
-            if (nowUtc - lastShownUtc <
-                TimeSpan.FromMilliseconds(CooldownMilliseconds)) return false;
-            return randomPercent >= 0 && randomPercent < ChancePercent;
+            if (windowStartUtc == default(DateTime)) return true;
+            if (nowUtc < windowStartUtc) return true;
+            return nowUtc - windowStartUtc >=
+                TimeSpan.FromMilliseconds(WindowMilliseconds);
         }
 
-        internal static int NextPhraseIndex(int previousIndex,
-            int randomPick, int phraseCount)
+        internal static bool HasSuccessfulGapElapsed(
+            DateTime lastSuccessfulUtc, DateTime nowUtc)
         {
-            if (phraseCount <= 0) return 0;
-            int next = randomPick % phraseCount;
-            if (next < 0) next += phraseCount;
-            if (phraseCount > 1 && next == previousIndex)
-                next = (next + 1) % phraseCount;
-            return next;
+            if (lastSuccessfulUtc == default(DateTime)) return true;
+            if (nowUtc < lastSuccessfulUtc) return false;
+            return nowUtc - lastSuccessfulUtc >=
+                TimeSpan.FromMilliseconds(SuccessfulGapMilliseconds);
+        }
+
+        internal static bool ShouldSpeak(int randomPercent)
+        {
+            return randomPercent >= 0 &&
+                randomPercent < SpeakChancePercent;
         }
     }
 }

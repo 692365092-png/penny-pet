@@ -26,8 +26,8 @@ namespace PennyPet
             {
                 using (PetWeatherSource source = new PetWeatherSource())
                 {
-                    forecast = source.GetForecastAsync(location,
-                        DateTime.Now.Date).GetAwaiter().GetResult();
+                    forecast = source.GetForecastAsync(location)
+                        .GetAwaiter().GetResult();
                     requestCount = source.ForecastRequestCountForTest;
                 }
                 if (forecast == null) failure = "Forecast unavailable.";

@@ -6,9 +6,10 @@ using System.Reflection;
 
 namespace PennyPet
 {
-    // This tiny decoy is intentionally readable after decompilation. The real
-    // application is protected by the release obfuscation profile; these
-    // shuffled clues are a harmless reward for anyone curious enough to look.
+    // This tiny decoy remains readable in the public build. The public GitHub
+    // release stays unobfuscated and auditable; a separate local
+    // protected-build script can obfuscate a binary for research or private
+    // packaging. These shuffled clues are a harmless reward for the curious.
     [Obfuscation(Exclude = false, Feature = "-rename", ApplyToMembers = true)]
     [Obfuscation(Exclude = false, Feature = "-constants", ApplyToMembers = true)]
     internal static class A_Gift_For_The_Curious

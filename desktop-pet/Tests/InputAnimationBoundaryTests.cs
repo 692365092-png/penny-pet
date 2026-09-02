@@ -60,8 +60,12 @@ namespace PennyPet.Tests
                 "private void Post(", "public void Dispose()");
             Assert.IsTrue(closeLoading.Contains("Post(") &&
                 postLoading.Contains("form.BeginInvoke(") &&
-                loadingThread.Contains("_exited.WaitOne()"),
-                "Close must marshal to loading STA and disposal must await exit.");
+                loadingThread.Contains(
+                    "_ready.WaitOne(ReadyTimeoutMilliseconds)") &&
+                loadingThread.Contains(
+                    "_exited.WaitOne(ExitTimeoutMilliseconds)") &&
+                !loadingThread.Contains("_exited.WaitOne()"),
+                "Close must marshal to loading STA and both waits must be bounded.");
             Assert.IsTrue(host.Contains("pet.StartupReady += delegate") &&
                 host.Contains("loading.Close();") &&
                 host.Contains("loading.BringToFront();") &&
@@ -365,23 +369,27 @@ namespace PennyPet.Tests
             Assert.IsTrue(form.Contains(
                     "private readonly PetSmallTalkCoordinator") &&
                 poke.Contains("StartOrdinaryPokeAnimation(nowUtc)") &&
-                poke.Contains("_dailyContentCoordinator") &&
+                poke.Contains("IsOpeningEligible") &&
+                poke.Contains("StartNotificationPokeAnimation(nowUtc)") &&
                 poke.Contains(".HandlePetPokedAsync") &&
-                poke.Contains("if (!dailyHandled)") &&
+                poke.Contains("if (dailyHandled)") &&
+                poke.Contains("_daypartCheckInCoordinator.HandlePetPoked") &&
                 poke.Contains("_smallTalkCoordinator.HandlePetPoked(nowUtc)") &&
                 !poke.Contains(".Wait(") && !poke.Contains(".Result"),
-                "PetForm must preserve Easter, Daily, SmallTalk, animation order.");
+                "PetForm must preserve Easter, Daily, Daypart, SmallTalk, animation order.");
             Assert.IsFalse(form.Contains("SmallTalkPhrases") ||
                 form.Contains("_smallTalkRandom") ||
                 form.Contains("_lastSmallTalkIndex") ||
                 form.Contains("_lastSmallTalkUtc") ||
                 animation.Contains("TryShowSmallTalk"),
                 "PetForm must not retain a second SmallTalk runtime state.");
-            Assert.IsTrue(coordinator.Contains("DefaultPhrases") &&
-                coordinator.Contains("PetSmallTalkPolicy.ShouldAttempt") &&
+            Assert.IsTrue(coordinator.Contains(
+                    "PetSmallTalkPolicy.IsWindowExpired") &&
+                coordinator.Contains("PetSmallTalkPolicy.ShouldSpeak") &&
                 coordinator.Contains("PetMessagePolicy.ShouldSuppress") &&
                 coordinator.Contains("if (!_show(") &&
-                coordinator.Contains("_lastShownUtc = nowUtc"),
+                coordinator.Contains("_loopableQuotaRemaining--") &&
+                coordinator.Contains("TryUseMeaningful"),
                 "The coordinator must own eligibility, selection and accepted state.");
             Assert.IsFalse(coordinator.Contains("PetForm") ||
                 coordinator.Contains("PetBubbleCoordinator") ||
@@ -556,7 +564,7 @@ namespace PennyPet.Tests
             string poke = Between(animation,
                 "private async void HandlePetPoked",
                 "private void StartOrdinaryPokeAnimation");
-            Assert.IsTrue(poke.IndexOf("StartOrdinaryPokeAnimation(nowUtc)",
+            Assert.IsTrue(poke.IndexOf("StartNotificationPokeAnimation(nowUtc)",
                     StringComparison.Ordinal) <
                 poke.IndexOf(".HandlePetPokedAsync", StringComparison.Ordinal) &&
                 coordinator.Contains("await _weatherForecast") &&
@@ -577,7 +585,9 @@ namespace PennyPet.Tests
                 "Weather location search must snapshot the query and cancel on close.");
             Assert.IsFalse(locationDialog.Contains("QueryKeyDown") ||
                 locationDialog.Contains("_query.Enabled = false") ||
-                locationDialog.Contains("_query.Focus()"),
+                locationDialog.Contains("_query.Focus()") ||
+                locationDialog.Contains("AcceptButton = _ok") ||
+                locationDialog.Contains("TopMost = true"),
                 "Weather search must not steal IME Enter or focus.");
             Assert.IsTrue(commands.Contains("--weather-api-probe=") &&
                 !coreProject.Contains("System.Net.Http") &&
@@ -649,15 +659,22 @@ namespace PennyPet.Tests
             string mouseDown = Between(animation,
                 "private void PetMouseDown",
                 "private void PetMouseMove");
+            string bubble = ReadSource("PetBubbleCoordinator.cs");
+            string form = ReadSource("PetForm.cs");
 
             Assert.IsTrue(mouseDown.Contains(
-                "_bubbleCoordinator.IsCurrent(PetMessageKind.Hover)") &&
-                mouseDown.Contains(
-                    "_bubbleCoordinator.CloseIfCurrent(PetMessageKind.Hover)"),
-                "Mouse-down may close only the ambient Hover bubble.");
+                    "_hoverSuppressedUntilStableLeave = true") &&
+                mouseDown.Contains("HideHoverBubble()"),
+                "Mouse-down must end the ambient Hover session.");
             Assert.IsFalse(mouseDown.Contains(
                 "CloseCurrentBubbleWithoutRestoringHover"),
                 "Mouse-down must not close foreground user messages.");
+            Assert.IsTrue(form.Contains(
+                    "_hoverSuppressedUntilStableLeave = false") &&
+                form.Contains("CommitStableLeave") &&
+                bubble.Contains(
+                    "PetHoverStabilityRules.ShouldSuppressHover"),
+                "Stable leave must release the latch and Hover requests must honor it.");
         }
 
         [TestMethod]

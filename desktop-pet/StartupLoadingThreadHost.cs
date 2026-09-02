@@ -6,6 +6,8 @@ namespace PennyPet
 {
     internal sealed class StartupLoadingThreadHost : IDisposable
     {
+        private const int ReadyTimeoutMilliseconds = 5000;
+        private const int ExitTimeoutMilliseconds = 5000;
         private readonly object _sync = new object();
         private readonly ManualResetEvent _ready = new ManualResetEvent(false);
         private readonly ManualResetEvent _exited = new ManualResetEvent(false);
@@ -28,7 +30,9 @@ namespace PennyPet
             _thread.IsBackground = true;
             _thread.SetApartmentState(ApartmentState.STA);
             _thread.Start();
-            _ready.WaitOne();
+            if (!_ready.WaitOne(ReadyTimeoutMilliseconds))
+                throw new TimeoutException(
+                    "Startup loading window did not become ready in time.");
             if (_failure != null)
                 throw new InvalidOperationException(
                     "Startup loading window could not be shown.", _failure);
@@ -95,12 +99,23 @@ namespace PennyPet
         public void Dispose()
         {
             if (_disposed) return;
+            _disposed = true;
             Close();
             Thread thread = _thread;
-            if (thread != null && thread.IsAlive) _exited.WaitOne();
-            _disposed = true;
-            _ready.Dispose();
-            _exited.Dispose();
+            if (thread == null || !thread.IsAlive ||
+                _exited.WaitOne(ExitTimeoutMilliseconds))
+            {
+                _ready.Dispose();
+                _exited.Dispose();
+                return;
+            }
+            // The background thread may still Set() these handles later, so
+            // they must not be disposed here. It is already a background
+            // thread and therefore cannot block process exit.
+            ApplicationDiagnostics.ReportNonFatal(
+                "startup-loading-exit-timeout",
+                new TimeoutException(
+                    "Startup loading thread did not exit in time."));
         }
     }
 }

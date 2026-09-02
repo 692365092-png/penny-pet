@@ -67,7 +67,7 @@
 - Preview、merge pulse、split guide，以及 group move、TopMost、horizontal/divider resize、collapse-reopen、middle split 和多成员 insertion 已完成。
 - persisted standalone 与 Dock component 都通过 hosted session 恢复；v1-v9 codec 和旧文件迁移继续保留，persisted data 不记录 executor 类型。
 - “展开全部并平铺到此屏幕”会展开全部 note、真正清除 Dock relation，并通过唯一 hosted effect path 平铺。
-- Side Tabs 是不激活的 TopMost Pet chrome；monitor、work area 或 Pet scale 改变时会重新验证左右 split，仅在分配变化时 rebuild。
+- Side Tabs 是不激活的 Pet chrome；左右 strip 按几何 overlap 独立决定 TopMost，被可见 Sticky 覆盖的 strip 临时降层，移开后恢复；monitor、work area 或 Pet scale 改变时会重新验证左右 split，仅在分配变化时 rebuild。
 - Side Tabs 继续由 WinForms Pet STA 承载，直接消费 Core 中 detached `SideTabSnapshot`；业务 note identity 使用稳定 `NoteId`，平台 UI source identity 保持本地 opaque object。OLE nested-loop、透明 canvas 和 WinForms z-order workaround 属于 Windows 实现，不要求 macOS 复制。
 - Pet-owned WinForms Form modal 统一经过 `PetWindowLayerCoordinator` 的内存栈；Keyboard Overlay、Bubble 和 Side Tabs 保持 no-activate，并位于嵌套 modal chain 之后。键盘提示始终跟随 Pet，不因 modal 改变位置。密码/凭据检测仍由原隐私链独立 fail closed。
 

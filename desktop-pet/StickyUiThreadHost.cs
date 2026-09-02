@@ -12,6 +12,9 @@ namespace PennyPet
         private Dispatcher _dispatcher;
         private Exception _startupError;
         private bool _acceptingCommands = true;
+        private bool _faulted;
+
+        internal event Action<Exception> Faulted;
 
         internal void Start()
         {
@@ -26,6 +29,8 @@ namespace PennyPet
                         try
                         {
                             _dispatcher = Dispatcher.CurrentDispatcher;
+                            _dispatcher.UnhandledException +=
+                                DispatcherUnhandledException;
                             ready.Set();
                             Dispatcher.Run();
                         }
@@ -105,6 +110,51 @@ namespace PennyPet
         internal void StopAcceptingCommands()
         {
             lock (_gate) _acceptingCommands = false;
+        }
+
+        private void DispatcherUnhandledException(object sender,
+            DispatcherUnhandledExceptionEventArgs e)
+        {
+            HandleDispatcherFault(e == null ? null : e.Exception);
+            // Contain the fault inside the sticky subsystem instead of letting
+            // it crash the whole desktop pet. The dispatcher is shut down right
+            // after the first fault; this flag only prevents process-level
+            // default handling of that contained exception.
+            e.Handled = true;
+        }
+
+        private void HandleDispatcherFault(Exception error)
+        {
+            bool firstFault;
+            Action<Exception> handler;
+            Dispatcher dispatcher;
+            lock (_gate)
+            {
+                firstFault = !_faulted;
+                _faulted = true;
+                _acceptingCommands = false;
+                handler = Faulted;
+                dispatcher = _dispatcher;
+            }
+            ApplicationDiagnostics.ReportNonFatal(
+                "sticky-ui-dispatcher-fault",
+                error ?? new InvalidOperationException(
+                    "Sticky UI dispatcher fault without an exception."));
+            if (firstFault && handler != null)
+            {
+                try { handler(error); }
+                catch { }
+            }
+            if (firstFault && dispatcher != null &&
+                !dispatcher.HasShutdownStarted &&
+                !dispatcher.HasShutdownFinished)
+            {
+                try
+                {
+                    dispatcher.BeginInvokeShutdown(DispatcherPriority.Send);
+                }
+                catch { }
+            }
         }
 
         internal void BeginShutdown(Action beforeDispatcherShutdown)
