@@ -134,6 +134,77 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyImportMergePlanner_SeparatesSpatialChangesAndAppendsTabs()
+        {
+            StickyNoteData currentA = new StickyNoteData
+            {
+                Id = "current-a", Text = "same", X = 900, Y = 500,
+                TabOrder = 0, ReminderUtcTicks = 123
+            };
+            StickyNoteData currentB = new StickyNoteData
+            {
+                Id = "current-b", Text = "keep", TabOrder = 1
+            };
+            StickyNoteData backupA = currentA.CloneForPersistence();
+            backupA.X = 10;
+            backupA.Y = 20;
+            backupA.TabOrder = 0;
+            StickyNoteData backupX = new StickyNoteData
+            {
+                Id = "import-x", Text = "x", TabOrder = 0,
+                CreatedUtcTicks = 20, ReminderUtcTicks = 999
+            };
+            StickyNoteData backupY = new StickyNoteData
+            {
+                Id = "import-y", Text = "y", TabOrder = 1,
+                CreatedUtcTicks = 10, ReminderUtcTicks = 999
+            };
+
+            StickyImportMergeResult result =
+                StickyImportMergePlanner.Calculate(
+                    new[] { currentA, currentB },
+                    new[] { backupA, backupX, backupY });
+
+            Assert.AreEqual(2, result.AddedCount);
+            Assert.AreEqual(1, result.SkippedIdenticalCount);
+            Assert.AreEqual(0, result.ConflictCount);
+            Assert.AreEqual(900, Find(result.MergedSnapshot, "current-a").X);
+            Assert.AreEqual(500, Find(result.MergedSnapshot, "current-a").Y);
+            Assert.AreEqual(0, Find(result.MergedSnapshot, "current-a").TabOrder);
+            Assert.AreEqual(1, Find(result.MergedSnapshot, "current-b").TabOrder);
+            Assert.AreEqual(2, Find(result.MergedSnapshot, "import-x").TabOrder);
+            Assert.AreEqual(3, Find(result.MergedSnapshot, "import-y").TabOrder);
+            Assert.AreEqual(0, Find(result.MergedSnapshot, "import-x").ReminderUtcTicks);
+            Assert.AreEqual(0, Find(result.MergedSnapshot, "import-y").ReminderUtcTicks);
+        }
+
+        [TestMethod]
+        public void StickyImportMergePlanner_DetectsLogicalDivergenceOnly()
+        {
+            StickyNoteData current = new StickyNoteData
+            {
+                Id = "logical", Text = "current", X = 900, Y = 500
+            };
+            StickyNoteData backup = current.CloneForPersistence();
+            backup.Text = "imported";
+            backup.X = 10;
+            backup.Y = 20;
+
+            StickyImportMergeResult result =
+                StickyImportMergePlanner.Calculate(new[] { current },
+                    new[] { backup });
+
+            Assert.AreEqual(1, result.ConflictCount);
+            Assert.AreEqual("current", Find(result.MergedSnapshot,
+                "logical").Text);
+            StickyNoteData copy = result.MergedSnapshot.Single(
+                note => !String.Equals(note.Id, "logical",
+                    StringComparison.OrdinalIgnoreCase));
+            Assert.AreEqual("imported", copy.Text);
+            Assert.AreEqual(0, copy.ReminderUtcTicks);
+        }
+
+        [TestMethod]
         public void StickyImportMergePlanner_PreservesDivergentVersionAndIsIdempotent()
         {
             StickyNoteData current = new StickyNoteData
@@ -574,6 +645,25 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void ReminderSchedule_RemovesOnlyOrphanedLinkedNotes()
+        {
+            DateTime baseline = DateTime.UtcNow.AddHours(1);
+            ReminderSchedule schedule = new ReminderSchedule();
+            schedule.Add(baseline, "linked", "note-a");
+            schedule.Add(baseline.AddMinutes(1), "standalone");
+            schedule.Add(baseline.AddMinutes(2), "orphan", "note-missing");
+
+            int removed = schedule.RemoveLinkedNotesNotIn(
+                new HashSet<string>(new[] { "note-a" },
+                    StringComparer.OrdinalIgnoreCase));
+
+            Assert.AreEqual(1, removed);
+            Assert.IsNotNull(schedule.FindBySourceNoteId("note-a"));
+            Assert.IsNull(schedule.FindBySourceNoteId("note-missing"));
+            Assert.AreEqual(2, schedule.Count);
+        }
+
+        [TestMethod]
         public void ReminderCoordinator_ExpressesTimingRulesAsPureFunctions()
         {
             ReminderItem enabled = new ReminderItem(
@@ -948,6 +1038,25 @@ namespace PennyPet.Tests
                     String.Join("|", encodedFields)
                 });
             Assert.IsFalse(badEncoding.Succeeded);
+        }
+
+        [TestMethod]
+        public void StickyImportBackupValidator_RejectsCorruptedV1Body()
+        {
+            string prefix = "1|v1-body|1|1|-1122868|10|20|300|240|" +
+                "637000000000000000|637000000000000001|0|";
+            StickyImportValidationResult validEmpty =
+                StickyImportBackupValidator.Validate(new[] { prefix });
+            Assert.IsTrue(validEmpty.Succeeded);
+
+            StickyImportValidationResult malformed =
+                StickyImportBackupValidator.Validate(new[] { prefix + "%%%" });
+            Assert.IsFalse(malformed.Succeeded);
+
+            string missingBody = prefix.Substring(0, prefix.Length - 1);
+            StickyImportValidationResult missing =
+                StickyImportBackupValidator.Validate(new[] { missingBody });
+            Assert.IsFalse(missing.Succeeded);
         }
 
         [TestMethod]

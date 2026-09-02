@@ -95,6 +95,8 @@ namespace PennyPet
             HashSet<string> partialImportedIds = FindPartialImportedIds(
                 imported, existingCurrentIds);
             List<StickyImportAction> actions = new List<StickyImportAction>();
+            List<ImportedTabOrderEntry> appendedNotes =
+                new List<ImportedTabOrderEntry>();
 
             foreach (StickyNoteData incoming in imported)
             {
@@ -103,6 +105,10 @@ namespace PennyPet
                 // identity difference. New and conflict copies always start
                 // hidden, while an existing note keeps its current visibility.
                 effectiveIncoming.Visible = false;
+                // Reminder records live in settings, not in the portable
+                // sticky-note contract.  Never create a note-side phantom
+                // reminder for an imported add or conflict copy.
+                effectiveIncoming.ReminderUtcTicks = 0;
                 if (partialImportedIds.Contains(incoming.Id))
                     StickyDockGroups.ClearMembership(effectiveIncoming);
                 StickyNoteData existing;
@@ -111,6 +117,7 @@ namespace PennyPet
                     StickyNoteData added = effectiveIncoming;
                     merged.Add(added);
                     currentById.Add(added.Id, added);
+                    appendedNotes.Add(new ImportedTabOrderEntry(added, incoming));
                     actions.Add(new StickyImportAction(
                         StickyImportActionKind.Add, incoming.Id, added.Id, true));
                     continue;
@@ -135,11 +142,14 @@ namespace PennyPet
                     conflict.Id = conflictId;
                     merged.Add(conflict);
                     currentById.Add(conflict.Id, conflict);
+                    appendedNotes.Add(new ImportedTabOrderEntry(conflict, incoming));
                 }
                 actions.Add(new StickyImportAction(
                     StickyImportActionKind.PreserveConflictCopy, incoming.Id,
                     conflictId, addedConflict));
             }
+
+            AppendImportedTabOrders(merged, appendedNotes);
 
             return new StickyImportMergeResult(merged, actions);
         }
@@ -150,8 +160,8 @@ namespace PennyPet
             if (left == null || right == null) return left == right;
             if (!String.Equals(left.Id, right.Id,
                 StringComparison.OrdinalIgnoreCase)) return false;
-            return String.Equals(CanonicalImportIdentityLine(left, true),
-                CanonicalImportIdentityLine(right, true),
+            return String.Equals(BuildLogicalContentFingerprint(left),
+                BuildLogicalContentFingerprint(right),
                 StringComparison.Ordinal);
         }
 
@@ -191,7 +201,7 @@ namespace PennyPet
             IDictionary<string, StickyNoteData> occupied)
         {
             string fingerprint = (imported.Id ?? String.Empty).ToLowerInvariant() +
-                "|" + CanonicalLine(imported, false);
+                "|" + BuildLogicalContentFingerprint(imported);
             for (int suffix = 0; ; suffix++)
             {
                 string candidate = DeterministicGuid(fingerprint + "|" +
@@ -205,24 +215,106 @@ namespace PennyPet
         private static bool CanonicalPayloadEquals(StickyNoteData left,
             StickyNoteData right)
         {
-            return String.Equals(CanonicalLine(left, false),
-                CanonicalLine(right, false), StringComparison.Ordinal);
+            return String.Equals(BuildLogicalContentFingerprint(left),
+                BuildLogicalContentFingerprint(right), StringComparison.Ordinal);
         }
 
-        private static string CanonicalLine(StickyNoteData note, bool includeId)
+        private sealed class ImportedTabOrderEntry
         {
-            StickyNoteData copy = note.CloneForPersistence();
-            if (!includeId) copy.Id = String.Empty;
-            return StickyNoteCodec.SerializeLine(copy);
+            internal ImportedTabOrderEntry(StickyNoteData note,
+                StickyNoteData source)
+            {
+                Note = note;
+                Source = source;
+            }
+
+            internal StickyNoteData Note { get; private set; }
+            internal StickyNoteData Source { get; private set; }
         }
 
-        private static string CanonicalImportIdentityLine(
-            StickyNoteData note, bool includeId)
+        private static void AppendImportedTabOrders(
+            IList<StickyNoteData> merged,
+            List<ImportedTabOrderEntry> appendedNotes)
         {
-            StickyNoteData copy = note.CloneForPersistence();
-            copy.Visible = false;
-            if (!includeId) copy.Id = String.Empty;
-            return StickyNoteCodec.SerializeLine(copy);
+            if (appendedNotes == null || appendedNotes.Count == 0) return;
+            int maximum = -1;
+            if (merged != null)
+                foreach (StickyNoteData note in merged)
+                {
+                    bool imported = false;
+                    foreach (ImportedTabOrderEntry entry in appendedNotes)
+                        if (Object.ReferenceEquals(entry.Note, note))
+                        {
+                            imported = true;
+                            break;
+                        }
+                    if (!imported && note != null)
+                        maximum = Math.Max(maximum, note.TabOrder);
+                }
+            appendedNotes.Sort(delegate(ImportedTabOrderEntry left,
+                ImportedTabOrderEntry right)
+            {
+                int result = left.Source.TabOrder.CompareTo(right.Source.TabOrder);
+                if (result != 0) return result;
+                result = left.Source.CreatedUtcTicks.CompareTo(
+                    right.Source.CreatedUtcTicks);
+                if (result != 0) return result;
+                return StringComparer.OrdinalIgnoreCase.Compare(
+                    left.Source.Id, right.Source.Id);
+            });
+            foreach (ImportedTabOrderEntry entry in appendedNotes)
+                entry.Note.TabOrder = ++maximum;
+        }
+
+        private static string BuildLogicalContentFingerprint(StickyNoteData note)
+        {
+            if (note == null) return String.Empty;
+            StringBuilder builder = new StringBuilder();
+            AppendFingerprint(builder, note.Title);
+            AppendFingerprint(builder, note.Text);
+            AppendFingerprint(builder, StickyNoteCodec.NormalizeRtf(
+                note.RichTextRtf));
+            AppendFingerprint(builder, note.IsTodoList ? "1" : "0");
+            AppendFingerprint(builder, note.IsSchedule ? "1" : "0");
+            AppendFingerprint(builder, note.FontFamilyName == null
+                ? String.Empty : note.FontFamilyName.Trim());
+            AppendFingerprint(builder, note.FontSizeTwips.ToString(
+                System.Globalization.CultureInfo.InvariantCulture));
+            AppendFingerprint(builder, note.ColorArgb.ToString(
+                System.Globalization.CultureInfo.InvariantCulture));
+            AppendFingerprint(builder, note.BackgroundOpacityPercent.ToString(
+                System.Globalization.CultureInfo.InvariantCulture));
+            AppendFingerprint(builder, note.TextColorArgb.ToString(
+                System.Globalization.CultureInfo.InvariantCulture));
+            builder.Append("todo[");
+            foreach (StickyTodoItem item in note.TodoItems)
+            {
+                if (item == null) continue;
+                AppendFingerprint(builder, ((int)item.State).ToString(
+                    System.Globalization.CultureInfo.InvariantCulture));
+                AppendFingerprint(builder, item.IsPinned ? "1" : "0");
+                AppendFingerprint(builder, item.Text);
+            }
+            builder.Append("]schedule[");
+            foreach (StickyScheduleItem item in note.ScheduleItems)
+            {
+                if (item == null) continue;
+                AppendFingerprint(builder, item.TargetDate.Ticks.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture));
+                AppendFingerprint(builder, item.IsPinned ? "1" : "0");
+                AppendFingerprint(builder, item.Text);
+            }
+            builder.Append(']');
+            return builder.ToString();
+        }
+
+        private static void AppendFingerprint(StringBuilder builder,
+            string value)
+        {
+            string text = value ?? String.Empty;
+            builder.Append(text.Length.ToString(
+                System.Globalization.CultureInfo.InvariantCulture));
+            builder.Append(':').Append(text).Append(';');
         }
 
         private static string DeterministicGuid(string value)
