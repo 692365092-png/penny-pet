@@ -440,9 +440,7 @@ namespace PennyPet
                 // here could silently change current workspace ownership.
                 List<StickyNoteData> snapshot = CloneNotes(_notes);
                 StickyDockGroups.NormalizeAll(snapshot);
-                List<string> lines = new List<string>();
-                foreach (StickyNoteData note in snapshot)
-                    lines.Add(StickyNoteCodec.SerializeLine(note));
+                List<string> lines = SerializeSnapshot(snapshot);
                 AtomicTextFile.WriteAllLines(filePath, lines, false);
                 return PersistenceResult.Success();
             }
@@ -452,6 +450,94 @@ namespace PennyPet
                     "sticky-notes-emergency-export", error);
                 return PersistenceResult.Failure(error);
             }
+        }
+
+        internal PersistenceResult CommitImportedMerge(
+            StickyImportMergeResult merge, string backupPath)
+        {
+            if (merge == null || String.IsNullOrWhiteSpace(backupPath))
+                return PersistenceResult.Failure(new ArgumentException(
+                    "A merge plan and automatic backup path are required."));
+            if (!_loadSucceeded)
+                return PersistenceResult.Failure(new InvalidOperationException(
+                    "Sticky-note data was not loaded safely; refusing to merge."));
+
+            string primaryPath = Path.GetFullPath(_filePath);
+            string automaticBackupPath = Path.GetFullPath(backupPath);
+            if (String.Equals(primaryPath, automaticBackupPath,
+                StringComparison.OrdinalIgnoreCase))
+                return PersistenceResult.Failure(new InvalidOperationException(
+                    "Automatic backup path must differ from the data file."));
+
+            List<StickyNoteData> committed;
+            try
+            {
+                committed = CloneAndValidateMergeSnapshot(
+                    merge.MergedSnapshot);
+            }
+            catch (Exception error)
+            {
+                return PersistenceResult.Failure(error);
+            }
+
+            long generation;
+            List<StickyNoteData> currentSnapshot;
+            lock (_saveGate)
+            {
+                generation = ++_requestedGeneration;
+                _latestSnapshot = null;
+                _latestGeneration = generation;
+                _hasUnsavedChanges = true;
+                currentSnapshot = CloneNotes(_notes);
+            }
+
+            PersistenceResult backupResult;
+            lock (_ioGate)
+            {
+                try
+                {
+                    // One rolling pre-import backup is deliberate: it protects
+                    // the current dataset without accumulating unbounded files.
+                    AtomicTextFile.WriteAllLines(automaticBackupPath,
+                        SerializeSnapshot(currentSnapshot), false);
+                }
+                catch (Exception error)
+                {
+                    backupResult = PersistenceResult.Failure(error);
+                    ApplicationDiagnostics.ReportNonFatal(
+                        "sticky-notes-pre-import-backup", error);
+                    return RecordSaveFailure(backupResult.Error);
+                }
+                backupResult = WriteSnapshot(_filePath, committed,
+                    generation, "sticky-notes-import-merge");
+            }
+            if (!backupResult.Succeeded)
+                return RecordSaveFailure(backupResult.Error);
+
+            lock (_saveGate)
+            {
+                _notes.Clear();
+                foreach (StickyNoteData note in committed)
+                    _notes.Add(note.CloneForPersistence());
+                _completedGeneration = Math.Max(_completedGeneration,
+                    generation);
+                if (generation == _requestedGeneration)
+                {
+                    _hasUnsavedChanges = false;
+                    _lastSaveError = null;
+                    _consecutiveSaveFailures = 0;
+                }
+            }
+            return PersistenceResult.Success();
+        }
+
+        internal PersistenceResult CommitImportedMerge(
+            StickyImportMergeResult merge)
+        {
+            // Keep one rolling rollback snapshot so repeated imports never
+            // create an unbounded trail of automatic backup files.
+            return CommitImportedMerge(merge,
+                _filePath + ".before-import.pennysticky");
         }
 
         private PersistenceResult RecordSaveFailure(Exception error)
@@ -485,6 +571,34 @@ namespace PennyPet
             if (notes != null)
                 foreach (StickyNoteData note in notes)
                     if (note != null) result.Add(note.CloneForPersistence());
+            return result;
+        }
+
+        private static List<string> SerializeSnapshot(
+            IEnumerable<StickyNoteData> snapshot)
+        {
+            List<string> lines = new List<string>();
+            if (snapshot != null)
+                foreach (StickyNoteData note in snapshot)
+                    if (note != null) lines.Add(StickyNoteCodec.SerializeLine(note));
+            return lines;
+        }
+
+        private static List<StickyNoteData> CloneAndValidateMergeSnapshot(
+            IEnumerable<StickyNoteData> snapshot)
+        {
+            List<StickyNoteData> result = CloneNotes(snapshot);
+            if (result.Count > StickyNoteLimits.MaximumNotes)
+                throw new InvalidDataException("Too many sticky notes.");
+            HashSet<string> ids = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+            foreach (StickyNoteData note in result)
+            {
+                if (String.IsNullOrWhiteSpace(note.Id) || !ids.Add(note.Id))
+                    throw new InvalidDataException(
+                        "Merged sticky-note data contains invalid NoteIds.");
+            }
+            StickyDockGroups.NormalizeAll(result);
             return result;
         }
 

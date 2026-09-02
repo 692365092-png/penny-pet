@@ -343,6 +343,7 @@ namespace PennyPet
             internal bool PersistenceOk;
             internal bool FailureDirtyRetryOk;
             internal bool GenerationMonotonicOk;
+            internal bool ImportMergeCommitOk;
             internal bool MultilingualOk;
             internal bool RichTextOk;
             internal bool RichTextNoSilentTruncationOk;
@@ -434,6 +435,97 @@ namespace PennyPet
             if (File.Exists(generationPath)) File.Delete(generationPath);
             if (File.Exists(generationPath + ".bak"))
                 File.Delete(generationPath + ".bak");
+
+            string mergePath = outputPath + ".sticky-import-merge-test.dat";
+            string mergeBackupPath = mergePath + ".before-import.pennysticky";
+            try
+            {
+                StickyNoteRepository mergeRepository =
+                    StickyNoteRepository.LoadFromFile(mergePath);
+                StickyNoteData currentVersion = mergeRepository.Create(
+                    "current-version", Point.Empty);
+                mergeRepository.SaveToFile(mergePath);
+                StickyNoteData importedVersion =
+                    currentVersion.CloneForPersistence();
+                importedVersion.Text = "imported-version";
+                StickyNoteData importedNew = new StickyNoteData
+                {
+                    Id = "imported-new",
+                    Text = "new-note"
+                };
+                StickyImportMergeResult mergePlan =
+                    StickyImportMergePlanner.Calculate(
+                        mergeRepository.GetAll(), new[]
+                        {
+                            importedVersion, importedNew
+                        });
+                PersistenceResult mergeCommit =
+                    mergeRepository.CommitImportedMerge(mergePlan);
+                StickyNoteRepository reopenedMerge =
+                    StickyNoteRepository.LoadFromFile(mergePath);
+                StickyNoteRepository preMergeBackup =
+                    StickyNoteRepository.LoadFromFile(mergeBackupPath);
+                int conflictCopies = reopenedMerge.GetAll().Count - 2;
+                result.ImportMergeCommitOk = mergeCommit.Succeeded &&
+                    reopenedMerge.GetAll().Count == 3 && conflictCopies == 1 &&
+                    reopenedMerge.Find(currentVersion.Id).Text ==
+                        "current-version" &&
+                    reopenedMerge.Find("imported-new") != null &&
+                    preMergeBackup.Find(currentVersion.Id) != null &&
+                    preMergeBackup.Find(currentVersion.Id).Text ==
+                        "current-version";
+
+                string blockedPath = outputPath +
+                    ".sticky-import-blocked-directory";
+                string blockedBackupPath = blockedPath +
+                    ".before-import.pennysticky";
+                try
+                {
+                    if (File.Exists(blockedPath))
+                        File.Delete(blockedPath);
+                    if (Directory.Exists(blockedPath))
+                        Directory.Delete(blockedPath, true);
+                    Directory.CreateDirectory(blockedPath);
+                    StickyNoteRepository blockedRepository =
+                        StickyNoteRepository.LoadFromFile(blockedPath);
+                    StickyNoteData blockedCurrent = blockedRepository.Create(
+                        "blocked-current", Point.Empty);
+                    StickyNoteData blockedIncoming =
+                        blockedCurrent.CloneForPersistence();
+                    blockedIncoming.Text = "blocked-import";
+                    StickyImportMergeResult blockedPlan =
+                        StickyImportMergePlanner.Calculate(
+                            blockedRepository.GetAll(), new[]
+                            {
+                                blockedIncoming
+                            });
+                    PersistenceResult failedMerge = blockedRepository
+                        .CommitImportedMerge(blockedPlan);
+                    StickyNoteData blockedAfter = blockedRepository.Find(
+                        blockedCurrent.Id);
+                    result.ImportMergeCommitOk = result.ImportMergeCommitOk &&
+                        !failedMerge.Succeeded && blockedAfter != null &&
+                        blockedAfter.Text == "blocked-current" &&
+                        blockedRepository.Count == 1 &&
+                        File.Exists(blockedBackupPath);
+                }
+                finally
+                {
+                    foreach (string blockedFile in new string[] {
+                        blockedBackupPath, blockedPath + ".tmp" })
+                        if (File.Exists(blockedFile)) File.Delete(blockedFile);
+                    if (Directory.Exists(blockedPath))
+                        Directory.Delete(blockedPath, true);
+                    if (File.Exists(blockedPath)) File.Delete(blockedPath);
+                }
+            }
+            finally
+            {
+                foreach (string mergeFile in new string[] {
+                    mergePath, mergePath + ".bak", mergeBackupPath,
+                    mergeBackupPath + ".bak" })
+                    if (File.Exists(mergeFile)) File.Delete(mergeFile);
+            }
 
             result.PersistenceOk = restoredNotes.Count == 1 &&
                 restoredNotes[0].Text == multilingualSample &&
@@ -4434,6 +4526,8 @@ namespace PennyPet
                     reminderCoordinatorChecks.MultipleLinkedReminderOk) + ",\n" +
                 "  \"sticky_note_persistence_ok\": " + Bool(
                     stickyChecks.PersistenceOk) + ",\n" +
+                "  \"sticky_import_merge_commit_ok\": " + Bool(
+                    stickyChecks.ImportMergeCommitOk) + ",\n" +
                 "  \"sticky_pin_action_text_ok\": " + Bool(
                     shellChecks.PinActionTextOk) + ",\n" +
                 "  \"todo_sticky_pin_action_text_ok\": " + Bool(
