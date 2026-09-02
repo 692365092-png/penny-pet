@@ -358,6 +358,7 @@ namespace PennyPet
                 }, "sticky-schedule-menu-create");
             };
             menuCommands.ManageNotes = ShowStickyNotesManager;
+            menuCommands.BackupNotes = ExportStickyNotesBackup;
             menuCommands.CollapseNotes = CollapseAllStickyNotes;
             menuCommands.ExpandTabs = ExpandAllStickyNoteTabs;
             menuCommands.RecoverWindows = delegate

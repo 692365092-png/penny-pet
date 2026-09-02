@@ -436,9 +436,12 @@ namespace PennyPet
         {
             try
             {
-                StickyDockGroups.NormalizeAll(_notes);
+                // Export is a detached read; normalizing the live repository
+                // here could silently change current workspace ownership.
+                List<StickyNoteData> snapshot = CloneNotes(_notes);
+                StickyDockGroups.NormalizeAll(snapshot);
                 List<string> lines = new List<string>();
-                foreach (StickyNoteData note in _notes)
+                foreach (StickyNoteData note in snapshot)
                     lines.Add(StickyNoteCodec.SerializeLine(note));
                 AtomicTextFile.WriteAllLines(filePath, lines, false);
                 return PersistenceResult.Success();

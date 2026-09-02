@@ -94,5 +94,31 @@ namespace PennyPet
                 return false;
             }
         }
+
+        private void ExportStickyNotesBackup()
+        {
+            using (SaveFileDialog dialog = new SaveFileDialog())
+            {
+                dialog.Title = "导出便利贴备份";
+                dialog.Filter = "Penny 便利贴备份 (*.pennysticky)|*.pennysticky|" +
+                    "所有文件 (*.*)|*.*";
+                dialog.FileName = "Penny-Stickies-" +
+                    DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".pennysticky";
+                dialog.InitialDirectory = Environment.GetFolderPath(
+                    Environment.SpecialFolder.DesktopDirectory);
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+                PersistenceResult result = _notes.ExportSnapshot(dialog.FileName);
+                if (result.Succeeded)
+                {
+                    ShowBubble("已导出 " + _notes.GetAll().Count +
+                        " 张便利贴。");
+                    return;
+                }
+                MessageBox.Show(this, "导出失败：" + result.ErrorMessage,
+                    "Penny pet", MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        }
     }
 }

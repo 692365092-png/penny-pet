@@ -33,6 +33,8 @@ namespace PennyPet
             NewScheduleItem.Click += delegate { _commands.CreateSchedule(); };
             ManageNotesItem = new ToolStripMenuItem("便利贴管理…");
             ManageNotesItem.Click += delegate { _commands.ManageNotes(); };
+            BackupNotesItem = new ToolStripMenuItem("便利贴数据备份…");
+            BackupNotesItem.Click += delegate { _commands.BackupNotes(); };
             CollapseNotesItem = new ToolStripMenuItem("收起全部便利贴到页签");
             CollapseNotesItem.Click += delegate { _commands.CollapseNotes(); };
             ExpandTabsItem = new ToolStripMenuItem("展开全部侧边页签");
@@ -72,6 +74,7 @@ namespace PennyPet
             Menu.Items.Add(NewTodoItem);
             Menu.Items.Add(NewScheduleItem);
             Menu.Items.Add(ManageNotesItem);
+            Menu.Items.Add(BackupNotesItem);
             Menu.Items.Add(CollapseNotesItem);
             Menu.Items.Add(ExpandTabsItem);
             Menu.Items.Add(RecoverWindowsItem);
@@ -101,6 +104,7 @@ namespace PennyPet
         internal ToolStripMenuItem NewTodoItem { get; private set; }
         internal ToolStripMenuItem NewScheduleItem { get; private set; }
         internal ToolStripMenuItem ManageNotesItem { get; private set; }
+        internal ToolStripMenuItem BackupNotesItem { get; private set; }
         internal ToolStripMenuItem CollapseNotesItem { get; private set; }
         internal ToolStripMenuItem ExpandTabsItem { get; private set; }
         internal ToolStripMenuItem RecoverWindowsItem { get; private set; }
@@ -126,6 +130,7 @@ namespace PennyPet
         internal Action CreateTodo;
         internal Action CreateSchedule;
         internal Action ManageNotes;
+        internal Action BackupNotes;
         internal Action CollapseNotes;
         internal Action ExpandTabs;
         internal Action RecoverWindows;
