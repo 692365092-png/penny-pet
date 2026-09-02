@@ -45,7 +45,7 @@ namespace PennyPet
         private int _dropIndex = -1;
         private int _normalHeight = 1;
         private int _dragPointerY;
-        private StickyNoteData _previewDraggedNote;
+        private string _previewDraggedNoteId;
         private StickyNoteTabControl _rolloverPreviewTab;
         private StickyNoteTabControl _hiddenBoundaryTab;
         private int _crossSideVisualDropIndex = -1;
@@ -106,18 +106,19 @@ namespace PennyPet
             }
         }
 
-        public void SetNotes(IList<StickyNoteData> notes)
+        public void SetNotes(IList<SideTabSnapshot> notes)
         {
             SetNotes(notes, 0);
         }
 
-        public void SetNotes(IList<StickyNoteData> notes, int globalStartIndex)
+        public void SetNotes(IList<SideTabSnapshot> notes,
+            int globalStartIndex)
         {
             ClearCrossSideBoundaryPreview();
             RestoreSourceHorizontalOffset();
             _globalStartIndex = Math.Max(0, globalStartIndex);
             _dropIndex = -1;
-            _previewDraggedNote = null;
+            _previewDraggedNoteId = null;
             _restoringLayout = false;
             _layoutAnimationTimer.Stop();
             SuspendLayout();
@@ -132,7 +133,7 @@ namespace PennyPet
             ClientSize = new Size(TabWidth, _normalHeight);
             for (int i = 0; i < count; i++)
             {
-                StickyNoteData note = notes[i];
+                SideTabSnapshot note = notes[i];
                 StickyNoteTabControl tab = new StickyNoteTabControl(note, _side,
                     _openNote, _deleteNote);
                 tab.ListIndex = i;
@@ -153,21 +154,6 @@ namespace PennyPet
                 return;
             }
             if (!Visible) Show();
-        }
-
-        public void SetNotes(IList<SideTabSnapshot> notes)
-        {
-            SetNotes(notes, 0);
-        }
-
-        public void SetNotes(IList<SideTabSnapshot> notes,
-            int globalStartIndex)
-        {
-            List<StickyNoteData> displayNotes = new List<StickyNoteData>();
-            if (notes != null)
-                foreach (SideTabSnapshot note in notes)
-                    if (note != null) displayNotes.Add(note.ToDisplayData());
-            SetNotes(displayNotes, globalStartIndex);
         }
 
         public void ShowNear(Rectangle petBounds, Rectangle workArea)
@@ -236,16 +222,17 @@ namespace PennyPet
 
         private void TabsDragEnter(object sender, DragEventArgs e)
         {
-            StickyNoteData moved = TryGetDraggedNote(e.Data);
-            e.Effect = moved != null
+            string movedId = TryGetDraggedNoteId(e.Data);
+            e.Effect = !String.IsNullOrEmpty(movedId)
                 ? DragDropEffects.Move : DragDropEffects.None;
-            if (moved != null) ActivateExclusiveDropTarget(this, moved);
+            if (!String.IsNullOrEmpty(movedId))
+                ActivateExclusiveDropTarget(this, movedId);
         }
 
         private void TabsDragOver(object sender, DragEventArgs e)
         {
-            StickyNoteData moved = TryGetDraggedNote(e.Data);
-            if (moved == null)
+            string movedId = TryGetDraggedNoteId(e.Data);
+            if (String.IsNullOrEmpty(movedId))
             {
                 e.Effect = DragDropEffects.None;
                 return;
@@ -255,16 +242,16 @@ namespace PennyPet
             // when the pointer crosses the transparent pet window. Clear the
             // other strip proactively so its source never overlaps an old
             // insertion animation or leaves a second purple guide behind.
-            ActivateExclusiveDropTarget(this, moved);
+            ActivateExclusiveDropTarget(this, movedId);
             if (DragSession.IsSource(this))
                 ClearRolloverPreviewTab();
             Point point = PointToClient(new Point(e.X, e.Y));
             _dragPointerY = point.Y;
             int next = CalculateDropIndex(point.Y, Controls.Count);
-            if (next == _dropIndex && ReferenceEquals(moved,
-                _previewDraggedNote)) return;
+            if (next == _dropIndex && IsSameNote(_previewDraggedNoteId,
+                movedId)) return;
             _dropIndex = next;
-            _previewDraggedNote = moved;
+            _previewDraggedNoteId = movedId;
             _restoringLayout = false;
             if (ClientSize.Height != _normalHeight + PreviewInsertionGap)
                 ClientSize = new Size(CurrentCanvasWidth,
@@ -281,12 +268,21 @@ namespace PennyPet
             if (IsHandleCreated) Update();
         }
 
-        private bool ContainsNote(StickyNoteData note)
+        private static bool IsSameNote(string leftId, string rightId)
+        {
+            return !String.IsNullOrEmpty(leftId) &&
+                !String.IsNullOrEmpty(rightId) &&
+                String.Equals(leftId, rightId,
+                    StringComparison.OrdinalIgnoreCase);
+        }
+
+        private bool ContainsNote(string noteId)
         {
             foreach (Control control in Controls)
             {
                 StickyNoteTabControl tab = control as StickyNoteTabControl;
-                if (tab != null && ReferenceEquals(tab.Note, note)) return true;
+                if (tab != null && IsSameNote(tab.Snapshot.NoteId, noteId))
+                    return true;
             }
             return false;
         }
@@ -317,7 +313,7 @@ namespace PennyPet
                     visualInsertion = _side == StickyTabSide.Right
                         ? Math.Max(0, _dropIndex - 1) : _dropIndex;
                     _crossSideVisualDropIndex = visualInsertion;
-                    sourceForm.ShowBoundaryRollover(boundary.Note,
+                    sourceForm.ShowBoundaryRollover(boundary.Snapshot,
                         sourceForm._side == StickyTabSide.Right);
                 }
             }
@@ -354,84 +350,84 @@ namespace PennyPet
             // Moving between child tab controls also raises DragLeave.  Keep
             // the preview until the pointer really leaves the complete strip.
             if (ClientRectangle.Contains(PointToClient(Cursor.Position))) return;
-            ShowSourceOnly(DragSession.CurrentNote);
+            ShowSourceOnly(DragSession.ActiveNoteId);
         }
 
         private void TabsDragDrop(object sender, DragEventArgs e)
         {
-            StickyNoteData moved = TryGetDraggedNote(e.Data);
+            string movedId = TryGetDraggedNoteId(e.Data);
             int destination = _globalStartIndex +
                 Math.Max(0, _dropIndex < 0 ? Controls.Count : _dropIndex);
             ResetDropPreview(false);
-            if (moved == null || _reorderNote == null) return;
+            if (String.IsNullOrEmpty(movedId) || _reorderNote == null) return;
 
             // Do not post this with BeginInvoke: the OLE nested message loop
             // may dispatch it before DoDragDrop returns. The source control
             // completes the session after OLE has fully unwound.
             Action<string, int> reorder = _reorderNote;
             StickyNoteTabsForm target = this;
-            DragSession.QueueCommit(moved, delegate
+            DragSession.QueueCommit(movedId, delegate
             {
                 if (target.IsDisposed) return;
-                reorder(moved.Id, destination);
+                reorder(movedId, destination);
             });
         }
 
-        private static StickyNoteData TryGetDraggedNote(IDataObject data)
+        private static string TryGetDraggedNoteId(IDataObject data)
         {
             if (data == null || !data.GetDataPresent(DragDataFormat, false))
-                return null;
+                return String.Empty;
             string id = data.GetData(DragDataFormat, false) as string;
-            return DragSession.ActiveNote(id);
+            return DragSession.IsActiveNote(id) ? id : String.Empty;
         }
 
-        internal static void BeginDragSession(StickyNoteData note)
+        internal static void BeginDragSession(string noteId)
         {
             StickyNoteTabsForm source = null;
             foreach (StickyNoteTabsForm form in
                 new List<StickyNoteTabsForm>(LiveForms))
             {
                 if (form != null && !form.IsDisposed &&
-                    form.ContainsNote(note))
+                    form.ContainsNote(noteId))
                 {
                     source = form;
                     break;
                 }
             }
-            BeginDragSession(note, source);
+            BeginDragSession(noteId, source);
         }
 
-        internal static void BeginDragSession(StickyNoteData note,
+        internal static void BeginDragSession(string noteId,
             StickyNoteTabsForm source)
         {
-            DragSession.Begin(note, source);
-            ShowSourceOnly(note);
+            DragSession.Begin(noteId, source);
+            ShowSourceOnly(noteId);
         }
 
         private static void ActivateExclusiveDropTarget(
-            StickyNoteTabsForm target, StickyNoteData note)
+            StickyNoteTabsForm target, string noteId)
         {
             foreach (StickyNoteTabsForm form in
                 new List<StickyNoteTabsForm>(LiveForms))
             {
                 if (form == null || form.IsDisposed ||
                     Object.ReferenceEquals(form, target)) continue;
-                form.HoldSourceVisual(note,
+                form.HoldSourceVisual(noteId,
                     !DragSession.IsSource(form));
             }
         }
 
-        private static void ShowSourceOnly(StickyNoteData note)
+        private static void ShowSourceOnly(string noteId)
         {
             foreach (StickyNoteTabsForm form in
                 new List<StickyNoteTabsForm>(LiveForms))
             {
                 if (form != null && !form.IsDisposed)
-                    form.HoldSourceVisual(note, true);
+                    form.HoldSourceVisual(noteId, true);
             }
         }
 
-        internal static void EndDragSession(StickyNoteData note)
+        internal static void EndDragSession(string noteId)
         {
             // Clear both strips before a successful reorder rebuilds them.
             // This also covers cancelled drops and prevents a stale insertion
@@ -442,7 +438,7 @@ namespace PennyPet
                 if (form != null && !form.IsDisposed)
                     form.ResetDropPreview(false);
             }
-            DragSession.Complete(note);
+            DragSession.Complete(noteId);
         }
 
         internal static int CalculateDropIndex(int pointerY, int count)
@@ -473,15 +469,15 @@ namespace PennyPet
         {
             int sourceIndex = -1;
             StickyNoteTabControl sourceTab = null;
-            StickyNoteData sourceNote = DragSession.CurrentNote ??
-                _previewDraggedNote;
-            bool canOwnSource = DragSession.CurrentNote == null ||
+            string sourceNoteId = DragSession.ActiveNoteId ??
+                _previewDraggedNoteId;
+            bool canOwnSource = String.IsNullOrEmpty(DragSession.ActiveNoteId) ||
                 DragSession.IsSource(this);
             foreach (Control control in Controls)
             {
                 StickyNoteTabControl tab = control as StickyNoteTabControl;
                 if (canOwnSource && tab != null &&
-                    ReferenceEquals(tab.Note, sourceNote))
+                    IsSameNote(tab.Snapshot.NoteId, sourceNoteId))
                 {
                     sourceIndex = tab.ListIndex;
                     sourceTab = tab;
@@ -520,14 +516,16 @@ namespace PennyPet
             if (_restoringLayout)
             {
                 _restoringLayout = false;
-                bool keepSourceOffset = DragSession.CurrentNote != null &&
+                bool keepSourceOffset = !String.IsNullOrEmpty(
+                    DragSession.ActiveNoteId) &&
                     sourceIndex >= 0;
-                _previewDraggedNote = keepSourceOffset
-                    ? DragSession.CurrentNote : null;
+                _previewDraggedNoteId = keepSourceOffset
+                    ? DragSession.ActiveNoteId : null;
                 // Keep a stable transparent canvas for the whole OLE drag.
                 // Resizing a TransparencyKey form while child tabs animate
                 // can make Windows temporarily omit a moving child window.
-                bool dragStillActive = DragSession.CurrentNote != null;
+                bool dragStillActive = !String.IsNullOrEmpty(
+                    DragSession.ActiveNoteId);
                 ClientSize = new Size(CurrentCanvasWidth, _normalHeight +
                     (dragStillActive ? PreviewInsertionGap : 0));
                 foreach (Control control in Controls)
@@ -557,7 +555,7 @@ namespace PennyPet
             if (IsHandleCreated) Update();
             if (!animateBack)
             {
-                _previewDraggedNote = null;
+                _previewDraggedNoteId = null;
                 _restoringLayout = false;
                 _layoutAnimationTimer.Stop();
                 ClearCrossSideBoundaryPreview();
@@ -577,7 +575,7 @@ namespace PennyPet
             _layoutAnimationTimer.Start();
         }
 
-        private void HoldSourceVisual(StickyNoteData note,
+        private void HoldSourceVisual(string noteId,
             bool clearBoundaryRollover)
         {
             if (clearBoundaryRollover)
@@ -591,11 +589,12 @@ namespace PennyPet
                 foreach (Control control in Controls)
                 {
                     StickyNoteTabControl tab = control as StickyNoteTabControl;
-                    if (tab != null && ReferenceEquals(tab.Note, note))
+                    if (tab != null && IsSameNote(tab.Snapshot.NoteId,
+                        noteId))
                         source = tab;
                 }
             }
-            _previewDraggedNote = source == null ? null : note;
+            _previewDraggedNoteId = source == null ? null : noteId;
             if (source != null) ApplySourceHorizontalOffset(source);
             else RestoreSourceHorizontalOffset();
             bool preserveRollover = !clearBoundaryRollover &&
@@ -613,7 +612,7 @@ namespace PennyPet
             // Both strips reserve the same transparent insertion area until
             // DoDragDrop ends. Switching target sides therefore never shrinks
             // a top-level transparent form in the middle of the animation.
-            bool dragActive = DragSession.CurrentNote != null;
+            bool dragActive = !String.IsNullOrEmpty(DragSession.ActiveNoteId);
             if (!preserveRollover)
                 ClientSize = new Size(CurrentCanvasWidth, _normalHeight +
                     (dragActive ? PreviewInsertionGap : 0));
@@ -664,11 +663,11 @@ namespace PennyPet
             }
         }
 
-        private void ShowBoundaryRollover(StickyNoteData note, bool atTop)
+        private void ShowBoundaryRollover(SideTabSnapshot note, bool atTop)
         {
             if (note == null) return;
             if (_rolloverPreviewTab == null ||
-                !ReferenceEquals(_rolloverPreviewTab.Note, note))
+                !IsSameNote(_rolloverPreviewTab.Snapshot.NoteId, note.NoteId))
             {
                 ClearRolloverPreviewTab();
                 _rolloverPreviewTab = new StickyNoteTabControl(note, _side,
@@ -702,8 +701,8 @@ namespace PennyPet
             foreach (Control control in Controls)
             {
                 StickyNoteTabControl tab = control as StickyNoteTabControl;
-                if (tab != null && ReferenceEquals(tab.Note,
-                    DragSession.CurrentNote) && !Object.ReferenceEquals(tab,
+                if (tab != null && IsSameNote(tab.Snapshot.NoteId,
+                    DragSession.ActiveNoteId) && !Object.ReferenceEquals(tab,
                     _rolloverPreviewTab)) activeSource = tab;
             }
             if (activeSource != null) activeSource.BringToFront();
@@ -734,7 +733,7 @@ namespace PennyPet
                 if (tab != null)
                     tab.Top = tab.ListIndex * (TabHeight + TabGap);
             }
-            bool dragActive = DragSession.CurrentNote != null;
+            bool dragActive = !String.IsNullOrEmpty(DragSession.ActiveNoteId);
             ClientSize = new Size(CurrentCanvasWidth, _normalHeight +
                 (dragActive ? PreviewInsertionGap : 0));
         }
@@ -747,19 +746,19 @@ namespace PennyPet
 
         internal void CancelDragPreview()
         {
-            if (_dropIndex >= 0 || _previewDraggedNote != null)
+            if (_dropIndex >= 0 || _previewDraggedNoteId != null)
                 ResetDropPreview(true);
         }
 
-        internal void ShowDropPreviewForTest(StickyNoteData note, int dropIndex)
+        internal void ShowDropPreviewForTest(string noteId, int dropIndex)
         {
-            ActivateExclusiveDropTarget(this, note);
-            _previewDraggedNote = note;
+            ActivateExclusiveDropTarget(this, noteId);
+            _previewDraggedNoteId = noteId;
             _dropIndex = Math.Max(0, Math.Min(Controls.Count, dropIndex));
             _dragPointerY = _dropIndex * (TabHeight + TabGap);
             ClientSize = new Size(CurrentCanvasWidth,
                 _normalHeight + PreviewInsertionGap);
-            if (DragSession.CurrentNote != null &&
+            if (!String.IsNullOrEmpty(DragSession.ActiveNoteId) &&
                 !DragSession.IsSource(this))
             {
                 ApplyCrossSidePreviewImmediately();
@@ -767,13 +766,13 @@ namespace PennyPet
                 return;
             }
             int sourceIndex = -1;
-            bool canOwnSource = DragSession.CurrentNote == null ||
+            bool canOwnSource = String.IsNullOrEmpty(DragSession.ActiveNoteId) ||
                 DragSession.IsSource(this);
             foreach (Control control in Controls)
             {
                 StickyNoteTabControl tab = control as StickyNoteTabControl;
                 if (canOwnSource && tab != null &&
-                    ReferenceEquals(tab.Note, note))
+                    IsSameNote(tab.Snapshot.NoteId, noteId))
                     sourceIndex = tab.ListIndex;
             }
             foreach (Control control in Controls)
@@ -793,12 +792,13 @@ namespace PennyPet
             get { return _dropIndex >= 0; }
         }
 
-        internal bool HasDragSourceVisualForTest(StickyNoteData note)
+        internal bool HasDragSourceVisualForTest(string noteId)
         {
             foreach (Control control in Controls)
             {
                 StickyNoteTabControl tab = control as StickyNoteTabControl;
-                if (tab == null || !ReferenceEquals(tab.Note, note)) continue;
+                if (tab == null || !IsSameNote(tab.Snapshot.NoteId, noteId))
+                    continue;
                 int expectedLeft = _side == StickyTabSide.Left
                     ? DragSourceVisualOffset : 0;
                 return tab.IsDragSource &&
@@ -810,34 +810,36 @@ namespace PennyPet
             return false;
         }
 
-        internal int TabTopForTest(StickyNoteData note)
+        internal int TabTopForTest(string noteId)
         {
             foreach (Control control in Controls)
             {
                 StickyNoteTabControl tab = control as StickyNoteTabControl;
-                if (tab != null && ReferenceEquals(tab.Note, note))
+                if (tab != null && IsSameNote(tab.Snapshot.NoteId, noteId))
                     return tab.Top;
             }
             return Int32.MinValue;
         }
 
-        internal bool HasBoundaryRolloverForTest(StickyNoteData note,
+        internal bool HasBoundaryRolloverForTest(string noteId,
             bool atTop)
         {
             if (_rolloverPreviewTab == null ||
-                !ReferenceEquals(_rolloverPreviewTab.Note, note)) return false;
+                !IsSameNote(_rolloverPreviewTab.Snapshot.NoteId, noteId))
+                return false;
             int expectedTop = atTop ? 0 :
                 Math.Max(0, Controls.Count - 1) * (TabHeight + TabGap);
             return _rolloverPreviewTab.Top == expectedTop;
         }
 
-        internal bool TabVisibleForTest(StickyNoteData note)
+        internal bool TabVisibleForTest(string noteId)
         {
             foreach (Control control in Controls)
             {
                 StickyNoteTabControl tab = control as StickyNoteTabControl;
                 if (tab != null && !Object.ReferenceEquals(tab,
-                    _rolloverPreviewTab) && ReferenceEquals(tab.Note, note))
+                    _rolloverPreviewTab) &&
+                    IsSameNote(tab.Snapshot.NoteId, noteId))
                     return !Object.ReferenceEquals(tab,
                         _hiddenBoundaryTab);
             }
@@ -850,7 +852,7 @@ namespace PennyPet
             {
                 int rolloverHeight = _rolloverPreviewTab == null ? 0 :
                     TabHeight + TabGap;
-                return DragSession.CurrentNote == null
+                return String.IsNullOrEmpty(DragSession.ActiveNoteId)
                     ? ClientSize.Height == _normalHeight &&
                         ClientSize.Width == TabWidth
                     : ClientSize.Height == _normalHeight +
@@ -864,13 +866,14 @@ namespace PennyPet
             base.OnPaint(e);
             if (_dropIndex < 0) return;
             int sourceIndex = -1;
-            bool canOwnSource = DragSession.CurrentNote == null ||
+            bool canOwnSource = String.IsNullOrEmpty(DragSession.ActiveNoteId) ||
                 DragSession.IsSource(this);
             foreach (Control control in Controls)
             {
                 StickyNoteTabControl tab = control as StickyNoteTabControl;
-                if (canOwnSource && tab != null && ReferenceEquals(tab.Note,
-                    _previewDraggedNote)) sourceIndex = tab.ListIndex;
+                if (canOwnSource && tab != null &&
+                    IsSameNote(tab.Snapshot.NoteId, _previewDraggedNoteId))
+                    sourceIndex = tab.ListIndex;
             }
             int insertion = _crossSideVisualDropIndex >= 0
                 ? _crossSideVisualDropIndex : _dropIndex;
@@ -910,7 +913,7 @@ namespace PennyPet
         private static readonly object TypeIconMaskSync = new object();
         private static Bitmap[] _typeIconMasks;
 
-        private readonly StickyNoteData _note;
+        private readonly SideTabSnapshot _snapshot;
         private readonly StickyTabSide _side;
         private readonly Action<string> _openNote;
         private readonly Action<string> _deleteNote;
@@ -922,9 +925,9 @@ namespace PennyPet
 
         internal int ListIndex { get; set; }
 
-        internal StickyNoteData Note
+        internal SideTabSnapshot Snapshot
         {
-            get { return _note; }
+            get { return _snapshot; }
         }
 
         internal bool IsDragSource
@@ -938,11 +941,13 @@ namespace PennyPet
             }
         }
 
-        public StickyNoteTabControl(StickyNoteData note, StickyTabSide side,
+        public StickyNoteTabControl(SideTabSnapshot snapshot,
+            StickyTabSide side,
             Action<string> openNote,
             Action<string> deleteNote)
         {
-            _note = note;
+            if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
+            _snapshot = snapshot;
             _side = side;
             _openNote = openNote;
             _deleteNote = deleteNote;
@@ -963,7 +968,8 @@ namespace PennyPet
             delete.Click += delegate
             {
                 if (_deleteNote != null && !IsDisposed)
-                    BeginInvoke((MethodInvoker)delegate { _deleteNote(_note.Id); });
+                    BeginInvoke((MethodInvoker)delegate
+                    { _deleteNote(_snapshot.NoteId); });
             };
             _menu.Items.Add(open);
             _menu.Items.Add(delete);
@@ -1003,7 +1009,8 @@ namespace PennyPet
         private void OpenNoteDeferred()
         {
             if (_openNote == null || IsDisposed) return;
-            BeginInvoke((MethodInvoker)delegate { _openNote(_note.Id); });
+            BeginInvoke((MethodInvoker)delegate
+            { _openNote(_snapshot.NoteId); });
         }
 
         private void LongPressTimerTick(object sender, EventArgs e)
@@ -1014,9 +1021,10 @@ namespace PennyPet
             Capture = false;
             Cursor = Cursors.SizeAll;
             StickyNoteTabsForm owner = Parent as StickyNoteTabsForm;
-            StickyNoteTabsForm.BeginDragSession(_note, owner);
+            StickyNoteTabsForm.BeginDragSession(_snapshot.NoteId, owner);
             DataObject payload = new DataObject();
-            payload.SetData(StickyNoteTabsForm.DragDataFormat, false, _note.Id);
+            payload.SetData(StickyNoteTabsForm.DragDataFormat, false,
+                _snapshot.NoteId);
             try { DoDragDrop(payload, DragDropEffects.Move); }
             finally
             {
@@ -1025,7 +1033,7 @@ namespace PennyPet
                 Cursor = Cursors.Hand;
                 // This is intentionally last: the commit rebuilds both tab
                 // strips and can dispose this source control.
-                StickyNoteTabsForm.EndDragSession(_note);
+                StickyNoteTabsForm.EndDragSession(_snapshot.NoteId);
             }
         }
 
@@ -1068,7 +1076,7 @@ namespace PennyPet
         protected override void OnPaint(PaintEventArgs e)
         {
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            Color paper = Color.FromArgb(_note.ColorArgb);
+            Color paper = Color.FromArgb(_snapshot.ColorArgb);
             if (_hover) paper = ControlPaint.Light(paper, 0.12F);
             if (_isDragSource) paper = ControlPaint.Light(paper, 0.35F);
             Color border = ControlPaint.Dark(paper, 0.20F);
@@ -1095,7 +1103,8 @@ namespace PennyPet
                     iconArea.Left - 24), Height - 4);
             Color textColor = paper.GetBrightness() > 0.52F
                 ? Color.FromArgb(58, 52, 48) : Color.White;
-            TextRenderer.DrawText(e.Graphics, _note.DisplayTitle, Font, textArea,
+            TextRenderer.DrawText(e.Graphics, _snapshot.DisplayTitle, Font,
+                textArea,
                 textColor, TextFormatFlags.EndEllipsis |
                 TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine |
                 TextFormatFlags.NoPadding);
@@ -1122,16 +1131,17 @@ namespace PennyPet
         private void DrawTypeIcon(Graphics graphics, Rectangle bounds,
             Color color, Color paper)
         {
-            DrawTypeIcon(graphics, bounds, color, paper, _note);
+            DrawTypeIcon(graphics, bounds, color, paper,
+                _snapshot.IsTodoList, _snapshot.IsSchedule);
         }
 
         private static void DrawTypeIcon(Graphics graphics, Rectangle bounds,
-            Color color, Color paper, StickyNoteData note)
+            Color color, Color paper, bool isTodoList, bool isSchedule)
         {
             // The supplied pencil silhouette is used verbatim.  The receipt
             // and calendar keep the established vector metrics so all tabs
             // retain their previous alignment and stroke weight.
-            if (!note.IsTodoList && !note.IsSchedule)
+            if (!isTodoList && !isSchedule)
             {
                 Bitmap referenceMask = GetTypeIconMask(2);
                 if (referenceMask != null)
@@ -1145,8 +1155,8 @@ namespace PennyPet
                 pen.StartCap = LineCap.Round;
                 pen.EndCap = LineCap.Round;
                 pen.LineJoin = LineJoin.Round;
-                if (note.IsTodoList) DrawTodoIcon(graphics, pen, bounds);
-                else if (note.IsSchedule) DrawScheduleIcon(graphics, pen, bounds);
+                if (isTodoList) DrawTodoIcon(graphics, pen, bounds);
+                else if (isSchedule) DrawScheduleIcon(graphics, pen, bounds);
                 else DrawOrdinaryIcon(graphics, pen, bounds, paper);
             }
         }
@@ -1163,7 +1173,8 @@ namespace PennyPet
                 graphics.SmoothingMode = SmoothingMode.AntiAlias;
                 DrawTypeIcon(graphics,
                     new Rectangle(0, 0, safeSize, safeSize),
-                    TypeIconColor(paper), paper, note);
+                    TypeIconColor(paper), paper, note.IsTodoList,
+                    note.IsSchedule);
             }
             return bitmap;
         }

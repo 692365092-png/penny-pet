@@ -2,14 +2,13 @@ using System;
 
 namespace PennyPet
 {
-    // Pure value snapshot for side tabs. Side tabs may consume this data but
-    // must not receive hosted WPF windows or inspect WPF DispatcherObjects.
+    // Detached lightweight data for platform SideTab UI. It is not canonical
+    // StickyNoteData and is not a persistence owner.
     internal sealed class SideTabSnapshot
     {
         private SideTabSnapshot(StickyNoteData source)
         {
             NoteId = source.Id ?? String.Empty;
-            Title = source.Title ?? String.Empty;
             DisplayTitle = source.DisplayTitle;
             ColorArgb = source.ColorArgb;
             IsTodoList = source.IsTodoList;
@@ -18,7 +17,6 @@ namespace PennyPet
         }
 
         internal string NoteId { get; private set; }
-        internal string Title { get; private set; }
         internal string DisplayTitle { get; private set; }
         internal int ColorArgb { get; private set; }
         internal bool IsTodoList { get; private set; }
@@ -29,18 +27,6 @@ namespace PennyPet
         {
             if (source == null) throw new ArgumentNullException(nameof(source));
             return new SideTabSnapshot(source);
-        }
-
-        internal StickyNoteData ToDisplayData()
-        {
-            StickyNoteData data = new StickyNoteData();
-            data.Id = NoteId;
-            data.Title = Title;
-            data.ColorArgb = ColorArgb;
-            data.IsTodoList = IsTodoList;
-            data.IsSchedule = IsSchedule;
-            data.Visible = Visible;
-            return data;
         }
     }
 }

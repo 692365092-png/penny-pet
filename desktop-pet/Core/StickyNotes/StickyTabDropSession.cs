@@ -7,28 +7,28 @@ namespace PennyPet
     // The source is an opaque identity token so Core does not depend on Forms.
     internal sealed class StickyTabDropSession
     {
-        private StickyNoteData _activeNote;
+        private string _activeNoteId;
         private object _source;
         private Action _pendingCommit;
 
-        internal void Begin(StickyNoteData note, object source)
+        internal void Begin(string noteId, object source)
         {
-            _activeNote = note;
+            _activeNoteId = noteId ?? String.Empty;
             _source = source;
             _pendingCommit = null;
         }
 
-        internal StickyNoteData ActiveNote(string id)
+        internal bool IsActiveNote(string noteId)
         {
-            if (_activeNote == null || String.IsNullOrEmpty(id) ||
-                !String.Equals(_activeNote.Id, id,
-                    StringComparison.OrdinalIgnoreCase)) return null;
-            return _activeNote;
+            return !String.IsNullOrEmpty(_activeNoteId) &&
+                !String.IsNullOrEmpty(noteId) &&
+                String.Equals(_activeNoteId, noteId,
+                    StringComparison.OrdinalIgnoreCase);
         }
 
-        internal StickyNoteData CurrentNote
+        internal string ActiveNoteId
         {
-            get { return _activeNote; }
+            get { return _activeNoteId; }
         }
 
         internal bool IsSource(object source)
@@ -41,20 +41,20 @@ namespace PennyPet
             get { return _source; }
         }
 
-        internal bool QueueCommit(StickyNoteData note, Action commit)
+        internal bool QueueCommit(string noteId, Action commit)
         {
-            if (!Object.ReferenceEquals(_activeNote, note) || commit == null)
+            if (!IsActiveNote(noteId) || commit == null)
                 return false;
             _pendingCommit = commit;
             return true;
         }
 
-        internal bool Complete(StickyNoteData note)
+        internal bool Complete(string noteId)
         {
-            if (!Object.ReferenceEquals(_activeNote, note)) return false;
+            if (!IsActiveNote(noteId)) return false;
             Action commit = _pendingCommit;
             _pendingCommit = null;
-            _activeNote = null;
+            _activeNoteId = null;
             _source = null;
             if (commit != null) commit();
             return true;

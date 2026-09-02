@@ -844,7 +844,7 @@ namespace PennyPet.Tests
             string tabs = ReadSource(
                 "Features/StickyNotes/StickyNoteTabs.cs");
             string snapshots = ReadSource(
-                "Features/StickyNotes/SideTabSnapshot.cs");
+                "Core/StickyNotes/SideTabSnapshot.cs");
 
             Assert.IsTrue(snapshots.Contains("NoteId") &&
                 snapshots.Contains("ColorArgb") &&
@@ -857,6 +857,10 @@ namespace PennyPet.Tests
             Assert.IsTrue(tabs.Contains(
                 "SetNotes(IList<SideTabSnapshot>"),
                 "Side tabs must accept snapshot input.");
+            Assert.IsFalse(snapshots.Contains("ToDisplayData"),
+                "SideTabSnapshot must remain a detached projection, not a fake note adapter.");
+            Assert.IsFalse(tabs.Contains("new StickyNoteData"),
+                "Side tab display code must not reconstruct canonical note objects.");
         }
 
         [TestMethod]

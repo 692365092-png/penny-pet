@@ -707,22 +707,50 @@ namespace PennyPet.Tests
         public void StickyTabDropSession_DefersCommitAndUsesOpaqueSourceIdentity()
         {
             StickyTabDropSession session = new StickyTabDropSession();
-            StickyNoteData note = new StickyNoteData { Id = "drag-note" };
             object source = new object();
             int commits = 0;
 
-            session.Begin(note, source);
-            Assert.AreSame(note, session.ActiveNote("DRAG-NOTE"));
+            session.Begin("drag-note", source);
+            Assert.IsTrue(session.IsActiveNote("DRAG-NOTE"));
+            Assert.AreEqual("drag-note", session.ActiveNoteId);
             Assert.IsTrue(session.IsSource(source));
             Assert.IsFalse(session.IsSource(new object()));
-            Assert.IsTrue(session.QueueCommit(note,
+            Assert.IsFalse(session.QueueCommit("other-note",
+                delegate { commits++; }));
+            Assert.IsTrue(session.QueueCommit("DRAG-NOTE",
                 delegate { commits++; }));
             Assert.AreEqual(0, commits);
-            Assert.IsTrue(session.Complete(note));
+            Assert.IsFalse(session.Complete("other-note"));
+            Assert.IsTrue(session.Complete("DRAG-NOTE"));
             Assert.AreEqual(1, commits);
-            Assert.IsNull(session.CurrentNote);
+            Assert.IsTrue(String.IsNullOrEmpty(session.ActiveNoteId));
             Assert.IsNull(session.Source);
-            Assert.IsFalse(session.Complete(note));
+            Assert.IsFalse(session.Complete("DRAG-NOTE"));
+        }
+
+        [TestMethod]
+        public void SideTabSnapshot_DetachesDisplayFactsFromCanonicalNote()
+        {
+            StickyNoteData note = new StickyNoteData
+            {
+                Id = "side-note",
+                Title = "初始标题",
+                ColorArgb = unchecked((int)0xFF112233),
+                IsTodoList = true,
+                Visible = false
+            };
+
+            SideTabSnapshot snapshot = SideTabSnapshot.FromData(note);
+            note.Title = "后续标题";
+            note.ColorArgb = unchecked((int)0xFF445566);
+            note.IsTodoList = false;
+            note.Visible = true;
+
+            Assert.AreEqual("side-note", snapshot.NoteId);
+            Assert.AreEqual("初始标题", snapshot.DisplayTitle);
+            Assert.AreEqual(unchecked((int)0xFF112233), snapshot.ColorArgb);
+            Assert.IsTrue(snapshot.IsTodoList);
+            Assert.IsFalse(snapshot.Visible);
         }
 
         [TestMethod]

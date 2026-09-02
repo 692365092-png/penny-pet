@@ -903,10 +903,13 @@ namespace PennyPet
                 Rectangle previewWork = new Rectangle(0, 0, 1920, 1080);
                 int previewLeftCount = StickyNoteTabsForm.CalculateLeftCount(
                     tabNotes.Count, 208, previewWork);
-                List<StickyNoteData> previewLeft = tabNotes.GetRange(0,
+                List<SideTabSnapshot> tabSnapshots = new List<SideTabSnapshot>();
+                foreach (StickyNoteData tabNote in tabNotes)
+                    tabSnapshots.Add(SideTabSnapshot.FromData(tabNote));
+                List<SideTabSnapshot> previewLeft = tabSnapshots.GetRange(0,
                     previewLeftCount);
-                List<StickyNoteData> previewRight = tabNotes.GetRange(
-                    previewLeftCount, tabNotes.Count - previewLeftCount);
+                List<SideTabSnapshot> previewRight = tabSnapshots.GetRange(
+                    previewLeftCount, tabSnapshots.Count - previewLeftCount);
                 using (StickyNoteTabsForm leftTabs = new StickyNoteTabsForm(
                     StickyTabSide.Left, delegate(string noteId) { }))
                 using (StickyNoteTabsForm rightTabs = new StickyNoteTabsForm(
@@ -919,11 +922,11 @@ namespace PennyPet
                     leftTabs.SetNotes(previewLeft);
                     rightTabs.SetNotes(previewRight);
                     StickyNoteData crossSideSource = previewLeft.Count >= 3 &&
-                        previewRight.Count >= 2 ? previewLeft[1] : null;
+                        previewRight.Count >= 2 ? tabNotes[1] : null;
                     if (crossSideSource != null)
                     {
-                        StickyNoteTabsForm.BeginDragSession(crossSideSource);
-                        rightTabs.ShowDropPreviewForTest(crossSideSource, 2);
+                        StickyNoteTabsForm.BeginDragSession(crossSideSource.Id);
+                        rightTabs.ShowDropPreviewForTest(crossSideSource.Id, 2);
                     }
                     Application.DoEvents();
                     using (Bitmap leftTabsBitmap = new Bitmap(leftTabs.Width,
@@ -948,7 +951,7 @@ namespace PennyPet
                             petY + (petFrame.Height - rightTabsBitmap.Height) / 2);
                     }
                     if (crossSideSource != null)
-                        StickyNoteTabsForm.EndDragSession(crossSideSource);
+                        StickyNoteTabsForm.EndDragSession(crossSideSource.Id);
                     leftTabs.Hide();
                     rightTabs.Hide();
                 }
