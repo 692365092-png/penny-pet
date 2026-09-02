@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace PennyPet
@@ -34,11 +35,25 @@ namespace PennyPet
         internal async Task<WeatherForecastWindow> FetchAsync(
             WeatherLocation location, DateTime localDate)
         {
+            return await FetchAsync(location, localDate,
+                CancellationToken.None).ConfigureAwait(false);
+        }
+
+        internal async Task<WeatherForecastWindow> FetchAsync(
+            WeatherLocation location, DateTime localDate,
+            CancellationToken cancellationToken)
+        {
             if (location == null)
                 throw new ArgumentNullException(nameof(location));
-            string json = await _httpClient.GetStringAsync(
-                BuildUri(location)).ConfigureAwait(false);
-            return _parser.Parse(json, localDate.Date);
+            using (HttpResponseMessage response = await _httpClient.GetAsync(
+                BuildUri(location), HttpCompletionOption.ResponseContentRead,
+                cancellationToken).ConfigureAwait(false))
+            {
+                response.EnsureSuccessStatusCode();
+                string json = await response.Content.ReadAsStringAsync()
+                    .ConfigureAwait(false);
+                return _parser.Parse(json, localDate.Date);
+            }
         }
 
         internal static Uri BuildUri(WeatherLocation location)

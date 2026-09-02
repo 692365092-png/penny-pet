@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 
@@ -21,9 +22,28 @@ namespace PennyPet
         internal async Task<IReadOnlyList<WeatherLocation>> SearchAsync(
             string query)
         {
-            Uri uri = BuildUri(query);
-            string json = await _httpClient.GetStringAsync(uri)
+            return await SearchAsync(query, CancellationToken.None)
                 .ConfigureAwait(false);
+        }
+
+        internal async Task<IReadOnlyList<WeatherLocation>> SearchAsync(
+            string query, CancellationToken cancellationToken)
+        {
+            Uri uri = BuildUri(query);
+            using (HttpResponseMessage response = await _httpClient.GetAsync(
+                uri, HttpCompletionOption.ResponseContentRead,
+                cancellationToken).ConfigureAwait(false))
+            {
+                response.EnsureSuccessStatusCode();
+                string json = await response.Content.ReadAsStringAsync()
+                    .ConfigureAwait(false);
+                return ParseResults(json);
+            }
+        }
+
+        private static IReadOnlyList<WeatherLocation> ParseResults(
+            string json)
+        {
             GeocodingResponse response = new JavaScriptSerializer()
                 .Deserialize<GeocodingResponse>(json);
             List<WeatherLocation> results = new List<WeatherLocation>();

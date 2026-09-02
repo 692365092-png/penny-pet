@@ -1,12 +1,17 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace PennyPet
 {
     internal sealed class PetWeatherSource : IDisposable
     {
+        internal static readonly TimeSpan ForecastRequestTimeout =
+            TimeSpan.FromSeconds(3);
+        internal static readonly TimeSpan GeocodingRequestTimeout =
+            TimeSpan.FromSeconds(8);
         private static readonly TimeSpan FailureCooldown =
             TimeSpan.FromMinutes(15);
         private readonly object _gate = new object();
@@ -36,7 +41,9 @@ namespace PennyPet
             _httpClient = httpClient ??
                 throw new ArgumentNullException(nameof(httpClient));
             _utcNow = utcNow ?? throw new ArgumentNullException(nameof(utcNow));
-            _httpClient.Timeout = TimeSpan.FromSeconds(3);
+            // Individual request deadlines keep the forecast's quiet 3s
+            // fallback independent from the user's slower city search.
+            _httpClient.Timeout = Timeout.InfiniteTimeSpan;
             Version version = typeof(PetWeatherSource).Assembly
                 .GetName().Version;
             string userAgent = "PennyPet/" + (version == null
@@ -52,8 +59,30 @@ namespace PennyPet
         internal Task<IReadOnlyList<WeatherLocation>> SearchLocationsAsync(
             string query)
         {
+            return SearchLocationsAsync(query, CancellationToken.None);
+        }
+
+        internal async Task<IReadOnlyList<WeatherLocation>> SearchLocationsAsync(
+            string query, CancellationToken cancellationToken)
+        {
             ThrowIfDisposed();
-            return _geocoding.SearchAsync(query);
+            using (CancellationTokenSource timeout =
+                CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken))
+            {
+                timeout.CancelAfter(GeocodingRequestTimeout);
+                try
+                {
+                    return await _geocoding.SearchAsync(query, timeout.Token)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    if (cancellationToken.IsCancellationRequested) throw;
+                    throw new TimeoutException(
+                        "Weather city search exceeded its deadline.");
+                }
+            }
         }
 
         internal Task<WeatherForecastWindow> GetForecastAsync(
@@ -114,8 +143,14 @@ namespace PennyPet
             try
             {
                 lock (_gate) _forecastRequestCount++;
-                WeatherForecastWindow value = await _forecast.FetchAsync(
-                    location, localDate).ConfigureAwait(false);
+                WeatherForecastWindow value;
+                using (CancellationTokenSource timeout =
+                    new CancellationTokenSource())
+                {
+                    timeout.CancelAfter(ForecastRequestTimeout);
+                    value = await _forecast.FetchAsync(location, localDate,
+                        timeout.Token).ConfigureAwait(false);
+                }
                 lock (_gate)
                 {
                     if (!_cache.ContainsKey(key))
