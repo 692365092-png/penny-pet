@@ -2086,6 +2086,20 @@ namespace PennyPet.Tests
                 PetSentenceContentKind.Almanac
             }, DailyBriefingComposer.SelectSentences(DayPart.Afternoon,
                 almanacOnly).Select(sentence => sentence.Kind).ToArray());
+
+            DailyLineEntry birthday = new DailyLineEntry(
+                "BIRTHDAY-TEST", "生日快乐。 ");
+            DailyBriefingContent birthdaySolarWeather =
+                new DailyBriefingContent(whiteDew, weather, null,
+                    curated, zodiac, birthday, PetBirthdayKind.User);
+            CollectionAssert.AreEqual(new[]
+            {
+                PetSentenceContentKind.Greeting,
+                PetSentenceContentKind.Birthday,
+                PetSentenceContentKind.Solar
+            }, DailyBriefingComposer.SelectSentences(DayPart.Afternoon,
+                birthdaySolarWeather).Select(sentence => sentence.Kind)
+                .ToArray());
             CollectionAssert.AreEqual(new[]
             {
                 PetSentenceContentKind.Greeting,

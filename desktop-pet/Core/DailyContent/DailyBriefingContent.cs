@@ -5,13 +5,16 @@ namespace PennyPet
         internal DailyBriefingContent(SolarTermInfo? solarTerm,
             WeatherDailySelection weather,
             AlmanacDailySelection almanac, DailyLineEntry curatedLine,
-            DailyLineEntry zodiacLine)
+            DailyLineEntry zodiacLine, DailyLineEntry birthdayLine = null,
+            PetBirthdayKind birthdayKind = PetBirthdayKind.None)
         {
             SolarTerm = solarTerm;
             Weather = weather;
             Almanac = almanac;
             CuratedLine = curatedLine;
             ZodiacLine = zodiacLine;
+            BirthdayLine = birthdayLine;
+            BirthdayKind = birthdayKind;
         }
 
         internal SolarTermInfo? SolarTerm { get; private set; }
@@ -19,6 +22,8 @@ namespace PennyPet
         internal AlmanacDailySelection Almanac { get; private set; }
         internal DailyLineEntry CuratedLine { get; private set; }
         internal DailyLineEntry ZodiacLine { get; private set; }
+        internal DailyLineEntry BirthdayLine { get; private set; }
+        internal PetBirthdayKind BirthdayKind { get; private set; }
     }
 
     internal sealed class DailyBriefingSentence

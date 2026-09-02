@@ -16,6 +16,8 @@ namespace PennyPet
         private readonly Func<WeatherLocation,
             Task<WeatherForecastWindow>> _weatherForecast;
         private readonly Func<ZodiacSign> _zodiacSign;
+        private readonly Func<int> _userBirthdayMonth;
+        private readonly Func<int> _userBirthdayDay;
         private readonly Func<string, bool> _showDailyGreeting;
         private readonly Action<string> _recordBriefingDate;
         private readonly object _attemptGate = new object();
@@ -29,6 +31,8 @@ namespace PennyPet
             Func<WeatherLocation, Task<WeatherForecastWindow>>
                 weatherForecast,
             Func<ZodiacSign> zodiacSign,
+            Func<int> userBirthdayMonth,
+            Func<int> userBirthdayDay,
             Func<string, bool> showDailyGreeting,
             Action<string> recordBriefingDate)
         {
@@ -50,6 +54,10 @@ namespace PennyPet
                 throw new ArgumentNullException("weatherForecast");
             _zodiacSign = zodiacSign ??
                 throw new ArgumentNullException("zodiacSign");
+            _userBirthdayMonth = userBirthdayMonth ??
+                throw new ArgumentNullException("userBirthdayMonth");
+            _userBirthdayDay = userBirthdayDay ??
+                throw new ArgumentNullException("userBirthdayDay");
             _showDailyGreeting = showDailyGreeting ??
                 throw new ArgumentNullException("showDailyGreeting");
             _recordBriefingDate = recordBriefingDate ??
@@ -103,8 +111,15 @@ namespace PennyPet
                     localNow);
                 DailyLineEntry zodiacLine = ZodiacDailySelector.Select(
                     _zodiacSign(), localNow);
+                PetBirthdayKind birthdayKind = PetBirthdayRule.Resolve(
+                    localNow.Month, localNow.Day,
+                    _userBirthdayMonth(), _userBirthdayDay());
+                DailyLineEntry birthdayLine =
+                    PetBirthdayWordingCatalog.Select(birthdayKind,
+                        localNow.Date);
                 DailyBriefingContent content = new DailyBriefingContent(
-                    solarTerm, weather, almanac, curatedLine, zodiacLine);
+                    solarTerm, weather, almanac, curatedLine, zodiacLine,
+                    birthdayLine, birthdayKind);
                 string text = DailyBriefingComposer.Compose(dayPart,
                     localNow.Date, content);
                 if (!_showDailyGreeting(text)) return false;

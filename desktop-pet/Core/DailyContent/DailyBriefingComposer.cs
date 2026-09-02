@@ -39,31 +39,38 @@ namespace PennyPet
             if (content == null) return new DailyBriefingSentence[0];
             List<DailyBriefingSentence> selected =
                 new List<DailyBriefingSentence>(2);
+            if (content.BirthdayKind != PetBirthdayKind.None &&
+                content.BirthdayLine != null)
+            {
+                selected.Add(EntrySentence(content.BirthdayLine,
+                    PetSentenceContentKind.Birthday));
+                if (selected.Count == 2) return selected.ToArray();
+            }
             if (content.SolarTerm.HasValue)
             {
                 selected.Add(SolarSentence(content.SolarTerm.Value));
-                if (content.Weather != null)
+                if (selected.Count < 2 && content.Weather != null)
                     selected.Add(WeatherSentence(content.Weather));
-                else if (content.Almanac != null)
+                else if (selected.Count < 2 && content.Almanac != null)
                     selected.Add(AlmanacSentence(content.Almanac));
                 return selected.ToArray();
             }
-            if (content.Weather != null)
+            if (selected.Count < 2 && content.Weather != null)
             {
                 selected.Add(WeatherSentence(content.Weather));
-                if (content.Almanac != null)
+                if (selected.Count < 2 && content.Almanac != null)
                     selected.Add(AlmanacSentence(content.Almanac));
                 return selected.ToArray();
             }
-            if (content.Almanac != null)
+            if (selected.Count < 2 && content.Almanac != null)
             {
                 selected.Add(AlmanacSentence(content.Almanac));
                 return selected.ToArray();
             }
-            if (content.CuratedLine != null)
+            if (selected.Count < 2 && content.CuratedLine != null)
                 selected.Add(EntrySentence(content.CuratedLine,
                     PetSentenceContentKind.Curated));
-            if (content.ZodiacLine != null)
+            if (selected.Count < 2 && content.ZodiacLine != null)
                 selected.Add(EntrySentence(content.ZodiacLine,
                     PetSentenceContentKind.Zodiac));
             return selected.ToArray();

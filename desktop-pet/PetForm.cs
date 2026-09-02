@@ -242,6 +242,8 @@ namespace PennyPet
                     return _weatherSource.GetForecastAsync(location);
                 },
                 delegate { return _settings.ZodiacSign; },
+                delegate { return _settings.UserBirthdayMonth; },
+                delegate { return _settings.UserBirthdayDay; },
                 delegate(string text)
                 {
                     if (_exiting || IsDisposed || Disposing) return false;

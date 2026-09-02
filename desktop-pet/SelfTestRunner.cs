@@ -2817,6 +2817,8 @@ namespace PennyPet
                         return Task.FromResult(rainLater);
                     },
                     delegate { return ZodiacSign.None; },
+                    delegate { return 0; },
+                    delegate { return 0; },
                     delegate(string text)
                     {
                         dailyShowCount++;
@@ -2849,6 +2851,8 @@ namespace PennyPet
                         return Task.FromResult<WeatherForecastWindow>(null);
                     },
                     delegate { return ZodiacSign.None; },
+                    delegate { return 0; },
+                    delegate { return 0; },
                     delegate(string text)
                     {
                         shownText = text;
@@ -2885,6 +2889,8 @@ namespace PennyPet
                             return pending.Task;
                         },
                         delegate { return ZodiacSign.None; },
+                        delegate { return 0; },
+                        delegate { return 0; },
                         delegate { pendingShows++; return true; },
                         delegate(string value) { pendingDate = value; });
                 DateTimeOffset pendingNow = new DateTimeOffset(date,
@@ -2928,6 +2934,8 @@ namespace PennyPet
                                 return retrySource.GetForecastAsync(target);
                             },
                             delegate { return ZodiacSign.None; },
+                            delegate { return 0; },
+                            delegate { return 0; },
                             delegate { attempts++; return accept; },
                             delegate(string value) { retryDate = value; });
                     DateTimeOffset retryNow = new DateTimeOffset(date,
@@ -3365,6 +3373,8 @@ namespace PennyPet
                         return Task.FromResult<WeatherForecastWindow>(null);
                     },
                     delegate { return zodiacSign; },
+                    delegate { return 0; },
+                    delegate { return 0; },
                     delegate(string text)
                     {
                         greetingCount++;

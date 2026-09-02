@@ -26,6 +26,7 @@ namespace PennyPet
         Solar,
         Weather,
         Almanac,
+        Birthday,
         Curated,
         Zodiac,
         SmallTalk
