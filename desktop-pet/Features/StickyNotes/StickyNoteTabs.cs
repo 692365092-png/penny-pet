@@ -73,7 +73,7 @@ namespace PennyPet
             ShowInTaskbar = false;
             TopMost = true;
             StartPosition = FormStartPosition.Manual;
-            AutoScaleMode = AutoScaleMode.None;
+            AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.Fuchsia;
             TransparencyKey = Color.Fuchsia;
             ClientSize = new Size(TabWidth, 1);
