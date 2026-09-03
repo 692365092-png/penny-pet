@@ -3875,7 +3875,7 @@ namespace PennyPet
                 FindPersonaEntry(PetPersonaRuntimeCatalog.SmallTalkMeaningful,
                     "PENNY-000004") == null &&
                 question != null && question.PreserveEnding &&
-                String.Equals(question.CanonicalBody, "嗯",
+                String.Equals(question.CanonicalBody, "嗯？",
                     StringComparison.Ordinal) &&
                 FindPersonaEntry(
                     PetPersonaRuntimeCatalog.SmallTalkMeaningful,
@@ -3903,9 +3903,9 @@ namespace PennyPet
                 String.Equals(lyricSong.CanonicalBody,
                     "我们现在还在一起会是怎样~", StringComparison.Ordinal) &&
                 legacyEn != null && legacyEn.PreserveEnding &&
-                String.Equals(legacyEn.CanonicalBody, "嗯",
+                String.Equals(legacyEn.CanonicalBody, "嗯？",
                     StringComparison.Ordinal) &&
-                !ContainsPersonaBody(PetPersonaRuntimeCatalog.SmallTalkLoopable,
+                ContainsPersonaBody(PetPersonaRuntimeCatalog.SmallTalkLoopable,
                     "嗯？") &&
                 songEnding != null && songEnding.PreserveEnding &&
                 songEnding.CanonicalBody.EndsWith("~",
@@ -4022,7 +4022,7 @@ namespace PennyPet
                     ending.EndsWith("哦～", StringComparison.Ordinal));
 
             DailyBriefingSentence en = new DailyBriefingSentence(
-                "嗯", PetSentenceContentKind.SmallTalk,
+                "嗯？", PetSentenceContentKind.SmallTalk,
                 PetSentenceIntent.Question, "PENNY-000002", true);
             string enOutput = DailyBriefingComposer.ComposeSentences(
                 new DateTime(2026, 9, 3),
@@ -4034,7 +4034,7 @@ namespace PennyPet
                 new DateTime(2026, 9, 3),
                 new DailyBriefingSentence[] { lyric });
             return preservedStable && normalUsesEnding &&
-                enOutput == "嗯" && lyricOutput ==
+                enOutput == "嗯？" && lyricOutput ==
                     "我们现在还在一起会是怎样~";
         }
 
