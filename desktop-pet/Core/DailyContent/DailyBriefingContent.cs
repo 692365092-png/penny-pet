@@ -30,17 +30,19 @@ namespace PennyPet
     {
         internal DailyBriefingSentence(string body,
             PetSentenceContentKind kind, PetSentenceIntent intent,
-            string stableContentId)
+            string stableContentId, bool preserveEnding = false)
         {
             Body = body;
             Kind = kind;
             Intent = intent;
             StableContentId = stableContentId;
+            PreserveEnding = preserveEnding;
         }
 
         internal string Body { get; private set; }
         internal PetSentenceContentKind Kind { get; private set; }
         internal PetSentenceIntent Intent { get; private set; }
         internal string StableContentId { get; private set; }
+        internal bool PreserveEnding { get; private set; }
     }
 }

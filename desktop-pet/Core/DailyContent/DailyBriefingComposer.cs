@@ -54,7 +54,7 @@ namespace PennyPet
                     content.SolarTerm.Value.ChineseName, out attachment))
                     selected.Add(new DailyBriefingSentence(attachment.Text,
                         PetSentenceContentKind.Solar, PetSentenceIntent.Gentle,
-                        attachment.StableContentId));
+                        attachment.StableContentId, true));
                 if (selected.Count < 2 && content.Weather != null)
                     selected.Add(WeatherSentence(content.Weather));
                 else if (selected.Count < 2 && content.Almanac != null)
@@ -101,9 +101,12 @@ namespace PennyPet
                         : i == sentences.Length - 1
                             ? PetSentenceRole.Closing
                             : PetSentenceRole.Middle;
-                lines[i] = PetSentenceEndingPolicy.Apply(sentence.Body,
-                    new PetSentenceEndingContext(role, sentence.Intent,
-                        sentence.Kind, sentence.StableContentId, localDate));
+                lines[i] = sentence.PreserveEnding
+                    ? sentence.Body
+                    : PetSentenceEndingPolicy.Apply(sentence.Body,
+                        new PetSentenceEndingContext(role, sentence.Intent,
+                            sentence.Kind, sentence.StableContentId,
+                            localDate));
             }
             return String.Join("\n", lines);
         }

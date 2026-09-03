@@ -25,15 +25,15 @@ namespace PennyPet
                 StringComparer.Ordinal)
         {
             { "春分", new PetSolarTermAttachment("PENNY-000013",
-                "春天最适合热聊，祝大家都有一个被爱包围的春分") },
+                "春天最适合热聊，祝大家都有一个被爱包围的春分。") },
             { "大寒", new PetSolarTermAttachment("PENNY-000014",
-                "大寒节气记得多保暖") },
+                "大寒节气记得多保暖。") },
             { "小寒", new PetSolarTermAttachment("PENNY-000015",
-                "祝大家小寒安康喜乐") },
+                "祝大家小寒安康喜乐。") },
             { "冬至", new PetSolarTermAttachment("PENNY-000016",
-                "冬至平安喜乐") },
+                "冬至平安喜乐。") },
             { "大雪", new PetSolarTermAttachment("PENNY-000018",
-                "大雪，沉淀成成果的时刻，身心都要继续保暖") }
+                "大雪，沉淀成成果的时刻，身心都要继续保暖。") }
         };
 
         internal static bool TryGet(string chineseName,

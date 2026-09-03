@@ -3789,6 +3789,7 @@ namespace PennyPet
             internal bool SolarTermAttachmentOk;
             internal bool PersonaLyricAnimationOk;
             internal bool SmallTalkAnimationProtectionOk;
+            internal bool SolarPreservePlumbingOk;
         }
 
         private sealed class StickyHostedCheckResult
@@ -3874,6 +3875,28 @@ namespace PennyPet
                 FindPersonaEntry(PetPersonaRuntimeCatalog.SmallTalkMeaningful,
                     "PENNY-000004") == null &&
                 question != null && question.PreserveEnding &&
+                String.Equals(question.CanonicalBody, "嗯",
+                    StringComparison.Ordinal) &&
+                FindPersonaEntry(
+                    PetPersonaRuntimeCatalog.SmallTalkMeaningful,
+                    "PENNY-000006").CanonicalBody.EndsWith("。",
+                        StringComparison.Ordinal) &&
+                FindPersonaEntry(
+                    PetPersonaRuntimeCatalog.SmallTalkMeaningful,
+                    "PENNY-000008").CanonicalBody.EndsWith("。",
+                        StringComparison.Ordinal) &&
+                FindPersonaEntry(
+                    PetPersonaRuntimeCatalog.SmallTalkMeaningful,
+                    "PENNY-000017").CanonicalBody.EndsWith("。",
+                        StringComparison.Ordinal) &&
+                FindPersonaEntry(
+                    PetPersonaRuntimeCatalog.SmallTalkMeaningful,
+                    "PENNY-000019").CanonicalBody.EndsWith("。",
+                        StringComparison.Ordinal) &&
+                FindPersonaEntry(
+                    PetPersonaRuntimeCatalog.SmallTalkMeaningful,
+                    "PENNY-000020").CanonicalBody.EndsWith("。",
+                        StringComparison.Ordinal) &&
                 legacyLoop != null &&
                 legacyMeal != null &&
                 lyricSong != null && lyricSong.PreserveEnding &&
@@ -3920,12 +3943,12 @@ namespace PennyPet
             string[][] expected = new string[][]
             {
                 new string[] { "春分", "PENNY-000013",
-                    "春天最适合热聊，祝大家都有一个被爱包围的春分" },
-                new string[] { "大寒", "PENNY-000014", "大寒节气记得多保暖" },
-                new string[] { "小寒", "PENNY-000015", "祝大家小寒安康喜乐" },
-                new string[] { "冬至", "PENNY-000016", "冬至平安喜乐" },
+                    "春天最适合热聊，祝大家都有一个被爱包围的春分。" },
+                new string[] { "大寒", "PENNY-000014", "大寒节气记得多保暖。" },
+                new string[] { "小寒", "PENNY-000015", "祝大家小寒安康喜乐。" },
+                new string[] { "冬至", "PENNY-000016", "冬至平安喜乐。" },
                 new string[] { "大雪", "PENNY-000018",
-                    "大雪，沉淀成成果的时刻，身心都要继续保暖" }
+                    "大雪，沉淀成成果的时刻，身心都要继续保暖。" }
             };
             foreach (string[] item in expected)
             {
@@ -3971,6 +3994,48 @@ namespace PennyPet
             controller.CancelInteractionAnimation();
             return controller.InteractionAnimationKind ==
                 PetInteractionAnimationKind.None;
+        }
+
+        private static bool RunSolarPreservePlumbingCheck()
+        {
+            DailyBriefingSentence preserved = new DailyBriefingSentence(
+                "大寒节气记得多保暖。", PetSentenceContentKind.Solar,
+                PetSentenceIntent.Gentle, "PENNY-000014", true);
+            string first = DailyBriefingComposer.ComposeSentences(
+                new DateTime(2026, 9, 3),
+                new DailyBriefingSentence[] { preserved });
+            string second = DailyBriefingComposer.ComposeSentences(
+                new DateTime(2026, 12, 21),
+                new DailyBriefingSentence[] { preserved });
+            bool preservedStable = first == "大寒节气记得多保暖。" &&
+                second == first;
+
+            DailyBriefingSentence normal = new DailyBriefingSentence(
+                "今天是什么日子", PetSentenceContentKind.Solar,
+                PetSentenceIntent.Gentle, "X-NORMAL", false);
+            string ending = DailyBriefingComposer.ComposeSentences(
+                new DateTime(2026, 9, 3),
+                new DailyBriefingSentence[] { normal });
+            bool normalUsesEnding = ending != "今天是什么日子" &&
+                (ending.EndsWith("。", StringComparison.Ordinal) ||
+                    ending.EndsWith("喔～", StringComparison.Ordinal) ||
+                    ending.EndsWith("哦～", StringComparison.Ordinal));
+
+            DailyBriefingSentence en = new DailyBriefingSentence(
+                "嗯", PetSentenceContentKind.SmallTalk,
+                PetSentenceIntent.Question, "PENNY-000002", true);
+            string enOutput = DailyBriefingComposer.ComposeSentences(
+                new DateTime(2026, 9, 3),
+                new DailyBriefingSentence[] { en });
+            DailyBriefingSentence lyric = new DailyBriefingSentence(
+                "我们现在还在一起会是怎样~", PetSentenceContentKind.SmallTalk,
+                PetSentenceIntent.Statement, "PENNY-000005", true);
+            string lyricOutput = DailyBriefingComposer.ComposeSentences(
+                new DateTime(2026, 9, 3),
+                new DailyBriefingSentence[] { lyric });
+            return preservedStable && normalUsesEnding &&
+                enOutput == "嗯" && lyricOutput ==
+                    "我们现在还在一起会是怎样~";
         }
 
         private static WindowShellCheckResult RunWindowShellChecks(
@@ -4047,6 +4112,8 @@ namespace PennyPet
                 RunPersonaLyricAnimationCheck();
             result.SmallTalkAnimationProtectionOk =
                 RunSmallTalkAnimationProtectionCheck();
+            result.SolarPreservePlumbingOk =
+                RunSolarPreservePlumbingCheck();
             result.ScaleRangeOk =
                 PetForm.NormalizeScalePercent(47) == 50 &&
                 PetForm.NormalizeScalePercent(104) == 100 &&
@@ -5315,6 +5382,8 @@ namespace PennyPet
                     shellChecks.PersonaLyricAnimationOk) + ",\n" +
                 "  \"persona_smalltalk_animation_protection_ok\": " + Bool(
                     shellChecks.SmallTalkAnimationProtectionOk) + ",\n" +
+                "  \"solar_preserve_plumbing_ok\": " + Bool(
+                    shellChecks.SolarPreservePlumbingOk) + ",\n" +
                 "  \"keyboard_hook_opt_in_and_default_off_ok\": " + Bool(
                     keyboardOverlayChecks.HookOptInDefaultOk) + ",\n" +
                 "  \"keyboard_privacy_notice_persistence_ok\": " + Bool(
