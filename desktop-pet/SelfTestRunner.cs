@@ -3801,6 +3801,7 @@ namespace PennyPet
             internal bool HostedMiddleSplitOk;
             internal bool HostedThreeNoteInsertionOk;
             internal bool DockRestoreOk;
+            internal bool HostedSetBoundsAtomicOk;
         }
 
         private static WindowShellCheckResult RunWindowShellChecks(
@@ -4003,6 +4004,8 @@ namespace PennyPet
                 StringComparer.OrdinalIgnoreCase);
             HashSet<StickyUiEventKind> eventKinds =
                 new HashSet<StickyUiEventKind>();
+            bool setBoundsInFlight = false;
+            bool setBoundsLeakedHeaderDrag = false;
             SynchronizationContext petContext =
                 new WindowsFormsSynchronizationContext();
             StickyNoteData canonical = new StickyNoteData();
@@ -4062,6 +4065,11 @@ namespace PennyPet
                     {
                         eventNoteIds.Add(value.NoteId);
                         eventKinds.Add(value.Kind);
+                        if (value.Kind == StickyUiEventKind.HeaderDragMoved &&
+                            setBoundsInFlight &&
+                            String.Equals(value.NoteId, canonical.Id,
+                                StringComparison.OrdinalIgnoreCase))
+                            setBoundsLeakedHeaderDrag = true;
                     }
                 }, petContext);
                 StickyUiCommandResult created = PostStickyCommandAndWait(host,
@@ -4153,6 +4161,54 @@ namespace PennyPet
                             hostedLayout[1].X, hostedLayout[1].Y,
                             hostedLayout[1].Width, hostedLayout[1].Height)),
                     petContext);
+
+                // Focused regression: a programmatic SetBounds must be atomic.
+                // It must not leak HeaderDragMoved, and its result must carry a
+                // strictly newer sequence with the final geometry immediately
+                // (mixed-width merge normalizes width without a self-heal wait).
+                List<Rectangle> mixedWidthLayout =
+                    PetForm.CalculateUnifiedDockLayout(new Size[]
+                    {
+                        new Size(320, 300), new Size(420, 420)
+                    }, 80, 140, 320);
+                StickyUiCommandResult mixedRoot =
+                    PostStickyCommandAndWait(host,
+                        new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                            second.Id, false, null, new StickyUiBounds(
+                                mixedWidthLayout[0].X,
+                                mixedWidthLayout[0].Y,
+                                mixedWidthLayout[0].Width,
+                                mixedWidthLayout[0].Height)),
+                        petContext);
+                long canonicalBaseline = sourceDocked == null
+                    ? 0 : sourceDocked.Sequence;
+                long secondBaseline = targetDocked == null
+                    ? 0 : targetDocked.Sequence;
+                setBoundsInFlight = true;
+                StickyUiCommandResult mixedSource =
+                    PostStickyCommandAndWait(host,
+                        new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                            canonical.Id, false, null, new StickyUiBounds(
+                                mixedWidthLayout[1].X,
+                                mixedWidthLayout[1].Y,
+                                mixedWidthLayout[1].Width,
+                                mixedWidthLayout[1].Height)),
+                        petContext);
+                setBoundsInFlight = false;
+                bool staleCannotOverwrite =
+                    !PetForm.ShouldApplyHostedSequence(
+                        canonicalBaseline, mixedSource.Sequence) &&
+                    PetForm.ShouldApplyHostedSequence(mixedSource.Sequence,
+                        canonicalBaseline);
+                check.HostedSetBoundsAtomicOk =
+                    mixedRoot != null && mixedSource != null &&
+                    mixedRoot.Status == StickyUiCommandStatus.Handled &&
+                    mixedSource.Status == StickyUiCommandStatus.Handled &&
+                    mixedRoot.Snapshot.Width == 320 &&
+                    mixedSource.Snapshot.Width == 320 &&
+                    mixedSource.Sequence > canonicalBaseline &&
+                    mixedRoot.Sequence > secondBaseline &&
+                    staleCannotOverwrite && !setBoundsLeakedHeaderDrag;
                 Dictionary<string, DockWindowFacts> moveFacts =
                     new Dictionary<string, DockWindowFacts>(
                         StringComparer.OrdinalIgnoreCase)
@@ -4503,8 +4559,7 @@ namespace PennyPet
                     targetDocked.Status == StickyUiCommandStatus.Handled &&
                     sourceDocked.Status == StickyUiCommandStatus.Handled &&
                     targetDocked.Snapshot.X == hostedLayout[0].X &&
-                    sourceDocked.Snapshot.Y == hostedLayout[1].Y &&
-                    eventKinds.Contains(StickyUiEventKind.HeaderDragMoved);
+                    sourceDocked.Snapshot.Y == hostedLayout[1].Y;
                 check.LifecycleOk = detachedOwnership && hidden != null &&
                     hidden.Status == StickyUiCommandStatus.Handled &&
                     hidden.Snapshot != null && !hidden.Snapshot.Visible &&
@@ -5073,6 +5128,8 @@ namespace PennyPet
                     ",\n" +
                 "  \"sticky_hosted_dock_restore_ok\": " + Bool(
                     shellChecks.StickyHosted.DockRestoreOk) + ",\n" +
+                "  \"sticky_hosted_setbounds_atomic_ok\": " + Bool(
+                    shellChecks.StickyHosted.HostedSetBoundsAtomicOk) + ",\n" +
                 "  \"keyboard_hook_opt_in_and_default_off_ok\": " + Bool(
                     keyboardOverlayChecks.HookOptInDefaultOk) + ",\n" +
                 "  \"keyboard_privacy_notice_persistence_ok\": " + Bool(

@@ -105,7 +105,12 @@ namespace PennyPet
                 _window.UpdateLayout();
             }
             finally { _applyingBounds = false; }
-            return CurrentResult();
+            // Authoritative geometry mutation: publish one strictly newer
+            // sequence with the final snapshot so the command result can never
+            // collide with (or be overwritten by) a leaked intermediate event.
+            _lastSnapshot = CaptureSnapshot();
+            _sequence++;
+            return StickyUiCommandResult.Handled(_lastSnapshot, _sequence);
         }
 
         internal StickyUiCommandResult Close()
@@ -276,6 +281,10 @@ namespace PennyPet
 
         private void HeaderDragMoved(object sender, EventArgs e)
         {
+            // A programmatic bounds mutation is not a user drag. Suppress the
+            // WPF LocationChanged echo so canonical state only receives the
+            // authoritative final snapshot from SetBounds.
+            if (_applyingBounds) return;
             EmitSnapshot(StickyUiEventKind.HeaderDragMoved);
         }
 
