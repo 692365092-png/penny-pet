@@ -282,29 +282,18 @@ namespace PennyPet
                 (Math.Max(1, tabHeight) + Math.Max(0, tabGap)));
         }
 
-        internal static int CalculateLeftSideTabCount(int totalCount,
-            int petHeight, int workHeight, int tabHeight, int tabGap)
+        internal static int CalculateBalancedLeftSideTabCount(int totalCount)
         {
-            if (totalCount <= 0) return 0;
-            int screenCapacity = CalculateSideTabScreenCapacity(workHeight,
-                tabHeight, tabGap);
-            int preferred = CalculatePreferredSideTabCount(petHeight,
-                workHeight, tabHeight, tabGap);
-            int left = Math.Min(totalCount, preferred);
-            if (totalCount - left > screenCapacity)
-                left = Math.Min(screenCapacity, totalCount - screenCapacity);
-            return Math.Max(0, left);
+            return (Math.Max(0, totalCount) + 1) / 2;
         }
 
-        internal static int CalculatePreferredSideTabCount(int petHeight,
-            int workHeight, int tabHeight, int tabGap)
+        internal static bool IsBalancedSideTabSplit(int leftCount,
+            int rightCount)
         {
-            int normalizedHeight = Math.Max(1, tabHeight);
-            int normalizedGap = Math.Max(0, tabGap);
-            return Math.Min(CalculateSideTabScreenCapacity(workHeight,
-                normalizedHeight, normalizedGap), Math.Max(4,
-                (Math.Max(normalizedHeight, petHeight) + normalizedGap) /
-                (normalizedHeight + normalizedGap)));
+            int total = Math.Max(0, leftCount) + Math.Max(0, rightCount);
+            int desiredLeft = CalculateBalancedLeftSideTabCount(total);
+            return leftCount == desiredLeft &&
+                rightCount == total - desiredLeft;
         }
 
         internal static DockPoint CalculatePopupLocation(DockRect owner,

@@ -1815,10 +1815,9 @@ namespace PennyPet
         {
             StickySideTabCheckResult result = new StickySideTabCheckResult();
             Rectangle workArea = new Rectangle(0, 0, 1920, 1080);
-            int leftCount = StickyNoteTabsForm.CalculateLeftCount(9, 208,
-                workArea);
-            result.OverflowOk = leftCount >= 4 && leftCount < 9 &&
-                9 - leftCount > 0 &&
+            int leftCount = StickyNoteTabsForm.CalculateLeftCount(9);
+            result.OverflowOk = leftCount == 5 &&
+                9 - leftCount == 4 &&
                 StickyNoteTabsForm.ScreenCapacity(workArea) >= 9 - leftCount;
             result.DragPreviewOk =
                 StickyNoteTabsForm.PreviewInsertionGap >= 12 &&
@@ -1958,19 +1957,19 @@ namespace PennyPet
                 StickyNoteWindowRules.ShouldKeepSideTabsTopMost(false) &&
                 !StickyNoteWindowRules.ShouldKeepSideTabsTopMost(true);
             const int layoutNoteCount = 14;
-            int layoutLeftCount = StickyNoteTabsForm.CalculateLeftCount(
-                layoutNoteCount, 208, workArea);
-            Rectangle shortWorkArea = new Rectangle(0, 0, 1920, 280);
-            int shortLeftCount = StickyNoteTabsForm.CalculateLeftCount(
-                layoutNoteCount, 208,
-                shortWorkArea);
+            int balancedLeft = StickyNoteTabsForm.CalculateLeftCount(
+                layoutNoteCount);
             result.LayoutInvalidationOk =
-                StickyNoteTabsForm.IsLayoutSplitCurrent(layoutLeftCount,
-                    layoutNoteCount - layoutLeftCount, 208, workArea) &&
-                !StickyNoteTabsForm.IsLayoutSplitCurrent(layoutLeftCount,
-                    layoutNoteCount - layoutLeftCount, 208, shortWorkArea) &&
-                StickyNoteTabsForm.IsLayoutSplitCurrent(shortLeftCount,
-                    layoutNoteCount - shortLeftCount, 208, shortWorkArea);
+                StickyNoteTabsForm.IsLayoutSplitCurrent(balancedLeft,
+                    layoutNoteCount - balancedLeft) &&
+                !StickyNoteTabsForm.IsLayoutSplitCurrent(balancedLeft + 1,
+                    layoutNoteCount - balancedLeft - 1) &&
+                typeof(StickyNoteTabsForm).GetMethod(
+                    "CalculateLeftCount",
+                    BindingFlags.Static | BindingFlags.NonPublic,
+                    null, new Type[] { typeof(int) }, null) != null &&
+                typeof(StickyNoteTabsForm).GetMethod(
+                    "PreferredLeftCapacity") == null;
             return result;
         }
 

@@ -900,9 +900,8 @@ namespace PennyPet
                     tabNote.IsSchedule = i % 3 == 1;
                     tabNotes.Add(tabNote);
                 }
-                Rectangle previewWork = new Rectangle(0, 0, 1920, 1080);
                 int previewLeftCount = StickyNoteTabsForm.CalculateLeftCount(
-                    tabNotes.Count, 208, previewWork);
+                    tabNotes.Count);
                 List<SideTabSnapshot> tabSnapshots = new List<SideTabSnapshot>();
                 foreach (StickyNoteData tabNote in tabNotes)
                     tabSnapshots.Add(SideTabSnapshot.FromData(tabNote));

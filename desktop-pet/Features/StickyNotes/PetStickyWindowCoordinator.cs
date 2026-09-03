@@ -983,9 +983,8 @@ namespace PennyPet
                 return;
             }
             _noteTabsSignature = signature;
-            Rectangle work = Screen.FromRectangle(Bounds).WorkingArea;
-            int leftCount = StickyNoteTabsForm.CalculateLeftCount(hidden.Count,
-                Height, work);
+            int leftCount = StickyNoteTabsForm.CalculateLeftCount(
+                hidden.Count);
             List<SideTabSnapshot> left = hidden.GetRange(0, leftCount);
             List<SideTabSnapshot> right = hidden.GetRange(leftCount,
                 hidden.Count - leftCount);
@@ -1045,8 +1044,7 @@ namespace PennyPet
                 !IsHandleCreated || IsDisposed || _positioningNoteTabs) return;
             Rectangle work = Screen.FromRectangle(Bounds).WorkingArea;
             if (!StickyNoteTabsForm.IsLayoutSplitCurrent(
-                _leftNoteTabs.Controls.Count, _rightNoteTabs.Controls.Count,
-                Height, work))
+                _leftNoteTabs.Controls.Count, _rightNoteTabs.Controls.Count))
             {
                 _noteTabsSignature = String.Empty;
                 RefreshNoteTabs();

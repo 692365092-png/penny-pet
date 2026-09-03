@@ -189,28 +189,17 @@ namespace PennyPet
                 TabHeight, TabGap);
         }
 
-        internal static int PreferredLeftCapacity(int petHeight,
-            Rectangle workArea)
+        internal static int CalculateLeftCount(int totalCount)
         {
-            return StickyDockGeometry.CalculatePreferredSideTabCount(petHeight,
-                workArea.Height, TabHeight, TabGap);
-        }
-
-        internal static int CalculateLeftCount(int totalCount, int petHeight,
-            Rectangle workArea)
-        {
-            return StickyDockGeometry.CalculateLeftSideTabCount(totalCount,
-                petHeight, workArea.Height, TabHeight, TabGap);
+            return StickyDockGeometry.CalculateBalancedLeftSideTabCount(
+                totalCount);
         }
 
         internal static bool IsLayoutSplitCurrent(int leftCount,
-            int rightCount, int petHeight, Rectangle workArea)
+            int rightCount)
         {
-            int totalCount = Math.Max(0, leftCount) + Math.Max(0, rightCount);
-            int desiredLeftCount = CalculateLeftCount(totalCount, petHeight,
-                workArea);
-            return leftCount == desiredLeftCount &&
-                rightCount == totalCount - desiredLeftCount;
+            return StickyDockGeometry.IsBalancedSideTabSplit(leftCount,
+                rightCount);
         }
 
         private IEnumerable<Control> ControlsAsList()
