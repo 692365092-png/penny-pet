@@ -75,19 +75,69 @@ namespace PennyPet
             System.Drawing.Rectangle physical =
                 ResolveCanonicalPhysical(data);
             if (physical == System.Drawing.Rectangle.Empty) return false;
-            _window.ShowAtPhysicalBounds(physical, edit);
+            // Suppress the intermediate BoundsChanged echo raised while the
+            // HWND is first shown, so the wrong transient position can never
+            // leak a corrupt canonical placement before SetWindowPos lands.
+            bool previousApplying = _applyingBounds;
+            _applyingBounds = true;
+            try
+            {
+                _window.ShowAtPhysicalBounds(physical, edit);
+            }
+            finally { _applyingBounds = previousApplying; }
             return true;
         }
 
-        // The persisted compatibility X/Y/Width/Height are the physical
-        // projection of the canonical placement captured from the real window,
-        // so they are the primary source for the native placement executor.
-        // They are clamped into the nearest work area so an unplugged or moved
-        // monitor never hides a note. Only when the persisted rect is missing
-        // do we re-derive the physical rect from DisplayId + LocalLogicalRect.
+        // New-contract restore authority: when the canonical contract is valid
+        // the DisplayId + LocalLogicalRect are the source of truth. Resolve the
+        // display, project the display-local logical rect back to physical
+        // pixels with the current display scale, and hand it to the native
+        // physical placement executor. The persisted X/Y/Width/Height are a
+        // compatibility projection only and are used as a visible fallback only
+        // when the canonical contract is invalid or the target display is gone.
         private System.Drawing.Rectangle ResolveCanonicalPhysical(
             StickyNoteData data)
         {
+            // The capture records the canonical placement by resolving the real
+            // physical window with ResolvePhysicalRect, so that same resolver
+            // must be used to project LocalLogicalRect back to physical pixels
+            // (otherwise a mixed-DPI monitor can report a scale that skews the
+            // projection and lands the note in a far corner). Prefer the
+            // persisted physical rect's display when it still matches the saved
+            // DisplayId; only then fall back to a DisplayId lookup for a
+            // rearranged monitor layout.
+            WindowsDisplayMetrics metricsByRect = (data.Width > 0 &&
+                data.Height > 0)
+                ? WindowsDisplayResolver.ResolvePhysicalRect(
+                    data.X, data.Y,
+                    data.X + data.Width, data.Y + data.Height)
+                : null;
+            WindowsDisplayMetrics metricsByDisplay =
+                WindowsDisplayResolver.ResolveDisplay(
+                    data.DisplayId ?? String.Empty);
+            WindowsDisplayMetrics metrics =
+                metricsByRect != null &&
+                String.Equals(metricsByRect.DisplayId,
+                    data.DisplayId ?? String.Empty,
+                    StringComparison.OrdinalIgnoreCase)
+                    ? metricsByRect : metricsByDisplay;
+            if (metrics != null)
+            {
+                int left = metrics.PhysicalLeft + (int)Math.Round(
+                    data.LocalLogicalX * metrics.Scale);
+                int top = metrics.PhysicalTop + (int)Math.Round(
+                    data.LocalLogicalY * metrics.Scale);
+                int width = Math.Max(1, (int)Math.Round(
+                    Math.Max(1, data.LocalLogicalWidth) * metrics.Scale));
+                int height = Math.Max(1, (int)Math.Round(
+                    Math.Max(1, data.LocalLogicalHeight) * metrics.Scale));
+                return new System.Drawing.Rectangle(
+                    left, top, width, height);
+            }
+
+            // Canonical contract invalid, or the saved DisplayId no longer
+            // exists: reuse the persisted physical compatibility rect clamped
+            // into the nearest work area so the note stays visible.
             if (data.Width > 0 && data.Height > 0)
             {
                 System.Drawing.Rectangle persisted =
@@ -108,23 +158,6 @@ namespace PennyPet
                             persisted.Height));
                 return new System.Drawing.Rectangle(
                     left, top, persisted.Width, persisted.Height);
-            }
-
-            WindowsDisplayMetrics metrics =
-                WindowsDisplayResolver.ResolveDisplay(
-                    data.DisplayId ?? String.Empty);
-            if (metrics != null)
-            {
-                int left = metrics.PhysicalLeft + (int)Math.Round(
-                    data.LocalLogicalX * metrics.Scale);
-                int top = metrics.PhysicalTop + (int)Math.Round(
-                    data.LocalLogicalY * metrics.Scale);
-                int width = Math.Max(1, (int)Math.Round(
-                    Math.Max(1, data.LocalLogicalWidth) * metrics.Scale));
-                int height = Math.Max(1, (int)Math.Round(
-                    Math.Max(1, data.LocalLogicalHeight) * metrics.Scale));
-                return new System.Drawing.Rectangle(
-                    left, top, width, height);
             }
             return System.Drawing.Rectangle.Empty;
         }
@@ -173,11 +206,14 @@ namespace PennyPet
             _applyingBounds = true;
             try
             {
-                _window.Left = bounds.X;
-                _window.Top = bounds.Y;
-                _window.Width = bounds.Width;
-                _window.Height = bounds.Height;
-                _window.UpdateLayout();
+                // Bounds are physical pixels (Dock/restore targets). Position
+                // the HWND at physical pixels so per-monitor DPI keeps the note
+                // on the correct monitor instead of re-interpreting physical as
+                // DIP, which double-scales follower notes on a high-DPI display.
+                _window.ShowAtPhysicalBounds(
+                    new System.Drawing.Rectangle(
+                        bounds.X, bounds.Y, bounds.Width, bounds.Height),
+                    false);
             }
             finally { _applyingBounds = false; }
             // Authoritative geometry mutation: publish one strictly newer
@@ -526,21 +562,25 @@ namespace PennyPet
             }
             catch
             {
-                // Fall through to the legacy DIP capture below. A failing DPI
-                // query must never make a visible note disappear or corrupt the
-                // canonical file.
+                // A temporary DPI / display query failure must never erase the
+                // canonical placement or write DIP into the physical fields.
+                // Fall through and preserve the last valid canonical geometry.
             }
-            // No canonical placement resolved this pass: mark the working copy
-            // as legacy so it never carries a stale placement as truth.
-            _window.Data.DisplayId = String.Empty;
-            _window.Data.LocalLogicalX = 0;
-            _window.Data.LocalLogicalY = 0;
-            _window.Data.LocalLogicalWidth = 0;
-            _window.Data.LocalLogicalHeight = 0;
+            // Only a note that never owned a valid canonical placement may
+            // continue on the legacy DIP compatibility path. A note that
+            // already has DisplayId + LocalLogicalRect keeps it unchanged.
+            if (IsCanonicalValid(_window.Data)) return;
             _window.Data.X = _window.Left;
             _window.Data.Y = _window.Top;
             _window.Data.Width = _window.Width;
             _window.Data.Height = _window.Height;
+        }
+
+        private static bool IsCanonicalValid(StickyNoteData note)
+        {
+            return note != null &&
+                !String.IsNullOrWhiteSpace(note.DisplayId) &&
+                note.LocalLogicalWidth > 0 && note.LocalLogicalHeight > 0;
         }
 
         private void Raise(StickyUiEvent value)

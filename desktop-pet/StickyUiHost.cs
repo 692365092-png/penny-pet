@@ -108,6 +108,8 @@ namespace PennyPet
                         return TryGetSession(command.NoteId, out session)
                             ? session.SetBounds(command.Bounds)
                             : StickyUiCommandResult.NotHandled();
+                    case StickyUiCommandKind.ApplyDockBoundsBatch:
+                        return ApplyDockBoundsBatch(command.DockBatchLayout);
                     case StickyUiCommandKind.UpdateReminders:
                         return TryGetSession(command.NoteId, out session)
                             ? session.UpdateReminders(command.Reminders)
@@ -212,6 +214,71 @@ namespace PennyPet
                 foreach (StickyWindowSession session in sessions)
                     session.SetEventsSuppressed(false);
             }
+        }
+
+        // One narrow dispatcher frame for a live dock drag: apply the latest
+        // follower layout once, then publish the final canonical snapshots.
+        // Intermediate geometry events are suppressed so the drag never yields
+        // a stale coordinate chase on the following members.
+        private StickyUiCommandResult ApplyDockBoundsBatch(
+            DockBatchLayout layout)
+        {
+            if (layout == null) return StickyUiCommandResult.NotHandled();
+            List<DockLayoutTarget> targets;
+            string sourceNoteId;
+            lock (layout.Gate)
+            {
+                targets = new List<DockLayoutTarget>(layout.Targets);
+                sourceNoteId = layout.SourceNoteId ?? String.Empty;
+                layout.ApplyQueued = false;
+            }
+            if (targets.Count == 0) return StickyUiCommandResult.Handled();
+
+            List<StickyWindowSession> sessions =
+                new List<StickyWindowSession>();
+            List<DockLayoutTarget> followers =
+                new List<DockLayoutTarget>();
+            foreach (DockLayoutTarget target in targets)
+            {
+                if (String.Equals(target.NoteId, sourceNoteId,
+                    StringComparison.OrdinalIgnoreCase)) continue;
+                StickyWindowSession session;
+                if (!TryGetSession(target.NoteId, out session)) continue;
+                sessions.Add(session);
+                followers.Add(target);
+            }
+            if (followers.Count == 0) return StickyUiCommandResult.Handled();
+
+            foreach (StickyWindowSession session in sessions)
+                session.SetEventsSuppressed(true);
+            List<StickyUiCommandResult> results =
+                new List<StickyUiCommandResult>();
+            try
+            {
+                for (int index = 0; index < followers.Count; index++)
+                {
+                    DockLayoutTarget target = followers[index];
+                    results.Add(sessions[index].SetBounds(
+                        new StickyUiBounds(target.X, target.Y,
+                            target.Width, target.Height)));
+                }
+            }
+            finally
+            {
+                foreach (StickyWindowSession session in sessions)
+                    session.SetEventsSuppressed(false);
+            }
+
+            List<StickyUiFinalSnapshot> finals =
+                new List<StickyUiFinalSnapshot>();
+            foreach (StickyUiCommandResult result in results)
+            {
+                if (result == null || result.Snapshot == null) continue;
+                finals.Add(new StickyUiFinalSnapshot(
+                    result.Snapshot, result.Sequence));
+            }
+            return StickyUiCommandResult.Handled(
+                finals.ToArray());
         }
 
         private void PostEvent(StickyUiEvent value)

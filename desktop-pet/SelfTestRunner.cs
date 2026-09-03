@@ -1029,11 +1029,11 @@ namespace PennyPet
             expandRuntime.AddNote(expandA.Id);
             List<DockLayoutTarget> expandTargets = PetForm
                 .PrepareStickyExpandAndTileTargets(expandRepository.GetAll(),
-                    new Rectangle(0, 0, 1920, 1040));
+                    new Rectangle(0, 0, 1920, 1040), 1.0);
             List<DockLayoutTarget> secondaryTargets = PetForm
                 .PrepareStickyExpandAndTileTargets(new StickyNoteData[] {
                     new StickyNoteData(), new StickyNoteData() },
-                    new Rectangle(-1920, 0, 1920, 1040));
+                    new Rectangle(-1920, 0, 1920, 1040), 1.0);
             expandRepository.SaveToFile(expandPath);
             StickyNoteRepository restoredExpandRepository =
                 StickyNoteRepository.LoadFromFile(expandPath);
@@ -1073,8 +1073,8 @@ namespace PennyPet
                         note.X < 1920 && note.Y < 1040;
                 }) &&
                 restoredExpandRepository.Find(expandA.Id).Width == 320 &&
-                restoredExpandRepository.Find(expandB.Id).Width == 420 &&
-                restoredExpandRepository.Find(expandC.Id).Height == 260;
+                restoredExpandRepository.Find(expandB.Id).Width == 320 &&
+                restoredExpandRepository.Find(expandC.Id).Height == 360;
             if (File.Exists(expandPath)) File.Delete(expandPath);
             if (File.Exists(expandPath + ".bak"))
                 File.Delete(expandPath + ".bak");
@@ -5641,6 +5641,7 @@ namespace PennyPet
         {
             try
             {
+                RunDisplayResolverConsistencyCheck();
                 ArtResourceCheckResult artChecks = RunArtResourceChecks();
                 SettingsPersistenceCheckResult settingsChecks =
                     RunSettingsPersistenceChecks(outputPath);
@@ -5715,6 +5716,29 @@ namespace PennyPet
                     "{\"ok\":false,\"error\":\"" + message + "\"}",
                     new UTF8Encoding(false));
             }
+        }
+
+        // A broken DisplayId -> metrics resolver silently mis-places restored
+        // stickies on the wrong monitor. Verify that resolving by device id
+        // agrees with the point/rect resolver for the primary monitor so a
+        // regression fails loudly instead of landing notes on the wrong screen.
+        private static void RunDisplayResolverConsistencyCheck()
+        {
+            WindowsDisplayMetrics primary =
+                WindowsDisplayResolver.ResolvePhysicalRect(0, 0, 1, 1);
+            if (primary == null) return; // headless: nothing to validate
+            WindowsDisplayMetrics byDisplay =
+                WindowsDisplayResolver.ResolveDisplay(primary.DisplayId);
+            if (byDisplay == null)
+                throw new InvalidOperationException(
+                    "ResolveDisplay could not resolve primary monitor '" +
+                    primary.DisplayId + "'.");
+            if (byDisplay.Scale != primary.Scale ||
+                byDisplay.PhysicalLeft != primary.PhysicalLeft ||
+                byDisplay.PhysicalTop != primary.PhysicalTop)
+                throw new InvalidOperationException(
+                    "ResolveDisplay metrics differ from ResolvePhysicalRect " +
+                    "for monitor '" + primary.DisplayId + "'.");
         }
     }
 }

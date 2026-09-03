@@ -12,6 +12,7 @@ namespace PennyPet
         SetTopMost,
         SetDockResizeRole,
         SetBounds,
+        ApplyDockBoundsBatch,
         Close,
         CloseAll,
         UpdateReminders
@@ -24,7 +25,8 @@ namespace PennyPet
             bool flag, StickyNoteUiSnapshot snapshot = null,
             StickyUiBounds bounds = null,
             StickyUiDockResizeRole dockResizeRole = null,
-            ReminderItem[] reminders = null)
+            ReminderItem[] reminders = null,
+            DockBatchLayout dockBatchLayout = null)
         {
             Kind = kind;
             NoteId = noteId ?? String.Empty;
@@ -33,6 +35,7 @@ namespace PennyPet
             Bounds = bounds;
             DockResizeRole = dockResizeRole;
             Reminders = CopyReminders(reminders);
+            DockBatchLayout = dockBatchLayout;
         }
 
         internal static StickyUiCommand Create(StickyNoteUiSnapshot snapshot,
@@ -92,6 +95,16 @@ namespace PennyPet
                 false, null, bounds);
         }
 
+        internal static StickyUiCommand ApplyDockBoundsBatch(
+            DockBatchLayout layout)
+        {
+            if (layout == null) throw new ArgumentNullException(nameof(layout));
+            return new StickyUiCommand(
+                StickyUiCommandKind.ApplyDockBoundsBatch,
+                layout.SourceNoteId ?? String.Empty, false,
+                null, null, null, null, layout);
+        }
+
         internal static StickyUiCommand Close(string noteId)
         {
             return new StickyUiCommand(StickyUiCommandKind.Close, noteId,
@@ -111,6 +124,7 @@ namespace PennyPet
         internal StickyUiBounds Bounds { get; private set; }
         internal StickyUiDockResizeRole DockResizeRole { get; private set; }
         internal ReminderItem[] Reminders { get; private set; }
+        internal DockBatchLayout DockBatchLayout { get; private set; }
 
         private static ReminderItem[] CopyReminders(
             IEnumerable<ReminderItem> reminders)

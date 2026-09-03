@@ -211,6 +211,42 @@ namespace PennyPet
                 note.FontSizeTwips = size;
                 changed = true;
             }
+            // v10 canonical contract safety: a valid placement needs a display
+            // id and a sane positive local logical rect. If the display id is
+            // missing the placement is incomplete and must not claim canonical
+            // status; otherwise clamp the local rect to a plausible window size
+            // so a corrupt value can never overflow the display scale projection.
+            const int localLogicalLimit = 20000;
+            if (String.IsNullOrWhiteSpace(note.DisplayId))
+            {
+                if (note.LocalLogicalX != 0 || note.LocalLogicalY != 0 ||
+                    note.LocalLogicalWidth != 0 ||
+                    note.LocalLogicalHeight != 0)
+                {
+                    note.LocalLogicalX = 0;
+                    note.LocalLogicalY = 0;
+                    note.LocalLogicalWidth = 0;
+                    note.LocalLogicalHeight = 0;
+                    changed = true;
+                }
+            }
+            else
+            {
+                int localWidth = Math.Max(1,
+                    Math.Min(note.LocalLogicalWidth, localLogicalLimit));
+                int localHeight = Math.Max(1,
+                    Math.Min(note.LocalLogicalHeight, localLogicalLimit));
+                if (note.LocalLogicalWidth != localWidth)
+                {
+                    note.LocalLogicalWidth = localWidth;
+                    changed = true;
+                }
+                if (note.LocalLogicalHeight != localHeight)
+                {
+                    note.LocalLogicalHeight = localHeight;
+                    changed = true;
+                }
+            }
             if (note.BackgroundOpacityPercent != opacity)
             {
                 note.BackgroundOpacityPercent = opacity;

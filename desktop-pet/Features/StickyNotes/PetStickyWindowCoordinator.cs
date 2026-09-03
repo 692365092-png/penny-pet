@@ -53,13 +53,13 @@ namespace PennyPet
             StickyNoteData note = null;
             try
             {
-                note = CreateStickyNoteData(String.Empty);
+                note = CreateStickyNoteData(String.Empty,
+                    new DockSize(320, 360));
                 if (note == null) return;
                 note.IsTodoList = false;
                 note.IsSchedule = true;
                 note.Title = "日程";
                 note.FontSizeTwips = 320;
-                note.Height = 360;
                 _notes.Save();
                 StartHostedSticky(note, true);
                 RefreshMenuText();
@@ -85,8 +85,13 @@ namespace PennyPet
         private void ExpandAndTileAllStickyNotesToPetScreen()
         {
             Rectangle work = Screen.FromRectangle(Bounds).WorkingArea;
+            WindowsDisplayMetrics metrics =
+                WindowsDisplayResolver.ResolvePhysicalRect(
+                    Bounds.Left, Bounds.Top, Bounds.Right, Bounds.Bottom);
+            double scale = metrics != null ? metrics.Scale : 1.0;
             List<DockLayoutTarget> targets =
-                PrepareStickyExpandAndTileTargets(_notes.GetAll(), work);
+                PrepareStickyExpandAndTileTargets(_notes.GetAll(), work,
+                    scale);
             if (targets.Count == 0)
             {
                 ShowBubble("当前没有便利贴。");
@@ -117,43 +122,47 @@ namespace PennyPet
 
         internal static List<DockLayoutTarget>
             PrepareStickyExpandAndTileTargets(IList<StickyNoteData> notes,
-                Rectangle work)
+                Rectangle work, double scale)
         {
-            List<StickyNoteData> active = new List<StickyNoteData>();
-            List<Size> sizes = new List<Size>();
-            if (notes != null)
-            {
-                foreach (StickyNoteData note in notes)
-                {
-                    if (note == null) continue;
-                    active.Add(note);
-                    sizes.Add(new Size(
-                        Math.Min(Math.Max(1, work.Width),
-                            Math.Max(280, Math.Min(900, note.Width))),
-                        Math.Min(Math.Max(1, work.Height),
-                            Math.Max(220, Math.Min(700, note.Height)))));
-                }
-            }
-            List<Rectangle> layout = CalculateStickyRecoveryLayout(work,
-                sizes);
             List<DockLayoutTarget> targets = new List<DockLayoutTarget>();
-            for (int index = 0; index < active.Count; index++)
+            if (notes == null) return targets;
+            double safeScale = scale > 0.0 ? scale : 1.0;
+            // Pack as an overlapping card fan so more notes fit on one screen:
+            // every note is reset to its type default logical size and placed
+            // with a small offset from the previous one.
+            const int cascadeStep = 40;
+            const int margin = 24;
+            int index = 0;
+            foreach (StickyNoteData note in notes)
             {
-                StickyNoteData note = active[index];
-                Rectangle bounds = layout[index];
-                bounds.Size = sizes[index];
-                Point delta = CalculateHeaderReachableTranslation(
-                    new Rectangle(bounds.Left, bounds.Top, bounds.Width, 32),
-                    work);
-                bounds.Offset(delta);
+                if (note == null) continue;
+                int logicalWidth = 320;
+                int logicalHeight = note.IsSchedule ? 360 : 300;
+                int width = Math.Max(1,
+                    (int)Math.Round(logicalWidth * safeScale));
+                int height = Math.Max(1,
+                    (int)Math.Round(logicalHeight * safeScale));
+                int maxX = Math.Max(work.Left + 1,
+                    work.Right - width - 1);
+                int maxY = Math.Max(work.Top + 1,
+                    work.Bottom - height - 1);
+                int x = Math.Max(work.Left + 1,
+                    Math.Min(work.Left + margin + index * cascadeStep,
+                        maxX));
+                int y = Math.Max(work.Top + 1,
+                    Math.Min(work.Top + margin + index * cascadeStep,
+                        maxY));
                 StickyDockGroups.ClearMembership(note);
                 note.Visible = true;
-                note.X = bounds.X;
-                note.Y = bounds.Y;
-                note.Width = bounds.Width;
-                note.Height = bounds.Height;
-                targets.Add(new DockLayoutTarget(note.Id, bounds.X, bounds.Y,
-                    bounds.Width, bounds.Height, true, note.AlwaysOnTop));
+                DockLayoutTarget target = new DockLayoutTarget(note.Id,
+                    x, y, width, height, true,
+                    note.AlwaysOnTop);
+                // P1-C: keep the canonical DisplayId + LocalLogicalRect in
+                // lockstep with the physical bounds before the geometry is
+                // persisted or shown, so restore never re-reads stale data.
+                ApplyDockCanonicalFromPhysical(note, target);
+                targets.Add(target);
+                index++;
             }
             return targets;
         }
@@ -243,6 +252,12 @@ namespace PennyPet
 
         private StickyNoteData CreateStickyNoteData(string text)
         {
+            return CreateStickyNoteData(text, new DockSize(320, 300));
+        }
+
+        private StickyNoteData CreateStickyNoteData(string text,
+            DockSize logicalSize)
+        {
             if (!_notes.CanCreate)
             {
                 if (!_notes.LoadSucceeded)
@@ -255,7 +270,8 @@ namespace PennyPet
                 return null;
             }
             int offset = (_notes.GetAll().Count % 7) * 18;
-            StickyNoteData note = CreateStickyNoteDataWithPlacement(text, offset);
+            StickyNoteData note = CreateStickyNoteDataWithPlacement(
+                text, offset, logicalSize);
             if (note == null)
             {
                 ShowBubble("便利贴创建失败，原有数据没有被修改。请查看诊断记录。");
@@ -266,7 +282,7 @@ namespace PennyPet
         }
 
         private StickyNoteData CreateStickyNoteDataWithPlacement(
-            string text, int offset)
+            string text, int offset, DockSize logicalSize)
         {
             WindowsDisplayMetrics metrics =
                 WindowsDisplayResolver.ResolvePhysicalRect(
@@ -285,7 +301,7 @@ namespace PennyPet
                         metrics.DisplayId, metrics.PhysicalLeft,
                         metrics.PhysicalTop, metrics.Scale,
                         petPhysical, workPhysical,
-                        new DockSize(320, 300), 12 + offset);
+                        logicalSize, 12 + offset);
                 StickyNoteData note = _notes.Create(
                     text, new Point(placement.LocalX, placement.LocalY));
                 if (note == null) return null;
@@ -305,8 +321,8 @@ namespace PennyPet
             StickyNoteData legacy = _notes.Create(text, new Point(x, y));
             if (legacy != null)
             {
-                legacy.Width = 320;
-                legacy.Height = 300;
+                legacy.Width = Math.Max(1, logicalSize.Width);
+                legacy.Height = Math.Max(1, logicalSize.Height);
                 legacy.Visible = true;
             }
             return legacy;

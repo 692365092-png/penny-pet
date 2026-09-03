@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace PennyPet
 {
@@ -76,5 +77,17 @@ namespace PennyPet
         internal int Height { get; private set; }
         internal bool Visible { get; private set; }
         internal bool TopMost { get; private set; }
+    }
+
+    // Latest-wins holder for a live dock drag frame. The UI thread replaces the
+    // desired follower layout on every mouse move; the Sticky STA applies the
+    // most recent snapshot in a single ApplyDockBoundsBatch callback.
+    internal sealed class DockBatchLayout
+    {
+        internal readonly object Gate = new object();
+        internal List<DockLayoutTarget> Targets =
+            new List<DockLayoutTarget>();
+        internal string SourceNoteId = String.Empty;
+        internal bool ApplyQueued;
     }
 }

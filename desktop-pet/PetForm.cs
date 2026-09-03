@@ -157,6 +157,8 @@ namespace PennyPet
         private bool _activeNoteDetached;
         private bool _activeNoteSplitEligible;
         private bool _synchronizingDockLayout;
+        private readonly DockBatchLayout _liveDockBatch =
+            new DockBatchLayout();
         private System.Windows.Forms.Timer _startupWorkTimer;
         private StartupWorkPhase _startupWorkPhase;
         private Queue<StickyNoteData> _startupVisibleNotes;

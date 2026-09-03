@@ -1176,8 +1176,8 @@ namespace PennyPet.Tests
             Assert.IsTrue(preparation.Contains(
                 "StickyDockGroups.ClearMembership(note)") &&
                 preparation.Contains("note.Visible = true") &&
-                preparation.Contains("CalculateStickyRecoveryLayout"),
-                "Preparation must detach, expand, and independently tile every note.");
+                preparation.Contains("cascadeStep"),
+                "Preparation must detach, expand, and independently cascade every note.");
         }
 
         [TestMethod]

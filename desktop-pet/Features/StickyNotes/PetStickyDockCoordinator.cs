@@ -109,6 +109,12 @@ namespace PennyPet
             _activeNoteDetached = false;
             _activeNoteSplitEligible = false;
             _splitRemainderNoteId = null;
+            lock (_liveDockBatch.Gate)
+            {
+                _liveDockBatch.Targets = new List<DockLayoutTarget>();
+                _liveDockBatch.SourceNoteId = String.Empty;
+                _liveDockBatch.ApplyQueued = false;
+            }
             SetActiveDockGroup(BuildDockComponent(seed));
             _activeDockOriginalFacts.Clear();
             _activeDockCurrentFacts.Clear();
@@ -200,7 +206,7 @@ namespace PennyPet
                 _activeDockGroupIds, _activeDockCurrentFacts, facts,
                 dx, dy);
             _movingDockGroup = true;
-            try { ApplyDockTargets(moveTargets, facts.NoteId); }
+            try { ApplyLiveDockBatch(moveTargets, facts.NoteId); }
             finally { _movingDockGroup = false; }
             RememberActiveDockFacts(moveTargets);
             _activeNoteDragLastFacts = facts;
@@ -288,6 +294,93 @@ namespace PennyPet
             _activeNoteDetached = false;
             _activeNoteSplitEligible = false;
             _splitRemainderNoteId = null;
+            lock (_liveDockBatch.Gate)
+            {
+                _liveDockBatch.Targets = new List<DockLayoutTarget>();
+                _liveDockBatch.SourceNoteId = String.Empty;
+                _liveDockBatch.ApplyQueued = false;
+            }
+        }
+
+        // P1-C: write one consistent canonical + compatibility placement from
+        // the explicit physical bounds, never a bare X/Y/Width/Height that
+        // waits for an async WPF snapshot to backfill the DisplayId/local.
+        private static void ApplyDockCanonicalFromPhysical(StickyNoteData note,
+            DockLayoutTarget target)
+        {
+            if (note == null || target == null) return;
+            note.X = target.X;
+            note.Y = target.Y;
+            note.Width = target.Width;
+            note.Height = target.Height;
+            note.Visible = target.Visible;
+            note.AlwaysOnTop = target.TopMost;
+            WindowsDisplayMetrics metrics =
+                WindowsDisplayResolver.ResolvePhysicalRect(
+                    target.X, target.Y,
+                    target.X + target.Width, target.Y + target.Height);
+            if (metrics != null)
+            {
+                StickyCanonicalPlacement placement =
+                    StickyPlacementMath.FromPhysicalRect(
+                        metrics.DisplayId, metrics.PhysicalLeft,
+                        metrics.PhysicalTop, metrics.Scale,
+                        target.X, target.Y, target.Width, target.Height);
+                note.DisplayId = placement.DisplayId;
+                note.LocalLogicalX = placement.LocalX;
+                note.LocalLogicalY = placement.LocalY;
+                note.LocalLogicalWidth = placement.LocalWidth;
+                note.LocalLogicalHeight = placement.LocalHeight;
+            }
+        }
+
+        // P1-D: a narrow latest-wins frame for a live dock drag. Each mouse
+        // move replaces the pending follower layout; only one ApplyDockBoundsBatch
+        // is queued on the Sticky STA at a time, and it applies the newest
+        // follower bounds once instead of a SetBounds per member per move.
+        private void ApplyLiveDockBatch(IEnumerable<DockLayoutTarget> targets,
+            string sourceNoteId)
+        {
+            if (targets == null) return;
+            List<DockLayoutTarget> followers = new List<DockLayoutTarget>();
+            foreach (DockLayoutTarget target in targets)
+            {
+                if (target == null) continue;
+                StickyNoteData note = _notes.Find(target.NoteId);
+                if (note == null) continue;
+                ApplyDockCanonicalFromPhysical(note, target);
+                if (String.Equals(target.NoteId, sourceNoteId,
+                    StringComparison.OrdinalIgnoreCase)) continue;
+                followers.Add(target);
+            }
+            lock (_liveDockBatch.Gate)
+            {
+                _liveDockBatch.Targets = followers;
+                _liveDockBatch.SourceNoteId = sourceNoteId ?? String.Empty;
+                if (_liveDockBatch.ApplyQueued) return;
+                _liveDockBatch.ApplyQueued = true;
+            }
+            PostHostedStickyCommand(
+                StickyUiCommand.ApplyDockBoundsBatch(_liveDockBatch),
+                delegate(StickyUiCommandResult result)
+                {
+                    if (result == null) return;
+                    if (result.Status != StickyUiCommandStatus.Handled)
+                    {
+                        ReportHostedStickyCommandFailure(
+                            "sticky-hosted-dock-bounds-batch", result);
+                        return;
+                    }
+                    if (result.FinalSnapshots != null)
+                        foreach (StickyUiFinalSnapshot finalSnapshot in
+                            result.FinalSnapshots)
+                        {
+                            if (finalSnapshot == null) continue;
+                            ApplyHostedStickySnapshot(
+                                finalSnapshot.Snapshot,
+                                finalSnapshot.Sequence, false);
+                        }
+                });
         }
 
         private void SetActiveDockGroup(List<StickyNoteData> notes)
@@ -455,16 +548,9 @@ namespace PennyPet
             string alreadyAppliedNoteId)
         {
             if (target == null) return;
-            // ponytail: hosted effects are best-effort after canonical update;
-            // add rollback only if real command failures justify it.
             StickyNoteData note = _notes.Find(target.NoteId);
             if (note == null) return;
-            note.X = target.X;
-            note.Y = target.Y;
-            note.Width = target.Width;
-            note.Height = target.Height;
-            note.Visible = target.Visible;
-            note.AlwaysOnTop = target.TopMost;
+            ApplyDockCanonicalFromPhysical(note, target);
             if (String.Equals(target.NoteId, alreadyAppliedNoteId,
                 StringComparison.OrdinalIgnoreCase)) return;
             if (!IsHostedSticky(note)) return;

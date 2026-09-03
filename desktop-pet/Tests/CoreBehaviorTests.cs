@@ -2699,6 +2699,52 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyNoteCodec_ValidatesV10CanonicalContract()
+        {
+            // A valid placement round-trips and stays canonical.
+            StickyNoteData valid = new StickyNoteData
+            {
+                DisplayId = "\\\\.\\DISPLAY1",
+                LocalLogicalX = 10,
+                LocalLogicalY = 20,
+                LocalLogicalWidth = 320,
+                LocalLogicalHeight = 300
+            };
+            StickyNoteData restoredValid = StickyNoteCodec.ParseLine(
+                StickyNoteCodec.SerializeLine(valid));
+            Assert.AreEqual("\\\\.\\DISPLAY1", restoredValid.DisplayId);
+            Assert.AreEqual(10, restoredValid.LocalLogicalX);
+            Assert.AreEqual(320, restoredValid.LocalLogicalWidth);
+
+            // A missing DisplayId drops an incomplete placement to legacy.
+            StickyNoteData orphan = new StickyNoteData
+            {
+                DisplayId = String.Empty,
+                LocalLogicalX = 5,
+                LocalLogicalY = 6,
+                LocalLogicalWidth = 320,
+                LocalLogicalHeight = 300
+            };
+            StickyNoteData repaired = StickyNoteCodec.ParseLine(
+                StickyNoteCodec.SerializeLine(orphan));
+            Assert.IsTrue(String.IsNullOrWhiteSpace(repaired.DisplayId));
+            Assert.AreEqual(0, repaired.LocalLogicalWidth);
+            Assert.AreEqual(0, repaired.LocalLogicalHeight);
+
+            // A corrupt oversized local rect is clamped to the safety limit.
+            StickyNoteData corrupt = new StickyNoteData
+            {
+                DisplayId = "\\\\.\\DISPLAY1",
+                LocalLogicalWidth = int.MaxValue,
+                LocalLogicalHeight = int.MaxValue
+            };
+            StickyNoteData repairedCorrupt = StickyNoteCodec.ParseLine(
+                StickyNoteCodec.SerializeLine(corrupt));
+            Assert.IsTrue(repairedCorrupt.LocalLogicalWidth <= 20000);
+            Assert.IsTrue(repairedCorrupt.LocalLogicalHeight <= 20000);
+        }
+
+        [TestMethod]
         public void SettingsCodec_NormalizesInvalidAndRoundTripsPisces()
         {
             PetSettingsData pisces = new PetSettingsData
