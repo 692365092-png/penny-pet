@@ -413,6 +413,25 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void DisplayGeometry_ConvertsAcrossMixedMonitorOrigins()
+        {
+            LogicalPoint localA = DisplayGeometry.PhysicalToLocal(
+                100, 50, 0, 0, 1.0);
+            Assert.AreEqual(100, localA.X);
+            Assert.AreEqual(50, localA.Y);
+
+            LogicalPoint localB = DisplayGeometry.PhysicalToLocal(
+                2020, 100, 1920, 0, 2.0);
+            Assert.AreEqual(50, localB.X);
+            Assert.AreEqual(50, localB.Y);
+
+            PhysicalPoint physicalNegative =
+                DisplayGeometry.LocalToPhysical(-30, 40, -1920, 0, 2.0);
+            Assert.AreEqual(-1980, physicalNegative.X);
+            Assert.AreEqual(80, physicalNegative.Y);
+        }
+
+        [TestMethod]
         public void StickyDockOperations_CoordinateGuardUsesClampedHeights()
         {
             Assert.IsTrue(
