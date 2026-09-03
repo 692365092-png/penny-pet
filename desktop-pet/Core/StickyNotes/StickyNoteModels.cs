@@ -157,6 +157,11 @@ namespace PennyPet
         public int Y;
         public int Width = 280;
         public int Height = 230;
+        public string DisplayId = String.Empty;
+        public int LocalLogicalX;
+        public int LocalLogicalY;
+        public int LocalLogicalWidth;
+        public int LocalLogicalHeight;
         // Optional parent relationship for vertically docked notes.  Keeping
         // this in the data model (rather than merging windows) lets every note
         // retain its own editor, reminder state and transparency settings.

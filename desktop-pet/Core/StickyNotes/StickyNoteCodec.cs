@@ -17,7 +17,7 @@ namespace PennyPet
             if (note == null) throw new ArgumentNullException(nameof(note));
             return String.Join("|", new string[]
             {
-                "9", note.Id ?? String.Empty,
+                "10", note.Id ?? String.Empty,
                 note.Visible ? "1" : "0",
                 note.AlwaysOnTop ? "1" : "0",
                 note.ColorArgb.ToString(CultureInfo.InvariantCulture),
@@ -44,7 +44,12 @@ namespace PennyPet
                 Math.Max(-1, note.DockGroupOrder)
                     .ToString(CultureInfo.InvariantCulture),
                 note.IsSchedule ? "1" : "0",
-                EncodeSchedules(note.ScheduleItems)
+                EncodeSchedules(note.ScheduleItems),
+                Encode(note.DisplayId ?? String.Empty),
+                note.LocalLogicalX.ToString(CultureInfo.InvariantCulture),
+                note.LocalLogicalY.ToString(CultureInfo.InvariantCulture),
+                note.LocalLogicalWidth.ToString(CultureInfo.InvariantCulture),
+                note.LocalLogicalHeight.ToString(CultureInfo.InvariantCulture)
             });
         }
 
@@ -61,9 +66,10 @@ namespace PennyPet
             bool versionSeven = fields.Length >= 23 && fields[0] == "7";
             bool versionEight = fields.Length >= 25 && fields[0] == "8";
             bool versionNine = fields.Length >= 27 && fields[0] == "9";
+            bool versionTen = fields.Length >= 32 && fields[0] == "10";
             if (!versionOne && !versionTwo && !versionThree && !versionFour &&
                 !versionFive && !versionSix && !versionSeven && !versionEight &&
-                !versionNine) return null;
+                !versionNine && !versionTen) return null;
 
             int number;
             long ticks;
@@ -99,43 +105,57 @@ namespace PennyPet
                 DecodeTodos(fields[14], note.TodoItems);
                 note.Text = Decode(fields[15]);
                 if ((versionThree || versionFour || versionFive || versionSix ||
-                    versionSeven || versionEight || versionNine) &&
+                    versionSeven || versionEight || versionNine || versionTen) &&
                     Int32.TryParse(fields[16], out number))
                     note.TabOrder = Math.Max(0, number);
                 if (versionFour || versionFive || versionSix || versionSeven ||
-                    versionEight || versionNine)
+                    versionEight || versionNine || versionTen)
                     note.RichTextRtf = NormalizeRtf(Decode(fields[17]));
                 if (versionFive || versionSix || versionSeven || versionEight ||
-                    versionNine)
+                    versionNine || versionTen)
                 {
                     note.FontFamilyName = NormalizeFontFamily(Decode(fields[18]));
                     if (Int32.TryParse(fields[19], out number))
                         note.FontSizeTwips = Clamp(number, 120, 1440);
                 }
-                if (versionSix || versionSeven || versionEight || versionNine)
+                if (versionSix || versionSeven || versionEight || versionNine ||
+                    versionTen)
                 {
                     if (Int32.TryParse(fields[20], out number))
                         note.BackgroundOpacityPercent = Clamp(number, 10, 100);
                     if (Int32.TryParse(fields[21], out number))
                         note.TextColorArgb = NormalizeTextColor(number);
                 }
-                if (versionSeven || versionEight || versionNine)
+                if (versionSeven || versionEight || versionNine || versionTen)
                     note.DockParentId = Decode(fields[22]);
-                if (versionEight || versionNine)
+                if (versionEight || versionNine || versionTen)
                 {
                     note.DockGroupId = Decode(fields[23]);
                     if (Int32.TryParse(fields[24], out number))
                         note.DockGroupOrder = Math.Max(-1, number);
                 }
-                if (versionNine)
+                if (versionNine || versionTen)
                 {
                     note.IsSchedule = fields[25] == "1";
                     DecodeSchedules(fields[26], note.ScheduleItems);
                     if (note.IsSchedule) note.IsTodoList = false;
                 }
+                if (versionTen)
+                {
+                    note.DisplayId = Decode(fields[27]);
+                    if (Int32.TryParse(fields[28], out number))
+                        note.LocalLogicalX = number;
+                    if (Int32.TryParse(fields[29], out number))
+                        note.LocalLogicalY = number;
+                    if (Int32.TryParse(fields[30], out number))
+                        note.LocalLogicalWidth = number;
+                    if (Int32.TryParse(fields[31], out number))
+                        note.LocalLogicalHeight = number;
+                }
             }
 
-            if (!versionSix && !versionSeven && !versionEight && !versionNine)
+            if (!versionSix && !versionSeven && !versionEight && !versionNine &&
+                !versionTen)
                 note.TextColorArgb = IsLightPaper(note.ColorArgb)
                     ? WhiteArgb : BlackArgb;
             if (note.Title.Length > StickyNoteLimits.MaximumTitleCharacters ||

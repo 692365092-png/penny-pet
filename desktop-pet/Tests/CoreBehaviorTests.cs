@@ -2479,6 +2479,29 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyNoteCodec_RoundTripsDisplayLocalRect()
+        {
+            StickyNoteData note = new StickyNoteData
+            {
+                DisplayId = "\\\\.\\DISPLAY1",
+                LocalLogicalX = 120,
+                LocalLogicalY = 80,
+                LocalLogicalWidth = 320,
+                LocalLogicalHeight = 300
+            };
+            StickyNoteData restored = StickyNoteCodec.ParseLine(
+                StickyNoteCodec.SerializeLine(note));
+
+            Assert.AreEqual("\\\\.\\DISPLAY1", restored.DisplayId);
+            Assert.AreEqual(120, restored.LocalLogicalX);
+            Assert.AreEqual(80, restored.LocalLogicalY);
+            Assert.AreEqual(320, restored.LocalLogicalWidth);
+            Assert.AreEqual(300, restored.LocalLogicalHeight);
+            Assert.IsTrue(StickyNoteCodec.SerializeLine(restored)
+                .StartsWith("10|", StringComparison.Ordinal));
+        }
+
+        [TestMethod]
         public void SettingsCodec_NormalizesInvalidAndRoundTripsPisces()
         {
             PetSettingsData pisces = new PetSettingsData
