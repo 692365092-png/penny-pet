@@ -488,10 +488,12 @@ namespace PennyPet
             if (frame != null) LayeredSpriteRenderer.Show(this, frame);
         }
 
-        private void BuildRenderedFrameCache()
+        private void BuildRenderedFrameCache(Size? targetSize = null)
         {
+            _renderedTargetSize = targetSize ?? ScaledPetSize(_scalePercent);
             _renderedFrames = new Bitmap[PetArtPackage.RuntimeStateNames.Length][];
-            _renderedFramesOwnBitmaps = _scalePercent != 100;
+            _renderedFramesOwnBitmaps =
+                _renderedTargetSize != ScaledPetSize(100);
             EnsureRenderedRow(_row);
         }
 
@@ -507,7 +509,8 @@ namespace PennyPet
             for (int frame = 0; frame < count; frame++)
             {
                 Bitmap source = _art.GetFrame(row, frame);
-                if (_scalePercent == 100)
+                if (source.Width == _renderedTargetSize.Width &&
+                    source.Height == _renderedTargetSize.Height)
                 {
                     rendered[frame] = source;
                 }
@@ -516,8 +519,7 @@ namespace PennyPet
                     Bitmap resized;
                     if (!scaled.TryGetValue(source, out resized))
                     {
-                        resized = ResizeFrame(source,
-                            ScaledPetSize(_scalePercent));
+                        resized = ResizeFrame(source, _renderedTargetSize);
                         scaled[source] = resized;
                     }
                     rendered[frame] = resized;

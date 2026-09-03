@@ -89,6 +89,7 @@ namespace PennyPet
         private PetArtPackage _art;
         private Bitmap[][] _renderedFrames;
         private bool _renderedFramesOwnBitmaps;
+        private Size _renderedTargetSize;
         private ContactAuthorForm _contactAuthorForm;
         private ReminderItem _preAlertItem
             { get { return _reminderCoordinator.PreAlertItem; }
@@ -454,6 +455,33 @@ namespace PennyPet
                 value.ExStyle |= 0x00080000;
                 return value;
             }
+        }
+
+        protected override void OnDpiChanged(DpiChangedEventArgs e)
+        {
+            base.OnDpiChanged(e);
+            if (e == null || IsDisposed || Disposing) return;
+            ApplyCurrentDisplayScale(e.DeviceDpiNew);
+        }
+
+        private void ApplyCurrentDisplayScale(int dpi)
+        {
+            if (_art == null || _renderedFrames == null) return;
+            int safeDpi = Math.Max(96, dpi);
+            Size logical = ScaledPetSize(_scalePercent);
+            Size physical = ScaleForDpi(logical, safeDpi);
+            _renderedTargetSize = physical;
+            ClientSize = physical;
+            DisposeRenderedFrameCache();
+            BuildRenderedFrameCache(physical);
+            if (!_startupDisplaySuppressed) RenderCurrentFrame();
+        }
+
+        private static Size ScaleForDpi(Size size, int dpi)
+        {
+            int safeDpi = Math.Max(96, dpi);
+            return new Size(Math.Max(1, size.Width * safeDpi / 96),
+                Math.Max(1, size.Height * safeDpi / 96));
         }
 
         protected override void WndProc(ref Message message)
