@@ -30,6 +30,8 @@ namespace PennyPet
         internal const int DragSourceVisualOffset = 10;
         internal const string DragDataFormat = "PennyPet.StickyNoteTabId";
 
+        private DisplayScale _displayScale = new DisplayScale(1.0, 1.0);
+
         private static readonly StickyTabDropSession DragSession =
             new StickyTabDropSession();
         private static readonly List<StickyNoteTabsForm> LiveForms =
@@ -53,6 +55,46 @@ namespace PennyPet
         private bool _sourceHorizontallyOffset;
         private int _sourceNormalLeft;
         private bool _ownedResourcesDisposed;
+
+        internal void SetDisplayScale(DisplayScale scale)
+        {
+            _displayScale = scale;
+        }
+
+        private int PhysicalTabWidth
+        {
+            get { return (int)Math.Round(TabWidth * _displayScale.X,
+                MidpointRounding.AwayFromZero); }
+        }
+
+        private int PhysicalTabHeight
+        {
+            get { return (int)Math.Round(TabHeight * _displayScale.Y,
+                MidpointRounding.AwayFromZero); }
+        }
+
+        private int PhysicalTabGap
+        {
+            get { return (int)Math.Round(TabGap * _displayScale.Y,
+                MidpointRounding.AwayFromZero); }
+        }
+
+        internal static int PhysicalTabWidthFor(DisplayScale scale)
+        {
+            return (int)Math.Round(TabWidth * scale.X,
+                MidpointRounding.AwayFromZero);
+        }
+
+        internal static int PhysicalOverlapForWidth(DisplayScale scale,
+            int physicalPetWidth)
+        {
+            int logicalPetWidth = (int)Math.Round(
+                physicalPetWidth / scale.X, MidpointRounding.AwayFromZero);
+            int logicalOverlap =
+                StickyDockGeometry.CalculateSideTabOverlap(logicalPetWidth);
+            return (int)Math.Round(logicalOverlap * scale.X,
+                MidpointRounding.AwayFromZero);
+        }
 
         public StickyNoteTabsForm(StickyTabSide side,
             Action<string> openNote)
@@ -128,17 +170,20 @@ namespace PennyPet
                 control.Dispose();
             }
             int count = notes == null ? 0 : notes.Count;
+            int tabWidth = PhysicalTabWidth;
+            int tabHeight = PhysicalTabHeight;
+            int tabGap = PhysicalTabGap;
             _normalHeight = Math.Max(1,
-                count * (TabHeight + TabGap) - TabGap);
-            ClientSize = new Size(TabWidth, _normalHeight);
+                count * (tabHeight + tabGap) - tabGap);
+            ClientSize = new Size(tabWidth, _normalHeight);
             for (int i = 0; i < count; i++)
             {
                 SideTabSnapshot note = notes[i];
                 StickyNoteTabControl tab = new StickyNoteTabControl(note, _side,
                     _openNote, _deleteNote);
                 tab.ListIndex = i;
-                tab.Bounds = new Rectangle(0, i * (TabHeight + TabGap),
-                    TabWidth, TabHeight);
+                tab.Bounds = new Rectangle(0, i * (tabHeight + tabGap),
+                    tabWidth, tabHeight);
                 tab.AllowDrop = true;
                 tab.DragEnter += TabsDragEnter;
                 tab.DragOver += TabsDragOver;
@@ -159,20 +204,37 @@ namespace PennyPet
         public void ShowNear(Rectangle petBounds, Rectangle workArea)
         {
             if (Controls.Count == 0) return;
-            DockPoint location = StickyDockGeometry.CalculateSideTabLocation(
-                new DockRect(petBounds.Left, petBounds.Top, petBounds.Width,
-                    petBounds.Height),
-                new DockRect(workArea.Left, workArea.Top, workArea.Width,
-                    workArea.Height), new DockSize(Width, Height),
+            double sx = _displayScale.X;
+            double sy = _displayScale.Y;
+            int logicalStripHeight = Math.Max(1,
+                Controls.Count * (TabHeight + TabGap) - TabGap);
+            DockPoint logicalLocation =
+                StickyDockGeometry.CalculateSideTabLocation(
+                new DockRect(Round(petBounds.Left / sx),
+                    Round(petBounds.Top / sy), Round(petBounds.Width / sx),
+                    Round(petBounds.Height / sy)),
+                new DockRect(Round(workArea.Left / sx),
+                    Round(workArea.Top / sy), Round(workArea.Width / sx),
+                    Round(workArea.Height / sy)),
+                new DockSize(TabWidth, logicalStripHeight),
                 _side == StickyTabSide.Left,
-                PetOverlapForWidth(petBounds.Width),
+                StickyDockGeometry.CalculateSideTabOverlap(
+                    Round(petBounds.Width / sx)),
                 _sourceHorizontallyOffset && _side == StickyTabSide.Right
                     ? DragSourceVisualOffset : 0);
-            Location = new Point(location.X, location.Y);
+            Point physical = new Point(Round(logicalLocation.X * sx),
+                Round(logicalLocation.Y * sy));
+            Location = physical;
             if (_sourceHorizontallyOffset)
                 _sourceNormalLeft = _side == StickyTabSide.Right
-                    ? location.X + DragSourceVisualOffset : location.X;
+                    ? physical.X + Round(DragSourceVisualOffset * sx)
+                    : physical.X;
             if (!Visible) Show();
+        }
+
+        private static int Round(double value)
+        {
+            return (int)Math.Round(value, MidpointRounding.AwayFromZero);
         }
 
         internal static int PetOverlapForWidth(int petWidth)

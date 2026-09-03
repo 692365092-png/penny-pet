@@ -481,7 +481,7 @@ namespace PennyPet.Tests
             };
             List<DockRect> layout =
                 StickyDockGeometry.CalculateUnifiedDockLayout(sizes,
-                    120, 80, 460, 1F);
+                    120, 80, 460);
 
             Assert.AreEqual(3, layout.Count);
             Assert.AreEqual(120, layout[0].Left);
@@ -599,8 +599,7 @@ namespace PennyPet.Tests
                         Width = 1920,
                         Height = 1040
                     },
-                    sizes,
-                    1F);
+                    sizes);
 
             Assert.AreEqual(2, layout.Count);
             Assert.AreEqual(651, layout[0].Left);
@@ -1359,6 +1358,43 @@ namespace PennyPet.Tests
                 true, false, false, false, true));
             Assert.IsFalse(PetHoverStabilityRules.ShouldSuppressHover(
                 true, false, false, false, false));
+        }
+
+        [TestMethod]
+        public void LogicalGeometry_TracksScaledUnitsWithoutRounding()
+        {
+            LogicalRect rect = new LogicalRect(10.5, 20.25, 146, 34);
+            Assert.AreEqual(10.5, rect.Left);
+            Assert.AreEqual(20.25, rect.Top);
+            Assert.AreEqual(146, rect.Width);
+            Assert.AreEqual(34, rect.Height);
+            Assert.AreEqual(156.5, rect.Right);
+            Assert.AreEqual(54.25, rect.Bottom);
+
+            DisplayScale scale = new DisplayScale(1.5, 2.0);
+            Assert.AreEqual(1.5, scale.X);
+            Assert.AreEqual(2.0, scale.Y);
+            Assert.AreEqual(1.5 * 146, rect.Width * scale.X);
+        }
+
+        [TestMethod]
+        public void SideTabCapacity_IsScaleInvariantWhenProjectedToLogical()
+        {
+            double[] scales = { 1.0, 1.25, 1.5, 2.0 };
+            int reference = -1;
+            foreach (double scale in scales)
+            {
+                int physicalPetHeight = (int)Math.Round(208 * scale);
+                int physicalWorkHeight = (int)Math.Round(1080 * scale);
+                int logicalPetHeight =
+                    (int)Math.Round(physicalPetHeight / scale);
+                int logicalWorkHeight =
+                    (int)Math.Round(physicalWorkHeight / scale);
+                int left = StickyDockGeometry.CalculateLeftSideTabCount(
+                    11, logicalPetHeight, logicalWorkHeight, 34, 2);
+                if (reference < 0) reference = left;
+                Assert.AreEqual(reference, left, "scale " + scale);
+            }
         }
 
         [TestMethod]

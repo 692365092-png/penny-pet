@@ -489,12 +489,6 @@ namespace PennyPet
         internal static List<Rectangle> CalculateUnifiedDockLayout(
             IList<Size> sizes, int left, int top, int width)
         {
-            return CalculateUnifiedDockLayout(sizes, left, top, width, 1F);
-        }
-
-        private static List<Rectangle> CalculateUnifiedDockLayout(
-            IList<Size> sizes, int left, int top, int width, float scale)
-        {
             List<DockSize> dockSizes = new List<DockSize>();
             if (sizes != null)
             {
@@ -507,7 +501,7 @@ namespace PennyPet
             }
             List<DockRect> dockLayout =
                 StickyDockGeometry.CalculateUnifiedDockLayout(dockSizes,
-                    left, top, width, scale);
+                    left, top, width);
             List<Rectangle> result = new List<Rectangle>();
             foreach (DockRect item in dockLayout)
                 result.Add(new Rectangle(item.Left, item.Top,

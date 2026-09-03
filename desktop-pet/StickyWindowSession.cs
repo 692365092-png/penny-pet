@@ -98,10 +98,14 @@ namespace PennyPet
             _applyingBounds = true;
             try
             {
-                _window.Left = bounds.X;
-                _window.Top = bounds.Y;
-                _window.Width = bounds.Width;
-                _window.Height = bounds.Height;
+                _window.Left = (int)Math.Round(bounds.Bounds.Left,
+                    MidpointRounding.AwayFromZero);
+                _window.Top = (int)Math.Round(bounds.Bounds.Top,
+                    MidpointRounding.AwayFromZero);
+                _window.Width = (int)Math.Round(bounds.Bounds.Width,
+                    MidpointRounding.AwayFromZero);
+                _window.Height = (int)Math.Round(bounds.Bounds.Height,
+                    MidpointRounding.AwayFromZero);
                 _window.UpdateLayout();
             }
             finally { _applyingBounds = false; }

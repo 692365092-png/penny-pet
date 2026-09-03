@@ -116,6 +116,7 @@ namespace PennyPet
             set { _animation.NextFrameUtc = value; } }
         private bool _exiting;
         private int _scalePercent = 100;
+        private DisplayScale _displayScale = new DisplayScale(1.0, 1.0);
         private KeyboardInputEventArgs _latestKeyboardEvent;
         private int _pendingKeyboardOccurrences;
         private bool _keyboardUiDispatchQueued;
@@ -271,7 +272,7 @@ namespace PennyPet
             _art = PetArtPackage.Load(CellWidth, CellHeight);
             Text = _art.DisplayName;
             _scalePercent = NormalizeScalePercent(_settings.ScalePercent);
-            ClientSize = ScaledPetSize(_scalePercent);
+            ClientSize = NativePetSize();
             // Always show the compact ordinary idle clip first. The less common
             // long animations are decoded only when they are actually selected.
             _idleRow = IdleRow;
@@ -415,6 +416,11 @@ namespace PennyPet
             MouseUp += PetMouseUp;
             MouseEnter += delegate { OnRawMouseEnter(); };
             MouseLeave += delegate { OnRawMouseLeave(); };
+            DpiChangedAfterParent += delegate
+            {
+                if (!IsDisposed && !Disposing)
+                    BeginInvoke(new Action(ApplyDisplayScale));
+            };
             LocationChanged += delegate
             {
                 PositionNoteTabs();
@@ -454,6 +460,39 @@ namespace PennyPet
                 value.ExStyle |= 0x00080000;
                 return value;
             }
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            ApplyDisplayScale();
+        }
+
+        private void ApplyDisplayScale()
+        {
+            if (!IsHandleCreated || IsDisposed || Disposing) return;
+            DisplayScale next = WindowsDisplayMetrics.ScaleForWindow(Handle);
+            bool changed = next.X != _displayScale.X ||
+                next.Y != _displayScale.Y;
+            DisplayScale previousScale = _displayScale;
+            _displayScale = next;
+            ClientSize = NativePetSize();
+            if (changed)
+            {
+                DisposeRenderedFrameCache();
+                BuildRenderedFrameCache();
+                RenderCurrentFrame();
+                LogicalPoint logicalLocation =
+                    WindowsDisplayMetrics.PhysicalToLogical(
+                        Location, previousScale);
+                Location = WindowsDisplayMetrics.LogicalToPhysicalPoint(
+                    logicalLocation, next);
+                KeepFullyVisible();
+                _noteTabsSignature = String.Empty;
+                RefreshNoteTabs();
+            }
+            PositionNoteTabs();
+            RepositionCurrentBubble();
         }
 
         protected override void WndProc(ref Message message)
@@ -546,7 +585,11 @@ namespace PennyPet
         {
             if (_settings.HasLocation)
             {
-                Point saved = new Point(_settings.X, _settings.Y);
+                DisplayScale scale = IsHandleCreated
+                    ? WindowsDisplayMetrics.ScaleForWindow(Handle)
+                    : new DisplayScale(1.0, 1.0);
+                Point saved = WindowsDisplayMetrics.LogicalToPhysicalPoint(
+                    new LogicalPoint(_settings.X, _settings.Y), scale);
                 if (IsVisible(saved)) return saved;
             }
             Rectangle work = Screen.PrimaryScreen.WorkingArea;
@@ -583,8 +626,21 @@ namespace PennyPet
         private void SaveLocation()
         {
             _settings.HasLocation = true;
-            _settings.X = Left;
-            _settings.Y = Top;
+            if (IsHandleCreated)
+            {
+                LogicalPoint logical =
+                    WindowsDisplayMetrics.PhysicalToLogicalDips(
+                        Handle, Location);
+                _settings.X = (int)Math.Round(logical.X,
+                    MidpointRounding.AwayFromZero);
+                _settings.Y = (int)Math.Round(logical.Y,
+                    MidpointRounding.AwayFromZero);
+            }
+            else
+            {
+                _settings.X = Left;
+                _settings.Y = Top;
+            }
             _settings.ScalePercent = _scalePercent;
             _settings.Save();
         }

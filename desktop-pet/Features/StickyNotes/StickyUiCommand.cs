@@ -191,6 +191,10 @@ namespace PennyPet
         internal int Y { get; private set; }
         internal int Width { get; private set; }
         internal int Height { get; private set; }
+        internal LogicalRect Bounds
+        {
+            get { return new LogicalRect(X, Y, Width, Height); }
+        }
         internal long CreatedUtcTicks { get; private set; }
         internal long ModifiedUtcTicks { get; private set; }
         internal long ReminderUtcTicks { get; private set; }
@@ -279,18 +283,17 @@ namespace PennyPet
 
     internal sealed class StickyUiBounds
     {
-        internal StickyUiBounds(int x, int y, int width, int height)
+        internal StickyUiBounds(LogicalRect bounds)
         {
-            X = x;
-            Y = y;
-            Width = width;
-            Height = height;
+            Bounds = bounds;
         }
 
-        internal int X { get; private set; }
-        internal int Y { get; private set; }
-        internal int Width { get; private set; }
-        internal int Height { get; private set; }
+        internal StickyUiBounds(int x, int y, int width, int height)
+            : this(new LogicalRect(x, y, width, height))
+        {
+        }
+
+        internal LogicalRect Bounds { get; private set; }
     }
 
     internal sealed class StickyUiDockResizeRole

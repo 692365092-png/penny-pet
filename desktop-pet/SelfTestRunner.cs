@@ -3775,6 +3775,7 @@ namespace PennyPet
             internal bool StickyUiHostOk;
             internal StickyHostedCheckResult StickyHosted;
             internal bool ScaleRangeOk;
+            internal bool DisplayMetricsOk;
             internal bool DailyContentSettingsUiOk;
             internal bool ZodiacPreferenceSettingsUiOk;
             internal bool ReverseReminderStepOk;
@@ -3876,6 +3877,7 @@ namespace PennyPet
                 PetForm.NormalizeScalePercent(207) == 200 &&
                 PetForm.ScaledPetSize(50) == new Size(96, 104) &&
                 PetForm.ScaledPetSize(200) == new Size(384, 416);
+            result.DisplayMetricsOk = DisplayMetricsRoundtripOk();
             WeatherLocation testWeatherLocation;
             WeatherLocation.TryCreate("武汉", "湖北", "中国", 30.5928,
                 114.3055, "Asia/Shanghai", out testWeatherLocation);
@@ -3991,6 +3993,37 @@ namespace PennyPet
                 result.StickyResizePaintingOk = note.UsesBufferedResizePainting;
             }
             return result;
+        }
+
+        private static bool DisplayMetricsRoundtripOk()
+        {
+            double[] scales = { 1.0, 1.25, 1.5, 1.75, 2.0, 2.5 };
+            foreach (double value in scales)
+            {
+                DisplayScale scale = new DisplayScale(value, value);
+                LogicalRect logical = new LogicalRect(-10.3, 40.6, 146, 34.2);
+                Rectangle physical = WindowsDisplayMetrics.LogicalToPhysicalRect(
+                    logical, scale);
+                LogicalRect roundTrip = WindowsDisplayMetrics.PhysicalToLogical(
+                    physical, scale);
+                if (Math.Abs(roundTrip.Left - logical.Left) > 1.0 / value ||
+                    Math.Abs(roundTrip.Top - logical.Top) > 1.0 / value ||
+                    Math.Abs(roundTrip.Width - logical.Width) > 1.5 / value ||
+                    Math.Abs(roundTrip.Height - logical.Height) > 1.5 / value)
+                    return false;
+                Point physicalPoint =
+                    WindowsDisplayMetrics.LogicalToPhysicalPoint(
+                        new LogicalPoint(12.4, -7.6), scale);
+                LogicalPoint roundTripPoint =
+                    WindowsDisplayMetrics.PhysicalToLogical(
+                        physicalPoint, scale);
+                if (Math.Abs(roundTripPoint.X - 12.4) > 1.0 / value ||
+                    Math.Abs(roundTripPoint.Y + 7.6) > 1.0 / value)
+                    return false;
+            }
+            DisplayScale real =
+                WindowsDisplayMetrics.ScaleForWindow(IntPtr.Zero);
+            return real.X > 0 && real.Y > 0;
         }
 
         private static StickyHostedCheckResult RunStickyHostedLifecycleCheck()
@@ -5291,6 +5324,8 @@ namespace PennyPet
                     shellChecks.ZodiacPreferenceSettingsUiOk) + ",\n" +
                 "  \"scale_50_to_200_step_10_ok\": " + Bool(
                     shellChecks.ScaleRangeOk) + ",\n" +
+                "  \"display_scale_logical_physical_roundtrip_ok\": " + Bool(
+                    shellChecks.DisplayMetricsOk) + ",\n" +
                 "  \"keyboard_text_scale_choices_ok\": " + Bool(
                     keyboardOverlayChecks.TextScaleChoicesOk) + ",\n" +
                 "  \"keyboard_shortcut_and_repeat_ok\": " + Bool(

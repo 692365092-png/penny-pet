@@ -85,8 +85,11 @@ namespace PennyPet
         private void ExpandAndTileAllStickyNotesToPetScreen()
         {
             Rectangle work = Screen.FromRectangle(Bounds).WorkingArea;
+            Rectangle logicalWork = LogicalRectToRectangle(
+                WindowsDisplayMetrics.PhysicalToLogicalDips(Handle, work));
             List<DockLayoutTarget> targets =
-                PrepareStickyExpandAndTileTargets(_notes.GetAll(), work);
+                PrepareStickyExpandAndTileTargets(_notes.GetAll(),
+                    logicalWork);
             if (targets.Count == 0)
             {
                 ShowBubble("当前没有便利贴。");
@@ -161,12 +164,6 @@ namespace PennyPet
         internal static List<Rectangle> CalculateStickyRecoveryLayout(
             Rectangle work, IList<Size> componentSizes)
         {
-            return CalculateStickyRecoveryLayout(work, componentSizes, 1F);
-        }
-
-        private static List<Rectangle> CalculateStickyRecoveryLayout(
-            Rectangle work, IList<Size> componentSizes, float scale)
-        {
             List<DockSize> dockSizes = new List<DockSize>();
             if (componentSizes != null)
             {
@@ -186,8 +183,7 @@ namespace PennyPet
                         Width = work.Width,
                         Height = work.Height
                     },
-                    dockSizes,
-                    scale);
+                    dockSizes);
             List<Rectangle> result = new List<Rectangle>();
             foreach (DockRect item in dockLayout)
                 result.Add(new Rectangle(item.Left, item.Top,
@@ -255,18 +251,38 @@ namespace PennyPet
                 return null;
             }
             Rectangle work = Screen.FromRectangle(Bounds).WorkingArea;
-            int offset = (_notes.GetAll().Count % 7) * 18;
-            int x = Left - 332 - offset;
-            if (x < work.Left) x = Math.Min(work.Right - 332, Right + 12 + offset);
-            int y = Math.Max(work.Top, Math.Min(Top + offset, work.Bottom - 312));
+            // Spawn policy is entirely logical. Pet native bounds and the
+            // native working area are projected to logical before placement,
+            // then written directly as WPF DIP geometry.
+            const int spawnGap = 12;
+            const int spawnCascade = 18;
+            const int spawnWidth = 320;
+            const int spawnHeight = 300;
+            LogicalRect logicalWork =
+                WindowsDisplayMetrics.PhysicalToLogicalDips(Handle, work);
+            LogicalRect logicalBounds =
+                WindowsDisplayMetrics.PhysicalToLogicalDips(Handle, Bounds);
+            int offset = (_notes.GetAll().Count % 7) * spawnCascade;
+            int x = (int)Math.Round(
+                logicalBounds.Left - spawnWidth - spawnGap - offset,
+                MidpointRounding.AwayFromZero);
+            if (x < logicalWork.Left)
+                x = (int)Math.Round(Math.Min(
+                    logicalWork.Right - spawnWidth - spawnGap,
+                    logicalBounds.Right + spawnGap + offset),
+                    MidpointRounding.AwayFromZero);
+            int y = (int)Math.Round(Math.Max(logicalWork.Top,
+                Math.Min(logicalBounds.Top + offset,
+                    logicalWork.Bottom - spawnHeight - spawnGap)),
+                MidpointRounding.AwayFromZero);
             StickyNoteData note = _notes.Create(text, new Point(x, y));
             if (note == null)
             {
                 ShowBubble("便利贴创建失败，原有数据没有被修改。请查看诊断记录。");
                 return null;
             }
-            note.Width = 320;
-            note.Height = 300;
+            note.Width = spawnWidth;
+            note.Height = spawnHeight;
             note.Visible = true;
             _notes.Save();
             return note;
@@ -813,7 +829,12 @@ namespace PennyPet
             int rootWidth = Math.Max(280, Math.Min(900, rootData.Width));
             Rectangle rootHeader = new Rectangle(rootData.X, rootData.Y,
                 rootWidth, 32);
-            Rectangle work = Screen.FromRectangle(rootHeader).WorkingArea;
+            Point physicalRoot = WindowsDisplayMetrics.LogicalToPhysicalPoint(
+                new LogicalPoint(rootData.X, rootData.Y),
+                WindowsDisplayMetrics.ScaleForWindow(Handle));
+            Rectangle work = LogicalRectToRectangle(
+                WindowsDisplayMetrics.PhysicalToLogicalDips(Handle,
+                    Screen.FromPoint(physicalRoot).WorkingArea));
             Point translation = CalculateHeaderReachableTranslation(
                 rootHeader, work);
             int rootLeft = rootData.X + translation.X;
@@ -961,6 +982,8 @@ namespace PennyPet
                 "structural");
             if (_leftNoteTabs == null || _rightNoteTabs == null || IsDisposed)
                 return;
+            _leftNoteTabs.SetDisplayScale(_displayScale);
+            _rightNoteTabs.SetDisplayScale(_displayScale);
             // Side tabs have their own persistent order.  Sorting them by the
             // note's modified time here used to undo every successful drag.
             List<StickyNoteData> hiddenData = _notes.GetHiddenInTabOrder();
@@ -984,8 +1007,11 @@ namespace PennyPet
             }
             _noteTabsSignature = signature;
             Rectangle work = Screen.FromRectangle(Bounds).WorkingArea;
-            int leftCount = StickyNoteTabsForm.CalculateLeftCount(hidden.Count,
-                Height, work);
+            Rectangle logicalWork = ToLogicalRect(work);
+            int logicalPetHeight = (int)Math.Round(
+                Height / _displayScale.Y, MidpointRounding.AwayFromZero);
+            int leftCount = StickyNoteTabsForm.CalculateLeftCount(
+                hidden.Count, logicalPetHeight, logicalWork);
             List<SideTabSnapshot> left = hidden.GetRange(0, leftCount);
             List<SideTabSnapshot> right = hidden.GetRange(leftCount,
                 hidden.Count - leftCount);
@@ -993,6 +1019,28 @@ namespace PennyPet
             _rightNoteTabs.SetNotes(right, leftCount);
             PositionNoteTabs();
             ApplyNoteTabZOrder();
+        }
+
+        private Rectangle ToLogicalRect(Rectangle physical)
+        {
+            return new Rectangle(
+                (int)Math.Round(physical.Left / _displayScale.X,
+                    MidpointRounding.AwayFromZero),
+                (int)Math.Round(physical.Top / _displayScale.Y,
+                    MidpointRounding.AwayFromZero),
+                (int)Math.Round(physical.Width / _displayScale.X,
+                    MidpointRounding.AwayFromZero),
+                (int)Math.Round(physical.Height / _displayScale.Y,
+                    MidpointRounding.AwayFromZero));
+        }
+
+        private static Rectangle LogicalRectToRectangle(LogicalRect rect)
+        {
+            return new Rectangle(
+                (int)Math.Round(rect.Left, MidpointRounding.AwayFromZero),
+                (int)Math.Round(rect.Top, MidpointRounding.AwayFromZero),
+                (int)Math.Round(rect.Width, MidpointRounding.AwayFromZero),
+                (int)Math.Round(rect.Height, MidpointRounding.AwayFromZero));
         }
 
         private bool IsStripCoveredByVisibleSticky(StickyNoteTabsForm tabs)
@@ -1003,8 +1051,15 @@ namespace PennyPet
             {
                 if (note == null || !note.Visible) continue;
                 if (note.Width <= 0 || note.Height <= 0) continue;
-                Rectangle noteBounds = new Rectangle(note.X, note.Y,
-                    note.Width, note.Height);
+                Rectangle noteBounds = new Rectangle(
+                    (int)Math.Round(note.X * _displayScale.X,
+                        MidpointRounding.AwayFromZero),
+                    (int)Math.Round(note.Y * _displayScale.Y,
+                        MidpointRounding.AwayFromZero),
+                    (int)Math.Round(note.Width * _displayScale.X,
+                        MidpointRounding.AwayFromZero),
+                    (int)Math.Round(note.Height * _displayScale.Y,
+                        MidpointRounding.AwayFromZero));
                 if (stripBounds.IntersectsWith(noteBounds)) return true;
             }
             return false;
@@ -1044,9 +1099,12 @@ namespace PennyPet
             if (_leftNoteTabs == null || _rightNoteTabs == null ||
                 !IsHandleCreated || IsDisposed || _positioningNoteTabs) return;
             Rectangle work = Screen.FromRectangle(Bounds).WorkingArea;
+            Rectangle logicalWork = ToLogicalRect(work);
+            int logicalPetHeight = (int)Math.Round(
+                Height / _displayScale.Y, MidpointRounding.AwayFromZero);
             if (!StickyNoteTabsForm.IsLayoutSplitCurrent(
                 _leftNoteTabs.Controls.Count, _rightNoteTabs.Controls.Count,
-                Height, work))
+                logicalPetHeight, logicalWork))
             {
                 _noteTabsSignature = String.Empty;
                 RefreshNoteTabs();
@@ -1056,11 +1114,13 @@ namespace PennyPet
             try
             {
                 int reserveLeft = _leftNoteTabs.Controls.Count > 0
-                    ? StickyNoteTabsForm.TabWidth -
-                        StickyNoteTabsForm.PetOverlapForWidth(Width) + 2 : 0;
+                    ? StickyNoteTabsForm.PhysicalTabWidthFor(_displayScale) -
+                        StickyNoteTabsForm.PhysicalOverlapForWidth(
+                            _displayScale, Width) + 2 : 0;
                 int reserveRight = _rightNoteTabs.Controls.Count > 0
-                    ? StickyNoteTabsForm.TabWidth -
-                        StickyNoteTabsForm.PetOverlapForWidth(Width) + 2 : 0;
+                    ? StickyNoteTabsForm.PhysicalTabWidthFor(_displayScale) -
+                        StickyNoteTabsForm.PhysicalOverlapForWidth(
+                            _displayScale, Width) + 2 : 0;
                 int minimumLeft = work.Left + reserveLeft;
                 int maximumLeft = work.Right - reserveRight - Width;
                 if (maximumLeft >= minimumLeft)

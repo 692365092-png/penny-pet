@@ -36,11 +36,19 @@ namespace PennyPet
                     }
                     if (!_disposed) ScheduleSave();
                 });
-            Rectangle work = WF.Screen.FromRectangle(new Rectangle(
-                (int)Left, (int)Top, (int)Width, (int)Height)).WorkingArea;
+            DisplayScale scale = WindowsDisplayMetrics.ScaleForWindow(Handle);
+            System.Drawing.Point physicalLocation =
+                WindowsDisplayMetrics.LogicalToPhysicalPoint(
+                    new LogicalPoint(Left, Top), scale);
+            System.Drawing.Point physicalSize =
+                WindowsDisplayMetrics.LogicalToPhysicalPoint(
+                    new LogicalPoint(Width, Height), scale);
+            Rectangle physicalNote = new Rectangle(physicalLocation.X,
+                physicalLocation.Y, physicalSize.X, physicalSize.Y);
+            Rectangle work = WF.Screen.FromRectangle(physicalNote)
+                .WorkingArea;
             _appearanceDialog.Location = CalculateAppearanceDialogLocation(
-                new Rectangle((int)Left, (int)Top, (int)Width, (int)Height),
-                _appearanceDialog.Size, work);
+                physicalNote, _appearanceDialog.Size, work);
             _appearanceDialog.FormClosed += delegate { _appearanceDialog = null; };
             if (_opaqueQaHost)
             {

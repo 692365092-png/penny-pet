@@ -21,6 +21,10 @@ namespace PennyPet
         internal int Y { get; private set; }
         internal int Width { get; private set; }
         internal int Height { get; private set; }
+        internal LogicalRect Bounds
+        {
+            get { return new LogicalRect(X, Y, Width, Height); }
+        }
         internal bool Visible { get; private set; }
         internal bool TopMost { get; private set; }
 
@@ -74,6 +78,10 @@ namespace PennyPet
         internal int Y { get; private set; }
         internal int Width { get; private set; }
         internal int Height { get; private set; }
+        internal LogicalRect Bounds
+        {
+            get { return new LogicalRect(X, Y, Width, Height); }
+        }
         internal bool Visible { get; private set; }
         internal bool TopMost { get; private set; }
     }

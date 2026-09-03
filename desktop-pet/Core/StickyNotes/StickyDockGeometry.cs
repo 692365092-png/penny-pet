@@ -49,15 +49,13 @@ namespace PennyPet
     internal static class StickyDockGeometry
     {
         internal static List<DockRect> CalculateUnifiedDockLayout(
-            IList<DockSize> sizes, int left, int top, int width, float scale)
+            IList<DockSize> sizes, int left, int top, int width)
         {
             List<DockRect> result = new List<DockRect>();
-            int minimumWidth = Math.Max(1, (int)Math.Round(280 * scale));
-            int maximumWidth = Math.Max(minimumWidth,
-                (int)Math.Round(900 * scale));
-            int minimumHeight = Math.Max(1, (int)Math.Round(220 * scale));
-            int maximumHeight = Math.Max(minimumHeight,
-                (int)Math.Round(700 * scale));
+            int minimumWidth = StickyNoteLimits.MinimumWindowWidth;
+            int maximumWidth = StickyNoteLimits.MaximumWindowWidth;
+            int minimumHeight = StickyNoteLimits.MinimumWindowHeight;
+            int maximumHeight = StickyNoteLimits.MaximumWindowHeight;
             int normalizedWidth = Math.Max(minimumWidth,
                 Math.Min(maximumWidth, width));
             int y = top;
@@ -154,7 +152,7 @@ namespace PennyPet
         }
 
         internal static List<DockRect> CalculateStickyRecoveryLayout(
-            DockRect work, IList<DockSize> componentSizes, float scale)
+            DockRect work, IList<DockSize> componentSizes)
         {
             List<DockRect> result = new List<DockRect>();
             int count = componentSizes == null ? 0 : componentSizes.Count;
@@ -164,14 +162,11 @@ namespace PennyPet
 
             const int margin = 24;
             const int gap = 18;
-            int scaledMargin = Math.Max(1, (int)Math.Round(margin * scale));
-            int scaledGap = Math.Max(1, (int)Math.Round(gap * scale));
-            int minimumWidth = Math.Max(1, (int)Math.Round(280 * scale));
-            int maximumWidth = Math.Max(minimumWidth,
-                (int)Math.Round(900 * scale));
-            int minimumHeight = Math.Max(1, (int)Math.Round(220 * scale));
+            int minimumWidth = StickyNoteLimits.MinimumWindowWidth;
+            int maximumWidth = StickyNoteLimits.MaximumWindowWidth;
+            int minimumHeight = StickyNoteLimits.MinimumWindowHeight;
             int rowWidthLimit = Math.Max(minimumWidth,
-                work.Width - scaledMargin * 2);
+                work.Width - margin * 2);
             List<List<int>> rows = new List<List<int>>();
             List<int> normal = new List<int>();
             List<int> oversized = new List<int>();
@@ -179,10 +174,8 @@ namespace PennyPet
             {
                 DockSize size = componentSizes[index];
                 bool isOversized = size.Width >= Math.Max(
-                    (int)Math.Round(520 * scale),
-                    work.Width * 45 / 100) || size.Height >= Math.Max(
-                    (int)Math.Round(520 * scale),
-                    work.Height * 50 / 100);
+                    520, work.Width * 45 / 100) ||
+                    size.Height >= Math.Max(520, work.Height * 50 / 100);
                 if (isOversized) oversized.Add(index);
                 else normal.Add(index);
             }
@@ -194,7 +187,7 @@ namespace PennyPet
                 int width = Math.Max(minimumWidth, Math.Min(maximumWidth,
                     componentSizes[index].Width));
                 int nextWidth = row.Count == 0 ? width :
-                    rowWidth + scaledGap + width;
+                    rowWidth + gap + width;
                 if (row.Count > 0 && nextWidth > rowWidthLimit)
                 {
                     rows.Add(row);
@@ -203,7 +196,7 @@ namespace PennyPet
                 }
                 row.Add(index);
                 rowWidth = rowWidth == 0 ? width :
-                    rowWidth + scaledGap + width;
+                    rowWidth + gap + width;
             }
             if (row.Count > 0) rows.Add(row);
             foreach (int index in oversized)
@@ -221,8 +214,8 @@ namespace PennyPet
                 rowHeights.Add(height);
                 totalHeight += height;
             }
-            totalHeight += Math.Max(0, rows.Count - 1) * scaledGap;
-            int y = work.Top + Math.Max(scaledMargin,
+            totalHeight += Math.Max(0, rows.Count - 1) * gap;
+            int y = work.Top + Math.Max(margin,
                 (work.Height - totalHeight) / 2);
             for (int rowIndex = 0; rowIndex < rows.Count; rowIndex++)
             {
@@ -230,7 +223,7 @@ namespace PennyPet
                 int width = 0;
                 foreach (int index in recoveryRow)
                 {
-                    if (width > 0) width += scaledGap;
+                    if (width > 0) width += gap;
                     width += Math.Max(minimumWidth, Math.Min(maximumWidth,
                         componentSizes[index].Width));
                 }
@@ -247,9 +240,9 @@ namespace PennyPet
                         Width = itemWidth,
                         Height = componentSizes[index].Height
                     };
-                    x += itemWidth + scaledGap;
+                    x += itemWidth + gap;
                 }
-                y += rowHeights[rowIndex] + scaledGap;
+                y += rowHeights[rowIndex] + gap;
             }
             return result;
         }
@@ -301,10 +294,11 @@ namespace PennyPet
         {
             int normalizedHeight = Math.Max(1, tabHeight);
             int normalizedGap = Math.Max(0, tabGap);
-            return Math.Min(CalculateSideTabScreenCapacity(workHeight,
-                normalizedHeight, normalizedGap), Math.Max(4,
+            int geometric = Math.Max(1,
                 (Math.Max(normalizedHeight, petHeight) + normalizedGap) /
-                (normalizedHeight + normalizedGap)));
+                (normalizedHeight + normalizedGap));
+            return Math.Min(CalculateSideTabScreenCapacity(workHeight,
+                normalizedHeight, normalizedGap), geometric);
         }
 
         internal static DockPoint CalculatePopupLocation(DockRect owner,

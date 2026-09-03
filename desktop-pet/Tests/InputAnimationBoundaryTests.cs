@@ -679,6 +679,69 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void DisplayGeometry_LogicalCoreAndWindowsAdapterBoundary()
+        {
+            string core = ReadSource("Core/Display/LogicalGeometry.cs");
+            string adapter = ReadSource(
+                "Infrastructure/Display/WindowsDisplayMetrics.cs");
+
+            Assert.IsTrue(core.Contains("LogicalPoint") &&
+                core.Contains("LogicalSize") &&
+                core.Contains("LogicalRect") &&
+                core.Contains("DisplayScale") &&
+                !core.Contains("System.Drawing") &&
+                !core.Contains("GetDpiForWindow") &&
+                !core.Contains("user32") &&
+                !core.Contains("Dpi"),
+                "Core logical geometry must never reference DPI or Windows APIs.");
+            Assert.IsTrue(adapter.Contains("GetDpiForWindow") &&
+                adapter.Contains("MidpointRounding.AwayFromZero") &&
+                adapter.Contains("PhysicalToLogical") &&
+                adapter.Contains("LogicalToPhysical") &&
+                adapter.Contains("ScaleForWindow"),
+                "Only the Windows adapter may own DPI and native rounding.");
+        }
+
+        [TestMethod]
+        public void DockCore_DoesNotTakeDisplayScale()
+        {
+            string geometry = ReadSource(
+                "Core/StickyNotes/StickyDockGeometry.cs");
+            Assert.IsFalse(geometry.Contains("float scale") ||
+                geometry.Contains("* scale") ||
+                geometry.Contains("DisplayScale"),
+                "Core dock layout must be fully logical and never take a scale parameter.");
+        }
+
+        [TestMethod]
+        public void StickyGeometryProtocol_CarriesLogicalBounds()
+        {
+            string commands = ReadSource(
+                "Features/StickyNotes/StickyUiCommand.cs");
+            string facts = ReadSource(
+                "Features/StickyNotes/DockWindowFacts.cs");
+
+            int boundsClass = commands.IndexOf("internal sealed class StickyUiBounds",
+                StringComparison.Ordinal);
+            string bounds = commands.Substring(boundsClass);
+            int nextClass = bounds.IndexOf("internal sealed class",
+                bounds.IndexOf("internal LogicalRect Bounds",
+                    StringComparison.Ordinal) + 1,
+                StringComparison.Ordinal);
+            string boundsBody = bounds.Substring(0, nextClass);
+
+            Assert.IsTrue(boundsBody.Contains(
+                    "internal LogicalRect Bounds") &&
+                !boundsBody.Contains("internal int X") &&
+                !boundsBody.Contains("internal int Y"),
+                "The bounds payload must be a logical rectangle, not raw ints.");
+            Assert.IsTrue(commands.Contains(
+                    "internal LogicalRect Bounds") &&
+                facts.Contains("internal LogicalRect Bounds"),
+                "Snapshot and dock facts/targets must expose logical bounds.");
+        }
+
+        [TestMethod]
         public void PetLocationChange_RepositionsCurrentBubble()
         {
             string form = ReadSource("PetForm.cs");

@@ -12,7 +12,9 @@ namespace PennyPet
         private const string ResourceName = "PennyPet.Startup.Loading";
         private const int NativePetWidth = 192;
         private const int NativePetHeight = 208;
-        private readonly Bitmap _frame;
+        private Bitmap _frame;
+        private readonly PetSettings _settings;
+        private readonly int _scalePercent;
 
         internal StartupLoadingForm(PetSettings settings)
         {
@@ -21,9 +23,10 @@ namespace PennyPet
             TopMost = true;
             StartPosition = FormStartPosition.Manual;
             AutoScaleMode = AutoScaleMode.None;
-            ClientSize = ScaledPetSize(settings == null
-                ? 100 : settings.ScalePercent);
-            Location = ResolveLocation(settings, ClientSize);
+            _settings = settings;
+            _scalePercent = settings == null ? 100 : settings.ScalePercent;
+            ClientSize = ScaledPetSize(_scalePercent);
+            Location = ResolveLocation(_settings, ClientSize);
             _frame = LoadScaledFrame(ClientSize);
         }
 
@@ -41,6 +44,24 @@ namespace PennyPet
         {
             base.OnShown(e);
             if (_frame != null) LayeredSpriteRenderer.Show(this, _frame);
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            DisplayScale scale = WindowsDisplayMetrics.ScaleForWindow(Handle);
+            Size logical = ScaledPetSize(_scalePercent);
+            Size native = new Size(
+                (int)Math.Round(logical.Width * scale.X,
+                    MidpointRounding.AwayFromZero),
+                (int)Math.Round(logical.Height * scale.Y,
+                    MidpointRounding.AwayFromZero));
+            if (ClientSize == native) return;
+            ClientSize = native;
+            Bitmap previous = _frame;
+            _frame = LoadScaledFrame(native);
+            if (previous != null) previous.Dispose();
+            Location = ResolveLocation(_settings, ClientSize);
         }
 
         internal static bool HasEmbeddedFrame

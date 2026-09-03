@@ -437,6 +437,22 @@ namespace PennyPet
                 CellHeight * normalized / 100);
         }
 
+        private Size NativePetSize()
+        {
+            Size logical = ScaledPetSize(_scalePercent);
+            return new Size(
+                (int)Math.Round(logical.Width * _displayScale.X,
+                    MidpointRounding.AwayFromZero),
+                (int)Math.Round(logical.Height * _displayScale.Y,
+                    MidpointRounding.AwayFromZero));
+        }
+
+        private bool NeedsScaledFrames()
+        {
+            return _scalePercent != 100 ||
+                _displayScale.X != 1.0 || _displayScale.Y != 1.0;
+        }
+
         private void RenderCurrentFrame()
         {
             if (_startupDisplaySuppressed || !IsHandleCreated || IsDisposed)
@@ -452,7 +468,7 @@ namespace PennyPet
         private void BuildRenderedFrameCache()
         {
             _renderedFrames = new Bitmap[PetArtPackage.RuntimeStateNames.Length][];
-            _renderedFramesOwnBitmaps = _scalePercent != 100;
+            _renderedFramesOwnBitmaps = NeedsScaledFrames();
             EnsureRenderedRow(_row);
         }
 
@@ -468,7 +484,7 @@ namespace PennyPet
             for (int frame = 0; frame < count; frame++)
             {
                 Bitmap source = _art.GetFrame(row, frame);
-                if (_scalePercent == 100)
+                if (!NeedsScaledFrames())
                 {
                     rendered[frame] = source;
                 }
@@ -478,7 +494,7 @@ namespace PennyPet
                     if (!scaled.TryGetValue(source, out resized))
                     {
                         resized = ResizeFrame(source,
-                            ScaledPetSize(_scalePercent));
+                            NativePetSize());
                         scaled[source] = resized;
                     }
                     rendered[frame] = resized;

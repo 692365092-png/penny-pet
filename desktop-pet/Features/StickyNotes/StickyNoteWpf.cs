@@ -1416,10 +1416,19 @@ namespace PennyPet
 
         private void EnsureOnScreen()
         {
-            Rectangle work = WF.Screen.FromPoint(
-                new System.Drawing.Point(Data.X, Data.Y)).WorkingArea;
-            Left = Math.Max(work.Left, Math.Min(Data.X, work.Right - Width));
-            Top = Math.Max(work.Top, Math.Min(Data.Y, work.Bottom - Height));
+            DisplayScale scale = WindowsDisplayMetrics.ScaleForWindow(Handle);
+            System.Drawing.Point physical =
+                WindowsDisplayMetrics.LogicalToPhysicalPoint(
+                    new LogicalPoint(Data.X, Data.Y), scale);
+            Rectangle work = WF.Screen.FromPoint(physical).WorkingArea;
+            LogicalRect logicalWork =
+                WindowsDisplayMetrics.PhysicalToLogicalDips(Handle, work);
+            Left = (int)Math.Round(Math.Max(logicalWork.Left,
+                Math.Min(Data.X, logicalWork.Right - Width)),
+                MidpointRounding.AwayFromZero);
+            Top = (int)Math.Round(Math.Max(logicalWork.Top,
+                Math.Min(Data.Y, logicalWork.Bottom - Height)),
+                MidpointRounding.AwayFromZero);
         }
 
         private void WindowClosing(object sender,

@@ -116,7 +116,7 @@ namespace PennyPet
                 int bottom = Bottom;
                 DisposeRenderedFrameCache();
                 _scalePercent = next;
-                ClientSize = ScaledPetSize(_scalePercent);
+                ClientSize = NativePetSize();
                 BuildRenderedFrameCache();
                 Location = new Point(centerX - Width / 2, bottom - Height);
                 KeepFullyVisible();
