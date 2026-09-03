@@ -49,6 +49,12 @@ namespace PennyPet
             if (content.SolarTerm.HasValue)
             {
                 selected.Add(SolarSentence(content.SolarTerm.Value));
+                PetSolarTermAttachment attachment;
+                if (PetSolarTermAttachmentCatalog.TryGet(
+                    content.SolarTerm.Value.ChineseName, out attachment))
+                    selected.Add(new DailyBriefingSentence(attachment.Text,
+                        PetSentenceContentKind.Solar, PetSentenceIntent.Gentle,
+                        attachment.StableContentId));
                 if (selected.Count < 2 && content.Weather != null)
                     selected.Add(WeatherSentence(content.Weather));
                 else if (selected.Count < 2 && content.Almanac != null)

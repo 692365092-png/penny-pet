@@ -83,7 +83,7 @@ namespace PennyPet
             if (_meaningfulRemaining > 0 && ledger != null)
             {
                 PetPersonaEntry meaningful =
-                    PetPersonaTempCatalog.SelectUnusedMeaningful(
+                    PetPersonaRuntimeCatalog.SelectUnusedMeaningful(
                         PetPersonaContext.SmallTalk,
                         delegate(string id)
                         {
@@ -92,7 +92,7 @@ namespace PennyPet
                 if (meaningful != null) return meaningful;
             }
             if (_loopableQuotaRemaining > 0)
-                return PetPersonaTempCatalog.SelectLoopable(_random);
+                return PetPersonaRuntimeCatalog.SelectLoopable(_random);
             return null;
         }
 

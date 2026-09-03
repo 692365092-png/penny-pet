@@ -44,7 +44,7 @@ namespace PennyPet
                 DailyContentRules.GreetingIntentFor(dayPart),
                 "GREETING-" + dayPart));
             PetPersonaEntry extra =
-                PetPersonaTempCatalog.SelectUnusedMeaningful(
+                PetPersonaRuntimeCatalog.SelectUnusedMeaningful(
                     ContextFor(dayPart),
                     delegate(string id) { return ledger.WasMeaningfulUsed(id); });
             if (extra != null)

@@ -3785,6 +3785,8 @@ namespace PennyPet
             internal bool StickyResizePaintingOk;
             internal StickyReminderWindowCheckResult ReminderChecks;
             internal StickyTodoWindowCheckResult TodoChecks;
+            internal bool PersonaRuntimeCatalogOk;
+            internal bool SolarTermAttachmentOk;
         }
 
         private sealed class StickyHostedCheckResult
@@ -3802,6 +3804,104 @@ namespace PennyPet
             internal bool HostedThreeNoteInsertionOk;
             internal bool DockRestoreOk;
             internal bool HostedSetBoundsAtomicOk;
+        }
+
+        private static bool RunPersonaRuntimeCatalogCheck()
+        {
+            List<PetPersonaEntry> all = new List<PetPersonaEntry>();
+            all.AddRange(PetPersonaRuntimeCatalog.SmallTalkLoopable);
+            all.AddRange(PetPersonaRuntimeCatalog.SmallTalkMeaningful);
+            all.AddRange(PetPersonaRuntimeCatalog.DaypartMeaningful);
+            if (all.Count == 0) return false;
+            HashSet<string> ids = new HashSet<string>(
+                StringComparer.Ordinal);
+            HashSet<string> bodies = new HashSet<string>(
+                StringComparer.Ordinal);
+            foreach (PetPersonaEntry entry in all)
+            {
+                if (entry == null || !entry.Approved) return false;
+                if (String.IsNullOrWhiteSpace(entry.StableContentId) ||
+                    String.IsNullOrWhiteSpace(entry.CanonicalBody))
+                    return false;
+                if (!ids.Add(entry.StableContentId)) return false;
+                if (!bodies.Add(entry.CanonicalBody)) return false;
+                if (entry.EligibleContexts == 0) return false;
+                if (entry.RepeatClass != PetPersonaRepeatClass.Loopable &&
+                    entry.RepeatClass != PetPersonaRepeatClass.Meaningful)
+                    return false;
+                if (entry.ContextClass != PetPersonaContextClass.ContextFree &&
+                    entry.ContextClass != PetPersonaContextClass.Contextual)
+                    return false;
+                if ((int)entry.Intent < (int)PetSentenceIntent.Statement ||
+                    (int)entry.Intent > (int)PetSentenceIntent.Serious)
+                    return false;
+                if ((int)entry.Category <
+                        (int)PetPersonaCategory.General ||
+                    (int)entry.Category >
+                        (int)PetPersonaCategory.Inspiration)
+                    return false;
+            }
+            PetPersonaEntry noonMeal = FindPersonaEntry(
+                PetPersonaRuntimeCatalog.DaypartMeaningful, "PENNY-000004");
+            PetPersonaEntry question = FindPersonaEntry(
+                PetPersonaRuntimeCatalog.SmallTalkLoopable, "PENNY-000002");
+            PetPersonaEntry songEnding = FindPersonaEntry(
+                PetPersonaRuntimeCatalog.SmallTalkMeaningful, "PENNY-000007");
+            PetPersonaEntry inspiration = FindPersonaEntry(
+                PetPersonaRuntimeCatalog.SmallTalkMeaningful, "PENNY-000019");
+            return PetPersonaRuntimeCatalog.SmallTalkLoopable.Length == 3 &&
+                PetPersonaRuntimeCatalog.SmallTalkMeaningful.Length == 13 &&
+                noonMeal != null &&
+                (noonMeal.EligibleContexts & PetPersonaContext.Noon) != 0 &&
+                (noonMeal.EligibleContexts & PetPersonaContext.SmallTalk) == 0 &&
+                FindPersonaEntry(PetPersonaRuntimeCatalog.SmallTalkMeaningful,
+                    "PENNY-000004") == null &&
+                question != null && question.PreserveEnding &&
+                songEnding != null && songEnding.PreserveEnding &&
+                songEnding.CanonicalBody.EndsWith("~",
+                    StringComparison.Ordinal) &&
+                inspiration != null &&
+                inspiration.Category == PetPersonaCategory.Inspiration;
+        }
+
+        private static PetPersonaEntry FindPersonaEntry(
+            IList<PetPersonaEntry> entries, string stableContentId)
+        {
+            if (entries == null) return null;
+            foreach (PetPersonaEntry entry in entries)
+                if (entry != null && String.Equals(
+                    entry.StableContentId, stableContentId,
+                    StringComparison.Ordinal))
+                    return entry;
+            return null;
+        }
+
+        private static bool RunSolarTermAttachmentCheck()
+        {
+            if (PetSolarTermAttachmentCatalog.Count != 5) return false;
+            string[][] expected = new string[][]
+            {
+                new string[] { "春分", "PENNY-000013",
+                    "春天最适合热聊，祝大家都有一个被爱包围的春分" },
+                new string[] { "大寒", "PENNY-000014", "大寒节气记得多保暖" },
+                new string[] { "小寒", "PENNY-000015", "祝大家小寒安康喜乐" },
+                new string[] { "冬至", "PENNY-000016", "冬至平安喜乐" },
+                new string[] { "大雪", "PENNY-000018",
+                    "大雪，沉淀成成果的时刻，身心都要继续保暖" }
+            };
+            foreach (string[] item in expected)
+            {
+                PetSolarTermAttachment value;
+                if (!PetSolarTermAttachmentCatalog.TryGet(item[0],
+                    out value)) return false;
+                if (!String.Equals(value.StableContentId, item[1],
+                    StringComparison.Ordinal)) return false;
+                if (!String.Equals(value.Text, item[2],
+                    StringComparison.Ordinal)) return false;
+            }
+            PetSolarTermAttachment unknown;
+            return !PetSolarTermAttachmentCatalog.TryGet("立春",
+                out unknown);
         }
 
         private static WindowShellCheckResult RunWindowShellChecks(
@@ -3870,6 +3970,10 @@ namespace PennyPet
                     afterShutdown.Status == StickyUiCommandStatus.NotAccepted;
             }
             result.StickyHosted = RunStickyHostedLifecycleCheck();
+            result.PersonaRuntimeCatalogOk =
+                RunPersonaRuntimeCatalogCheck();
+            result.SolarTermAttachmentOk =
+                RunSolarTermAttachmentCheck();
             result.ScaleRangeOk =
                 PetForm.NormalizeScalePercent(47) == 50 &&
                 PetForm.NormalizeScalePercent(104) == 100 &&
@@ -5130,6 +5234,10 @@ namespace PennyPet
                     shellChecks.StickyHosted.DockRestoreOk) + ",\n" +
                 "  \"sticky_hosted_setbounds_atomic_ok\": " + Bool(
                     shellChecks.StickyHosted.HostedSetBoundsAtomicOk) + ",\n" +
+                "  \"persona_runtime_catalog_ok\": " + Bool(
+                    shellChecks.PersonaRuntimeCatalogOk) + ",\n" +
+                "  \"solar_term_attachment_ok\": " + Bool(
+                    shellChecks.SolarTermAttachmentOk) + ",\n" +
                 "  \"keyboard_hook_opt_in_and_default_off_ok\": " + Bool(
                     keyboardOverlayChecks.HookOptInDefaultOk) + ",\n" +
                 "  \"keyboard_privacy_notice_persistence_ok\": " + Bool(
