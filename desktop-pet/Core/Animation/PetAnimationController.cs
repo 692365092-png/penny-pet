@@ -41,6 +41,7 @@ namespace PennyPet
         internal PetInteractionAnimationKind InteractionAnimationKind
             { get; private set; }
         internal int InteractionAnimationRow { get; private set; }
+        internal bool SmallTalkAnimationProtected { get; private set; }
 
         internal int ChooseRow(bool exiting, bool draggingAndMoved,
             bool mouseInside, bool menuVisible, Func<int, bool> isRowLoaded)
@@ -62,12 +63,14 @@ namespace PennyPet
             return isRowLoaded(IdleRowState) ? IdleRowState : IdleRow;
         }
 
-        internal bool TryStartOrdinaryPoke(int row)
+        internal bool TryStartOrdinaryPoke(int row,
+            bool smallTalkProtected = false)
         {
             if (ReminderAttentionActive || InteractionAnimationKind !=
                 PetInteractionAnimationKind.None) return false;
             InteractionAnimationKind = PetInteractionAnimationKind.OrdinaryPoke;
             InteractionAnimationRow = row;
+            SmallTalkAnimationProtected = smallTalkProtected;
             return true;
         }
 
@@ -93,10 +96,14 @@ namespace PennyPet
         {
             InteractionAnimationKind = PetInteractionAnimationKind.None;
             InteractionAnimationRow = -1;
+            SmallTalkAnimationProtected = false;
         }
 
         internal void CancelInteractionAnimation()
         {
+            // SmallTalk special animations may not be cancelled by rapid
+            // mouse interaction; they complete their own cycle first.
+            if (SmallTalkAnimationProtected) return;
             CompleteInteractionAnimation();
         }
 

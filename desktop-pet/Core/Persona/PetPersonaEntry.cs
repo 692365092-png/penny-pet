@@ -17,7 +17,8 @@ namespace PennyPet
     internal enum PetPersonaAnimationKind
     {
         Default,
-        Guitar
+        Guitar,
+        Hover
     }
 
     [Flags]
@@ -105,15 +106,15 @@ namespace PennyPet
             Approved("PENNY-000001", "我在", PetPersonaCategory.General,
                 PetSentenceIntent.Gentle, PetPersonaContext.SmallTalk,
                 PetPersonaRepeatClass.Loopable, PetPersonaContextClass.ContextFree,
-                false),
+                false, PetPersonaAnimationKind.Hover),
             Approved("PENNY-000002", "嗯", PetPersonaCategory.General,
                 PetSentenceIntent.Question, PetPersonaContext.SmallTalk,
                 PetPersonaRepeatClass.Loopable, PetPersonaContextClass.ContextFree,
-                true),
+                true, PetPersonaAnimationKind.Hover),
             Approved("PENNY-000003", "需要我帮什么忙吗", PetPersonaCategory.General,
                 PetSentenceIntent.Question, PetPersonaContext.SmallTalk,
                 PetPersonaRepeatClass.Loopable, PetPersonaContextClass.ContextFree,
-                false),
+                false, PetPersonaAnimationKind.Hover),
             Loopable("SMALLTALK-LOOP-IN", "我在。"),
             Loopable("SMALLTALK-LOOP-QUESTION", "怎么了？"),
             Loopable("SMALLTALK-LOOP-EN", "嗯"),
@@ -244,7 +245,8 @@ namespace PennyPet
             return PetPersonaEntry.CreateApproved(id, body,
                 PetPersonaCategory.Playful, PetSentenceIntent.Gentle,
                 PetPersonaContext.SmallTalk, PetPersonaRepeatClass.Loopable,
-                PetPersonaContextClass.ContextFree, true);
+                PetPersonaContextClass.ContextFree, true,
+                PetPersonaAnimationKind.Hover);
         }
 
         private static PetPersonaEntry Meaningful(string id, string body,

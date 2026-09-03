@@ -240,6 +240,9 @@ namespace PennyPet
                 if (_smallTalkCoordinator.LastSpokenAnimationKind ==
                     PetPersonaAnimationKind.Guitar)
                     StartGuitarPokeAnimation(nowUtc);
+                else if (_smallTalkCoordinator.LastSpokenAnimationKind ==
+                    PetPersonaAnimationKind.Hover)
+                    StartHoverPokeAnimation(nowUtc);
                 else if (_smallTalkCoordinator.LastSpokenRepeatClass ==
                     PetPersonaRepeatClass.Meaningful)
                     StartNotificationPokeAnimation(nowUtc);
@@ -259,12 +262,28 @@ namespace PennyPet
                 PetMessagePolicy.IsProtectedForegroundMessage(
                     _bubbleCoordinator.CurrentKind.Value)) return;
             // Lyric-reference SmallTalk uses the guitar "waiting" clip.
-            if (!_animation.TryStartOrdinaryPoke(
-                PetAnimationController.WaitingRow)) return;
+            StartProtectedSmallTalkAnimation(
+                PetAnimationController.WaitingRow, nowUtc);
+        }
+
+        private void StartHoverPokeAnimation(DateTime nowUtc)
+        {
+            if (_bubbleCoordinator.CurrentKind.HasValue &&
+                PetMessagePolicy.IsProtectedForegroundMessage(
+                    _bubbleCoordinator.CurrentKind.Value)) return;
+            // Loopable SmallTalk reflections use the hover/drag clip.
+            StartProtectedSmallTalkAnimation(
+                PetAnimationController.HoverRow, nowUtc);
+        }
+
+        private void StartProtectedSmallTalkAnimation(int row,
+            DateTime nowUtc)
+        {
+            if (!_animation.TryStartOrdinaryPoke(row, true)) return;
             _typingSession = false;
-            QueueArtPreload(PetAnimationController.WaitingRow);
-            if (!_art.IsRowLoaded(PetAnimationController.WaitingRow)) return;
-            _row = PetAnimationController.WaitingRow;
+            QueueArtPreload(row);
+            if (!_art.IsRowLoaded(row)) return;
+            _row = row;
             _frame = 0;
             ScheduleNextFrame(nowUtc);
             RenderCurrentFrame();
