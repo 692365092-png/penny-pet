@@ -3859,6 +3859,11 @@ namespace PennyPet
             PetPersonaEntry legacyMeal = FindPersonaEntry(
                 PetPersonaRuntimeCatalog.SmallTalkMeaningful,
                 "MEANINGFUL-MEAL");
+            PetPersonaEntry lyricSong = FindPersonaEntry(
+                PetPersonaRuntimeCatalog.SmallTalkMeaningful, "PENNY-000005");
+            PetPersonaEntry legacyEn = FindPersonaEntry(
+                PetPersonaRuntimeCatalog.SmallTalkLoopable,
+                "SMALLTALK-LOOP-EN");
             return PetPersonaRuntimeCatalog.SmallTalkLoopable.Length == 11 &&
                 PetPersonaRuntimeCatalog.SmallTalkMeaningful.Length == 20 &&
                 noonMeal != null &&
@@ -3869,6 +3874,14 @@ namespace PennyPet
                 question != null && question.PreserveEnding &&
                 legacyLoop != null &&
                 legacyMeal != null &&
+                lyricSong != null && lyricSong.PreserveEnding &&
+                String.Equals(lyricSong.CanonicalBody,
+                    "我们现在还在一起会是怎样~", StringComparison.Ordinal) &&
+                legacyEn != null && legacyEn.PreserveEnding &&
+                String.Equals(legacyEn.CanonicalBody, "嗯",
+                    StringComparison.Ordinal) &&
+                !ContainsPersonaBody(PetPersonaRuntimeCatalog.SmallTalkLoopable,
+                    "嗯？") &&
                 songEnding != null && songEnding.PreserveEnding &&
                 songEnding.CanonicalBody.EndsWith("~",
                     StringComparison.Ordinal) &&
@@ -3886,6 +3899,17 @@ namespace PennyPet
                     StringComparison.Ordinal))
                     return entry;
             return null;
+        }
+
+        private static bool ContainsPersonaBody(
+            IList<PetPersonaEntry> entries, string body)
+        {
+            if (entries == null) return false;
+            foreach (PetPersonaEntry entry in entries)
+                if (entry != null && String.Equals(entry.CanonicalBody, body,
+                    StringComparison.Ordinal))
+                    return true;
+            return false;
         }
 
         private static bool RunSolarTermAttachmentCheck()

@@ -106,7 +106,7 @@ namespace PennyPet
                 false),
             Loopable("SMALLTALK-LOOP-IN", "我在。"),
             Loopable("SMALLTALK-LOOP-QUESTION", "怎么了？"),
-            Loopable("SMALLTALK-LOOP-EN", "嗯？"),
+            Loopable("SMALLTALK-LOOP-EN", "嗯"),
             Loopable("SMALLTALK-LOOP-AGAIN", "又来戳我了。"),
             Loopable("SMALLTALK-LOOP-SEE", "好啦，看见你了。"),
             Loopable("SMALLTALK-LOOP-KNOW", "我知道你在。"),
@@ -116,10 +116,10 @@ namespace PennyPet
 
         internal static readonly PetPersonaEntry[] SmallTalkMeaningful =
         {
-            Approved("PENNY-000005", "今天突然有点想听《怎样》",
+            Approved("PENNY-000005", "我们现在还在一起会是怎样~",
                 PetPersonaCategory.Music, PetSentenceIntent.Statement,
                 PetPersonaContext.SmallTalk, PetPersonaRepeatClass.Meaningful,
-                PetPersonaContextClass.ContextFree, false),
+                PetPersonaContextClass.ContextFree, true),
             Approved("PENNY-000006",
                 "跟你一起变成更好的自己，是我们一直在一起的意义",
                 PetPersonaCategory.Catchphrase, PetSentenceIntent.Gentle,
