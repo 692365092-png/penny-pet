@@ -22,6 +22,12 @@ namespace PennyPet
             private set;
         }
 
+        internal PetPersonaAnimationKind LastSpokenAnimationKind
+        {
+            get;
+            private set;
+        }
+
         internal PetSmallTalkCoordinator(Func<bool> silentMode,
             Func<string, bool> show,
             Func<PetDailyInteractionLedger> ledger = null,
@@ -37,6 +43,7 @@ namespace PennyPet
         internal bool HandlePetPoked(DateTime nowUtc)
         {
             LastSpokenRepeatClass = null;
+            LastSpokenAnimationKind = PetPersonaAnimationKind.Default;
             if (PetMessagePolicy.ShouldSuppress(PetMessageKind.SmallTalk,
                 _silentMode())) return false;
             if (PetSmallTalkPolicy.IsWindowExpired(_windowStartUtc, nowUtc))
@@ -61,6 +68,7 @@ namespace PennyPet
 
             _lastSuccessfulUtc = nowUtc;
             LastSpokenRepeatClass = entry.RepeatClass;
+            LastSpokenAnimationKind = entry.AnimationKind;
             if (entry.RepeatClass == PetPersonaRepeatClass.Meaningful)
             {
                 _meaningfulRemaining--;

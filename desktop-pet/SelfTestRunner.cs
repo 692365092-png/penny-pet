@@ -3787,6 +3787,7 @@ namespace PennyPet
             internal StickyTodoWindowCheckResult TodoChecks;
             internal bool PersonaRuntimeCatalogOk;
             internal bool SolarTermAttachmentOk;
+            internal bool PersonaLyricAnimationOk;
         }
 
         private sealed class StickyHostedCheckResult
@@ -3940,6 +3941,21 @@ namespace PennyPet
                 out unknown);
         }
 
+        private static bool RunPersonaLyricAnimationCheck()
+        {
+            PetPersonaEntry song = FindPersonaEntry(
+                PetPersonaRuntimeCatalog.SmallTalkMeaningful, "PENNY-000005");
+            PetPersonaEntry fly = FindPersonaEntry(
+                PetPersonaRuntimeCatalog.SmallTalkMeaningful, "PENNY-000007");
+            PetPersonaEntry ordinary = FindPersonaEntry(
+                PetPersonaRuntimeCatalog.SmallTalkLoopable, "PENNY-000001");
+            if (song == null || fly == null || ordinary == null) return false;
+            return song.AnimationKind == PetPersonaAnimationKind.Guitar &&
+                fly.AnimationKind == PetPersonaAnimationKind.Guitar &&
+                ordinary.AnimationKind == PetPersonaAnimationKind.Default &&
+                PetAnimationController.WaitingRow == 6;
+        }
+
         private static WindowShellCheckResult RunWindowShellChecks(
             StickyNoteData restoredNote)
         {
@@ -4010,6 +4026,8 @@ namespace PennyPet
                 RunPersonaRuntimeCatalogCheck();
             result.SolarTermAttachmentOk =
                 RunSolarTermAttachmentCheck();
+            result.PersonaLyricAnimationOk =
+                RunPersonaLyricAnimationCheck();
             result.ScaleRangeOk =
                 PetForm.NormalizeScalePercent(47) == 50 &&
                 PetForm.NormalizeScalePercent(104) == 100 &&
@@ -5274,6 +5292,8 @@ namespace PennyPet
                     shellChecks.PersonaRuntimeCatalogOk) + ",\n" +
                 "  \"solar_term_attachment_ok\": " + Bool(
                     shellChecks.SolarTermAttachmentOk) + ",\n" +
+                "  \"persona_lyric_animation_ok\": " + Bool(
+                    shellChecks.PersonaLyricAnimationOk) + ",\n" +
                 "  \"keyboard_hook_opt_in_and_default_off_ok\": " + Bool(
                     keyboardOverlayChecks.HookOptInDefaultOk) + ",\n" +
                 "  \"keyboard_privacy_notice_persistence_ok\": " + Bool(

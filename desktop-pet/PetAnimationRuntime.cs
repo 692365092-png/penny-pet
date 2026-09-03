@@ -237,7 +237,10 @@ namespace PennyPet
             // Live SmallTalk under the new rhythm window.
             if (_smallTalkCoordinator.HandlePetPoked(nowUtc))
             {
-                if (_smallTalkCoordinator.LastSpokenRepeatClass ==
+                if (_smallTalkCoordinator.LastSpokenAnimationKind ==
+                    PetPersonaAnimationKind.Guitar)
+                    StartGuitarPokeAnimation(nowUtc);
+                else if (_smallTalkCoordinator.LastSpokenRepeatClass ==
                     PetPersonaRepeatClass.Meaningful)
                     StartNotificationPokeAnimation(nowUtc);
                 else
@@ -248,6 +251,23 @@ namespace PennyPet
 
             // No talk: a random interaction animation is the whole response.
             StartOrdinaryPokeAnimation(nowUtc);
+        }
+
+        private void StartGuitarPokeAnimation(DateTime nowUtc)
+        {
+            if (_bubbleCoordinator.CurrentKind.HasValue &&
+                PetMessagePolicy.IsProtectedForegroundMessage(
+                    _bubbleCoordinator.CurrentKind.Value)) return;
+            // Lyric-reference SmallTalk uses the guitar "waiting" clip.
+            if (!_animation.TryStartOrdinaryPoke(
+                PetAnimationController.WaitingRow)) return;
+            _typingSession = false;
+            QueueArtPreload(PetAnimationController.WaitingRow);
+            if (!_art.IsRowLoaded(PetAnimationController.WaitingRow)) return;
+            _row = PetAnimationController.WaitingRow;
+            _frame = 0;
+            ScheduleNextFrame(nowUtc);
+            RenderCurrentFrame();
         }
 
         private void StartNotificationPokeAnimation(DateTime nowUtc)

@@ -14,6 +14,12 @@ namespace PennyPet
         Contextual
     }
 
+    internal enum PetPersonaAnimationKind
+    {
+        Default,
+        Guitar
+    }
+
     [Flags]
     internal enum PetPersonaContext
     {
@@ -50,7 +56,7 @@ namespace PennyPet
             PetSentenceIntent intent, PetPersonaContext eligibleContexts,
             PetPersonaRepeatClass repeatClass,
             PetPersonaContextClass contextClass, bool preserveEnding,
-            bool approved)
+            bool approved, PetPersonaAnimationKind animationKind)
         {
             StableContentId = stableContentId ?? String.Empty;
             CanonicalBody = canonicalBody ?? String.Empty;
@@ -61,6 +67,7 @@ namespace PennyPet
             ContextClass = contextClass;
             PreserveEnding = preserveEnding;
             Approved = approved;
+            AnimationKind = animationKind;
         }
 
         internal string StableContentId { get; private set; }
@@ -72,16 +79,19 @@ namespace PennyPet
         internal PetPersonaContextClass ContextClass { get; private set; }
         internal bool PreserveEnding { get; private set; }
         internal bool Approved { get; private set; }
+        internal PetPersonaAnimationKind AnimationKind { get; private set; }
 
         internal static PetPersonaEntry CreateApproved(string stableContentId,
             string canonicalBody, PetPersonaCategory category,
             PetSentenceIntent intent, PetPersonaContext eligibleContexts,
             PetPersonaRepeatClass repeatClass,
-            PetPersonaContextClass contextClass, bool preserveEnding)
+            PetPersonaContextClass contextClass, bool preserveEnding,
+            PetPersonaAnimationKind animationKind =
+                PetPersonaAnimationKind.Default)
         {
             return new PetPersonaEntry(stableContentId, canonicalBody,
                 category, intent, eligibleContexts, repeatClass,
-                contextClass, preserveEnding, true);
+                contextClass, preserveEnding, true, animationKind);
         }
     }
 
@@ -119,7 +129,8 @@ namespace PennyPet
             Approved("PENNY-000005", "我们现在还在一起会是怎样~",
                 PetPersonaCategory.Music, PetSentenceIntent.Statement,
                 PetPersonaContext.SmallTalk, PetPersonaRepeatClass.Meaningful,
-                PetPersonaContextClass.ContextFree, true),
+                PetPersonaContextClass.ContextFree, true,
+                PetPersonaAnimationKind.Guitar),
             Approved("PENNY-000006",
                 "跟你一起变成更好的自己，是我们一直在一起的意义",
                 PetPersonaCategory.Catchphrase, PetSentenceIntent.Gentle,
@@ -128,7 +139,8 @@ namespace PennyPet
             Approved("PENNY-000007", "只管闭上眼睛往前追~",
                 PetPersonaCategory.Music, PetSentenceIntent.Statement,
                 PetPersonaContext.SmallTalk, PetPersonaRepeatClass.Meaningful,
-                PetPersonaContextClass.ContextFree, true),
+                PetPersonaContextClass.ContextFree, true,
+                PetPersonaAnimationKind.Guitar),
             Approved("PENNY-000008", "心慢自然安",
                 PetPersonaCategory.Catchphrase, PetSentenceIntent.Statement,
                 PetPersonaContext.SmallTalk, PetPersonaRepeatClass.Meaningful,
@@ -247,10 +259,13 @@ namespace PennyPet
         private static PetPersonaEntry Approved(string id, string body,
             PetPersonaCategory category, PetSentenceIntent intent,
             PetPersonaContext contexts, PetPersonaRepeatClass repeatClass,
-            PetPersonaContextClass contextClass, bool preserveEnding)
+            PetPersonaContextClass contextClass, bool preserveEnding,
+            PetPersonaAnimationKind animationKind =
+                PetPersonaAnimationKind.Default)
         {
             return PetPersonaEntry.CreateApproved(id, body, category, intent,
-                contexts, repeatClass, contextClass, preserveEnding);
+                contexts, repeatClass, contextClass, preserveEnding,
+                animationKind);
         }
     }
 }
