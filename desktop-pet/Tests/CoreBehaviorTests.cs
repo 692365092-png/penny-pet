@@ -432,6 +432,27 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyDockGeometry_PetSideSpawnPrefersLeftThenClamps()
+        {
+            DockRect left = StickyDockGeometry.CalculatePetSideSpawnLocal(
+                new DockRect { Left = 400, Top = 200, Width = 192,
+                    Height = 208 },
+                new DockRect { Left = 0, Top = 0, Width = 1000,
+                    Height = 800 },
+                new DockSize { Width = 320, Height = 300 }, 12);
+            Assert.AreEqual(68, left.Left);
+            Assert.AreEqual(200, left.Top);
+
+            DockRect right = StickyDockGeometry.CalculatePetSideSpawnLocal(
+                new DockRect { Left = 20, Top = 200, Width = 192,
+                    Height = 208 },
+                new DockRect { Left = 0, Top = 0, Width = 600,
+                    Height = 800 },
+                new DockSize { Width = 320, Height = 300 }, 12);
+            Assert.AreEqual(224, right.Left);
+        }
+
+        [TestMethod]
         public void StickyDockOperations_CoordinateGuardUsesClampedHeights()
         {
             Assert.IsTrue(

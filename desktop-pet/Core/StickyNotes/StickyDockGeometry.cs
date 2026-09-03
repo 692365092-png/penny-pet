@@ -296,6 +296,27 @@ namespace PennyPet
                 rightCount == total - desiredLeft;
         }
 
+        internal static DockRect CalculatePetSideSpawnLocal(
+            DockRect petLocal, DockRect workLocal, DockSize size, int gap)
+        {
+            int safeGap = Math.Max(0, gap);
+            int requestedLeft = petLocal.Left - size.Width - safeGap;
+            if (requestedLeft < workLocal.Left)
+                requestedLeft = petLocal.Right + safeGap;
+            int left = Math.Max(workLocal.Left,
+                Math.Min(requestedLeft,
+                    Math.Max(workLocal.Left, workLocal.Right - size.Width)));
+            int top = Math.Max(workLocal.Top,
+                Math.Min(petLocal.Top, workLocal.Bottom - size.Height));
+            return new DockRect
+            {
+                Left = left,
+                Top = top,
+                Width = size.Width,
+                Height = size.Height
+            };
+        }
+
         internal static DockPoint CalculatePopupLocation(DockRect owner,
             DockSize popup, DockRect work, int gap)
         {
