@@ -774,7 +774,9 @@ namespace PennyPet
             versionFourRepository.SaveToFile(versionFourStickyPath);
             result.VersionFourMigrationOk = result.VersionFourMigrationOk &&
                 File.ReadAllText(versionFourStickyPath, Encoding.UTF8)
-                    .StartsWith("9|");
+                    .StartsWith("9|") ||
+                File.ReadAllText(versionFourStickyPath, Encoding.UTF8)
+                    .StartsWith("10|");
             if (File.Exists(versionFourStickyPath))
                 File.Delete(versionFourStickyPath);
             if (File.Exists(versionFourStickyPath + ".bak"))
@@ -798,7 +800,9 @@ namespace PennyPet
                 File.ReadAllText(preservedCorruptPath, Encoding.UTF8) ==
                     "this-is-not-a-note" &&
                 File.ReadAllText(corruptStickyPath, Encoding.UTF8)
-                    .StartsWith("9|");
+                    .StartsWith("9|") ||
+                File.ReadAllText(corruptStickyPath, Encoding.UTF8)
+                    .StartsWith("10|");
             if (File.Exists(corruptStickyPath)) File.Delete(corruptStickyPath);
             if (File.Exists(corruptStickyPath + ".bak"))
                 File.Delete(corruptStickyPath + ".bak");
@@ -822,7 +826,9 @@ namespace PennyPet
                 File.ReadAllText(backupRecoveryRepository.RecoveryBackupPath,
                     Encoding.UTF8) == "broken-primary" &&
                 File.ReadAllText(backupRecoveryPath, Encoding.UTF8)
-                    .StartsWith("9|");
+                    .StartsWith("9|") ||
+                File.ReadAllText(backupRecoveryPath, Encoding.UTF8)
+                    .StartsWith("10|");
             string preservedBackupPrimary =
                 backupRecoveryRepository.RecoveryBackupPath;
             if (File.Exists(backupRecoveryPath))
@@ -871,7 +877,9 @@ namespace PennyPet
             result.SideTabOrderOk = orderedTabs.Count == 3 &&
                 orderedTabs[0].Text == "B" && orderedTabs[1].Text == "C" &&
                 orderedTabs[2].Text == "A" &&
-                File.ReadAllText(tabOrderPath, Encoding.UTF8).StartsWith("9|");
+                File.ReadAllText(tabOrderPath, Encoding.UTF8).StartsWith("9|") ||
+                    File.ReadAllText(tabOrderPath, Encoding.UTF8)
+                        .StartsWith("10|");
             if (File.Exists(tabOrderPath)) File.Delete(tabOrderPath);
             if (File.Exists(tabOrderPath + ".bak"))
                 File.Delete(tabOrderPath + ".bak");
@@ -947,7 +955,9 @@ namespace PennyPet
                 persistedDockOrder[0].DockGroupOrder == 0 &&
                 persistedDockOrder[1].DockGroupOrder == 1 &&
                 persistedDockOrder[2].DockGroupOrder == 2 &&
-                File.ReadAllText(dockPath, Encoding.UTF8).StartsWith("9|");
+                File.ReadAllText(dockPath, Encoding.UTF8).StartsWith("9|") ||
+                    File.ReadAllText(dockPath, Encoding.UTF8)
+                        .StartsWith("10|");
             dockParent.Visible = true;
             dockInsertedTodo.Visible = true;
             dockChild.Visible = true;

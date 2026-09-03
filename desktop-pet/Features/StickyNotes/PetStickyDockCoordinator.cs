@@ -265,10 +265,10 @@ namespace PennyPet
                 StickyNoteData existingChild =
                     _notes.Find(target.ExistingChildNoteId);
                 if (existingChild != null)
-                    ShowTransientDockPulse(CalculateDockVisualSeam(
+                    ShowTransientDockPulse(CalculateDockVisualSeamPhysical(
                         DockWindowFacts.FromData(tailData)),
                         Color.FromArgb(32, 160, 255));
-                ShowTransientDockPulse(CalculateDockVisualSeam(
+                ShowTransientDockPulse(CalculateDockVisualSeamPhysical(
                     DockWindowFacts.FromData(parent)),
                     Color.FromArgb(32, 160, 255));
             }
@@ -910,7 +910,8 @@ namespace PennyPet
             DockWindowFacts parentFacts;
             Rectangle seam = factsById != null &&
                 factsById.TryGetValue(source.DockParentId, out parentFacts)
-                ? CalculateDockVisualSeam(parentFacts) : Rectangle.Empty;
+                ? CalculateDockVisualSeamPhysical(parentFacts) :
+                Rectangle.Empty;
             if (seam.IsEmpty) return;
             _splitGuideIndicator = new DockPulseIndicatorForm(
                 Color.FromArgb(255, 151, 62), 0);
@@ -925,7 +926,8 @@ namespace PennyPet
             DockWindowFacts parentFacts;
             Rectangle seam = factsById != null &&
                 factsById.TryGetValue(source.DockParentId, out parentFacts)
-                ? CalculateDockVisualSeam(parentFacts) : Rectangle.Empty;
+                ? CalculateDockVisualSeamPhysical(parentFacts) :
+                Rectangle.Empty;
             if (!seam.IsEmpty) _splitGuideIndicator.UpdateSeam(seam);
         }
 
@@ -961,7 +963,7 @@ namespace PennyPet
             if (factsById != null && factsById.TryGetValue(parent.Id,
                 out parentFacts))
                 _dockPreviewIndicator.ShowSeam(
-                    CalculateDockVisualSeam(parentFacts));
+                    CalculateDockVisualSeamPhysical(parentFacts));
         }
 
         internal static Rectangle CalculateDockVisualSeam(
@@ -969,6 +971,19 @@ namespace PennyPet
         {
             return facts == null ? Rectangle.Empty : new Rectangle(facts.X,
                 facts.Y + facts.Height - 3, facts.Width, 6);
+        }
+
+        private Rectangle CalculateDockVisualSeamPhysical(
+            DockWindowFacts facts)
+        {
+            Rectangle seam = CalculateDockVisualSeam(facts);
+            if (seam.IsEmpty) return seam;
+            double scale = DeviceDpi / 96.0;
+            return new Rectangle(
+                (int)Math.Round(seam.X * scale),
+                (int)Math.Round(seam.Y * scale),
+                Math.Max(1, (int)Math.Round(seam.Width * scale)),
+                Math.Max(1, (int)Math.Round(seam.Height * scale)));
         }
 
         private DockTarget FindDockTarget(StickyNoteData source,

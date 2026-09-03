@@ -1128,7 +1128,7 @@ namespace PennyPet.Tests
                 !mergeVisuals.Contains("if (!_activeNoteDragHosted)"),
                 "Hosted merge must publish the detached seam pulse.");
             Assert.IsTrue(helpers.Contains(
-                    "CalculateDockVisualSeam(parentFacts)") &&
+                    "CalculateDockVisualSeamPhysical(parentFacts)") &&
                 helpers.Contains("IDictionary<string, DockWindowFacts>") &&
                 !helpers.Contains("parent.Bounds") &&
                 !helpers.Contains("StickyDockOperations"),
