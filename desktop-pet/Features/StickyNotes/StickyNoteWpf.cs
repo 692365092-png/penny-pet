@@ -868,6 +868,20 @@ namespace PennyPet
             Data.Height = Height;
         }
 
+        // Places the HWND at physical pixels (so Windows performs the correct
+        // per-monitor DPI conversion) and, when editing, activates and focuses
+        // the primary input. Used for a standalone note with a valid display
+        // placement so it lands on the correct monitor regardless of DPI.
+        internal void ShowAtPhysicalBounds(Rectangle bounds, bool edit)
+        {
+            ShowRestoredAtPhysicalBounds(bounds);
+            if (edit)
+            {
+                Activate();
+                FocusPrimaryInputForTest();
+            }
+        }
+
         internal Rectangle PhysicalBounds
         {
             get

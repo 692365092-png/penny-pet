@@ -215,6 +215,11 @@ namespace PennyPet
             copy.Y = Y;
             copy.Width = Width;
             copy.Height = Height;
+            copy.DisplayId = DisplayId;
+            copy.LocalLogicalX = LocalLogicalX;
+            copy.LocalLogicalY = LocalLogicalY;
+            copy.LocalLogicalWidth = LocalLogicalWidth;
+            copy.LocalLogicalHeight = LocalLogicalHeight;
             copy.DockParentId = DockParentId;
             copy.DockGroupId = DockGroupId;
             copy.DockGroupOrder = DockGroupOrder;

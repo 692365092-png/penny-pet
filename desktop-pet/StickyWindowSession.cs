@@ -45,13 +45,37 @@ namespace PennyPet
 
         internal StickyUiCommandResult Show(bool edit)
         {
-            if (edit) _window.ShowAndEdit();
+            if (TryShowAtPhysicalBounds(edit))
+            {
+                if (!edit) EmitSnapshot(StickyUiEventKind.SnapshotChanged);
+                return CurrentResult();
+            }
+            if (edit)
+            {
+                _window.ShowAndEdit();
+            }
             else
             {
                 _window.ShowRestored();
                 EmitSnapshot(StickyUiEventKind.SnapshotChanged);
             }
             return CurrentResult();
+        }
+
+        private bool TryShowAtPhysicalBounds(bool edit)
+        {
+            if (!IsAvailable) return false;
+            StickyNoteData data = _window.Data;
+            // Only the canonical standalone path uses the physical placement
+            // executor. A dock member is repositioned by the owner via SetBounds
+            // in the same batch, so we leave the dock geometry untouched here.
+            if (String.IsNullOrWhiteSpace(data.DisplayId) ||
+                data.LocalLogicalWidth <= 0 || data.LocalLogicalHeight <= 0 ||
+                !String.IsNullOrEmpty(data.DockGroupId)) return false;
+            System.Drawing.Rectangle physical = new System.Drawing.Rectangle(
+                data.X, data.Y, data.Width, data.Height);
+            _window.ShowAtPhysicalBounds(physical, edit);
+            return true;
         }
 
         internal StickyUiCommandResult Hide()
@@ -416,11 +440,56 @@ namespace PennyPet
 
         private StickyNoteUiSnapshot CaptureSnapshot()
         {
+            // Canonical placement is derived from the real physical window
+            // bounds so mixed-DPI monitor origins never warp the stored
+            // DisplayId + LocalLogicalRect. The compatibility X/Y/Width/Height
+            // are the physical projection of the same placement, which feeds
+            // the native placement executor and the existing Dock/legacy
+            // runtime, never a second independent source of truth.
+            CaptureCanonicalPlacement();
+            return StickyNoteUiSnapshot.FromData(_window.Data);
+        }
+
+        private void CaptureCanonicalPlacement()
+        {
+            if (!IsAvailable) return;
+            try
+            {
+                System.Drawing.Rectangle physical = _window.PhysicalBounds;
+                if (physical == System.Drawing.Rectangle.Empty) return;
+                WindowsDisplayMetrics metrics =
+                    WindowsDisplayResolver.ResolvePhysicalRect(
+                        physical.Left, physical.Top,
+                        physical.Right, physical.Bottom);
+                if (metrics != null)
+                {
+                    StickyCanonicalPlacement placement =
+                        StickyPlacementMath.FromPhysicalRect(
+                            metrics.DisplayId, metrics.PhysicalLeft,
+                            metrics.PhysicalTop, metrics.Scale,
+                            physical.Left, physical.Top,
+                            physical.Width, physical.Height);
+                    placement.ApplyTo(_window.Data);
+                    return;
+                }
+            }
+            catch
+            {
+                // Fall through to the legacy DIP capture below. A failing DPI
+                // query must never make a visible note disappear or corrupt the
+                // canonical file.
+            }
+            // No canonical placement resolved this pass: mark the working copy
+            // as legacy so it never carries a stale placement as truth.
+            _window.Data.DisplayId = String.Empty;
+            _window.Data.LocalLogicalX = 0;
+            _window.Data.LocalLogicalY = 0;
+            _window.Data.LocalLogicalWidth = 0;
+            _window.Data.LocalLogicalHeight = 0;
             _window.Data.X = _window.Left;
             _window.Data.Y = _window.Top;
             _window.Data.Width = _window.Width;
             _window.Data.Height = _window.Height;
-            return StickyNoteUiSnapshot.FromData(_window.Data);
         }
 
         private void Raise(StickyUiEvent value)

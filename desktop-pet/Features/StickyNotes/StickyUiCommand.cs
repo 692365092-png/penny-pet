@@ -157,6 +157,11 @@ namespace PennyPet
             Y = source.Y;
             Width = source.Width;
             Height = source.Height;
+            DisplayId = source.DisplayId ?? String.Empty;
+            LocalLogicalX = source.LocalLogicalX;
+            LocalLogicalY = source.LocalLogicalY;
+            LocalLogicalWidth = source.LocalLogicalWidth;
+            LocalLogicalHeight = source.LocalLogicalHeight;
             CreatedUtcTicks = source.CreatedUtcTicks;
             ModifiedUtcTicks = source.ModifiedUtcTicks;
             ReminderUtcTicks = source.ReminderUtcTicks;
@@ -191,6 +196,11 @@ namespace PennyPet
         internal int Y { get; private set; }
         internal int Width { get; private set; }
         internal int Height { get; private set; }
+        internal string DisplayId { get; private set; }
+        internal int LocalLogicalX { get; private set; }
+        internal int LocalLogicalY { get; private set; }
+        internal int LocalLogicalWidth { get; private set; }
+        internal int LocalLogicalHeight { get; private set; }
         internal long CreatedUtcTicks { get; private set; }
         internal long ModifiedUtcTicks { get; private set; }
         internal long ReminderUtcTicks { get; private set; }
@@ -230,6 +240,11 @@ namespace PennyPet
             target.Y = Y;
             target.Width = Width;
             target.Height = Height;
+            target.DisplayId = DisplayId ?? String.Empty;
+            target.LocalLogicalX = LocalLogicalX;
+            target.LocalLogicalY = LocalLogicalY;
+            target.LocalLogicalWidth = LocalLogicalWidth;
+            target.LocalLogicalHeight = LocalLogicalHeight;
             target.CreatedUtcTicks = CreatedUtcTicks;
             target.ModifiedUtcTicks = ModifiedUtcTicks;
             target.ReminderUtcTicks = ReminderUtcTicks;

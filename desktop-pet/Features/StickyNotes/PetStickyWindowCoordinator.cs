@@ -254,22 +254,62 @@ namespace PennyPet
                         " 张，请先删除不需要的便利贴。");
                 return null;
             }
-            Rectangle work = Screen.FromRectangle(Bounds).WorkingArea;
             int offset = (_notes.GetAll().Count % 7) * 18;
-            int x = Left - 332 - offset;
-            if (x < work.Left) x = Math.Min(work.Right - 332, Right + 12 + offset);
-            int y = Math.Max(work.Top, Math.Min(Top + offset, work.Bottom - 312));
-            StickyNoteData note = _notes.Create(text, new Point(x, y));
+            StickyNoteData note = CreateStickyNoteDataWithPlacement(text, offset);
             if (note == null)
             {
                 ShowBubble("便利贴创建失败，原有数据没有被修改。请查看诊断记录。");
                 return null;
             }
-            note.Width = 320;
-            note.Height = 300;
-            note.Visible = true;
             _notes.Save();
             return note;
+        }
+
+        private StickyNoteData CreateStickyNoteDataWithPlacement(
+            string text, int offset)
+        {
+            WindowsDisplayMetrics metrics =
+                WindowsDisplayResolver.ResolvePhysicalRect(
+                    Bounds.Left, Bounds.Top, Bounds.Right, Bounds.Bottom);
+            if (metrics != null)
+            {
+                DockRect petPhysical = new DockRect(
+                    Bounds.Left, Bounds.Top,
+                    Math.Max(1, Bounds.Width), Math.Max(1, Bounds.Height));
+                DockRect workPhysical = new DockRect(
+                    metrics.WorkLeft, metrics.WorkTop,
+                    Math.Max(1, metrics.WorkWidth),
+                    Math.Max(1, metrics.WorkHeight));
+                StickyCanonicalPlacement placement =
+                    StickyPlacementMath.FromSpawn(
+                        metrics.DisplayId, metrics.PhysicalLeft,
+                        metrics.PhysicalTop, metrics.Scale,
+                        petPhysical, workPhysical,
+                        new DockSize(320, 300), 12 + offset);
+                StickyNoteData note = _notes.Create(
+                    text, new Point(placement.LocalX, placement.LocalY));
+                if (note == null) return null;
+                placement.ApplyTo(note);
+                note.Visible = true;
+                return note;
+            }
+
+            // Legacy fallback when the Windows monitor resolver is unavailable.
+            // Keeps the note visible without fabricating a historical DPI.
+            Rectangle legacyWork = Screen.FromRectangle(Bounds).WorkingArea;
+            int x = Left - 332 - offset;
+            if (x < legacyWork.Left)
+                x = Math.Min(legacyWork.Right - 332, Right + 12 + offset);
+            int y = Math.Max(legacyWork.Top,
+                Math.Min(Top + offset, legacyWork.Bottom - 312));
+            StickyNoteData legacy = _notes.Create(text, new Point(x, y));
+            if (legacy != null)
+            {
+                legacy.Width = 320;
+                legacy.Height = 300;
+                legacy.Visible = true;
+            }
+            return legacy;
         }
 
         private void StartHostedSticky(StickyNoteData note,

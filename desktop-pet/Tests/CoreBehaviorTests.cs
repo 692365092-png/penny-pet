@@ -432,6 +432,203 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyPlacementMath_RoundTrip_100Percent()
+        {
+            StickyCanonicalPlacement placement =
+                StickyPlacementMath.FromPhysicalRect(
+                    "\\\\.\\DISPLAY1", 0, 0, 1.0,
+                    100, 50, 320, 300);
+            Assert.AreEqual("\\\\.\\DISPLAY1", placement.DisplayId);
+            Assert.AreEqual(100, placement.LocalX);
+            Assert.AreEqual(50, placement.LocalY);
+            Assert.AreEqual(320, placement.LocalWidth);
+            Assert.AreEqual(300, placement.LocalHeight);
+            Assert.AreEqual(100, placement.PhysicalLeft);
+            Assert.AreEqual(50, placement.PhysicalTop);
+
+            LogicalPoint local = DisplayGeometry.PhysicalToLocal(
+                100, 50, 0, 0, 1.0);
+            PhysicalPoint round = DisplayGeometry.LocalToPhysical(
+                local.X, local.Y, 0, 0, 1.0);
+            Assert.AreEqual(100, round.X);
+            Assert.AreEqual(50, round.Y);
+        }
+
+        [TestMethod]
+        public void StickyPlacementMath_RoundTrip_200PercentNonZeroOrigin()
+        {
+            StickyCanonicalPlacement placement =
+                StickyPlacementMath.FromPhysicalRect(
+                    "\\\\.\\DISPLAY2", 1920, 0, 2.0,
+                    2020, 100, 640, 600);
+            Assert.AreEqual("\\\\.\\DISPLAY2", placement.DisplayId);
+            Assert.AreEqual(50, placement.LocalX);
+            Assert.AreEqual(50, placement.LocalY);
+            Assert.AreEqual(320, placement.LocalWidth);
+            Assert.AreEqual(300, placement.LocalHeight);
+            Assert.AreEqual(2020, placement.PhysicalLeft);
+            Assert.AreEqual(100, placement.PhysicalTop);
+
+            LogicalPoint local = DisplayGeometry.PhysicalToLocal(
+                2020, 100, 1920, 0, 2.0);
+            PhysicalPoint round = DisplayGeometry.LocalToPhysical(
+                local.X, local.Y, 1920, 0, 2.0);
+            Assert.AreEqual(2020, round.X);
+            Assert.AreEqual(100, round.Y);
+        }
+
+        [TestMethod]
+        public void StickyPlacementMath_RoundTrip_NegativeOrigin()
+        {
+            StickyCanonicalPlacement placement =
+                StickyPlacementMath.FromPhysicalRect(
+                    "\\\\.\\DISPLAY3", -1920, 0, 2.0,
+                    -2010, 80, 640, 600);
+            Assert.AreEqual(-45, placement.LocalX);
+            Assert.AreEqual(40, placement.LocalY);
+            Assert.AreEqual(320, placement.LocalWidth);
+            Assert.AreEqual(300, placement.LocalHeight);
+            Assert.AreEqual(-2010, placement.PhysicalLeft);
+            Assert.AreEqual(80, placement.PhysicalTop);
+
+            LogicalPoint local = DisplayGeometry.PhysicalToLocal(
+                -2010, 80, -1920, 0, 2.0);
+            PhysicalPoint round = DisplayGeometry.LocalToPhysical(
+                local.X, local.Y, -1920, 0, 2.0);
+            Assert.AreEqual(-2010, round.X);
+            Assert.AreEqual(80, round.Y);
+        }
+
+        [TestMethod]
+        public void StickyPlacementMath_SpawnMatchesCanonicalSavedPlacement()
+        {
+            StickyCanonicalPlacement placement =
+                StickyPlacementMath.FromSpawn(
+                    "\\\\.\\DISPLAY1", 0, 0, 1.0,
+                    new DockRect(400, 200, 192, 208),
+                    new DockRect(0, 0, 1000, 800),
+                    new DockSize(320, 300), 12);
+            Assert.AreEqual(68, placement.LocalX);
+            Assert.AreEqual(154, placement.LocalY);
+            Assert.AreEqual(320, placement.LocalWidth);
+            Assert.AreEqual(300, placement.LocalHeight);
+            Assert.AreEqual(68, placement.PhysicalLeft);
+            Assert.AreEqual(154, placement.PhysicalTop);
+
+            StickyNoteData note = new StickyNoteData();
+            placement.ApplyTo(note);
+            Assert.AreEqual(placement.DisplayId, note.DisplayId);
+            Assert.AreEqual(placement.LocalX, note.LocalLogicalX);
+            Assert.AreEqual(placement.LocalY, note.LocalLogicalY);
+            Assert.AreEqual(placement.LocalWidth, note.LocalLogicalWidth);
+            Assert.AreEqual(placement.LocalHeight, note.LocalLogicalHeight);
+            Assert.AreEqual(placement.PhysicalLeft, note.X);
+            Assert.AreEqual(placement.PhysicalTop, note.Y);
+            Assert.AreEqual(placement.PhysicalWidth, note.Width);
+            Assert.AreEqual(placement.PhysicalHeight, note.Height);
+
+            StickyCanonicalPlacement restored =
+                StickyCanonicalPlacement.FromData(note);
+            Assert.AreEqual(placement.DisplayId, restored.DisplayId);
+            Assert.AreEqual(placement.LocalX, restored.LocalX);
+            Assert.AreEqual(placement.LocalY, restored.LocalY);
+            Assert.AreEqual(placement.LocalWidth, restored.LocalWidth);
+            Assert.AreEqual(placement.LocalHeight, restored.LocalHeight);
+            Assert.AreEqual(placement.PhysicalLeft, restored.PhysicalLeft);
+            Assert.AreEqual(placement.PhysicalTop, restored.PhysicalTop);
+            Assert.AreEqual(placement.PhysicalWidth, restored.PhysicalWidth);
+            Assert.AreEqual(placement.PhysicalHeight, restored.PhysicalHeight);
+        }
+
+        [TestMethod]
+        public void StickyPlacementMath_MoveAcrossDisplayChangesCanonical()
+        {
+            StickyCanonicalPlacement before =
+                StickyPlacementMath.FromPhysicalRect(
+                    "\\\\.\\DISPLAY1", 0, 0, 1.0,
+                    100, 50, 320, 300);
+
+            StickyCanonicalPlacement after =
+                StickyPlacementMath.FromPhysicalRect(
+                    "\\\\.\\DISPLAY2", 1920, 0, 2.0,
+                    2020, 100, 640, 600);
+
+            Assert.AreNotEqual(before.DisplayId, after.DisplayId);
+            Assert.AreEqual("\\\\.\\DISPLAY2", after.DisplayId);
+            Assert.AreEqual(50, after.LocalX);
+            Assert.AreEqual(50, after.LocalY);
+        }
+
+        [TestMethod]
+        public void StickyPlacementMath_SpawnStaysOnPetScreenAcrossDisplays()
+        {
+            // The pet lives on a 200% monitor at non-zero origin. The newly
+            // created sticky must fall inside that same monitor's work area,
+            // never on the primary monitor.
+            StickyCanonicalPlacement placement =
+                StickyPlacementMath.FromSpawn(
+                    "\\\\.\\DISPLAY2", 1920, 0, 2.0,
+                    new DockRect(2000, 50, 192, 208),
+                    new DockRect(1920, 0, 1280, 720),
+                    new DockSize(320, 300), 12);
+
+            Assert.AreEqual("\\\\.\\DISPLAY2", placement.DisplayId);
+            // B work area in local units is 0..640 x 0..360; the spawn must be
+            // fully inside it (local width 320, height 300).
+            Assert.IsTrue(placement.LocalX >= 0,
+                "spawn X must not leak before the pet screen");
+            Assert.IsTrue(placement.LocalX + placement.LocalWidth <= 640,
+                "spawn X must stay within the pet screen");
+            Assert.IsTrue(placement.LocalY >= 0,
+                "spawn Y must not leak above the pet screen");
+            Assert.IsTrue(placement.LocalY + placement.LocalHeight <= 360,
+                "spawn Y must stay within the pet screen");
+            // Compat physical position is on monitor B, to the right of B origin.
+            Assert.IsTrue(placement.PhysicalLeft >= 1920,
+                "compat physical position must remain on the pet screen");
+        }
+
+        [TestMethod]
+        public void StickyPlacementMath_NoGlobalLogicalShortcutInCoreGeometry()
+        {
+            string root = ResolveRepositoryRoot();
+            string[] candidates = new string[]
+            {
+                "Core/Display/DisplayGeometry.cs",
+                "Core/Display/StickyPlacementMath.cs",
+                "Core/StickyNotes/StickyDockGeometry.cs",
+                "Core/StickyNotes/StickyNoteModels.cs",
+                "Core/StickyNotes/StickyNoteCodec.cs"
+            };
+            foreach (string relative in candidates)
+            {
+                string path = Path.Combine(root, relative);
+                if (!File.Exists(path)) continue;
+                string text = File.ReadAllText(path);
+                Assert.IsFalse(text.Contains("globalPhysicalX"),
+                    relative + " reintroduced a global physical shortcut.");
+                Assert.IsFalse(text.Contains("globalLogical"),
+                    relative + " reintroduced a global logical shortcut.");
+                Assert.IsFalse(text.Contains("displayScale"),
+                    relative + " reintroduced a displayScale shortcut.");
+            }
+        }
+
+        private static string ResolveRepositoryRoot()
+        {
+            DirectoryInfo directory =
+                new DirectoryInfo(AppContext.BaseDirectory);
+            for (int depth = 0; depth < 6 && directory != null; depth++)
+            {
+                if (File.Exists(Path.Combine(
+                    directory.FullName, "PennyPet.sln")))
+                    return directory.FullName;
+                directory = directory.Parent;
+            }
+            return AppContext.BaseDirectory;
+        }
+
+        [TestMethod]
         public void StickyDockGeometry_PetSideSpawnPrefersLeftThenClamps()
         {
             DockRect left = StickyDockGeometry.CalculatePetSideSpawnLocal(
