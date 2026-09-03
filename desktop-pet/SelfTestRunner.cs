@@ -3813,18 +3813,22 @@ namespace PennyPet
             all.AddRange(PetPersonaRuntimeCatalog.SmallTalkMeaningful);
             all.AddRange(PetPersonaRuntimeCatalog.DaypartMeaningful);
             if (all.Count == 0) return false;
-            HashSet<string> ids = new HashSet<string>(
-                StringComparer.Ordinal);
-            HashSet<string> bodies = new HashSet<string>(
-                StringComparer.Ordinal);
+            Dictionary<string, string> idToBody =
+                new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (PetPersonaEntry entry in all)
             {
                 if (entry == null || !entry.Approved) return false;
                 if (String.IsNullOrWhiteSpace(entry.StableContentId) ||
                     String.IsNullOrWhiteSpace(entry.CanonicalBody))
                     return false;
-                if (!ids.Add(entry.StableContentId)) return false;
-                if (!bodies.Add(entry.CanonicalBody)) return false;
+                string existingBody;
+                if (idToBody.TryGetValue(entry.StableContentId,
+                    out existingBody))
+                {
+                    if (!String.Equals(existingBody, entry.CanonicalBody,
+                        StringComparison.Ordinal)) return false;
+                }
+                else idToBody[entry.StableContentId] = entry.CanonicalBody;
                 if (entry.EligibleContexts == 0) return false;
                 if (entry.RepeatClass != PetPersonaRepeatClass.Loopable &&
                     entry.RepeatClass != PetPersonaRepeatClass.Meaningful)
@@ -3849,14 +3853,22 @@ namespace PennyPet
                 PetPersonaRuntimeCatalog.SmallTalkMeaningful, "PENNY-000007");
             PetPersonaEntry inspiration = FindPersonaEntry(
                 PetPersonaRuntimeCatalog.SmallTalkMeaningful, "PENNY-000019");
-            return PetPersonaRuntimeCatalog.SmallTalkLoopable.Length == 3 &&
-                PetPersonaRuntimeCatalog.SmallTalkMeaningful.Length == 13 &&
+            PetPersonaEntry legacyLoop = FindPersonaEntry(
+                PetPersonaRuntimeCatalog.SmallTalkLoopable,
+                "SMALLTALK-LOOP-IN");
+            PetPersonaEntry legacyMeal = FindPersonaEntry(
+                PetPersonaRuntimeCatalog.SmallTalkMeaningful,
+                "MEANINGFUL-MEAL");
+            return PetPersonaRuntimeCatalog.SmallTalkLoopable.Length == 11 &&
+                PetPersonaRuntimeCatalog.SmallTalkMeaningful.Length == 20 &&
                 noonMeal != null &&
                 (noonMeal.EligibleContexts & PetPersonaContext.Noon) != 0 &&
                 (noonMeal.EligibleContexts & PetPersonaContext.SmallTalk) == 0 &&
                 FindPersonaEntry(PetPersonaRuntimeCatalog.SmallTalkMeaningful,
                     "PENNY-000004") == null &&
                 question != null && question.PreserveEnding &&
+                legacyLoop != null &&
+                legacyMeal != null &&
                 songEnding != null && songEnding.PreserveEnding &&
                 songEnding.CanonicalBody.EndsWith("~",
                     StringComparison.Ordinal) &&

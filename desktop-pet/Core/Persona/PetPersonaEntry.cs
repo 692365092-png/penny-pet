@@ -86,7 +86,8 @@ namespace PennyPet
     }
 
     // Approved Persona corpus consumed by the SmallTalk and Daypart selectors.
-    // Content is provided by the data pipeline and must not be edited here.
+    // Legacy reflection lines retained by user decision live alongside the
+    // data-pipeline Approved entries.
     internal static class PetPersonaRuntimeCatalog
     {
         internal static readonly PetPersonaEntry[] SmallTalkLoopable =
@@ -102,7 +103,15 @@ namespace PennyPet
             Approved("PENNY-000003", "需要我帮什么忙吗", PetPersonaCategory.General,
                 PetSentenceIntent.Question, PetPersonaContext.SmallTalk,
                 PetPersonaRepeatClass.Loopable, PetPersonaContextClass.ContextFree,
-                false)
+                false),
+            Loopable("SMALLTALK-LOOP-IN", "我在。"),
+            Loopable("SMALLTALK-LOOP-QUESTION", "怎么了？"),
+            Loopable("SMALLTALK-LOOP-EN", "嗯？"),
+            Loopable("SMALLTALK-LOOP-AGAIN", "又来戳我了。"),
+            Loopable("SMALLTALK-LOOP-SEE", "好啦，看见你了。"),
+            Loopable("SMALLTALK-LOOP-KNOW", "我知道你在。"),
+            Loopable("SMALLTALK-LOOP-CALL", "有事就叫我。"),
+            Loopable("SMALLTALK-LOOP-POKE", "还戳呀。")
         };
 
         internal static readonly PetPersonaEntry[] SmallTalkMeaningful =
@@ -161,7 +170,21 @@ namespace PennyPet
             Approved("PENNY-000022", "允许外面依旧喧闹，允许自己喜欢独处",
                 PetPersonaCategory.Catchphrase, PetSentenceIntent.Gentle,
                 PetPersonaContext.SmallTalk, PetPersonaRepeatClass.Meaningful,
-                PetPersonaContextClass.ContextFree, true)
+                PetPersonaContextClass.ContextFree, true),
+            Meaningful("MEANINGFUL-MOVE", "别坐太久，起来动一动。",
+                PetPersonaContext.SmallTalk),
+            Meaningful("MEANINGFUL-WATER", "水还是要喝的。",
+                PetPersonaContext.SmallTalk),
+            Meaningful("MEANINGFUL-MEAL", "忙归忙，饭还是要吃。",
+                PetPersonaContext.SmallTalk),
+            Meaningful("MEANINGFUL-RETHINK", "卡住了就先换个思路。",
+                PetPersonaContext.SmallTalk),
+            Meaningful("MEANINGFUL-SLOW", "不急，慢慢来。",
+                PetPersonaContext.SmallTalk),
+            Meaningful("MEANINGFUL-ENOUGH", "今天也不用什么都做完。",
+                PetPersonaContext.SmallTalk),
+            Meaningful("MEANINGFUL-EYES", "眼睛也休息一下。",
+                PetPersonaContext.SmallTalk)
         };
 
         internal static readonly PetPersonaEntry[] DaypartMeaningful =
