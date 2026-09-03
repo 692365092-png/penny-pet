@@ -31,12 +31,42 @@ namespace PennyPet
             return ResolveMonitor(monitor);
         }
 
+        internal static WindowsDisplayMetrics ResolveDisplay(
+            string displayId)
+        {
+            if (String.IsNullOrWhiteSpace(displayId)) return null;
+            WindowsDisplayMetrics found = null;
+            MonitorEnumProc callback =
+                delegate(IntPtr hMonitor, IntPtr hdcMonitor,
+                    ref NativeRect clip, IntPtr dwData)
+                {
+                    NativeMonitorInfo info = new NativeMonitorInfo();
+                    info.cbSize = Marshal.SizeOf(typeof(NativeMonitorInfo));
+                    if (GetMonitorInfo(hMonitor, ref info) &&
+                        String.Equals(info.szDevice, displayId,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        found = BuildMetrics(hMonitor, info);
+                        return false;
+                    }
+                    return true;
+                };
+            EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, callback,
+                IntPtr.Zero);
+            return found;
+        }
+
         private static WindowsDisplayMetrics ResolveMonitor(IntPtr monitor)
         {
             NativeMonitorInfo info = new NativeMonitorInfo();
             info.cbSize = Marshal.SizeOf(typeof(NativeMonitorInfo));
             if (!GetMonitorInfo(monitor, ref info)) return null;
+            return BuildMetrics(monitor, info);
+        }
 
+        private static WindowsDisplayMetrics BuildMetrics(
+            IntPtr monitor, NativeMonitorInfo info)
+        {
             int dpiX;
             int dpiY;
             if (GetDpiForMonitor(monitor, EffectiveDpi, out dpiX, out dpiY) != 0)
@@ -57,6 +87,10 @@ namespace PennyPet
                 info.rcWork.Bottom - info.rcWork.Top,
                 scale);
         }
+
+        private delegate bool MonitorEnumProc(
+            IntPtr hMonitor, IntPtr hdcMonitor, ref NativeRect clip,
+            IntPtr dwData);
 
         [StructLayout(LayoutKind.Sequential)]
         private struct NativePoint
@@ -114,5 +148,10 @@ namespace PennyPet
         [DllImport("shcore.dll")]
         private static extern int GetDpiForMonitor(IntPtr monitor,
             int dpiType, out int dpiX, out int dpiY);
+
+        [DllImport("user32.dll")]
+        private static extern bool EnumDisplayMonitors(
+            IntPtr hdc, IntPtr lprcClip, MonitorEnumProc lpfnEnum,
+            IntPtr dwData);
     }
 }

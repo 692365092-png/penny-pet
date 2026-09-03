@@ -72,10 +72,61 @@ namespace PennyPet
             if (String.IsNullOrWhiteSpace(data.DisplayId) ||
                 data.LocalLogicalWidth <= 0 || data.LocalLogicalHeight <= 0 ||
                 !String.IsNullOrEmpty(data.DockGroupId)) return false;
-            System.Drawing.Rectangle physical = new System.Drawing.Rectangle(
-                data.X, data.Y, data.Width, data.Height);
+            System.Drawing.Rectangle physical =
+                ResolveCanonicalPhysical(data);
+            if (physical == System.Drawing.Rectangle.Empty) return false;
             _window.ShowAtPhysicalBounds(physical, edit);
             return true;
+        }
+
+        // The persisted compatibility X/Y/Width/Height are the physical
+        // projection of the canonical placement captured from the real window,
+        // so they are the primary source for the native placement executor.
+        // They are clamped into the nearest work area so an unplugged or moved
+        // monitor never hides a note. Only when the persisted rect is missing
+        // do we re-derive the physical rect from DisplayId + LocalLogicalRect.
+        private System.Drawing.Rectangle ResolveCanonicalPhysical(
+            StickyNoteData data)
+        {
+            if (data.Width > 0 && data.Height > 0)
+            {
+                System.Drawing.Rectangle persisted =
+                    new System.Drawing.Rectangle(
+                        data.X, data.Y, data.Width, data.Height);
+                WindowsDisplayMetrics nearest =
+                    WindowsDisplayResolver.ResolvePhysicalRect(
+                        persisted.Left, persisted.Top,
+                        persisted.Right, persisted.Bottom);
+                if (nearest == null) return persisted;
+                int left = Math.Max(nearest.WorkLeft,
+                    Math.Min(persisted.Left,
+                        nearest.WorkLeft + nearest.WorkWidth -
+                            persisted.Width));
+                int top = Math.Max(nearest.WorkTop,
+                    Math.Min(persisted.Top,
+                        nearest.WorkTop + nearest.WorkHeight -
+                            persisted.Height));
+                return new System.Drawing.Rectangle(
+                    left, top, persisted.Width, persisted.Height);
+            }
+
+            WindowsDisplayMetrics metrics =
+                WindowsDisplayResolver.ResolveDisplay(
+                    data.DisplayId ?? String.Empty);
+            if (metrics != null)
+            {
+                int left = metrics.PhysicalLeft + (int)Math.Round(
+                    data.LocalLogicalX * metrics.Scale);
+                int top = metrics.PhysicalTop + (int)Math.Round(
+                    data.LocalLogicalY * metrics.Scale);
+                int width = Math.Max(1, (int)Math.Round(
+                    Math.Max(1, data.LocalLogicalWidth) * metrics.Scale));
+                int height = Math.Max(1, (int)Math.Round(
+                    Math.Max(1, data.LocalLogicalHeight) * metrics.Scale));
+                return new System.Drawing.Rectangle(
+                    left, top, width, height);
+            }
+            return System.Drawing.Rectangle.Empty;
         }
 
         internal StickyUiCommandResult Hide()
