@@ -2016,6 +2016,52 @@ namespace PennyPet.Tests
                 "The STA batch executor must not touch durable preferred fields.");
         }
 
+        [TestMethod]
+        public void Drt10_LiveDragUsesPlannerDrivenBySourceFacts()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string plannerPath = Between(coordinator,
+                "private List<DockLayoutTarget> PlanLiveDockTargets",
+                "private void CompleteStickyDockDrag");
+
+            Assert.IsTrue(plannerPath.Contains(
+                    "_placementRuntime.GetEffective(") &&
+                plannerPath.Contains("DockPlacementPlanner.Plan(") &&
+                plannerPath.Contains("DisplayGeometry.PhysicalToLocal(") &&
+                plannerPath.Contains("BuildDockChainOrder(seed)"),
+                "The live drag must be planned from the source window's actual facts.");
+            Assert.IsFalse(plannerPath.Contains("WindowsDisplayResolver") ||
+                plannerPath.Contains("Screen.FromRectangle") ||
+                plannerPath.Contains("CalculateDockTranslationTargets"),
+                "Followers must never pick a target display or translate old coordinates.");
+            string move = Between(coordinator,
+                "private void MoveStickyDockDrag",
+                "private List<DockLayoutTarget> PlanLiveDockTargets");
+            Assert.IsTrue(move.Contains("PlanLiveDockTargets(seed, facts)") &&
+                !move.Contains("CalculateDockTranslationTargets("),
+                "The live move path must route through the planner.");
+        }
+
+        [TestMethod]
+        public void Drt10_PlanSurfaceAndDpiComeFromSourceFacts()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string batch = Between(coordinator,
+                "private void ApplyLiveDockBatch",
+                "private void SetActiveDockGroup");
+
+            Assert.IsTrue(batch.Contains(
+                    "_placementRuntime.GetEffective(sourceNoteId)") &&
+                batch.Contains("targetDpi = sourceFacts.Dpi") &&
+                batch.Contains("FindByRuntimeGdiName("),
+                "The batch plan surface and DPI must derive from the source facts.");
+            Assert.IsFalse(batch.Contains("WindowsDisplayResolver") ||
+                batch.Contains("MonitorFromRect"),
+                "The live batch must not re-guess the target display.");
+        }
+
         private static string ReadSource(string relativePath)
         {
             string root = FindDesktopPetDirectory();

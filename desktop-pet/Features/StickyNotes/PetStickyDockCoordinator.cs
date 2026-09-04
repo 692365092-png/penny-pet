@@ -201,13 +201,15 @@ namespace PennyPet
                 }
             }
 
-            List<DockLayoutTarget> moveTargets = CalculateDockTranslationTargets(
-                _activeDockGroupIds, _activeDockCurrentFacts, facts,
-                dx, dy);
-            _movingDockGroup = true;
-            try { ApplyLiveDockBatch(moveTargets, facts.NoteId); }
-            finally { _movingDockGroup = false; }
-            RememberActiveDockFacts(moveTargets);
+            List<DockLayoutTarget> moveTargets =
+                PlanLiveDockTargets(seed, facts);
+            if (moveTargets != null)
+            {
+                _movingDockGroup = true;
+                try { ApplyLiveDockBatch(moveTargets, facts.NoteId); }
+                finally { _movingDockGroup = false; }
+                RememberActiveDockFacts(moveTargets);
+            }
             _activeNoteDragLastFacts = facts;
             if (!_activeNoteDetached && _activeNoteSplitEligible)
                 UpdateSplitGuide(seed, _activeDockCurrentFacts);
@@ -215,6 +217,86 @@ namespace PennyPet
                 CaptureDockFacts(_notes.GetAll());
             previewFacts[facts.NoteId] = facts;
             UpdateDockPreview(seed, previewFacts);
+        }
+
+        // DRT-10: the live drag is driven by the pure planner and the source
+        // window's actual facts. Followers never choose a target display;
+        // when the source crosses a DPI boundary the next plan naturally
+        // re-scales the whole group to the new surface. A stale generation
+        // or missing facts drops this frame instead of chasing old coordinates.
+        private List<DockLayoutTarget> PlanLiveDockTargets(
+            StickyNoteData seed, DockWindowFacts movedFacts)
+        {
+            if (seed == null || movedFacts == null) return null;
+            WindowFacts sourceFacts = _placementRuntime.GetEffective(
+                movedFacts.NoteId);
+            if (sourceFacts == null) return null;
+            DisplayTopologySnapshot topology = CurrentTopologySnapshot();
+            if (topology == null) return null;
+            DisplaySurfaceSnapshot surface =
+                topology.FindByRuntimeGdiName(sourceFacts.RuntimeGdiName);
+            if (surface == null)
+                surface = topology.FindByTargetKey(
+                    sourceFacts.ActiveTargetKey);
+            if (surface == null) return null;
+
+            List<StickyNoteData> ordered = BuildDockChainOrder(seed);
+            int sourceIndex = ordered.FindIndex(delegate(StickyNoteData note)
+            {
+                return String.Equals(note.Id, movedFacts.NoteId,
+                    StringComparison.OrdinalIgnoreCase);
+            });
+            if (sourceIndex < 0) return null;
+
+            List<DockLogicalMember> members =
+                new List<DockLogicalMember>(ordered.Count);
+            foreach (StickyNoteData member in ordered)
+            {
+                if (member.LocalLogicalWidth <= 0 ||
+                    member.LocalLogicalHeight <= 0) return null;
+                members.Add(new DockLogicalMember(member.Id,
+                    member.LocalLogicalWidth,
+                    member.LocalLogicalHeight));
+            }
+
+            LogicalPoint sourceLocal = DisplayGeometry.PhysicalToLocal(
+                sourceFacts.PhysicalBounds.Left,
+                sourceFacts.PhysicalBounds.Top,
+                surface.Bounds.Left, surface.Bounds.Top, sourceFacts.Scale);
+            int rootX = sourceLocal.X;
+            int rootY = sourceLocal.Y;
+            for (int index = 0; index < sourceIndex; index++)
+                rootY -= ordered[index].LocalLogicalHeight;
+            DockGroupLogicalState group = new DockGroupLogicalState(
+                new LogicalPoint { X = rootX, Y = rootY }, members);
+
+            DockPlacementPlan plan;
+            try
+            {
+                plan = DockPlacementPlanner.Plan(group, sourceFacts,
+                    surface, sourceFacts.Dpi, topology.Generation, 0);
+            }
+            catch (ArgumentException)
+            {
+                DisplayDiagnostics.Trace("DockPlanCreated",
+                    "stale frame note=" + movedFacts.NoteId +
+                    " generation=" + sourceFacts.TopologyGeneration);
+                return null;
+            }
+
+            List<DockLayoutTarget> targets =
+                new List<DockLayoutTarget>();
+            foreach (DockWindowTarget target in plan.WindowTargets)
+            {
+                StickyNoteData member = _notes.Find(target.NoteId);
+                if (member == null) continue;
+                targets.Add(new DockLayoutTarget(target.NoteId,
+                    target.PhysicalBounds.Left, target.PhysicalBounds.Top,
+                    target.PhysicalBounds.Width,
+                    target.PhysicalBounds.Height,
+                    member.Visible, member.AlwaysOnTop));
+            }
+            return targets.Count == 0 ? null : targets;
         }
 
         private void CompleteStickyDockDrag(DockWindowFacts facts)
