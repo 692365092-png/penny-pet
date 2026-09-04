@@ -558,6 +558,8 @@ namespace PennyPet.Tests
             string client = ReadSource(
                 "Infrastructure/Weather/OpenMeteoForecastClient.cs");
             string coordinator = ReadSource("PetDailyContentCoordinator.cs");
+            string preferences = ReadSource(
+                "Core/DailyContent/DailyContentPreferencesSnapshot.cs");
             string animation = ReadSource("PetAnimationRuntime.cs");
             string startup = ReadSource("PetStartupCoordinator.cs");
             string commands = ReadSource(
@@ -609,6 +611,20 @@ namespace PennyPet.Tests
                 !coordinator.Contains(".Wait(") &&
                 !coordinator.Contains(".Result"),
                 "Poke animation must start before the asynchronous weather path.");
+            Assert.IsTrue(preferences.Contains(
+                    "sealed class DailyContentPreferencesSnapshot") &&
+                preferences.Contains("WeatherLocation WeatherLocation") &&
+                preferences.Contains("ZodiacSign ZodiacSign") &&
+                preferences.Contains("int BirthdayMonth") &&
+                preferences.Contains("int BirthdayDay") &&
+                preferences.Contains("string LastBriefingDate") &&
+                coordinator.Contains(
+                    "DailyContentPreferencesSnapshot preferences = _preferences();") &&
+                !coordinator.Contains("private readonly Func<ZodiacSign>") &&
+                animation.Contains("private async Task HandlePetPokedAsync()") &&
+                animation.Contains(
+                    "ApplicationDiagnostics.ReportNonFatal(\"pet-poke\", error)"),
+                "One immutable preference snapshot must span each async attempt and the UI boundary must observe failures.");
             Assert.IsFalse(startup.Contains("GetForecastAsync") ||
                 startup.Contains("SearchLocationsAsync"),
                 "Startup must make zero weather requests.");

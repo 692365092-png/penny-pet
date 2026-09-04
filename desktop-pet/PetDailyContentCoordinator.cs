@@ -6,18 +6,9 @@ namespace PennyPet
     // Hosts the poke-triggered daily interaction without owning settings or UI.
     internal sealed class PetDailyContentCoordinator
     {
-        private readonly Func<string> _lastBriefingDate;
-        private readonly Func<bool> _silentMode;
-        private readonly Func<bool> _dailyContentEnabled;
-        private readonly Func<bool> _solarTermEnabled;
-        private readonly Func<bool> _almanacEnabled;
-        private readonly Func<bool> _weatherEnabled;
-        private readonly Func<WeatherLocation> _weatherLocation;
+        private readonly Func<DailyContentPreferencesSnapshot> _preferences;
         private readonly Func<WeatherLocation,
             Task<WeatherForecastWindow>> _weatherForecast;
-        private readonly Func<ZodiacSign> _zodiacSign;
-        private readonly Func<int> _userBirthdayMonth;
-        private readonly Func<int> _userBirthdayDay;
         private readonly Func<string, bool> _showDailyGreeting;
         private readonly Action<string> _recordBriefingDate;
         private readonly object _attemptGate = new object();
@@ -36,28 +27,36 @@ namespace PennyPet
             Func<string, bool> showDailyGreeting,
             Action<string> recordBriefingDate)
         {
-            _lastBriefingDate = lastBriefingDate ??
+            if (lastBriefingDate == null)
                 throw new ArgumentNullException("lastBriefingDate");
-            _silentMode = silentMode ??
+            if (silentMode == null)
                 throw new ArgumentNullException("silentMode");
-            _dailyContentEnabled = dailyContentEnabled ??
+            if (dailyContentEnabled == null)
                 throw new ArgumentNullException("dailyContentEnabled");
-            _solarTermEnabled = solarTermEnabled ??
+            if (solarTermEnabled == null)
                 throw new ArgumentNullException("solarTermEnabled");
-            _almanacEnabled = almanacEnabled ??
+            if (almanacEnabled == null)
                 throw new ArgumentNullException("almanacEnabled");
-            _weatherEnabled = weatherEnabled ??
+            if (weatherEnabled == null)
                 throw new ArgumentNullException("weatherEnabled");
-            _weatherLocation = weatherLocation ??
+            if (weatherLocation == null)
                 throw new ArgumentNullException("weatherLocation");
+            if (zodiacSign == null)
+                throw new ArgumentNullException("zodiacSign");
+            if (userBirthdayMonth == null)
+                throw new ArgumentNullException("userBirthdayMonth");
+            if (userBirthdayDay == null)
+                throw new ArgumentNullException("userBirthdayDay");
+            _preferences = delegate
+            {
+                return new DailyContentPreferencesSnapshot(silentMode(),
+                    dailyContentEnabled(), solarTermEnabled(),
+                    almanacEnabled(), weatherEnabled(), weatherLocation(),
+                    zodiacSign(), userBirthdayMonth(), userBirthdayDay(),
+                    lastBriefingDate());
+            };
             _weatherForecast = weatherForecast ??
                 throw new ArgumentNullException("weatherForecast");
-            _zodiacSign = zodiacSign ??
-                throw new ArgumentNullException("zodiacSign");
-            _userBirthdayMonth = userBirthdayMonth ??
-                throw new ArgumentNullException("userBirthdayMonth");
-            _userBirthdayDay = userBirthdayDay ??
-                throw new ArgumentNullException("userBirthdayDay");
             _showDailyGreeting = showDailyGreeting ??
                 throw new ArgumentNullException("showDailyGreeting");
             _recordBriefingDate = recordBriefingDate ??
@@ -69,10 +68,11 @@ namespace PennyPet
         internal async Task<bool> HandlePetPokedAsync(
             DateTimeOffset localNow)
         {
-            if (!_dailyContentEnabled() ||
+            DailyContentPreferencesSnapshot preferences = _preferences();
+            if (!preferences.DailyContentEnabled ||
                 PetMessagePolicy.ShouldSuppress(PetMessageKind.DailyGreeting,
-                _silentMode()) || !DailyContentRules.ShouldShow(
-                    _lastBriefingDate(), localNow)) return false;
+                preferences.SilentMode) || !DailyContentRules.ShouldShow(
+                    preferences.LastBriefingDate, localNow)) return false;
             lock (_attemptGate)
             {
                 if (_attemptInFlight) return true;
@@ -81,11 +81,11 @@ namespace PennyPet
             try
             {
                 DayPart dayPart = DailyContentRules.ResolveDayPart(localNow);
-                SolarTermInfo? solarTerm = _solarTermEnabled()
+                SolarTermInfo? solarTerm = preferences.SolarTermEnabled
                     ? SolarTermCalculator.FindForLocalDate(localNow)
                     : (SolarTermInfo?)null;
                 AlmanacDailySelection almanac = null;
-                if (_almanacEnabled())
+                if (preferences.AlmanacEnabled)
                 {
                     AlmanacDayInfo almanacDay =
                         AlmanacCalculator.Calculate(localNow);
@@ -94,8 +94,8 @@ namespace PennyPet
                             almanacDay, localNow);
                 }
                 WeatherDailySelection weather = null;
-                WeatherLocation location = _weatherEnabled()
-                    ? _weatherLocation() : null;
+                WeatherLocation location = preferences.WeatherEnabled
+                    ? preferences.WeatherLocation : null;
                 if (location != null)
                 {
                     WeatherForecastWindow forecast = await _weatherForecast(
@@ -110,10 +110,10 @@ namespace PennyPet
                 DailyLineEntry curatedLine = CuratedDailyLineSelector.Select(
                     localNow);
                 DailyLineEntry zodiacLine = ZodiacDailySelector.Select(
-                    _zodiacSign(), localNow);
+                    preferences.ZodiacSign, localNow);
                 PetBirthdayKind birthdayKind = PetBirthdayRule.Resolve(
                     localNow.Month, localNow.Day,
-                    _userBirthdayMonth(), _userBirthdayDay());
+                    preferences.BirthdayMonth, preferences.BirthdayDay);
                 DailyLineEntry birthdayLine =
                     PetBirthdayWordingCatalog.Select(birthdayKind,
                         localNow.Date);
@@ -134,10 +134,12 @@ namespace PennyPet
 
         internal bool IsOpeningEligible(DateTimeOffset localNow)
         {
-            return _dailyContentEnabled() &&
+            DailyContentPreferencesSnapshot preferences = _preferences();
+            return preferences.DailyContentEnabled &&
                 !PetMessagePolicy.ShouldSuppress(
-                    PetMessageKind.DailyGreeting, _silentMode()) &&
-                DailyContentRules.ShouldShow(_lastBriefingDate(), localNow);
+                    PetMessageKind.DailyGreeting, preferences.SilentMode) &&
+                DailyContentRules.ShouldShow(preferences.LastBriefingDate,
+                    localNow);
         }
     }
 }

@@ -2669,6 +2669,7 @@ namespace PennyPet
             internal bool DailyCoordinatorWeatherOk;
             internal bool DailyCoordinatorFailureFallbackOk;
             internal bool DailyCoordinatorInFlightOk;
+            internal bool DailyCoordinatorPreferenceSnapshotOk;
             internal bool RejectedBubbleReusesForecastOk;
             internal bool LocationDialogLayoutOk;
         }
@@ -2981,6 +2982,55 @@ namespace PennyPet
                 bool firstShown = firstAttempt.GetAwaiter().GetResult();
                 return secondConsumed && firstShown && pendingFetches == 1 &&
                     pendingShows == 1 && pendingDate == "20260901";
+            }).GetAwaiter().GetResult();
+
+            result.DailyCoordinatorPreferenceSnapshotOk = Task.Run(delegate
+            {
+                int birthdayMonth = date.Month;
+                int birthdayDay = date.Day;
+                int birthdayReads = 0;
+                string snapshotText = null;
+                TaskCompletionSource<WeatherForecastWindow> pending =
+                    new TaskCompletionSource<WeatherForecastWindow>();
+                PetDailyContentCoordinator snapshotDaily =
+                    new PetDailyContentCoordinator(
+                        delegate { return String.Empty; },
+                        delegate { return false; },
+                        delegate { return true; },
+                        delegate { return false; },
+                        delegate { return false; },
+                        delegate { return true; },
+                        delegate { return location; },
+                        delegate { return pending.Task; },
+                        delegate { return ZodiacSign.None; },
+                        delegate
+                        {
+                            birthdayReads++;
+                            return birthdayMonth;
+                        },
+                        delegate
+                        {
+                            birthdayReads++;
+                            return birthdayDay;
+                        },
+                        delegate(string text)
+                        {
+                            snapshotText = text;
+                            return true;
+                        },
+                        delegate { });
+                DateTimeOffset snapshotNow = new DateTimeOffset(date,
+                    TimeSpan.FromHours(8));
+                Task<bool> attempt = snapshotDaily.HandlePetPokedAsync(
+                    snapshotNow);
+                birthdayMonth = 1;
+                birthdayDay = 1;
+                pending.SetResult(rainLater);
+                bool shown = attempt.GetAwaiter().GetResult();
+                DailyLineEntry expected = PetBirthdayWordingCatalog.Select(
+                    PetBirthdayKind.User, date);
+                return shown && birthdayReads == 2 && expected != null &&
+                    snapshotText != null && snapshotText.Contains(expected.Text);
             }).GetAwaiter().GetResult();
 
             result.RejectedBubbleReusesForecastOk = Task.Run(delegate
@@ -5677,6 +5727,9 @@ namespace PennyPet
                     ",\n" +
                 "  \"weather_daily_inflight_coalescing_ok\": " + Bool(
                     weatherChecks.DailyCoordinatorInFlightOk) + ",\n" +
+                "  \"daily_content_async_preference_snapshot_ok\": " + Bool(
+                    weatherChecks.DailyCoordinatorPreferenceSnapshotOk) +
+                    ",\n" +
                 "  \"weather_rejected_bubble_reuses_forecast_ok\": " + Bool(
                     weatherChecks.RejectedBubbleReusesForecastOk) + ",\n" +
                 "  \"weather_location_dialog_compact_formatting_ok\": " +

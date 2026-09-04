@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace PennyPet
@@ -200,6 +201,18 @@ namespace PennyPet
         }
 
         private async void HandlePetPoked()
+        {
+            try
+            {
+                await HandlePetPokedAsync();
+            }
+            catch (Exception error)
+            {
+                ApplicationDiagnostics.ReportNonFatal("pet-poke", error);
+            }
+        }
+
+        private async Task HandlePetPokedAsync()
         {
             DateTime nowUtc = DateTime.UtcNow;
             if (_pokeBurstTracker.RegisterPoke(nowUtc))
