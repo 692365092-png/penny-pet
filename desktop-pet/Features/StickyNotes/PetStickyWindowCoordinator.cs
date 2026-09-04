@@ -457,8 +457,7 @@ namespace PennyPet
                             if (result != null && result.Status ==
                                 StickyUiCommandStatus.Handled)
                             {
-                                ApplyHostedStickySnapshot(result.Snapshot,
-                                    result.Sequence);
+                                ApplyReprojectResult(result, noteId);
                                 _placementRuntime.
                                     MarkReturnedToPreferred(noteId);
                                 DisplayDiagnostics.Trace(
@@ -483,8 +482,7 @@ namespace PennyPet
                     if (result != null && result.Status ==
                         StickyUiCommandStatus.Handled)
                     {
-                        ApplyHostedStickySnapshot(result.Snapshot,
-                            result.Sequence);
+                        ApplyReprojectResult(result, rehomedNoteId);
                         CompleteTemporaryRehome(rehomedNoteId, fallback,
                             "preferred-display-missing", snapshot);
                     }
@@ -576,8 +574,11 @@ namespace PennyPet
                     if (result != null &&
                         result.Status == StickyUiCommandStatus.Handled)
                     {
-                        ApplyHostedStickySnapshot(result.Snapshot,
-                            result.Sequence);
+                        if (temporaryRehome)
+                            ApplyReprojectResult(result, noteId);
+                        else
+                            ApplyHostedStickySnapshot(result.Snapshot,
+                                result.Sequence);
                         if (temporaryRehome)
                             CompleteTemporaryRehome(noteId, fallback,
                                 "preferred-display-missing-at-restore",
@@ -613,8 +614,7 @@ namespace PennyPet
                         if (result != null && result.Status ==
                             StickyUiCommandStatus.Handled)
                         {
-                            ApplyHostedStickySnapshot(result.Snapshot,
-                                result.Sequence);
+                            ApplyReprojectResult(result, noteId);
                             CompleteTemporaryRehome(noteId, fallback,
                                 "preferred-display-missing-at-reopen",
                                 topology);
@@ -738,8 +738,7 @@ namespace PennyPet
                 }
                 else
                 {
-                    CommitDraggedNotePreferred(value);
-                    CompleteStickyDockDrag(facts);
+                    CompleteStickyDockDrag(facts, value);
                 }
                 return;
             }
@@ -950,6 +949,28 @@ namespace PennyPet
             placement.ApplyTo(canonical);
         }
 
+        // A successful Reproject carries actual HWND facts; the repository is
+        // updated from those facts, never from the WPF-derived snapshot
+        // geometry, and the runtime Effective advances to the same facts.
+        private void ApplyReprojectResult(StickyUiCommandResult result,
+            string noteId)
+        {
+            if (result == null || result.Snapshot == null ||
+                !_hostedRuntime.CanApplySequence(noteId,
+                    result.Sequence)) return;
+            StickyNoteData canonical = _notes.Find(noteId);
+            if (canonical == null) return;
+            result.Snapshot.ApplyContentTo(canonical);
+            canonical.Visible = result.Snapshot.Visible;
+            canonical.AlwaysOnTop = result.Snapshot.AlwaysOnTop;
+            ApplyHostedStickyFactsGeometry(canonical, result.Facts,
+                result.Topology);
+            _placementRuntime.UpdateEffective(noteId, result.Facts);
+            _hostedRuntime.RecordSequence(noteId, result.Sequence);
+            _notes.SaveAsync();
+            RefreshMenuText();
+        }
+
         private static bool TryBuildPreference(WindowFacts facts,
             DisplayTopologySnapshot topology, string existingKey,
             out string targetKey, out LogicalRect localRect)
@@ -1012,50 +1033,57 @@ namespace PennyPet
             }
         }
 
-        // The dragged note's durable preference comes strictly from the
-        // capture-time event facts and the capture-time topology snapshot. A
-        // geometry captured at generation G is never interpreted against a
-        // later Current generation.
-        private void CommitDraggedNotePreferred(StickyUiEvent value)
+        // DRT-9/10 durable dock commit continuation: after mouse-up the
+        // capture ran on the Sticky STA; every member's preferred placement
+        // is derived from the captured actual facts plus the event's
+        // capture-time topology, then membership and content are persisted
+        // once. No synchronous wait and no Current-generation guessing.
+        private void CompleteDockDurableCommit(StickyUiCommandResult result,
+            StickyUiEvent value, StickyNoteData seed,
+            StickyNoteData remainderSeed)
         {
-            StickyNoteData canonical = _notes.Find(value.NoteId);
-            if (canonical == null) return;
-            string targetKey;
-            LogicalRect local;
-            if (TryBuildPreference(value.Facts, value.Topology,
-                canonical.PreferredDisplayTargetKey, out targetKey,
-                out local) &&
-                CommitHostedStickyPreferred(canonical, targetKey,
-                    local.X, local.Y, local.Width, local.Height,
-                    PlacementReason.UserMoveCommit))
-                _placementRuntime.MarkUserPlacementCommit(value.NoteId);
+            if (result != null &&
+                result.Status == StickyUiCommandStatus.Handled)
+                ApplyDockCommitFacts(result.DockBatchResult, value);
+            CommitVisibleDockOrder(seed);
+            if (remainderSeed != null)
+                CommitVisibleDockOrder(remainderSeed);
+            _notes.Save();
         }
 
-        // Transition-only legacy commit for DOCK members other than the
-        // dragged note. The dragged note was already committed from
-        // capture-time facts above; the full multi-member actual-facts commit
-        // belongs to DRT-9/10 and must not be built here.
-        private void CommitUserMovedPreferred(StickyNoteData seed)
+        private void ApplyDockCommitFacts(DockBatchResult batch,
+            StickyUiEvent value)
         {
-            if (seed == null) return;
-            DisplayTopologySnapshot topology = CurrentTopologySnapshot();
-            foreach (string id in _activeDockGroupIds)
+            if (batch == null || value == null || value.Topology == null)
+                return;
+            if (batch.TopologyGeneration != value.Topology.Generation)
+                return;
+            foreach (DockBatchMemberResult member in batch.Members)
             {
-                if (String.Equals(id, seed.Id,
-                    StringComparison.OrdinalIgnoreCase)) continue;
-                StickyNoteData note = _notes.Find(id);
-                if (note == null) continue;
-                DisplaySurfaceSnapshot surface = topology != null
-                    ? topology.FindByRuntimeGdiName(
-                        note.DisplayId ?? String.Empty)
-                    : null;
-                string key = DisplayTopologyRules.SelectPreferredTargetKey(
-                    surface, note.PreferredDisplayTargetKey);
-                if (CommitHostedStickyPreferred(note, key,
-                    note.LocalLogicalX, note.LocalLogicalY,
-                    note.LocalLogicalWidth, note.LocalLogicalHeight,
-                    PlacementReason.DockCommit))
-                    _placementRuntime.MarkUserPlacementCommit(id);
+                if (member == null || member.Snapshot == null) continue;
+                if (!_hostedRuntime.CanApplySequence(member.NoteId,
+                    member.WindowSequence)) continue;
+                StickyNoteData canonical = _notes.Find(member.NoteId);
+                if (canonical == null) continue;
+                member.Snapshot.ApplyContentTo(canonical);
+                canonical.Visible = member.Snapshot.Visible;
+                canonical.AlwaysOnTop = member.Snapshot.AlwaysOnTop;
+                ApplyHostedStickyFactsGeometry(canonical, member.Facts,
+                    value.Topology);
+                _placementRuntime.UpdateEffective(member.NoteId,
+                    member.Facts);
+                _hostedRuntime.RecordSequence(member.NoteId,
+                    member.WindowSequence);
+                string targetKey;
+                LogicalRect local;
+                if (TryBuildPreference(member.Facts, value.Topology,
+                    canonical.PreferredDisplayTargetKey, out targetKey,
+                    out local) &&
+                    CommitHostedStickyPreferred(canonical, targetKey,
+                        local.X, local.Y, local.Width, local.Height,
+                        PlacementReason.DockCommit))
+                    _placementRuntime.MarkUserPlacementCommit(
+                        member.NoteId);
             }
         }
 

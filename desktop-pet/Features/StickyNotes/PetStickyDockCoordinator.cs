@@ -201,14 +201,13 @@ namespace PennyPet
                 }
             }
 
-            List<DockLayoutTarget> moveTargets =
-                PlanLiveDockTargets(seed, facts);
-            if (moveTargets != null)
+            DockPlacementPlan livePlan = PlanLiveDockPlan(seed, facts);
+            if (livePlan != null)
             {
                 _movingDockGroup = true;
-                try { ApplyLiveDockBatch(moveTargets, facts.NoteId); }
+                try { ApplyLiveDockPlan(livePlan); }
                 finally { _movingDockGroup = false; }
-                RememberActiveDockFacts(moveTargets);
+                RememberActiveDockFacts(PlanToDockTargets(livePlan));
             }
             _activeNoteDragLastFacts = facts;
             if (!_activeNoteDetached && _activeNoteSplitEligible)
@@ -224,7 +223,11 @@ namespace PennyPet
         // when the source crosses a DPI boundary the next plan naturally
         // re-scales the whole group to the new surface. A stale generation
         // or missing facts drops this frame instead of chasing old coordinates.
-        private List<DockLayoutTarget> PlanLiveDockTargets(
+        // DRT-10: the live drag is driven by the pure planner and the source
+        // window's actual facts. The plan is built exactly once with one
+        // capture-time topology generation and one mailbox sequence; nothing
+        // downstream may re-stamp it against a later Current generation.
+        private DockPlacementPlan PlanLiveDockPlan(
             StickyNoteData seed, DockWindowFacts movedFacts)
         {
             if (seed == null || movedFacts == null) return null;
@@ -274,7 +277,8 @@ namespace PennyPet
             try
             {
                 plan = DockPlacementPlanner.Plan(group, sourceFacts,
-                    surface, sourceFacts.Dpi, topology.Generation, 0);
+                    surface, sourceFacts.Dpi, topology.Generation,
+                    _dockPlanMailbox.NextSequence());
             }
             catch (ArgumentException)
             {
@@ -283,7 +287,15 @@ namespace PennyPet
                     " generation=" + sourceFacts.TopologyGeneration);
                 return null;
             }
+            return plan;
+        }
 
+        // Runtime-only conversion for preview and drag-state tracking. It
+        // never writes repository geometry; canonical updates come from the
+        // native batch's actual facts.
+        private List<DockLayoutTarget> PlanToDockTargets(
+            DockPlacementPlan plan)
+        {
             List<DockLayoutTarget> targets =
                 new List<DockLayoutTarget>();
             foreach (DockWindowTarget target in plan.WindowTargets)
@@ -296,10 +308,11 @@ namespace PennyPet
                     target.PhysicalBounds.Height,
                     member.Visible, member.AlwaysOnTop));
             }
-            return targets.Count == 0 ? null : targets;
+            return targets;
         }
 
-        private void CompleteStickyDockDrag(DockWindowFacts facts)
+        private void CompleteStickyDockDrag(DockWindowFacts facts,
+            StickyUiEvent value)
         {
             if (facts == null) return;
             StickyNoteData seed = _notes.Find(facts.NoteId);
@@ -359,16 +372,20 @@ namespace PennyPet
                     DockWindowFacts.FromData(parent)),
                     Color.FromArgb(32, 160, 255));
             }
-            CommitVisibleDockOrder(seed);
-            StickyNoteData remainderSeed =
-                _notes.Find(_splitRemainderNoteId);
-            if (remainderSeed != null)
-                CommitVisibleDockOrder(remainderSeed);
             ClearDockPreview();
             ClearSplitGuide();
             RefreshDockResizeRoles();
-            CommitUserMovedPreferred(seed);
-            _notes.Save();
+            // Capture each member's actual facts once on the Sticky STA, then
+            // finish the durable commit in the completion continuation.
+            StickyNoteData remainderSeed =
+                _notes.Find(_splitRemainderNoteId);
+            PostHostedStickyCommand(StickyUiCommand.CaptureDockFacts(
+                CollectDockCommitMemberIds(seed)),
+                delegate(StickyUiCommandResult result)
+                {
+                    CompleteDockDurableCommit(result, value, seed,
+                        remainderSeed);
+                });
             _activeNoteDragId = null;
             _activeDockGroupIds.Clear();
             _activeDockOriginalFacts.Clear();
@@ -415,52 +432,16 @@ namespace PennyPet
             }
         }
 
-        // P1-D: a narrow latest-wins frame for a live dock drag. Each mouse
-        // move replaces the pending immutable plan in the mailbox; only one
-        // deferred native batch runs on the Sticky STA at a time, and it
-        // applies the newest follower rects once instead of a SetBounds per
-        // member per move. The live batch never writes a durable preferred.
-        private void ApplyLiveDockBatch(IEnumerable<DockLayoutTarget> targets,
-            string sourceNoteId)
+        // P1-D: a narrow latest-wins frame for a live dock drag. A desired
+        // plan only enters the mailbox; repository geometry is never written
+        // before the native batch succeeds, and canonical/effective updates
+        // come from the batch's actual facts in the completion callback.
+        private void ApplyLiveDockPlan(DockPlacementPlan plan)
         {
-            if (targets == null) return;
-            List<DockWindowTarget> windowTargets =
-                new List<DockWindowTarget>();
-            foreach (DockLayoutTarget target in targets)
-            {
-                if (target == null) continue;
-                StickyNoteData note = _notes.Find(target.NoteId);
-                if (note == null) continue;
-                ApplyDockCanonicalFromPhysical(note, target);
-                windowTargets.Add(new DockWindowTarget(target.NoteId,
-                    new PhysicalRect(target.X, target.Y, target.Width,
-                        target.Height)));
-            }
-            if (windowTargets.Count == 0) return;
-            long generation = _displayTopologyRuntime == null
-                ? 0 : _displayTopologyRuntime.Generation;
-            WindowFacts sourceFacts =
-                _placementRuntime.GetEffective(sourceNoteId);
-            string targetSurfaceId = String.Empty;
-            int targetDpi = 0;
-            if (sourceFacts != null)
-            {
-                targetDpi = sourceFacts.Dpi;
-                DisplayTopologySnapshot topology =
-                    CurrentTopologySnapshot();
-                DisplaySurfaceSnapshot surface = topology == null
-                    ? null : topology.FindByRuntimeGdiName(
-                        sourceFacts.RuntimeGdiName);
-                if (surface != null)
-                    targetSurfaceId = surface.RuntimeSurfaceId;
-            }
+            if (plan == null) return;
             DockPlanMailbox mailbox = _dockPlanMailbox;
-            DockPlacementPlan plan;
             lock (mailbox.Gate)
             {
-                plan = new DockPlacementPlan(generation,
-                    mailbox.NextSequence(), sourceNoteId ?? String.Empty,
-                    targetSurfaceId, targetDpi, windowTargets);
                 mailbox.Current = plan;
                 if (mailbox.ApplyQueued) return;
                 mailbox.ApplyQueued = true;
@@ -475,16 +456,54 @@ namespace PennyPet
                             "sticky-hosted-dock-bounds-batch", result);
                         return;
                     }
-                    if (result.FinalSnapshots != null)
-                        foreach (StickyUiFinalSnapshot finalSnapshot in
-                            result.FinalSnapshots)
-                        {
-                            if (finalSnapshot == null) continue;
-                            ApplyHostedStickySnapshot(
-                                finalSnapshot.Snapshot,
-                                finalSnapshot.Sequence, false);
-                        }
+                    ApplyDockBatchResult(result.DockBatchResult);
                 }, _petUiContext);
+        }
+
+        // Only same-generation, newest-sequence batch results are accepted.
+        // Actual WindowFacts are the effective geometry truth; content and
+        // non-geometry state come from the member snapshot.
+        private void ApplyDockBatchResult(DockBatchResult batch)
+        {
+            if (batch == null || batch.Members.Count == 0) return;
+            if (_displayTopologyRuntime == null ||
+                _displayTopologyRuntime.Current == null ||
+                _displayTopologyRuntime.Current.Generation !=
+                    batch.TopologyGeneration) return;
+            if (batch.PlanSequence < _lastAppliedDockPlanSequence) return;
+            _lastAppliedDockPlanSequence = batch.PlanSequence;
+            DisplayTopologySnapshot topology =
+                _displayTopologyRuntime.Current;
+            foreach (DockBatchMemberResult member in batch.Members)
+            {
+                if (member == null || member.Snapshot == null) continue;
+                if (!_hostedRuntime.CanApplySequence(member.NoteId,
+                    member.WindowSequence)) continue;
+                StickyNoteData canonical = _notes.Find(member.NoteId);
+                if (canonical == null) continue;
+                member.Snapshot.ApplyContentTo(canonical);
+                canonical.Visible = member.Snapshot.Visible;
+                canonical.AlwaysOnTop = member.Snapshot.AlwaysOnTop;
+                ApplyHostedStickyFactsGeometry(canonical, member.Facts,
+                    topology);
+                _placementRuntime.UpdateEffective(member.NoteId,
+                    member.Facts);
+                _hostedRuntime.RecordSequence(member.NoteId,
+                    member.WindowSequence);
+            }
+        }
+
+        private List<string> CollectDockCommitMemberIds(StickyNoteData seed)
+        {
+            HashSet<string> ids = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+            if (seed != null) ids.Add(seed.Id);
+            foreach (string id in _activeDockGroupIds) ids.Add(id);
+            List<StickyNoteData> ordered =
+                StickyDockGroups.GetOrderedGroup(_notes.GetAll(), seed);
+            foreach (StickyNoteData note in ordered)
+                if (note != null) ids.Add(note.Id);
+            return new List<string>(ids);
         }
 
         private void SetActiveDockGroup(List<StickyNoteData> notes)

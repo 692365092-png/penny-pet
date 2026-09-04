@@ -17,7 +17,7 @@ namespace PennyPet
         private readonly Dictionary<string, StickyWindowSession> _sessions =
             new Dictionary<string, StickyWindowSession>(
                 StringComparer.OrdinalIgnoreCase);
-        private long _lastDockPlanGeneration = -1;
+        private DisplayTopologySnapshot _currentTopology;
 
         internal void Start()
         {
@@ -88,6 +88,13 @@ namespace PennyPet
                 completed, completionContext);
         }
 
+        // Host-owned current topology truth for the Dock stale gate and for
+        // actual-facts capture. Pet publishes every settled snapshot here.
+        internal void SetCurrentTopology(DisplayTopologySnapshot snapshot)
+        {
+            lock (_configurationGate) _currentTopology = snapshot;
+        }
+
         private StickyUiCommandResult HandleCommand(
             StickyUiCommand command)
         {
@@ -128,6 +135,8 @@ namespace PennyPet
                             ? session.Reproject(command.ReprojectTarget,
                                 command.Topology, command.Flag)
                             : StickyUiCommandResult.NotHandled();
+                    case StickyUiCommandKind.CaptureDockFacts:
+                        return CaptureDockFactsForCommit(command);
                     case StickyUiCommandKind.UpdateReminders:
                         return TryGetSession(command.NoteId, out session)
                             ? session.UpdateReminders(command.Reminders)
@@ -255,11 +264,20 @@ namespace PennyPet
                 ? null : mailbox.TakeLatest();
             if (plan == null || plan.WindowTargets.Count == 0)
                 return StickyUiCommandResult.Handled();
-            // A plan older than the newest generation already applied is
-            // stale; the mailbox itself guarantees latest-wins ordering.
-            if (plan.TopologyGeneration < _lastDockPlanGeneration)
+            // Stale gate against the host-owned current topology generation:
+            // a plan built for generation G is never applied after Pet has
+            // published G+1.
+            DisplayTopologySnapshot topology;
+            lock (_configurationGate) topology = _currentTopology;
+            if (topology == null ||
+                plan.TopologyGeneration != topology.Generation)
+            {
+                DisplayDiagnostics.Trace("DockPlanStale",
+                    "plan=" + plan.PlanSequence + " planGeneration=" +
+                    plan.TopologyGeneration + " currentGeneration=" +
+                    (topology == null ? -1 : topology.Generation));
                 return StickyUiCommandResult.Handled();
-            _lastDockPlanGeneration = plan.TopologyGeneration;
+            }
 
             List<StickyWindowSession> sessions =
                 new List<StickyWindowSession>();
@@ -281,29 +299,71 @@ namespace PennyPet
 
             foreach (StickyWindowSession session in sessions)
                 session.SetEventsSuppressed(true);
-            List<StickyUiFinalSnapshot> finals =
-                new List<StickyUiFinalSnapshot>();
             try
             {
-                if (!WindowsBatchWindowPlacementExecutor.Apply(
-                    handles, rects))
+                WindowsBatchPlacementStatus status =
+                    WindowsBatchWindowPlacementExecutor.Apply(
+                        handles, rects);
+                if (status != WindowsBatchPlacementStatus.Applied)
                 {
-                    // The next mouse frame posts a newer plan; a failed
-                    // native batch must not fall back to a per-window chase.
                     DisplayDiagnostics.Trace("DockBatchApplied",
-                        "defer failed plan=" + plan.PlanSequence +
+                        "batch failed status=" + status +
+                        " plan=" + plan.PlanSequence +
                         " followers=" + sessions.Count);
-                    return StickyUiCommandResult.Handled();
+                    DisplayTopologySnapshot current;
+                    lock (_configurationGate) current = _currentTopology;
+                    if (current != null &&
+                        current.Generation != plan.TopologyGeneration)
+                        return StickyUiCommandResult.Handled();
+                    // Bounded per-window fallback, once, no loop.
+                    for (int index = 0; index < sessions.Count; index++)
+                    {
+                        PhysicalRect rect = rects[index];
+                        sessions[index].SetBounds(new StickyUiBounds(
+                            rect.Left, rect.Top, rect.Width, rect.Height));
+                    }
                 }
+                List<DockBatchMemberResult> members =
+                    new List<DockBatchMemberResult>();
                 foreach (StickyWindowSession session in sessions)
-                    finals.Add(session.CaptureBatchFinal());
+                {
+                    DockBatchMemberResult member =
+                        session.CaptureDockMember(topology);
+                    if (member != null) members.Add(member);
+                }
+                return StickyUiCommandResult.Handled(new DockBatchResult(
+                    plan.PlanSequence, plan.TopologyGeneration, members));
             }
             finally
             {
                 foreach (StickyWindowSession session in sessions)
                     session.SetEventsSuppressed(false);
             }
-            return StickyUiCommandResult.Handled(finals.ToArray());
+        }
+
+        // One detached actual-facts capture for a dock-commit continuation.
+        // Facts are captured with the host's current topology so the Pet can
+        // only accept same-generation geometry.
+        private StickyUiCommandResult CaptureDockFactsForCommit(
+            StickyUiCommand command)
+        {
+            if (command == null || command.DockNoteIds == null ||
+                command.DockNoteIds.Length == 0)
+                return StickyUiCommandResult.Handled();
+            DisplayTopologySnapshot topology;
+            lock (_configurationGate) topology = _currentTopology;
+            List<DockBatchMemberResult> members =
+                new List<DockBatchMemberResult>();
+            foreach (string noteId in command.DockNoteIds)
+            {
+                StickyWindowSession session;
+                if (!TryGetSession(noteId, out session)) continue;
+                DockBatchMemberResult member =
+                    session.CaptureDockMember(topology);
+                if (member != null) members.Add(member);
+            }
+            return StickyUiCommandResult.Handled(new DockBatchResult(0,
+                topology == null ? 0 : topology.Generation, members));
         }
 
         private void PostEvent(StickyUiEvent value)

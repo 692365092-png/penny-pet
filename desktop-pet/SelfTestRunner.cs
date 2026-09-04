@@ -4778,7 +4778,14 @@ namespace PennyPet
             foreach (System.Reflection.PropertyInfo property in
                 typeof(DockPlacementPlan).GetProperties())
                 if (property.CanWrite) planImmutable = false;
-            return latestWins && planImmutable;
+            bool batchResultImmutable = true;
+            foreach (System.Reflection.PropertyInfo property in
+                typeof(DockBatchResult).GetProperties())
+                if (property.CanWrite) batchResultImmutable = false;
+            foreach (System.Reflection.PropertyInfo property in
+                typeof(DockBatchMemberResult).GetProperties())
+                if (property.CanWrite) batchResultImmutable = false;
+            return latestWins && planImmutable && batchResultImmutable;
         }
 
         private static WindowShellCheckResult RunWindowShellChecks(

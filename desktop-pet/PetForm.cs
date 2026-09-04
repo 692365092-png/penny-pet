@@ -163,6 +163,7 @@ namespace PennyPet
         private bool _synchronizingDockLayout;
         private readonly DockPlanMailbox _dockPlanMailbox =
             new DockPlanMailbox();
+        private long _lastAppliedDockPlanSequence = -1;
         private System.Windows.Forms.Timer _startupWorkTimer;
         private StartupWorkPhase _startupWorkPhase;
         private Queue<StickyNoteData> _startupVisibleNotes;
@@ -543,6 +544,7 @@ namespace PennyPet
                 StringComparison.Ordinal))
                 DisplayDiagnostics.Trace("TopologyChanged",
                     details.ToString());
+            _stickyUiHost.SetCurrentTopology(snapshot);
             HandleStickyTopologyChanged(snapshot);
         }
 

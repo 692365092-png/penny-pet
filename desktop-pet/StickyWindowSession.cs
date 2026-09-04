@@ -362,16 +362,6 @@ namespace PennyPet
             }
         }
 
-        // Publishes one strictly newer final snapshot after a native batch
-        // placement without flushing content persistence, so a live drag
-        // frame never triggers an autosave per mouse move.
-        internal StickyUiFinalSnapshot CaptureBatchFinal()
-        {
-            _lastSnapshot = CaptureSnapshot();
-            _sequence++;
-            return new StickyUiFinalSnapshot(_lastSnapshot, _sequence);
-        }
-
         // Visible-safe native reprojection for hotplug rehome and preferred
         // return. The window is temporarily hidden before the target-surface
         // bootstrap so the work-area inset and the exact final rect can never
@@ -400,8 +390,11 @@ namespace PennyPet
                 logical.Height <= 0) return StickyUiCommandResult.NotHandled();
 
             bool wasVisible = _window.IsVisible;
+            System.Drawing.Rectangle previousBounds = _window.PhysicalBounds;
             bool previousApplying = _applyingBounds;
             _applyingBounds = true;
+            WindowFacts facts = null;
+            bool succeeded = false;
             try
             {
                 _window.ApplyTopMostWindowState(
@@ -423,30 +416,42 @@ namespace PennyPet
                     return StickyUiCommandResult.NotHandled();
                 if (wasVisible || target.ShowAfterPlacement)
                     _placementExecutor.Show();
-                CorrectReprojectionOnce(projected, surface);
+                facts = CorrectReprojectionOnce(projected);
+                if (facts == null)
+                    facts = _placementExecutor.CaptureFacts(_noteId,
+                        _topology == null ? 0 : _topology.Generation,
+                        _sequence, _topology);
+                succeeded = true;
                 if (focusPrimary)
                 {
                     _window.Activate();
                     _window.FocusPrimaryInputForTest();
                 }
             }
-            finally { _applyingBounds = previousApplying; }
+            finally
+            {
+                if (!succeeded)
+                    RollbackReproject(wasVisible, previousBounds);
+                _applyingBounds = previousApplying;
+            }
+            if (!succeeded) return StickyUiCommandResult.NotHandled();
             _lastSnapshot = CaptureSnapshot();
             _sequence++;
-            return StickyUiCommandResult.Handled(_lastSnapshot, _sequence);
+            return StickyUiCommandResult.Handled(_lastSnapshot, _sequence,
+                facts, _topology);
         }
 
-        private void CorrectReprojectionOnce(PhysicalRect requested,
-            DisplaySurfaceSnapshot surface)
+        private WindowFacts CorrectReprojectionOnce(PhysicalRect requested)
         {
             long generation = _topology == null ? 0 : _topology.Generation;
             WindowFacts facts = _placementExecutor.CaptureFacts(_noteId,
                 generation, _sequence, _topology);
-            if (facts == null ||
+            if (facts == null) return null;
+            if (
                 DisplayGeometry.IsWithinPlacementTolerance(requested,
                     facts.PhysicalBounds,
                     WindowsWindowPlacementExecutor.PlacementTolerancePixels))
-                return;
+                return facts;
             _placementExecutor.SetWindowPosExact(requested);
             facts = _placementExecutor.CaptureFacts(_noteId, generation,
                 _sequence, _topology);
@@ -455,6 +460,49 @@ namespace PennyPet
                     facts.PhysicalBounds,
                     WindowsWindowPlacementExecutor.PlacementTolerancePixels))
                 TracePlacementMismatch(requested, facts);
+            return facts;
+        }
+
+        // Transactional failure path: a reprojection must never leave a
+        // repository-visible window hidden. Restore the previous physical
+        // bounds and visibility whenever any bootstrap step fails.
+        private void RollbackReproject(bool wasVisible,
+            System.Drawing.Rectangle previousBounds)
+        {
+            try
+            {
+                if (previousBounds != System.Drawing.Rectangle.Empty)
+                    _placementExecutor.SetWindowPosExact(new PhysicalRect(
+                        previousBounds.Left, previousBounds.Top,
+                        previousBounds.Width, previousBounds.Height));
+                if (wasVisible) _placementExecutor.Show();
+            }
+            catch
+            {
+                // Rollback is best-effort; the bounded visibility restore
+                // above already ran whenever the handle was usable.
+            }
+        }
+
+        // Captures one detached member result (actual facts + content
+        // snapshot) for a native Dock batch or a dock-commit capture.
+        internal DockBatchMemberResult CaptureDockMember(
+            DisplayTopologySnapshot topology)
+        {
+            _lastSnapshot = CaptureSnapshot();
+            _sequence++;
+            WindowFacts facts = CaptureFactsWith(topology);
+            return new DockBatchMemberResult(_noteId, _sequence, facts,
+                _lastSnapshot);
+        }
+
+        private WindowFacts CaptureFactsWith(DisplayTopologySnapshot topology)
+        {
+            IntPtr hwnd = PlacementHwnd;
+            if (hwnd == IntPtr.Zero) return null;
+            return WindowsWindowFactsReader.Capture(hwnd, _noteId,
+                topology == null ? 0 : topology.Generation,
+                _sequence, topology);
         }
 
         internal StickyUiCommandResult Close()

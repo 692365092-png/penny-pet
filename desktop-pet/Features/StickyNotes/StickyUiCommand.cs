@@ -13,6 +13,7 @@ namespace PennyPet
         SetDockResizeRole,
         SetBounds,
         Reproject,
+        CaptureDockFacts,
         Close,
         CloseAll,
         UpdateReminders
@@ -27,7 +28,8 @@ namespace PennyPet
             StickyUiDockResizeRole dockResizeRole = null,
             ReminderItem[] reminders = null,
             DisplayTopologySnapshot topology = null,
-            StickyUiReprojectTarget reprojectTarget = null)
+            StickyUiReprojectTarget reprojectTarget = null,
+            string[] dockNoteIds = null)
         {
             Kind = kind;
             NoteId = noteId ?? String.Empty;
@@ -38,6 +40,9 @@ namespace PennyPet
             Reminders = CopyReminders(reminders);
             Topology = topology;
             ReprojectTarget = reprojectTarget;
+            DockNoteIds = dockNoteIds == null
+                ? null
+                : (string[])dockNoteIds.Clone();
         }
 
         internal static StickyUiCommand Create(StickyNoteUiSnapshot snapshot,
@@ -110,6 +115,19 @@ namespace PennyPet
                 false, null, null, null, null, topology, target);
         }
 
+        internal static StickyUiCommand CaptureDockFacts(
+            IEnumerable<string> noteIds)
+        {
+            List<string> ids = new List<string>();
+            if (noteIds != null)
+                foreach (string noteId in noteIds)
+                    if (!String.IsNullOrEmpty(noteId)) ids.Add(noteId);
+            return new StickyUiCommand(
+                StickyUiCommandKind.CaptureDockFacts,
+                ids.Count > 0 ? ids[0] : String.Empty, false,
+                null, null, null, null, null, null, ids.ToArray());
+        }
+
         internal static StickyUiCommand Close(string noteId)
         {
             return new StickyUiCommand(StickyUiCommandKind.Close, noteId,
@@ -131,6 +149,7 @@ namespace PennyPet
         internal ReminderItem[] Reminders { get; private set; }
         internal DisplayTopologySnapshot Topology { get; private set; }
         internal StickyUiReprojectTarget ReprojectTarget { get; private set; }
+        internal string[] DockNoteIds { get; private set; }
 
         private static ReminderItem[] CopyReminders(
             IEnumerable<ReminderItem> reminders)
@@ -562,11 +581,55 @@ namespace PennyPet
         internal long Sequence { get; private set; }
     }
 
+    // Detached actual-facts result for one window inside a native Dock batch
+    // or a dock-commit capture. Geometry authority is Facts; Snapshot only
+    // carries content and non-geometry state.
+    internal sealed class DockBatchMemberResult
+    {
+        internal DockBatchMemberResult(string noteId, long windowSequence,
+            WindowFacts facts, StickyNoteUiSnapshot snapshot)
+        {
+            NoteId = noteId ?? String.Empty;
+            WindowSequence = windowSequence;
+            Facts = facts;
+            Snapshot = snapshot;
+        }
+
+        internal string NoteId { get; private set; }
+        internal long WindowSequence { get; private set; }
+        internal WindowFacts Facts { get; private set; }
+        internal StickyNoteUiSnapshot Snapshot { get; private set; }
+    }
+
+    internal sealed class DockBatchResult
+    {
+        private readonly DockBatchMemberResult[] _members;
+
+        internal DockBatchResult(long planSequence, long topologyGeneration,
+            IEnumerable<DockBatchMemberResult> members)
+        {
+            PlanSequence = planSequence;
+            TopologyGeneration = topologyGeneration;
+            _members = members == null
+                ? new DockBatchMemberResult[0]
+                : new List<DockBatchMemberResult>(members).ToArray();
+            Members = Array.AsReadOnly(_members);
+        }
+
+        internal long PlanSequence { get; private set; }
+        internal long TopologyGeneration { get; private set; }
+        internal IReadOnlyList<DockBatchMemberResult> Members
+            { get; private set; }
+    }
+
     internal sealed class StickyUiCommandResult
     {
         private StickyUiCommandResult(StickyUiCommandStatus status,
             string error, StickyNoteUiSnapshot snapshot, long sequence,
-            StickyUiFinalSnapshot[] finalSnapshots, int ownerThreadId)
+            StickyUiFinalSnapshot[] finalSnapshots, int ownerThreadId,
+            WindowFacts facts = null,
+            DisplayTopologySnapshot topology = null,
+            DockBatchResult dockBatchResult = null)
         {
             Status = status;
             Error = error ?? String.Empty;
@@ -574,6 +637,9 @@ namespace PennyPet
             Sequence = sequence;
             FinalSnapshots = finalSnapshots;
             OwnerThreadId = ownerThreadId;
+            Facts = facts;
+            Topology = topology;
+            DockBatchResult = dockBatchResult;
         }
 
         internal StickyUiCommandStatus Status { get; private set; }
@@ -582,6 +648,9 @@ namespace PennyPet
         internal long Sequence { get; private set; }
         internal StickyUiFinalSnapshot[] FinalSnapshots { get; private set; }
         internal int OwnerThreadId { get; private set; }
+        internal WindowFacts Facts { get; private set; }
+        internal DisplayTopologySnapshot Topology { get; private set; }
+        internal DockBatchResult DockBatchResult { get; private set; }
 
         internal static StickyUiCommandResult Handled()
         {
@@ -601,6 +670,23 @@ namespace PennyPet
         {
             return new StickyUiCommandResult(StickyUiCommandStatus.Handled,
                 String.Empty, null, 0, finalSnapshots, ThreadingThreadId());
+        }
+
+        internal static StickyUiCommandResult Handled(
+            StickyNoteUiSnapshot snapshot, long sequence, WindowFacts facts,
+            DisplayTopologySnapshot topology)
+        {
+            return new StickyUiCommandResult(StickyUiCommandStatus.Handled,
+                String.Empty, snapshot, sequence, null, ThreadingThreadId(),
+                facts, topology);
+        }
+
+        internal static StickyUiCommandResult Handled(
+            DockBatchResult dockBatchResult)
+        {
+            return new StickyUiCommandResult(StickyUiCommandStatus.Handled,
+                String.Empty, null, 0, null, ThreadingThreadId(),
+                null, null, dockBatchResult);
         }
 
         internal static StickyUiCommandResult NotHandled()
