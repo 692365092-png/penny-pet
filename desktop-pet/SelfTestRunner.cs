@@ -3917,6 +3917,7 @@ namespace PennyPet
             internal bool PersonaLyricAnimationOk;
             internal bool SmallTalkAnimationProtectionOk;
             internal bool SolarPreservePlumbingOk;
+            internal bool DisplayTopologyRuntimeOk;
         }
 
         private sealed class StickyHostedCheckResult
@@ -4165,6 +4166,118 @@ namespace PennyPet
                     "我们现在还在一起会是怎样~";
         }
 
+        private static bool RunDisplayTopologyRuntimeCheck()
+        {
+            DisplayTargetIdentity target1 = FakeTarget("mdp:fake-1");
+            DisplayTargetIdentity target2 = FakeTarget("mdp:fake-2");
+            DisplayTargetIdentity target3 = FakeTarget("mdp:fake-3");
+            DisplaySurfaceSnapshot surface1 = FakeSurface(1, 0, true,
+                1080, 1032, target1);
+            DisplaySurfaceSnapshot surface2 = FakeSurface(2, 1920, false,
+                1080, 1032, target2);
+            DisplaySurfaceSnapshot surface3 = FakeSurface(3, 3840, false,
+                1080, 1032, target3);
+            DisplayTopologySnapshot two = new DisplayTopologySnapshot(0,
+                new[] { surface1, surface2 });
+            DisplayTopologySnapshot three = new DisplayTopologySnapshot(0,
+                new[] { surface1, surface2, surface3 });
+            DisplayTopologySnapshot reordered = new DisplayTopologySnapshot(0,
+                new[] { surface2, surface1 });
+            DisplaySurfaceSnapshot shifted2 = FakeSurface(2, 1920, false,
+                1080, 932, target2);
+            DisplayTopologySnapshot workShifted = new DisplayTopologySnapshot(0,
+                new[] { FakeSurface(1, 0, true, 1080, 932, target1) });
+            DisplayTopologySnapshot one = new DisplayTopologySnapshot(0,
+                new[] { surface1 });
+
+            int captures = 0;
+            DisplayTopologySnapshot current = two;
+            bool initialGenerationZero = false;
+            bool sameSnapshotUnchanged = false;
+            bool addedSurface = false;
+            bool removedMany = false;
+            bool reorderIgnored = false;
+            bool workAreaChanged = false;
+            bool rapidHintsOneSettledCapture = false;
+            using (DisplayTopologyRuntime runtime =
+                new DisplayTopologyRuntime(delegate
+                {
+                    captures++;
+                    return current;
+                }))
+            {
+                runtime.CaptureInitial();
+                initialGenerationZero =
+                    runtime.Generation == 0 && runtime.Current != null &&
+                    captures == 1;
+
+                runtime.NotifyPotentialChange("same");
+                runtime.FlushPendingForTest();
+                sameSnapshotUnchanged =
+                    runtime.Generation == 0 && captures == 2;
+
+                current = reordered;
+                runtime.NotifyPotentialChange("reorder");
+                runtime.FlushPendingForTest();
+                reorderIgnored = runtime.Generation == 0 &&
+                    captures == 3;
+
+                current = three;
+                runtime.NotifyPotentialChange("added");
+                runtime.FlushPendingForTest();
+                addedSurface = runtime.Generation == 1 &&
+                    captures == 4;
+
+                current = one;
+                runtime.NotifyPotentialChange("removed");
+                runtime.FlushPendingForTest();
+                removedMany = runtime.Generation == 2 &&
+                    captures == 5;
+
+                current = workShifted;
+                runtime.NotifyPotentialChange("workarea");
+                runtime.FlushPendingForTest();
+                workAreaChanged = runtime.Generation == 3 &&
+                    captures == 6;
+            }
+
+            int burstCaptures = 0;
+            using (DisplayTopologyRuntime burst =
+                new DisplayTopologyRuntime(delegate
+                {
+                    burstCaptures++;
+                    return two;
+                }))
+            {
+                burst.CaptureInitial();
+                for (int index = 0; index < 20; index++)
+                    burst.NotifyPotentialChange("hint-" + index);
+                burst.FlushPendingForTest();
+                rapidHintsOneSettledCapture =
+                    burstCaptures == 2 && burst.Generation == 0;
+            }
+            return initialGenerationZero && sameSnapshotUnchanged &&
+                addedSurface && removedMany && reorderIgnored &&
+                workAreaChanged && rapidHintsOneSettledCapture;
+        }
+
+        private static DisplayTargetIdentity FakeTarget(string key)
+        {
+            return new DisplayTargetIdentity(key, true, String.Empty,
+                "fake", 0, 0, 0);
+        }
+
+        private static DisplaySurfaceSnapshot FakeSurface(int index,
+            int left, bool primary, int height, int workHeight,
+            DisplayTargetIdentity target)
+        {
+            return new DisplaySurfaceSnapshot("surface-" + index,
+                "\\\\.\\DISPLAY" + index,
+                new PhysicalRect(left, 0, 1920, height),
+                new PhysicalRect(left, 0, 1920, workHeight),
+                primary, 0, new[] { target });
+        }
+
         private static WindowShellCheckResult RunWindowShellChecks(
             StickyNoteData restoredNote)
         {
@@ -4241,6 +4354,8 @@ namespace PennyPet
                 RunSmallTalkAnimationProtectionCheck();
             result.SolarPreservePlumbingOk =
                 RunSolarPreservePlumbingCheck();
+            result.DisplayTopologyRuntimeOk =
+                RunDisplayTopologyRuntimeCheck();
             result.ScaleRangeOk =
                 PetForm.NormalizeScalePercent(47) == 50 &&
                 PetForm.NormalizeScalePercent(104) == 100 &&
@@ -5517,6 +5632,8 @@ namespace PennyPet
                     shellChecks.SmallTalkAnimationProtectionOk) + ",\n" +
                 "  \"solar_preserve_plumbing_ok\": " + Bool(
                     shellChecks.SolarPreservePlumbingOk) + ",\n" +
+                "  \"display_topology_runtime_ok\": " + Bool(
+                    shellChecks.DisplayTopologyRuntimeOk) + ",\n" +
                 "  \"keyboard_hook_opt_in_and_default_off_ok\": " + Bool(
                     keyboardOverlayChecks.HookOptInDefaultOk) + ",\n" +
                 "  \"keyboard_privacy_notice_persistence_ok\": " + Bool(

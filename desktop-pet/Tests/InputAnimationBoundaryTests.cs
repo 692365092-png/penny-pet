@@ -132,7 +132,10 @@ namespace PennyPet.Tests
                 "Positioning must rebuild only an invalid split and otherwise reposition.");
             Assert.IsTrue(form.Contains("WmSettingChange") &&
                 form.Contains("WmDisplayChange") &&
-                form.Contains("BeginInvoke(new Action(PositionNoteTabs))") &&
+                form.Contains("WmDeviceChange") &&
+                form.Contains("NotifyPotentialChange") &&
+                form.Contains("DisplayTopologyRuntime") &&
+                !form.Contains("BeginInvoke(new Action(PositionNoteTabs))") &&
                 tabs.Contains("TopMost = true") &&
                 tabs.Contains("BringToFront()") &&
                 !tabs.Contains("Activate()"),
@@ -1317,11 +1320,13 @@ namespace PennyPet.Tests
                 placement.Contains("WindowPlacementPreference Preferred") &&
                 placement.Contains("WindowFacts Effective"),
                 "Topology collections must be immutable and preferred/effective placement must stay separate.");
-            Assert.IsFalse(ReadSource("PetForm.cs").Contains(
-                    "DisplayTopologySnapshot") ||
-                ReadSource("StickyUiHost.cs").Contains(
+            Assert.IsTrue(ReadSource("PetForm.cs").Contains(
+                    "DisplayTopologyRuntime") &&
+                ReadSource("PetForm.cs").Contains(
+                    "NotifyPotentialChange") &&
+                !ReadSource("StickyUiHost.cs").Contains(
                     "DisplayTopologySnapshot"),
-                "DRT-1 contracts must not be wired into production UI yet.");
+                "DRT-3 wiring must go through DisplayTopologyRuntime only.");
         }
 
         private static string ReadSource(string relativePath)

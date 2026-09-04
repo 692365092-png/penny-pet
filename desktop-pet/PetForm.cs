@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -91,6 +92,7 @@ namespace PennyPet
         private bool _renderedFramesOwnBitmaps;
         private Size _renderedTargetSize;
         private ContactAuthorForm _contactAuthorForm;
+        private DisplayTopologyRuntime _displayTopologyRuntime;
         private ReminderItem _preAlertItem
             { get { return _reminderCoordinator.PreAlertItem; }
                 set { _reminderCoordinator.PreAlertItem = value; } }
@@ -434,6 +436,11 @@ namespace PennyPet
             _petUiContext =
                 SynchronizationContext.Current as WindowsFormsSynchronizationContext
                 ?? new WindowsFormsSynchronizationContext();
+            _displayTopologyRuntime = new DisplayTopologyRuntime(
+                delegate { return new WindowsDisplayTopologyProvider().Capture(); });
+            _displayTopologyRuntime.TopologyChanged +=
+                DisplayTopologyChanged;
+            _displayTopologyRuntime.CaptureInitial();
             _stickyUiHost.Configure(HostedStickyEventReceived,
                 _petUiContext);
             _stickyUiHost.SetFaultHandler(HostedStickyFaulted);
@@ -490,11 +497,48 @@ namespace PennyPet
         {
             const int WmSettingChange = 0x001A;
             const int WmDisplayChange = 0x007E;
+            const int WmDeviceChange = 0x0219;
             base.WndProc(ref message);
-            if ((message.Msg == WmSettingChange ||
-                message.Msg == WmDisplayChange) && IsHandleCreated &&
-                !IsDisposed && !Disposing)
-                BeginInvoke(new Action(PositionNoteTabs));
+            if (IsHandleCreated && !IsDisposed && !Disposing &&
+                _displayTopologyRuntime != null)
+            {
+                if (message.Msg == WmDisplayChange)
+                    _displayTopologyRuntime.NotifyPotentialChange(
+                        "WM_DISPLAYCHANGE");
+                else if (message.Msg == WmSettingChange)
+                    _displayTopologyRuntime.NotifyPotentialChange(
+                        "WM_SETTINGCHANGE");
+                else if (message.Msg == WmDeviceChange)
+                    _displayTopologyRuntime.NotifyPotentialChange(
+                        "WM_DEVICECHANGE");
+            }
+        }
+
+        private void DisplayTopologyChanged(string reason,
+            DisplayTopologySnapshot snapshot)
+        {
+            if (snapshot == null || _displayTopologyRuntime == null) return;
+            StringBuilder details = new StringBuilder();
+            details.Append("generation=")
+                .Append(_displayTopologyRuntime.Generation)
+                .Append(" reason=").Append(reason ?? String.Empty)
+                .Append(" surfaces=").Append(snapshot.Surfaces.Count);
+            foreach (DisplaySurfaceSnapshot surface in snapshot.Surfaces)
+            {
+                details.Append(" | ")
+                    .Append(surface.RuntimeGdiName)
+                    .Append(" b=(").Append(surface.Bounds.Left).Append(",")
+                    .Append(surface.Bounds.Top).Append(",")
+                    .Append(surface.Bounds.Width).Append(",")
+                    .Append(surface.Bounds.Height).Append(")")
+                    .Append(" primary=").Append(surface.IsPrimary ? "1" : "0");
+            }
+            DisplayDiagnostics.Trace("TopologyCaptured",
+                details.ToString());
+            if (!String.Equals(reason, "initial",
+                StringComparison.Ordinal))
+                DisplayDiagnostics.Trace("TopologyChanged",
+                    details.ToString());
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
