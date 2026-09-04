@@ -236,6 +236,56 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyPersistence_FutureSchemaFailsClosedBeforeRecovery()
+        {
+            string repository = ReadSource(
+                "Features/StickyNotes/StickyNoteRepository.cs");
+            string exception = ReadSource(
+                "Features/StickyNotes/UnsupportedStickySchemaException.cs");
+            string host = ReadSource("PennyApplicationHost.cs");
+            string pet = ReadSource("PetForm.cs");
+            string load = Between(repository,
+                "internal static StickyNoteRepository LoadFromFile(string filePath)",
+                "private static bool TryPopulateFromFile");
+            string populate = Between(repository,
+                "private static bool TryPopulateFromFile",
+                "private static void AddParsedLine");
+            string save = Between(repository,
+                "internal PersistenceResult SaveToFile",
+                "internal PersistenceResult ExportSnapshot");
+
+            Assert.IsTrue(exception.Contains("DetectedVersion") &&
+                exception.Contains("MaximumSupportedVersion") &&
+                exception.Contains("SourcePath"),
+                "Future schema must have an explicit failure classification.");
+            int primaryBlock = load.IndexOf(
+                "primaryError as UnsupportedStickySchemaException",
+                StringComparison.Ordinal);
+            int backupProbe = load.IndexOf(
+                "string backupPath = filePath + \".bak\"",
+                StringComparison.Ordinal);
+            Assert.IsTrue(primaryBlock >= 0 && backupProbe > primaryBlock,
+                "A future primary must block before any backup fallback.");
+            int preflight = populate.IndexOf(
+                "InspectSchemaVersions(lines, filePath)",
+                StringComparison.Ordinal);
+            int parse = populate.IndexOf("AddParsedLine(repository, line)",
+                StringComparison.Ordinal);
+            Assert.IsTrue(preflight >= 0 && parse > preflight,
+                "Every file must be version-preflighted before payload parsing.");
+            Assert.IsTrue(save.IndexOf("if (!_loadSucceeded)",
+                    StringComparison.Ordinal) <
+                save.IndexOf("generation = ++_requestedGeneration",
+                    StringComparison.Ordinal),
+                "A blocked repository must reject save before snapshot generation.");
+            Assert.IsTrue(pet.Contains("if (_notes.IsFutureSchemaBlocked)") &&
+                pet.Contains("throw _notes.FutureSchemaError;") &&
+                host.Contains("catch (UnsupportedStickySchemaException error)") &&
+                host.Contains("BuildFutureSchemaBlockedMessage(error)"),
+                "Startup must show the dedicated message and exit before Pet UI continues.");
+        }
+
+        [TestMethod]
         public void StickyPersistence_BarriersAreBoundedAndExitResolvesBothFailures()
         {
             string repository = ReadSource(

@@ -56,6 +56,8 @@
   <ItemGroup>
     <EmbeddedResource Include="Tests\Fixtures\weather-*.json"
       LogicalName="PennyPet.Tests.Fixtures.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Tests\Fixtures\sticky-v*.txt"
+      LogicalName="PennyPet.Tests.Fixtures.%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

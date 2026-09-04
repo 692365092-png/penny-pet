@@ -1515,6 +1515,21 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void FutureStickyFixture_UsesTheNextVersionAndOpaquePayload()
+        {
+            string fixture = Path.Combine(AppContext.BaseDirectory,
+                "Tests", "Fixtures", "sticky-vFuture.txt");
+            int futureVersion = StickyNoteCodec.CurrentVersion + 1;
+            string line = File.ReadAllText(fixture, Encoding.UTF8).Trim()
+                .Replace("{VERSION}", futureVersion.ToString());
+
+            Assert.AreEqual(futureVersion.ToString(),
+                line.Substring(0, line.IndexOf('|')));
+            Assert.IsNull(StickyNoteCodec.ParseLine(line),
+                "The current codec must not interpret a future payload.");
+        }
+
+        [TestMethod]
         public void StickyImportBackupValidator_AcceptsHistoricalCodecFixtures()
         {
             for (int version = 1; version <= StickyNoteCodec.CurrentVersion;

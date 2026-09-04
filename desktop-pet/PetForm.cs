@@ -288,6 +288,8 @@ namespace PennyPet
             _reminders = new ReminderSchedule();
             RestoreReminders();
             _notes = StickyNoteRepository.Load();
+            if (_notes.IsFutureSchemaBlocked)
+                throw _notes.FutureSchemaError;
             _notes.SaveFailed += PersistenceSaveFailed;
             ReconcileNoteReminders();
             _leftNoteTabs = new StickyNoteTabsForm(StickyTabSide.Left,
