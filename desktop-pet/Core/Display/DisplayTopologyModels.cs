@@ -81,6 +81,12 @@ namespace PennyPet
         internal int RotationDegrees { get; private set; }
         internal IReadOnlyList<DisplayTargetIdentity> Targets
             { get; private set; }
+
+        // A mirrored surface can expose several physical targets. Target
+        // enumeration order is never an identity and never a durable-preferred
+        // selection rule; DRT-6 must choose deterministically (prefer an
+        // existing preferred key that belongs to this surface) without
+        // relying on QueryDisplayConfig enumeration order.
     }
 
     // Immutable topology truth for one semantic generation. Display order is
@@ -117,6 +123,14 @@ namespace PennyPet
         internal DisplaySurfaceSnapshot PrimaryOrFirst()
         {
             return DisplayTopologyRules.PrimaryOrFirst(_surfaces);
+        }
+
+        // Re-brands the same immutable surface set with a new semantic
+        // generation. Only DisplayTopologyRuntime may own generations; the
+        // capture provider never assigns a semantic generation.
+        internal DisplayTopologySnapshot WithGeneration(long generation)
+        {
+            return new DisplayTopologySnapshot(generation, _surfaces);
         }
     }
 }

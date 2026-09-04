@@ -278,6 +278,23 @@ namespace PennyPet.Tests
                 requested, new PhysicalRect(101, 200, 480, 450), -5));
         }
 
+        [TestMethod]
+        public void WithGeneration_RebrandsSurfacesWithoutCopyingThem()
+        {
+            DisplaySurfaceSnapshot surface = Surface(1, true, 0,
+                Target("mdp:only"));
+            DisplayTopologySnapshot original = new DisplayTopologySnapshot(0,
+                new[] { surface });
+            DisplayTopologySnapshot rebranded =
+                original.WithGeneration(42);
+
+            Assert.AreEqual(0, original.Generation);
+            Assert.AreEqual(42, rebranded.Generation);
+            Assert.AreSame(surface, original.Surfaces[0]);
+            Assert.AreSame(surface, rebranded.Surfaces[0]);
+            Assert.AreNotSame(original, rebranded);
+        }
+
         private static DisplayTargetIdentity Target(string stableKey)
         {
             return new DisplayTargetIdentity(stableKey,

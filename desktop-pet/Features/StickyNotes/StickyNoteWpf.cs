@@ -132,6 +132,12 @@ namespace PennyPet
         private bool _closingForExit;
         private bool _disposed;
         private bool _shownRaised;
+        private readonly bool _hostedNativePlacement;
+        private bool _hasLastValidDips;
+        private double _lastValidLeft;
+        private double _lastValidTop;
+        private double _lastValidWidth;
+        private double _lastValidHeight;
         private bool _inputFocusReportQueued;
         private bool _updatingFormatToolbar;
         private bool _rebuildingTodos;
@@ -204,6 +210,7 @@ namespace PennyPet
             if (data == null) throw new ArgumentNullException("data");
             Data = data;
             _opaqueQaHost = opaqueQaHost;
+            _hostedNativePlacement = hostedNativePlacement;
             _initializing = true;
             _typingFontFamilyName = StickyNoteRepository.NormalizeFontFamily(
                 data.FontFamilyName);
@@ -514,11 +521,16 @@ namespace PennyPet
             };
             LocationChanged += delegate
             {
+                CacheLastValidDips();
                 if (_initializing) return;
                 Raise(HeaderDragMoved);
                 ScheduleSave();
             };
-            SizeChanged += delegate { if (!_initializing) ScheduleSave(); };
+            SizeChanged += delegate
+            {
+                CacheLastValidDips();
+                if (!_initializing) ScheduleSave();
+            };
             StateChanged += delegate
             {
                 if (base.WindowState == W.WindowState.Maximized)
@@ -1452,10 +1464,52 @@ namespace PennyPet
 
         private void EnsureOnScreen()
         {
+            if (_hostedNativePlacement)
+            {
+                EnsureOnScreenNative();
+                return;
+            }
             Rectangle work = WF.Screen.FromPoint(
                 new System.Drawing.Point(Data.X, Data.Y)).WorkingArea;
             Left = Math.Max(work.Left, Math.Min(Data.X, work.Right - Width));
             Top = Math.Max(work.Top, Math.Min(Data.Y, work.Bottom - Height));
+        }
+
+        // Hosted production never feeds persisted physical Data.X/Y into WPF
+        // DIP. The on-screen clamp happens on the native HWND in physical
+        // pixels instead; the dock owner follows up with an authoritative
+        // SetBounds batch, so this only keeps the transient window visible.
+        private void EnsureOnScreenNative()
+        {
+            IntPtr hwnd = new System.Windows.Interop.WindowInteropHelper(
+                this).EnsureHandle();
+            NativeRect rect;
+            if (!GetWindowRect(hwnd, out rect)) return;
+            Rectangle work = WF.Screen.FromPoint(
+                new System.Drawing.Point(rect.Left, rect.Top)).WorkingArea;
+            int width = rect.Right - rect.Left;
+            int height = rect.Bottom - rect.Top;
+            int left = Math.Max(work.Left,
+                Math.Min(rect.Left, work.Right - width));
+            int top = Math.Max(work.Top,
+                Math.Min(rect.Top, work.Bottom - height));
+            SetWindowPos(hwnd, IntPtr.Zero, left, top, 0, 0,
+                SwpNoSize | SwpNoZOrder | SwpNoActivate);
+        }
+
+        private void CacheLastValidDips()
+        {
+            // Never record the transient geometry written while recovering
+            // from a system maximize/snap; only live, settled normal bounds.
+            if (_recoveringSystemGeometry) return;
+            if (base.WindowState != W.WindowState.Normal) return;
+            if (Double.IsNaN(base.Left) || Double.IsNaN(base.Top) ||
+                Double.IsNaN(base.Width) || Double.IsNaN(base.Height)) return;
+            _hasLastValidDips = true;
+            _lastValidLeft = base.Left;
+            _lastValidTop = base.Top;
+            _lastValidWidth = base.Width;
+            _lastValidHeight = base.Height;
         }
 
         private void WindowClosing(object sender,

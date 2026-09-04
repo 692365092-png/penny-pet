@@ -90,10 +90,10 @@ namespace PennyPet.Tests
                 "if (value.Kind == StickyUiEventKind.SnapshotChanged)",
                 "if (value.Kind == StickyUiEventKind.Closed)");
             string apply = Between(source,
-                "private bool ApplyHostedStickySnapshot",
+                "private bool ApplyHostedStickyEvent",
                 "private void ClearHostedDockResizeSession");
 
-            Assert.IsTrue(handler.Contains("ApplyHostedStickySnapshot(") &&
+            Assert.IsTrue(handler.Contains("ApplyHostedStickyEvent(") &&
                 apply.Contains("if (persist) _notes.SaveAsync();"),
                 "NoteChanged must persist note data.");
             Assert.IsTrue(apply.Contains("RefreshMenuText();"),
@@ -313,7 +313,7 @@ namespace PennyPet.Tests
                 "Only sticky STA sessions may own hosted WPF windows.");
             Assert.IsTrue(coordinator.Contains(
                 "StickyNoteUiSnapshot.FromData(note)") &&
-                coordinator.Contains("snapshot.ApplyTo(canonical)") &&
+                coordinator.Contains("ApplyHostedStickyFactsGeometry") &&
                 pet.Contains("StickyHostedRuntime _hostedRuntime") &&
                 runtime.Contains("Dictionary<string, long> _appliedSequences"),
                 "Pet must apply each note using an independent sequence.");
@@ -1418,6 +1418,129 @@ namespace PennyPet.Tests
             Assert.IsFalse(placement.Contains("_window.ShowAtPhysicalBounds") ||
                 placement.Contains("ShowRestoredAtPhysicalBounds"),
                 "The standalone native path must not reuse the legacy show helper.");
+        }
+
+        [TestMethod]
+        public void DrtCloseout_TopologyGenerationOwnedOnlyByRuntime()
+        {
+            string provider = ReadSource(
+                "Infrastructure/Display/WindowsDisplayTopologyProvider.cs");
+            string runtime = ReadSource(
+                "Infrastructure/Display/DisplayTopologyRuntime.cs");
+            string models = ReadSource(
+                "Core/Display/DisplayTopologyModels.cs");
+
+            Assert.IsTrue(provider.Contains(
+                    "return new DisplayTopologySnapshot(0, surfaces)") &&
+                runtime.Contains(".WithGeneration(") &&
+                runtime.Contains("Generation++") &&
+                models.Contains("WithGeneration(long generation)"),
+                "Only DisplayTopologyRuntime may assign semantic generations.");
+            Assert.IsFalse(provider.Contains("Generation++"),
+                "The capture provider must not own semantic generation.");
+        }
+
+        [TestMethod]
+        public void DrtCloseout_StickySessionNeverRecapturesTopology()
+        {
+            string session = ReadSource("StickyWindowSession.cs");
+            string host = ReadSource("StickyUiHost.cs");
+
+            Assert.IsFalse(session.Contains(
+                    "new WindowsDisplayTopologyProvider()"),
+                "The sticky STA must not capture Windows topology itself.");
+            Assert.IsTrue(session.Contains("_topology") &&
+                session.Contains("topology.FindByRuntimeGdiName("),
+                "Placement must resolve against the Pet-owned topology.");
+            Assert.IsFalse(host.Contains("DisplayTopologySnapshot"),
+                "The host facade must only forward the detached typed snapshot.");
+        }
+
+        [TestMethod]
+        public void DrtCloseout_GeometryEventsUseFactsAsGeometryTruth()
+        {
+            string session = ReadSource("StickyWindowSession.cs");
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+
+            Assert.IsTrue(session.Contains(
+                    "WindowsWindowFactsReader.Capture(hwnd, _noteId,") &&
+                session.Contains("_topology == null ? 0 : _topology.Generation") &&
+                session.Contains("facts, _topology)"),
+                "Facts must be captured with the Pet-owned topology generation.");
+            Assert.IsTrue(coordinator.Contains(
+                    "ApplyHostedStickyFactsGeometry") &&
+                coordinator.Contains("StickyPlacementMath.FromPhysicalRect(") &&
+                coordinator.Contains(
+                    "value.Snapshot.ApplyContentTo(canonical)"),
+                "Geometry events must derive v10 geometry from facts, never snapshot.ApplyTo.");
+
+            string dragHandler = Between(coordinator,
+                "if (value.Kind == StickyUiEventKind.HeaderDragStarted ||",
+                "if (value.Kind == StickyUiEventKind.BoundsChanged)");
+            Assert.IsTrue(dragHandler.Contains(
+                    "DockWindowFacts.FromData(canonical)") &&
+                !dragHandler.Contains("ApplyHostedStickySnapshot"),
+                "Drag geometry must flow from facts-derived canonical state.");
+            string boundsHandler = Between(coordinator,
+                "if (value.Kind == StickyUiEventKind.BoundsChanged)",
+                "if (value.Kind == StickyUiEventKind.DockDividerResizeStarted)");
+            Assert.IsTrue(boundsHandler.Contains(
+                    "ApplyHostedStickyEvent(value, false)") &&
+                !boundsHandler.Contains("ApplyHostedStickySnapshot"),
+                "BoundsChanged must not apply the full snapshot.");
+        }
+
+        [TestMethod]
+        public void DrtCloseout_HostedNeverWritesPhysicalIntoWpfDips()
+        {
+            string behavior = ReadSource(
+                "Features/StickyNotes/StickyNativeWindowBehavior.cs");
+            string wpf = ReadSource(
+                "Features/StickyNotes/StickyNoteWpf.cs");
+
+            string recover = Between(behavior,
+                "private void RecoverUnexpectedMaximize()",
+                "internal static Rectangle CalculateRecoveredHeaderDragBounds");
+            Assert.IsFalse(recover.Contains("base.Left = Data.X") ||
+                recover.Contains("base.Top = Data.Y") ||
+                recover.Contains("base.Width = Math.Max(MinWidth") ||
+                recover.Contains("base.Height = Math.Max(MinHeight"),
+                "Maximize recovery must not write persisted physical fields into WPF DIP.");
+            Assert.IsTrue(recover.Contains("_lastValidLeft"),
+                "Recovery must restore the last valid DIP geometry.");
+
+            string ensure = Between(wpf,
+                "private void EnsureOnScreen()",
+                "private void EnsureOnScreenNative()");
+            Assert.IsTrue(ensure.Contains("_hostedNativePlacement") &&
+                ensure.Contains("EnsureOnScreenNative();"),
+                "Hosted windows must clamp on the native HWND, not in WPF DIP.");
+            string nativeEnsure = Between(wpf,
+                "private void EnsureOnScreenNative()",
+                "private void CacheLastValidDips()");
+            Assert.IsTrue(nativeEnsure.Contains("EnsureHandle()") &&
+                nativeEnsure.Contains("SetWindowPos(") &&
+                !nativeEnsure.Contains("Data.X"),
+                "The hosted clamp must be a native physical-pixel move.");
+        }
+
+        [TestMethod]
+        public void DrtCloseout_MirrorTargets0IsNotDurablePreferenceRule()
+        {
+            string reader = ReadSource(
+                "Infrastructure/Display/WindowsWindowFactsReader.cs");
+            string models = ReadSource(
+                "Core/Display/DisplayTopologyModels.cs");
+
+            Assert.IsTrue(reader.Contains(
+                    "Targets[0] is NOT a durable") &&
+                reader.Contains("DRT-6 must choose"),
+                "Facts capture must document Targets[0] as an active-target hint only.");
+            Assert.IsTrue(models.Contains(
+                    "never a durable-preferred") &&
+                models.Contains("QueryDisplayConfig enumeration order"),
+                "Mirrored-surface target order must never become an identity rule.");
         }
 
         private static string ReadSource(string relativePath)

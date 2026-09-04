@@ -95,12 +95,18 @@ namespace PennyPet
             try
             {
                 base.WindowState = W.WindowState.Normal;
-                base.Left = Data.X;
-                base.Top = Data.Y;
-                base.Width = Math.Max(MinWidth, Math.Min(MaxWidth,
-                    Data.Width));
-                base.Height = Math.Max(MinHeight, Math.Min(MaxHeight,
-                    Data.Height));
+                // Hosted production must never write persisted physical
+                // Data.X/Y/W/H into WPF DIP. Restore the last valid DIP
+                // geometry captured from the live HWND instead; if none was
+                // recorded yet, WPF's native normal-state restore owns the
+                // placement.
+                if (_hasLastValidDips)
+                {
+                    base.Left = _lastValidLeft;
+                    base.Top = _lastValidTop;
+                    base.Width = _lastValidWidth;
+                    base.Height = _lastValidHeight;
+                }
             }
             finally { _recoveringSystemGeometry = false; }
         }

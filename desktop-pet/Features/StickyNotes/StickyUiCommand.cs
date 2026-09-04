@@ -26,7 +26,8 @@ namespace PennyPet
             StickyUiBounds bounds = null,
             StickyUiDockResizeRole dockResizeRole = null,
             ReminderItem[] reminders = null,
-            DockBatchLayout dockBatchLayout = null)
+            DockBatchLayout dockBatchLayout = null,
+            DisplayTopologySnapshot topology = null)
         {
             Kind = kind;
             NoteId = noteId ?? String.Empty;
@@ -36,16 +37,18 @@ namespace PennyPet
             DockResizeRole = dockResizeRole;
             Reminders = CopyReminders(reminders);
             DockBatchLayout = dockBatchLayout;
+            Topology = topology;
         }
 
         internal static StickyUiCommand Create(StickyNoteUiSnapshot snapshot,
-            bool focusEditor, IEnumerable<ReminderItem> reminders = null)
+            bool focusEditor, IEnumerable<ReminderItem> reminders = null,
+            DisplayTopologySnapshot topology = null)
         {
             if (snapshot == null)
                 throw new ArgumentNullException(nameof(snapshot));
             return new StickyUiCommand(StickyUiCommandKind.Create,
                 snapshot.NoteId, focusEditor, snapshot, null, null,
-                CopyReminders(reminders));
+                CopyReminders(reminders), null, topology);
         }
 
         internal static StickyUiCommand UpdateReminders(string noteId,
@@ -55,10 +58,11 @@ namespace PennyPet
                 noteId, false, null, null, null, CopyReminders(reminders));
         }
 
-        internal static StickyUiCommand Show(string noteId, bool focusEditor)
+        internal static StickyUiCommand Show(string noteId, bool focusEditor,
+            DisplayTopologySnapshot topology = null)
         {
             return new StickyUiCommand(StickyUiCommandKind.Show, noteId,
-                focusEditor);
+                focusEditor, null, null, null, null, null, topology);
         }
 
         internal static StickyUiCommand Hide(string noteId)
@@ -125,6 +129,7 @@ namespace PennyPet
         internal StickyUiDockResizeRole DockResizeRole { get; private set; }
         internal ReminderItem[] Reminders { get; private set; }
         internal DockBatchLayout DockBatchLayout { get; private set; }
+        internal DisplayTopologySnapshot Topology { get; private set; }
 
         private static ReminderItem[] CopyReminders(
             IEnumerable<ReminderItem> reminders)
@@ -389,7 +394,8 @@ namespace PennyPet
         internal StickyUiEvent(StickyUiEventKind kind, string noteId,
             StickyNoteUiSnapshot snapshot, bool flag, long sequence,
             ReminderItem reminder = null, int left = 0, int width = 0,
-            int height = 0, WindowFacts facts = null)
+            int height = 0, WindowFacts facts = null,
+            DisplayTopologySnapshot topology = null)
         {
             Kind = kind;
             NoteId = noteId ?? String.Empty;
@@ -401,6 +407,7 @@ namespace PennyPet
             Width = width;
             Height = height;
             Facts = facts;
+            Topology = topology;
         }
 
         internal static StickyUiEvent Signal(StickyUiEventKind kind,
@@ -419,12 +426,13 @@ namespace PennyPet
         }
 
         internal static StickyUiEvent FromSnapshot(StickyUiEventKind kind,
-            StickyNoteUiSnapshot snapshot, long sequence, WindowFacts facts)
+            StickyNoteUiSnapshot snapshot, long sequence, WindowFacts facts,
+            DisplayTopologySnapshot topology = null)
         {
             if (snapshot == null)
                 throw new ArgumentNullException(nameof(snapshot));
             return new StickyUiEvent(kind, snapshot.NoteId, snapshot,
-                snapshot.Visible, sequence, null, 0, 0, 0, facts);
+                snapshot.Visible, sequence, null, 0, 0, 0, facts, topology);
         }
 
         internal static StickyUiEvent ReminderRequest(StickyUiEventKind kind,
@@ -467,6 +475,7 @@ namespace PennyPet
         internal int Width { get; private set; }
         internal int Height { get; private set; }
         internal WindowFacts Facts { get; private set; }
+        internal DisplayTopologySnapshot Topology { get; private set; }
     }
 
     internal enum StickyUiCommandStatus

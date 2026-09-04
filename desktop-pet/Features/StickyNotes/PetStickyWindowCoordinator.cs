@@ -383,6 +383,12 @@ namespace PennyPet
             }
         }
 
+        private DisplayTopologySnapshot CurrentTopologySnapshot()
+        {
+            return _displayTopologyRuntime == null
+                ? null : _displayTopologyRuntime.Current;
+        }
+
         private void StartHostedSticky(StickyNoteData note,
             bool focusEditor)
         {
@@ -396,7 +402,7 @@ namespace PennyPet
             HostedStickyWindowCreatedCount++;
             StickyUiCommand command = StickyUiCommand.Create(
                 StickyNoteUiSnapshot.FromData(note), focusEditor,
-                _reminders.GetItems());
+                _reminders.GetItems(), CurrentTopologySnapshot());
             PostHostedStickyCommand(command,
                 delegate(StickyUiCommandResult result)
                 {
@@ -422,7 +428,8 @@ namespace PennyPet
         {
             if (!IsHostedSticky(note)) return false;
             string noteId = note.Id;
-            PostHostedStickyCommand(StickyUiCommand.Show(noteId, focusEditor),
+            PostHostedStickyCommand(StickyUiCommand.Show(noteId,
+                focusEditor, CurrentTopologySnapshot()),
                 delegate(StickyUiCommandResult result)
                 {
                     if (result != null &&
@@ -513,10 +520,10 @@ namespace PennyPet
                 value.Kind == StickyUiEventKind.HeaderDragMoved ||
                 value.Kind == StickyUiEventKind.HeaderDragCompleted)
             {
-                if (!ApplyHostedStickySnapshot(value.Snapshot,
-                    value.Sequence, false)) return;
-                DockWindowFacts facts =
-                    DockWindowFacts.FromSnapshot(value.Snapshot);
+                if (!ApplyHostedStickyEvent(value, false)) return;
+                StickyNoteData canonical = _notes.Find(value.NoteId);
+                if (canonical == null) return;
+                DockWindowFacts facts = DockWindowFacts.FromData(canonical);
                 if (value.Kind == StickyUiEventKind.HeaderDragStarted)
                     BeginStickyDockDrag(facts);
                 else if (value.Kind == StickyUiEventKind.HeaderDragMoved)
@@ -529,7 +536,7 @@ namespace PennyPet
             }
             if (value.Kind == StickyUiEventKind.BoundsChanged)
             {
-                ApplyHostedStickySnapshot(value.Snapshot, value.Sequence, false);
+                ApplyHostedStickyEvent(value, false);
                 ApplyNoteTabZOrder();
                 return;
             }
@@ -582,8 +589,7 @@ namespace PennyPet
                 bool topMostChanged = canonical != null &&
                     value.Snapshot != null && canonical.AlwaysOnTop !=
                     value.Snapshot.AlwaysOnTop;
-                if (!ApplyHostedStickySnapshot(value.Snapshot,
-                    value.Sequence)) return;
+                if (!ApplyHostedStickyEvent(value)) return;
                 if (topMostChanged)
                 {
                     ApplyDockComponentTopMost(canonical,
@@ -648,26 +654,68 @@ namespace PennyPet
         {
             if (value.Facts == null) return;
             WindowFacts facts = value.Facts;
-            string targetKey = String.Empty;
-            long generation = 0;
-            DisplayTopologySnapshot topology = _displayTopologyRuntime == null
-                ? null : _displayTopologyRuntime.Current;
-            if (topology != null)
-            {
-                generation = topology.Generation;
-                DisplaySurfaceSnapshot surface =
-                    topology.FindByRuntimeGdiName(facts.RuntimeGdiName);
-                if (surface != null && surface.Targets.Count > 0)
-                    targetKey = surface.Targets[0].StableKey;
-            }
             DisplayDiagnostics.Trace("WindowFacts",
-                "note=" + facts.WindowId + " topology=" + generation +
-                " target=" + targetKey + " seq=" + facts.WindowSequence +
+                "note=" + facts.WindowId + " topology=" +
+                facts.TopologyGeneration + " target=" +
+                facts.ActiveTargetKey + " seq=" + facts.WindowSequence +
                 " dpi=" + facts.Dpi + " gdi=" + facts.RuntimeGdiName +
                 " physical=(" + facts.PhysicalBounds.Left + "," +
                 facts.PhysicalBounds.Top + "," +
                 facts.PhysicalBounds.Width + "," +
                 facts.PhysicalBounds.Height + ")");
+        }
+
+        // Geometry-bearing production events treat WindowFacts as the only
+        // geometry truth. Content flows through ApplyContentTo, Visible and
+        // AlwaysOnTop are applied explicitly, and the v10 compatibility
+        // geometry is derived from the facts plus the capture-time topology
+        // surface - never from the snapshot's WPF-derived geometry.
+        private bool ApplyHostedStickyEvent(StickyUiEvent value,
+            bool persist = true)
+        {
+            if (value == null || value.Snapshot == null ||
+                !_hostedRuntime.CanApplySequence(value.NoteId,
+                    value.Sequence)) return false;
+            StickyNoteData canonical = _notes.Find(value.NoteId);
+            if (canonical == null) return false;
+            bool visibilityChanged = canonical.Visible !=
+                value.Snapshot.Visible;
+            string oldHiddenTitle = canonical.Visible
+                ? String.Empty : canonical.DisplayTitle;
+            value.Snapshot.ApplyContentTo(canonical);
+            canonical.Visible = value.Snapshot.Visible;
+            canonical.AlwaysOnTop = value.Snapshot.AlwaysOnTop;
+            ApplyHostedStickyFactsGeometry(canonical, value.Facts,
+                value.Topology);
+            _hostedRuntime.RecordSequence(value.NoteId, value.Sequence);
+            if (persist) _notes.SaveAsync();
+            RefreshMenuText();
+            if (visibilityChanged || (!canonical.Visible &&
+                !String.Equals(oldHiddenTitle, canonical.DisplayTitle,
+                    StringComparison.Ordinal))) RefreshNoteTabs();
+            return true;
+        }
+
+        private static void ApplyHostedStickyFactsGeometry(
+            StickyNoteData canonical, WindowFacts facts,
+            DisplayTopologySnapshot topology)
+        {
+            if (canonical == null || facts == null || topology == null)
+                return;
+            DisplaySurfaceSnapshot surface =
+                topology.FindByTargetKey(facts.ActiveTargetKey);
+            if (surface == null)
+                surface = topology.FindByRuntimeGdiName(
+                    facts.RuntimeGdiName);
+            if (surface == null) return;
+            StickyCanonicalPlacement placement =
+                StickyPlacementMath.FromPhysicalRect(
+                    surface.RuntimeGdiName, surface.Bounds.Left,
+                    surface.Bounds.Top, facts.Scale,
+                    facts.PhysicalBounds.Left, facts.PhysicalBounds.Top,
+                    facts.PhysicalBounds.Width,
+                    facts.PhysicalBounds.Height);
+            placement.ApplyTo(canonical);
         }
 
         private bool ApplyHostedStickySnapshot(StickyNoteUiSnapshot snapshot,
@@ -990,8 +1038,10 @@ namespace PennyPet
                 int dividerMaximum = 700;
                 StickyUiCommand initialCommand = create
                     ? StickyUiCommand.Create(StickyNoteUiSnapshot.FromData(
-                        member), false, _reminders.GetItems())
-                    : StickyUiCommand.Show(member.Id, false);
+                        member), false, _reminders.GetItems(),
+                        CurrentTopologySnapshot())
+                    : StickyUiCommand.Show(member.Id, false,
+                        CurrentTopologySnapshot());
                 PostHostedStickyCommand(
                     initialCommand,
                     delegate(StickyUiCommandResult result)
@@ -1022,7 +1072,8 @@ namespace PennyPet
                                 StickyUiCommand.Show(member.Id, focusEditor &&
                                     focus != null && String.Equals(member.Id,
                                         focus.Id,
-                                        StringComparison.OrdinalIgnoreCase)),
+                                        StringComparison.OrdinalIgnoreCase),
+                                    CurrentTopologySnapshot()),
                                 delegate(StickyUiCommandResult showResult) { });
                         }
                         if (Interlocked.Decrement(ref pending) == 0 &&

@@ -39,6 +39,12 @@ namespace PennyPet
             {
                 DisplaySurfaceSnapshot surface =
                     topology.FindByRuntimeGdiName(gdiName);
+                // Active-target hint only: Targets[0] is NOT a durable
+                // preferred-identity selection rule. A mirrored surface can
+                // expose several targets, and DRT-6 must choose
+                // deterministically (prefer an existing preferred key that
+                // belongs to this surface) without relying on
+                // QueryDisplayConfig enumeration order.
                 if (surface != null && surface.Targets.Count > 0)
                     activeTargetKey = surface.Targets[0].StableKey;
             }

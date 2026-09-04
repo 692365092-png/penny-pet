@@ -10,6 +10,7 @@ namespace PennyPet
     {
         internal const int QuietDelayMilliseconds = 150;
         internal const int SettleWindowMilliseconds = 750;
+        internal const int CaptureFailureTraceLimit = 8;
 
         private readonly Func<DisplayTopologySnapshot> _capture;
         private readonly object _gate = new object();
@@ -18,6 +19,7 @@ namespace PennyPet
         private DateTime _firstHintUtc;
         private bool _hintActive;
         private bool _disposed;
+        private int _captureFailureTraceCount;
 
         internal event Action<string, DisplayTopologySnapshot> TopologyChanged;
 
@@ -42,12 +44,14 @@ namespace PennyPet
         {
             DisplayTopologySnapshot snapshot = SafeCapture();
             if (snapshot == null) return;
+            DisplayTopologySnapshot owned;
             lock (_gate)
             {
-                Current = snapshot;
                 Generation = 0;
+                Current = snapshot.WithGeneration(Generation);
+                owned = Current;
             }
-            Raise("initial", snapshot);
+            Raise("initial", owned);
         }
 
         internal void NotifyPotentialChange(string reason)
@@ -171,8 +175,8 @@ namespace PennyPet
             }
             DisplayTopologySnapshot snapshot = SafeCapture();
             if (snapshot == null) return;
-            bool changed;
             string reason;
+            DisplayTopologySnapshot owned = null;
             lock (_gate)
             {
                 if (_disposed) return;
@@ -180,12 +184,12 @@ namespace PennyPet
                 {
                     return;
                 }
-                Current = snapshot;
-                changed = true;
                 Generation++;
+                Current = snapshot.WithGeneration(Generation);
+                owned = Current;
                 reason = LastReason;
             }
-            if (changed) Raise(reason, snapshot);
+            Raise(reason, owned);
         }
 
         private DisplayTopologySnapshot SafeCapture()
@@ -197,6 +201,19 @@ namespace PennyPet
             }
             catch
             {
+                // Bounded evidence: capture failures are rare and hint-driven,
+                // so a small trace cap documents the failure without building
+                // a retry framework or spamming the diagnostic log forever.
+                lock (_gate)
+                {
+                    if (_captureFailureTraceCount < CaptureFailureTraceLimit)
+                    {
+                        _captureFailureTraceCount++;
+                        DisplayDiagnostics.Trace("TopologyCaptured",
+                            "capture failed (attempt " +
+                            _captureFailureTraceCount + ")");
+                    }
+                }
                 return null;
             }
         }

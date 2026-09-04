@@ -555,6 +555,13 @@ namespace PennyPet
             SaveLocation();
             ClearHostedDockResizeSession();
             _stickyUiHost.BeginShutdown();
+            if (_displayTopologyRuntime != null)
+            {
+                _displayTopologyRuntime.TopologyChanged -=
+                    DisplayTopologyChanged;
+                _displayTopologyRuntime.Dispose();
+                _displayTopologyRuntime = null;
+            }
             _notes.Save();
             _notes.SaveFailed -= PersistenceSaveFailed;
             _settings.SaveFailed -= PersistenceSaveFailed;

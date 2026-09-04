@@ -86,7 +86,7 @@ namespace PennyPet
                         return CreateSession(command);
                     case StickyUiCommandKind.Show:
                         return TryGetSession(command.NoteId, out session)
-                            ? session.Show(command.Flag)
+                            ? session.Show(command.Flag, command.Topology)
                             : StickyUiCommandResult.NotHandled();
                     case StickyUiCommandKind.Hide:
                         return TryGetSession(command.NoteId, out session)
@@ -150,7 +150,7 @@ namespace PennyPet
             _sessions[command.NoteId] = session;
             if (command.Reminders != null)
                 session.UpdateReminders(command.Reminders);
-            try { return session.Show(command.Flag); }
+            try { return session.Show(command.Flag, command.Topology); }
             catch
             {
                 session.CloseAfterFailure();

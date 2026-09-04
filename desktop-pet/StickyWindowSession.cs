@@ -18,6 +18,10 @@ namespace PennyPet
         private bool _hideAfterImeComposition;
         private bool _applyingBounds;
         private bool _eventsSuppressed;
+        // Runtime topology truth owned by Pet's DisplayTopologyRuntime and
+        // passed across the typed boundary with every Create/Show command.
+        // The sticky STA must never capture Windows topology itself.
+        private DisplayTopologySnapshot _topology;
 
         internal StickyWindowSession(StickyNoteUiSnapshot snapshot,
             Action<StickyWindowSession, StickyUiEvent> eventHandler)
@@ -50,8 +54,10 @@ namespace PennyPet
             }
         }
 
-        internal StickyUiCommandResult Show(bool edit)
+        internal StickyUiCommandResult Show(bool edit,
+            DisplayTopologySnapshot topology)
         {
+            _topology = topology ?? _topology;
             if (TryShowAtPhysicalBounds(edit))
             {
                 if (!edit) EmitSnapshot(StickyUiEventKind.SnapshotChanged);
@@ -166,15 +172,7 @@ namespace PennyPet
         private NativePlacementPlan ResolvePlacementPlan(
             StickyNoteData data)
         {
-            DisplayTopologySnapshot topology = null;
-            try
-            {
-                topology = new WindowsDisplayTopologyProvider().Capture();
-            }
-            catch
-            {
-                topology = null;
-            }
+            DisplayTopologySnapshot topology = _topology;
             DisplaySurfaceSnapshot surface = topology != null
                 ? topology.FindByRuntimeGdiName(
                     data.DisplayId ?? String.Empty)
@@ -197,29 +195,52 @@ namespace PennyPet
                 System.Drawing.Rectangle persisted =
                     new System.Drawing.Rectangle(
                         data.X, data.Y, data.Width, data.Height);
-                WindowsDisplayMetrics nearest =
-                    WindowsDisplayResolver.ResolvePhysicalRect(
-                        persisted.Left, persisted.Top,
-                        persisted.Right, persisted.Bottom);
+                // Without a Pet-owned topology this session cannot place the
+                // note authoritatively; the legacy ShowRestored path owns the
+                // visibility fallback instead of a second topology capture.
+                if (topology == null) return null;
                 PhysicalRect fallback = new PhysicalRect(
                     persisted.Left, persisted.Top,
                     persisted.Width, persisted.Height);
-                if (nearest == null)
-                    return NativePlacementPlan.Physical(topology, fallback);
-                int left = Math.Max(nearest.WorkLeft,
-                    Math.Min(persisted.Left, nearest.WorkLeft +
-                        nearest.WorkWidth - persisted.Width));
-                int top = Math.Max(nearest.WorkTop,
-                    Math.Min(persisted.Top, nearest.WorkTop +
-                        nearest.WorkHeight - persisted.Height));
-                PhysicalRect workArea = new PhysicalRect(
-                    nearest.WorkLeft, nearest.WorkTop,
-                    nearest.WorkWidth, nearest.WorkHeight);
-                return NativePlacementPlan.Physical(topology, workArea,
+                DisplaySurfaceSnapshot nearest =
+                    FindSurfaceWithLargestIntersection(topology, fallback);
+                if (nearest == null) nearest = topology.PrimaryOrFirst();
+                int left = Math.Max(nearest.WorkArea.Left,
+                    Math.Min(persisted.Left, nearest.WorkArea.Left +
+                        nearest.WorkArea.Width - persisted.Width));
+                int top = Math.Max(nearest.WorkArea.Top,
+                    Math.Min(persisted.Top, nearest.WorkArea.Top +
+                        nearest.WorkArea.Height - persisted.Height));
+                return NativePlacementPlan.Physical(topology,
+                    nearest.WorkArea,
                     new PhysicalRect(left, top, persisted.Width,
                         persisted.Height));
             }
             return null;
+        }
+
+        private static DisplaySurfaceSnapshot FindSurfaceWithLargestIntersection(
+            DisplayTopologySnapshot topology, PhysicalRect rect)
+        {
+            if (topology == null) return null;
+            DisplaySurfaceSnapshot best = null;
+            long bestArea = 0;
+            foreach (DisplaySurfaceSnapshot surface in topology.Surfaces)
+            {
+                long overlapWidth = Math.Max(0L,
+                    (long)Math.Min(surface.Bounds.Right, rect.Right) -
+                    Math.Max(surface.Bounds.Left, rect.Left));
+                long overlapHeight = Math.Max(0L,
+                    (long)Math.Min(surface.Bounds.Bottom, rect.Bottom) -
+                    Math.Max(surface.Bounds.Top, rect.Top));
+                long area = overlapWidth * overlapHeight;
+                if (area > bestArea)
+                {
+                    bestArea = area;
+                    best = surface;
+                }
+            }
+            return best;
         }
 
         internal StickyUiCommandResult Hide()
@@ -585,7 +606,7 @@ namespace PennyPet
             WindowFacts facts = CaptureWindowFacts(_sequence);
             TraceWindowFacts(facts, snapshot);
             Raise(StickyUiEvent.FromSnapshot(kind, snapshot, _sequence,
-                facts));
+                facts, _topology));
         }
 
         private WindowFacts CaptureWindowFacts(long sequence)
@@ -601,7 +622,8 @@ namespace PennyPet
                 return null;
             }
             return WindowsWindowFactsReader.Capture(hwnd, _noteId,
-                0, sequence);
+                _topology == null ? 0 : _topology.Generation, sequence,
+                _topology);
         }
 
         private void TraceWindowFacts(WindowFacts facts,

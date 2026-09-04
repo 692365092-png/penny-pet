@@ -4194,6 +4194,9 @@ namespace PennyPet
 
             int captures = 0;
             DisplayTopologySnapshot current = two;
+            DisplayTopologySnapshot lastEventSnapshot = null;
+            long lastEventGeneration = -1;
+            int changeEventCount = 0;
             bool initialGenerationZero = false;
             bool sameSnapshotUnchanged = false;
             bool addedSurface = false;
@@ -4208,9 +4211,20 @@ namespace PennyPet
                     return current;
                 }))
             {
+                runtime.TopologyChanged += delegate(string reason,
+                    DisplayTopologySnapshot snapshot)
+                {
+                    lastEventSnapshot = snapshot;
+                    lastEventGeneration = snapshot == null
+                        ? -1 : snapshot.Generation;
+                    changeEventCount++;
+                };
                 runtime.CaptureInitial();
                 initialGenerationZero =
                     runtime.Generation == 0 && runtime.Current != null &&
+                    runtime.Current.Generation == 0 &&
+                    Object.ReferenceEquals(runtime.Current,
+                        lastEventSnapshot) &&
                     captures == 1;
 
                 runtime.NotifyPotentialChange("same");
@@ -4228,20 +4242,31 @@ namespace PennyPet
                 runtime.NotifyPotentialChange("added");
                 runtime.FlushPendingForTest();
                 addedSurface = runtime.Generation == 1 &&
+                    runtime.Current.Generation == 1 &&
+                    Object.ReferenceEquals(runtime.Current,
+                        lastEventSnapshot) &&
+                    lastEventGeneration == 1 &&
                     captures == 4;
 
                 current = one;
                 runtime.NotifyPotentialChange("removed");
                 runtime.FlushPendingForTest();
                 removedMany = runtime.Generation == 2 &&
+                    runtime.Current.Generation == 2 &&
+                    lastEventGeneration == 2 &&
                     captures == 5;
 
                 current = workShifted;
                 runtime.NotifyPotentialChange("workarea");
                 runtime.FlushPendingForTest();
                 workAreaChanged = runtime.Generation == 3 &&
+                    runtime.Current.Generation == 3 &&
+                    lastEventGeneration == 3 &&
                     captures == 6;
             }
+            // initial + added + removed + workarea = 4 published snapshots;
+            // "same" and "reorder" publish nothing.
+            bool eventSnapshotsMatchGeneration = changeEventCount == 4;
 
             int burstCaptures = 0;
             using (DisplayTopologyRuntime burst =
@@ -4260,7 +4285,8 @@ namespace PennyPet
             }
             return initialGenerationZero && sameSnapshotUnchanged &&
                 addedSurface && removedMany && reorderIgnored &&
-                workAreaChanged && rapidHintsOneSettledCapture;
+                workAreaChanged && eventSnapshotsMatchGeneration &&
+                rapidHintsOneSettledCapture;
         }
 
         private static DisplayTargetIdentity FakeTarget(string key)
@@ -4330,17 +4356,20 @@ namespace PennyPet
                 target.LocalLogicalWidth == 320 &&
                 target.LocalLogicalHeight == 300;
 
-            StickyWindowFactsSnapshot facts =
-                new StickyWindowFactsSnapshot("sep-note",
-                    new WindowFacts("sep-note", "mdp:sep", "\\\\.\\DISPLAY2",
-                        new PhysicalRect(1920, 0, 640, 600), 144, 3, 5),
-                    true, true);
-            bool immutable = true;
+            WindowFacts facts = new WindowFacts("sep-note", "mdp:sep",
+                "\\\\.\\DISPLAY2",
+                new PhysicalRect(1920, 0, 640, 600), 144, 3, 5);
+            bool factsImmutable = true;
             foreach (System.Reflection.PropertyInfo property in
-                typeof(StickyWindowFactsSnapshot).GetProperties())
-                if (property.CanWrite) immutable = false;
-            return contentOnly && fullApply && immutable &&
-                facts.Facts.Scale == 1.5 && facts.NoteId == "sep-note";
+                typeof(WindowFacts).GetProperties())
+                if (property.CanWrite) factsImmutable = false;
+            bool eventCarrierImmutable = true;
+            foreach (System.Reflection.PropertyInfo property in
+                typeof(StickyUiEvent).GetProperties())
+                if (property.CanWrite) eventCarrierImmutable = false;
+            return contentOnly && fullApply && factsImmutable &&
+                eventCarrierImmutable && facts.Scale == 1.5 &&
+                facts.WindowId == "sep-note";
         }
 
         // DRT-5 pure placement contract: the logical rect is projected with a
