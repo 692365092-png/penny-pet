@@ -65,5 +65,30 @@ namespace PennyPet
             note.PreferredLocalLogicalHeight = note.LocalLogicalHeight;
             return true;
         }
+
+        // Derives a durable placement preference strictly from capture-time
+        // facts plus the capture-time topology snapshot. No other topology
+        // generation may participate: geometry captured at generation G is
+        // always interpreted against G.
+        internal static bool TryBuildPreferredPlacement(WindowFacts facts,
+            DisplayTopologySnapshot topology, string existingPreferredKey,
+            out WindowPlacementPreference preference)
+        {
+            preference = null;
+            if (facts == null || topology == null) return false;
+            DisplaySurfaceSnapshot surface =
+                topology.FindByTargetKey(facts.ActiveTargetKey);
+            if (surface == null)
+                surface = topology.FindByRuntimeGdiName(
+                    facts.RuntimeGdiName);
+            if (surface == null) return false;
+            string key = DisplayTopologyRules.SelectPreferredTargetKey(
+                surface, existingPreferredKey);
+            if (String.IsNullOrEmpty(key)) return false;
+            preference = StickyPlacementMath.PreferenceFromPhysicalRect(
+                key, surface.Bounds.Left, surface.Bounds.Top, facts.Scale,
+                facts.PhysicalBounds);
+            return true;
+        }
     }
 }

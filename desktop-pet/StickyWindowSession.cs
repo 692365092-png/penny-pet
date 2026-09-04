@@ -343,6 +343,91 @@ namespace PennyPet
             return StickyUiCommandResult.Handled(_lastSnapshot, _sequence);
         }
 
+        // Visible-safe native reprojection for hotplug rehome and preferred
+        // return. The window is temporarily hidden before the target-surface
+        // bootstrap so the work-area inset and the exact final rect can never
+        // be exposed as intermediate visible positions. DPI truth comes only
+        // from GetDpiForWindow after the HWND sits on the target surface.
+        internal StickyUiCommandResult Reproject(
+            StickyUiReprojectTarget target,
+            DisplayTopologySnapshot topology, bool focusPrimary)
+        {
+            if (target == null || !IsAvailable)
+                return StickyUiCommandResult.NotHandled();
+            if (IsImeCompositionActive)
+                return StickyUiCommandResult.NotAccepted();
+            _topology = topology ?? _topology;
+            DisplaySurfaceSnapshot surface = _topology == null ? null
+                : _topology.FindByRuntimeGdiName(
+                    target.SurfaceRuntimeGdiName);
+            LogicalRect logical = new LogicalRect
+            {
+                X = target.LogicalX,
+                Y = target.LogicalY,
+                Width = target.LogicalWidth,
+                Height = target.LogicalHeight
+            };
+            if (surface == null || logical.Width <= 0 ||
+                logical.Height <= 0) return StickyUiCommandResult.NotHandled();
+
+            bool wasVisible = _window.IsVisible;
+            bool previousApplying = _applyingBounds;
+            _applyingBounds = true;
+            try
+            {
+                _window.ApplyTopMostWindowState(
+                    _window.Data.AlwaysOnTop);
+                _placementExecutor.EnsureHandle();
+                if (wasVisible) _window.Hide();
+                if (!_placementExecutor.MoveHiddenToSurface(
+                    surface.WorkArea)) return StickyUiCommandResult.NotHandled();
+                int dpi = _placementExecutor.GetDpiForWindow();
+                if (dpi <= 0) return StickyUiCommandResult.NotHandled();
+                PhysicalRect projected = DisplayGeometry.ProjectLocalRect(
+                    logical, surface.Bounds.Left, surface.Bounds.Top,
+                    dpi / 96.0);
+                if (target.CenterInWorkArea)
+                    projected = StickySpawnPolicy.CenterInWorkArea(
+                        surface.WorkArea, projected.Width, projected.Height);
+                if (!projected.IsValid ||
+                    !_placementExecutor.SetWindowPosExact(projected))
+                    return StickyUiCommandResult.NotHandled();
+                if (wasVisible || target.ShowAfterPlacement)
+                    _placementExecutor.Show();
+                CorrectReprojectionOnce(projected, surface);
+                if (focusPrimary)
+                {
+                    _window.Activate();
+                    _window.FocusPrimaryInputForTest();
+                }
+            }
+            finally { _applyingBounds = previousApplying; }
+            _lastSnapshot = CaptureSnapshot();
+            _sequence++;
+            return StickyUiCommandResult.Handled(_lastSnapshot, _sequence);
+        }
+
+        private void CorrectReprojectionOnce(PhysicalRect requested,
+            DisplaySurfaceSnapshot surface)
+        {
+            long generation = _topology == null ? 0 : _topology.Generation;
+            WindowFacts facts = _placementExecutor.CaptureFacts(_noteId,
+                generation, _sequence, _topology);
+            if (facts == null ||
+                DisplayGeometry.IsWithinPlacementTolerance(requested,
+                    facts.PhysicalBounds,
+                    WindowsWindowPlacementExecutor.PlacementTolerancePixels))
+                return;
+            _placementExecutor.SetWindowPosExact(requested);
+            facts = _placementExecutor.CaptureFacts(_noteId, generation,
+                _sequence, _topology);
+            if (facts != null &&
+                !DisplayGeometry.IsWithinPlacementTolerance(requested,
+                    facts.PhysicalBounds,
+                    WindowsWindowPlacementExecutor.PlacementTolerancePixels))
+                TracePlacementMismatch(requested, facts);
+        }
+
         internal StickyUiCommandResult Close()
         {
             if (IsImeCompositionActive)

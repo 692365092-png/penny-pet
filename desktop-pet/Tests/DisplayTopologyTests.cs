@@ -453,6 +453,55 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StandaloneDragCommit_UsesEventSnapshotNotLaterGeneration()
+        {
+            // Generation G: display B sits at physical origin 1920.
+            DisplaySurfaceSnapshot surfaceG = new DisplaySurfaceSnapshot(
+                "surface-b", "\\\\.\\DISPLAY2",
+                new PhysicalRect(1920, 0, 1920, 1080),
+                new PhysicalRect(1920, 0, 1920, 1040), false, 0,
+                new[]
+                {
+                    new DisplayTargetIdentity("mdp:b", true,
+                        String.Empty, String.Empty, 0, 0, 0)
+                });
+            DisplayTopologySnapshot topologyG = new DisplayTopologySnapshot(4,
+                new[] { surfaceG });
+            WindowFacts factsG = new WindowFacts("n", "mdp:b",
+                "\\\\.\\DISPLAY2",
+                new PhysicalRect(2070, 60, 480, 450), 144, 4, 88);
+
+            WindowPlacementPreference preference;
+            Assert.IsTrue(StickyPlacementRules.TryBuildPreferredPlacement(
+                factsG, topologyG, null, out preference));
+            Assert.AreEqual("mdp:b", preference.PreferredTargetKey);
+            Assert.AreEqual(100, preference.LocalLogicalRect.X);
+            Assert.AreEqual(40, preference.LocalLogicalRect.Y);
+            Assert.AreEqual(320, preference.LocalLogicalRect.Width);
+            Assert.AreEqual(300, preference.LocalLogicalRect.Height);
+
+            // Generation G+1 moved the same target to origin -3840. If the
+            // capture-time facts were interpreted against the later snapshot
+            // the local X would jump to 3940, so the call site must pass the
+            // event's own topology snapshot, never a newer Current.
+            DisplaySurfaceSnapshot surfaceG1 = new DisplaySurfaceSnapshot(
+                "surface-b-moved", "\\\\.\\DISPLAY2",
+                new PhysicalRect(-3840, 0, 1920, 1080),
+                new PhysicalRect(-3840, 0, 1920, 1040), false, 0,
+                new[]
+                {
+                    new DisplayTargetIdentity("mdp:b", true,
+                        String.Empty, String.Empty, 0, 0, 0)
+                });
+            DisplayTopologySnapshot topologyG1 = new DisplayTopologySnapshot(5,
+                new[] { surfaceG1 });
+            WindowPlacementPreference wrongGeneration;
+            Assert.IsTrue(StickyPlacementRules.TryBuildPreferredPlacement(
+                factsG, topologyG1, null, out wrongGeneration));
+            Assert.AreEqual(3940, wrongGeneration.LocalLogicalRect.X);
+        }
+
+        [TestMethod]
         public void DockPlacementPlanner_StacksLogicalMembersAt100And200Percent()
         {
             DockGroupLogicalState group = DockGroup(40, 50);

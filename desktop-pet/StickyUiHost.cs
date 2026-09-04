@@ -109,6 +109,11 @@ namespace PennyPet
                             ? session.SetBounds(command.Bounds,
                                 command.Topology)
                             : StickyUiCommandResult.NotHandled();
+                    case StickyUiCommandKind.Reproject:
+                        return TryGetSession(command.NoteId, out session)
+                            ? session.Reproject(command.ReprojectTarget,
+                                command.Topology, command.Flag)
+                            : StickyUiCommandResult.NotHandled();
                     case StickyUiCommandKind.ApplyDockBoundsBatch:
                         return ApplyDockBoundsBatch(command.DockBatchLayout);
                     case StickyUiCommandKind.UpdateReminders:
@@ -151,7 +156,16 @@ namespace PennyPet
             _sessions[command.NoteId] = session;
             if (command.Reminders != null)
                 session.UpdateReminders(command.Reminders);
-            try { return session.Show(command.Flag, command.Topology); }
+            try
+            {
+                // Create-time temporary rehome: a single native placement on
+                // the fallback surface, never two placements with a visible
+                // intermediate position.
+                if (command.ReprojectTarget != null)
+                    return session.Reproject(command.ReprojectTarget,
+                        command.Topology, command.Flag);
+                return session.Show(command.Flag, command.Topology);
+            }
             catch
             {
                 session.CloseAfterFailure();

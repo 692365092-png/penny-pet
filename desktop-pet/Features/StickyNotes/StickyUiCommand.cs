@@ -12,6 +12,7 @@ namespace PennyPet
         SetTopMost,
         SetDockResizeRole,
         SetBounds,
+        Reproject,
         ApplyDockBoundsBatch,
         Close,
         CloseAll,
@@ -27,7 +28,8 @@ namespace PennyPet
             StickyUiDockResizeRole dockResizeRole = null,
             ReminderItem[] reminders = null,
             DockBatchLayout dockBatchLayout = null,
-            DisplayTopologySnapshot topology = null)
+            DisplayTopologySnapshot topology = null,
+            StickyUiReprojectTarget reprojectTarget = null)
         {
             Kind = kind;
             NoteId = noteId ?? String.Empty;
@@ -38,17 +40,19 @@ namespace PennyPet
             Reminders = CopyReminders(reminders);
             DockBatchLayout = dockBatchLayout;
             Topology = topology;
+            ReprojectTarget = reprojectTarget;
         }
 
         internal static StickyUiCommand Create(StickyNoteUiSnapshot snapshot,
             bool focusEditor, IEnumerable<ReminderItem> reminders = null,
-            DisplayTopologySnapshot topology = null)
+            DisplayTopologySnapshot topology = null,
+            StickyUiReprojectTarget reprojectTarget = null)
         {
             if (snapshot == null)
                 throw new ArgumentNullException(nameof(snapshot));
             return new StickyUiCommand(StickyUiCommandKind.Create,
                 snapshot.NoteId, focusEditor, snapshot, null, null,
-                CopyReminders(reminders), null, topology);
+                CopyReminders(reminders), null, topology, reprojectTarget);
         }
 
         internal static StickyUiCommand UpdateReminders(string noteId,
@@ -100,6 +104,15 @@ namespace PennyPet
                 false, null, bounds, null, null, null, topology);
         }
 
+        internal static StickyUiCommand Reproject(string noteId,
+            StickyUiReprojectTarget target,
+            DisplayTopologySnapshot topology = null)
+        {
+            if (target == null) throw new ArgumentNullException(nameof(target));
+            return new StickyUiCommand(StickyUiCommandKind.Reproject, noteId,
+                false, null, null, null, null, null, topology, target);
+        }
+
         internal static StickyUiCommand ApplyDockBoundsBatch(
             DockBatchLayout layout)
         {
@@ -131,6 +144,7 @@ namespace PennyPet
         internal ReminderItem[] Reminders { get; private set; }
         internal DockBatchLayout DockBatchLayout { get; private set; }
         internal DisplayTopologySnapshot Topology { get; private set; }
+        internal StickyUiReprojectTarget ReprojectTarget { get; private set; }
 
         private static ReminderItem[] CopyReminders(
             IEnumerable<ReminderItem> reminders)
@@ -367,6 +381,35 @@ namespace PennyPet
         internal int Y { get; private set; }
         internal int Width { get; private set; }
         internal int Height { get; private set; }
+    }
+
+    // Detached intent for one native visible-safe reprojection: move the HWND
+    // to the named surface, projecting the given display-local logical rect
+    // with the real window DPI. CenterInWorkArea rehomes temporarily at the
+    // preferred logical size; ShowAfterPlacement makes a hidden/reopen window
+    // visible after the exact placement lands.
+    internal sealed class StickyUiReprojectTarget
+    {
+        internal StickyUiReprojectTarget(string surfaceRuntimeGdiName,
+            int logicalX, int logicalY, int logicalWidth, int logicalHeight,
+            bool centerInWorkArea, bool showAfterPlacement)
+        {
+            SurfaceRuntimeGdiName = surfaceRuntimeGdiName ?? String.Empty;
+            LogicalX = logicalX;
+            LogicalY = logicalY;
+            LogicalWidth = logicalWidth;
+            LogicalHeight = logicalHeight;
+            CenterInWorkArea = centerInWorkArea;
+            ShowAfterPlacement = showAfterPlacement;
+        }
+
+        internal string SurfaceRuntimeGdiName { get; private set; }
+        internal int LogicalX { get; private set; }
+        internal int LogicalY { get; private set; }
+        internal int LogicalWidth { get; private set; }
+        internal int LogicalHeight { get; private set; }
+        internal bool CenterInWorkArea { get; private set; }
+        internal bool ShowAfterPlacement { get; private set; }
     }
 
     internal sealed class StickyUiDockResizeRole

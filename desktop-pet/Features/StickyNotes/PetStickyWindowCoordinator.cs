@@ -343,16 +343,20 @@ namespace PennyPet
         private void ApplyLegacySpawnFallback(StickyNoteData note,
             DockSize logicalSize)
         {
-            Rectangle legacyWork = Screen.FromRectangle(Bounds).WorkingArea;
-            int x = Left - 332;
-            if (x < legacyWork.Left)
-                x = Math.Min(legacyWork.Right - 332, Right + 12);
-            int y = Math.Max(legacyWork.Top,
-                Math.Min(Top, legacyWork.Bottom - 312));
-            note.X = x;
-            note.Y = y;
-            note.Width = Math.Max(1, logicalSize.Width);
-            note.Height = Math.Max(1, logicalSize.Height);
+            // Degraded fallback keeps the same product invariant as the
+            // normal path: centered in Penny's current screen WorkArea, with
+            // the logical default size. No durable preferred identity is
+            // fabricated here.
+            Rectangle work = Screen.FromRectangle(Bounds).WorkingArea;
+            PhysicalRect centered = StickySpawnPolicy.CenterInWorkArea(
+                new PhysicalRect(work.Left, work.Top, work.Width,
+                    work.Height),
+                Math.Max(1, logicalSize.Width),
+                Math.Max(1, logicalSize.Height));
+            note.X = centered.Left;
+            note.Y = centered.Top;
+            note.Width = centered.Width;
+            note.Height = centered.Height;
         }
 
         private static void TraceSpawnPlacement(StickyNoteData note,
@@ -438,8 +442,16 @@ namespace PennyPet
                     !_placementRuntime.UserMovedSinceRehome(note.Id))
                 {
                     string noteId = note.Id;
-                    PostHostedStickyCommand(StickyUiCommand.Show(noteId,
-                        false, snapshot),
+                    StickyUiReprojectTarget returnTarget =
+                        new StickyUiReprojectTarget(
+                            preferredSurface.RuntimeGdiName,
+                            note.PreferredLocalLogicalX,
+                            note.PreferredLocalLogicalY,
+                            note.PreferredLocalLogicalWidth,
+                            note.PreferredLocalLogicalHeight,
+                            false, true);
+                    PostHostedStickyCommand(StickyUiCommand.Reproject(
+                        noteId, returnTarget, snapshot),
                         delegate(StickyUiCommandResult result)
                         {
                             if (result != null && result.Status ==
@@ -460,14 +472,12 @@ namespace PennyPet
 
             if (_placementRuntime.IsTemporaryRehome(note.Id)) return;
             DisplaySurfaceSnapshot fallback;
-            StickyCanonicalPlacement temporary;
-            if (!TryResolveTemporaryRehome(note, snapshot, petFacts,
-                out fallback, out temporary)) return;
+            StickyUiReprojectTarget rehomeTarget;
+            if (!TryBuildTemporaryRehomeTarget(note, snapshot, petFacts,
+                true, out fallback, out rehomeTarget)) return;
             string rehomedNoteId = note.Id;
-            PostHostedStickyCommand(StickyUiCommand.SetBounds(rehomedNoteId,
-                new StickyUiBounds(temporary.PhysicalLeft,
-                    temporary.PhysicalTop, temporary.PhysicalWidth,
-                    temporary.PhysicalHeight), snapshot),
+            PostHostedStickyCommand(StickyUiCommand.Reproject(rehomedNoteId,
+                rehomeTarget, snapshot),
                 delegate(StickyUiCommandResult result)
                 {
                     if (result != null && result.Status ==
@@ -481,13 +491,17 @@ namespace PennyPet
                 });
         }
 
-        private static bool TryResolveTemporaryRehome(StickyNoteData note,
+        // Builds the typed temporary-rehome intent without guessing the
+        // target DPI: the Sticky STA projects the preferred logical size with
+        // GetDpiForWindow after bootstrapping the HWND onto the fallback
+        // surface. The durable preferred fields are never modified here.
+        private static bool TryBuildTemporaryRehomeTarget(StickyNoteData note,
             DisplayTopologySnapshot topology, WindowFacts petFacts,
-            out DisplaySurfaceSnapshot fallback,
-            out StickyCanonicalPlacement temporary)
+            bool showAfter, out DisplaySurfaceSnapshot fallback,
+            out StickyUiReprojectTarget target)
         {
             fallback = null;
-            temporary = null;
+            target = null;
             if (note == null || topology == null ||
                 !String.IsNullOrEmpty(note.DockGroupId) ||
                 String.IsNullOrWhiteSpace(
@@ -501,8 +515,12 @@ namespace PennyPet
                 new PhysicalRect(note.X, note.Y, note.Width, note.Height),
                 petFacts == null ? String.Empty : petFacts.RuntimeGdiName);
             if (fallback == null) return false;
-            temporary = ResolveTemporaryRehomePlacement(note, fallback);
-            return temporary != null;
+            target = new StickyUiReprojectTarget(
+                fallback.RuntimeGdiName, 0, 0,
+                note.PreferredLocalLogicalWidth,
+                note.PreferredLocalLogicalHeight,
+                true, showAfter);
+            return true;
         }
 
         private void CompleteTemporaryRehome(string noteId,
@@ -530,29 +548,6 @@ namespace PennyPet
                     CapturePetWindowFacts(current));
         }
 
-        // Temporary placement keeps the preferred logical size (fitted to the
-        // fallback work area) centered on that surface. The durable preferred
-        // fields stay untouched; the DPI here only shapes a visible fallback.
-        private static StickyCanonicalPlacement ResolveTemporaryRehomePlacement(
-            StickyNoteData note, DisplaySurfaceSnapshot fallback)
-        {
-            int logicalWidth = note.PreferredLocalLogicalWidth > 0
-                ? note.PreferredLocalLogicalWidth
-                : (note.LocalLogicalWidth > 0 ? note.LocalLogicalWidth : 320);
-            int logicalHeight = note.PreferredLocalLogicalHeight > 0
-                ? note.PreferredLocalLogicalHeight
-                : (note.LocalLogicalHeight > 0 ? note.LocalLogicalHeight : 300);
-            double scale = 1.0;
-            WindowsDisplayMetrics metrics =
-                WindowsDisplayResolver.ResolveDisplay(
-                    fallback.RuntimeGdiName);
-            if (metrics != null) scale = metrics.Scale;
-            return StickySpawnPolicy.PlanCenteredSpawn(
-                fallback.RuntimeGdiName, fallback.WorkArea,
-                fallback.Bounds.Left, fallback.Bounds.Top, scale,
-                logicalWidth, logicalHeight);
-        }
-
         private void StartHostedSticky(StickyNoteData note,
             bool focusEditor)
         {
@@ -566,19 +561,15 @@ namespace PennyPet
             HostedStickyWindowCreatedCount++;
             DisplayTopologySnapshot topology = CurrentTopologySnapshot();
             DisplaySurfaceSnapshot fallback;
-            StickyCanonicalPlacement temporary;
-            bool temporaryRehome = TryResolveTemporaryRehome(note, topology,
-                CapturePetWindowFacts(topology), out fallback, out temporary);
+            StickyUiReprojectTarget rehomeTarget;
+            bool temporaryRehome = TryBuildTemporaryRehomeTarget(note,
+                topology, CapturePetWindowFacts(topology), false,
+                out fallback, out rehomeTarget);
             StickyNoteUiSnapshot createSnapshot =
                 StickyNoteUiSnapshot.FromData(note);
-            if (temporaryRehome)
-            {
-                StickyNoteData working = createSnapshot.CreateWorkingCopy();
-                temporary.ApplyTo(working);
-                createSnapshot = StickyNoteUiSnapshot.FromData(working);
-            }
             StickyUiCommand command = StickyUiCommand.Create(
-                createSnapshot, focusEditor, _reminders.GetItems(), topology);
+                createSnapshot, focusEditor, _reminders.GetItems(), topology,
+                rehomeTarget);
             PostHostedStickyCommand(command,
                 delegate(StickyUiCommandResult result)
                 {
@@ -610,14 +601,13 @@ namespace PennyPet
             string noteId = note.Id;
             DisplayTopologySnapshot topology = CurrentTopologySnapshot();
             DisplaySurfaceSnapshot fallback;
-            StickyCanonicalPlacement temporary;
-            if (TryResolveTemporaryRehome(note, topology,
-                CapturePetWindowFacts(topology), out fallback, out temporary))
+            StickyUiReprojectTarget rehomeTarget;
+            if (TryBuildTemporaryRehomeTarget(note, topology,
+                CapturePetWindowFacts(topology), true,
+                out fallback, out rehomeTarget))
             {
-                PostHostedStickyCommand(StickyUiCommand.SetBounds(noteId,
-                    new StickyUiBounds(temporary.PhysicalLeft,
-                        temporary.PhysicalTop, temporary.PhysicalWidth,
-                        temporary.PhysicalHeight), topology),
+                PostHostedStickyCommand(StickyUiCommand.Reproject(noteId,
+                    rehomeTarget, topology),
                     delegate(StickyUiCommandResult result)
                     {
                         if (result != null && result.Status ==
@@ -746,7 +736,11 @@ namespace PennyPet
                     MoveStickyDockDrag(facts);
                     ApplyNoteTabZOrder();
                 }
-                else CompleteStickyDockDrag(facts);
+                else
+                {
+                    CommitDraggedNotePreferred(value);
+                    CompleteStickyDockDrag(facts);
+                }
                 return;
             }
             if (value.Kind == StickyUiEventKind.BoundsChanged)
@@ -962,21 +956,10 @@ namespace PennyPet
         {
             targetKey = null;
             localRect = new LogicalRect();
-            if (facts == null || topology == null) return false;
-            DisplaySurfaceSnapshot surface =
-                topology.FindByTargetKey(facts.ActiveTargetKey);
-            if (surface == null)
-                surface = topology.FindByRuntimeGdiName(
-                    facts.RuntimeGdiName);
-            if (surface == null) return false;
-            string key = DisplayTopologyRules.SelectPreferredTargetKey(
-                surface, existingKey);
-            if (String.IsNullOrEmpty(key)) return false;
-            WindowPlacementPreference preference =
-                StickyPlacementMath.PreferenceFromPhysicalRect(key,
-                    surface.Bounds.Left, surface.Bounds.Top, facts.Scale,
-                    facts.PhysicalBounds);
-            targetKey = key;
+            WindowPlacementPreference preference;
+            if (!StickyPlacementRules.TryBuildPreferredPlacement(facts,
+                topology, existingKey, out preference)) return false;
+            targetKey = preference.PreferredTargetKey;
             localRect = preference.LocalLogicalRect;
             return true;
         }
@@ -1029,19 +1012,37 @@ namespace PennyPet
             }
         }
 
-        // User placement commit for drag completion: the dragged note and its
-        // whole dock component keep one durable preference per member.
+        // The dragged note's durable preference comes strictly from the
+        // capture-time event facts and the capture-time topology snapshot. A
+        // geometry captured at generation G is never interpreted against a
+        // later Current generation.
+        private void CommitDraggedNotePreferred(StickyUiEvent value)
+        {
+            StickyNoteData canonical = _notes.Find(value.NoteId);
+            if (canonical == null) return;
+            string targetKey;
+            LogicalRect local;
+            if (TryBuildPreference(value.Facts, value.Topology,
+                canonical.PreferredDisplayTargetKey, out targetKey,
+                out local) &&
+                CommitHostedStickyPreferred(canonical, targetKey,
+                    local.X, local.Y, local.Width, local.Height,
+                    PlacementReason.UserMoveCommit))
+                _placementRuntime.MarkUserPlacementCommit(value.NoteId);
+        }
+
+        // Transition-only legacy commit for DOCK members other than the
+        // dragged note. The dragged note was already committed from
+        // capture-time facts above; the full multi-member actual-facts commit
+        // belongs to DRT-9/10 and must not be built here.
         private void CommitUserMovedPreferred(StickyNoteData seed)
         {
             if (seed == null) return;
             DisplayTopologySnapshot topology = CurrentTopologySnapshot();
-            List<string> ids = new List<string>();
-            ids.Add(seed.Id);
             foreach (string id in _activeDockGroupIds)
-                if (!String.Equals(id, seed.Id,
-                    StringComparison.OrdinalIgnoreCase)) ids.Add(id);
-            foreach (string id in ids)
             {
+                if (String.Equals(id, seed.Id,
+                    StringComparison.OrdinalIgnoreCase)) continue;
                 StickyNoteData note = _notes.Find(id);
                 if (note == null) continue;
                 DisplaySurfaceSnapshot surface = topology != null

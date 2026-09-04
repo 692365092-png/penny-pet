@@ -1763,7 +1763,7 @@ namespace PennyPet.Tests
                 "Features/StickyNotes/PetStickyWindowCoordinator.cs");
             string reconcile = Between(coordinator,
                 "private void HandleStickyTopologyChanged",
-                "private static StickyCanonicalPlacement ResolveTemporaryRehomePlacement");
+                "private void CompleteTemporaryRehome");
 
             Assert.IsTrue(reconcile.Contains(
                     "if (!String.IsNullOrEmpty(note.DockGroupId)) continue;") &&
@@ -1821,7 +1821,7 @@ namespace PennyPet.Tests
             string session = ReadSource("StickyWindowSession.cs");
 
             Assert.IsTrue(coordinator.Contains(
-                    "temporary.PhysicalHeight), snapshot)") &&
+                    "StickyUiCommand.Reproject(rehomedNoteId,") &&
                 commands.Contains(
                     "DisplayTopologySnapshot topology = null") &&
                 host.Contains(
@@ -1849,14 +1849,112 @@ namespace PennyPet.Tests
                 "private bool IsHostedSticky(");
 
             Assert.IsTrue(start.Contains(
-                    "TryResolveTemporaryRehome(note, topology") &&
-                start.Contains("createSnapshot.CreateWorkingCopy()") &&
-                start.Contains("temporary.ApplyTo(working)") &&
+                    "TryBuildTemporaryRehomeTarget(note") &&
+                start.Contains("StickyUiCommand.Create(") &&
+                start.Contains("rehomeTarget)") &&
                 start.Contains(
                     "preferred-display-missing-at-restore"),
-                "Startup restore must rehome a detached UI snapshot without rewriting the durable preferred target.");
+                "Startup restore must attach a typed rehome target without rewriting the durable preferred target.");
             Assert.IsFalse(start.Contains("temporary.ApplyTo(note)"),
                 "Temporary startup geometry must not mutate the canonical note before the hosted result succeeds.");
+        }
+
+        [TestMethod]
+        public void Drt67Closeout_StandaloneDragCommitUsesEventAuthority()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string dragCommit = Between(coordinator,
+                "private void CommitDraggedNotePreferred",
+                "private void CommitUserMovedPreferred");
+
+            Assert.IsTrue(dragCommit.Contains(
+                    "TryBuildPreference(value.Facts, value.Topology,") &&
+                dragCommit.Contains("PlacementReason.UserMoveCommit"),
+                "The dragged note preference must come from capture-time facts and topology.");
+            Assert.IsFalse(dragCommit.Contains("CurrentTopologySnapshot("),
+                "A G-generation drag commit must never read the Current generation.");
+
+            string legacy = Between(coordinator,
+                "Transition-only legacy commit",
+                "private bool ApplyHostedStickySnapshot");
+            Assert.IsTrue(legacy.Contains(
+                    "String.Equals(id, seed.Id,") &&
+                legacy.Contains("continue;") &&
+                legacy.Contains("Transition-only"),
+                "The legacy dock-member commit must skip the dragged note and stay marked transition-only.");
+        }
+
+        [TestMethod]
+        public void Drt67Closeout_RehomeUsesNativeReprojectNotMonitorDpi()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string session = ReadSource("StickyWindowSession.cs");
+
+            Assert.IsFalse(coordinator.Contains(
+                    "ResolveTemporaryRehomePlacement") ||
+                coordinator.Contains("WindowsDisplayResolver.ResolveDisplay"),
+                "GetDpiForMonitor must not shape the temporary rehome.");
+            Assert.IsTrue(coordinator.Contains(
+                    "TryBuildTemporaryRehomeTarget(") &&
+                coordinator.Contains("StickyUiCommand.Reproject("),
+                "Rehome must flow through the typed native reproject command.");
+            string reproject = Between(session,
+                "internal StickyUiCommandResult Reproject(",
+                "private void CorrectReprojectionOnce");
+            Assert.IsTrue(reproject.Contains("GetDpiForWindow()") &&
+                reproject.Contains("MoveHiddenToSurface(") &&
+                reproject.Contains("SetWindowPosExact(projected)"),
+                "The reproject must use the real window DPI on the sticky STA.");
+            Assert.IsFalse(reproject.Contains("PreferredDisplayTargetKey"),
+                "Reprojection must never modify the durable preferred fields.");
+        }
+
+        [TestMethod]
+        public void Drt67Closeout_PreferredReturnHidesBeforeBootstrap()
+        {
+            string session = ReadSource("StickyWindowSession.cs");
+            string reproject = Between(session,
+                "internal StickyUiCommandResult Reproject(",
+                "private void CorrectReprojectionOnce");
+            int hide = reproject.IndexOf("_window.Hide()",
+                StringComparison.Ordinal);
+            int move = reproject.IndexOf("MoveHiddenToSurface(",
+                StringComparison.Ordinal);
+
+            Assert.IsTrue(reproject.Contains("bool wasVisible =") &&
+                reproject.Contains("if (wasVisible) _window.Hide();") &&
+                hide >= 0 && move > hide,
+                "A visible window must be hidden before the target-surface bootstrap.");
+            Assert.IsTrue(reproject.Contains(
+                    "StickySpawnPolicy.CenterInWorkArea("),
+                "The rehome path must center-fit the preferred logical size.");
+            string correction = Between(session,
+                "private void CorrectReprojectionOnce",
+                "internal StickyUiCommandResult Close()");
+            Assert.IsTrue(correction.Contains("IsWithinPlacementTolerance") &&
+                correction.Contains("SetWindowPosExact(requested)"),
+                "The reproject must allow one bounded correction.");
+        }
+
+        [TestMethod]
+        public void Drt67Closeout_SpawnFallbackCentersWithoutDurable()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string fallback = Between(coordinator,
+                "private void ApplyLegacySpawnFallback",
+                "private static void TraceSpawnPlacement");
+
+            Assert.IsTrue(fallback.Contains(
+                    "StickySpawnPolicy.CenterInWorkArea(") &&
+                fallback.Contains("Screen.FromRectangle(Bounds)"),
+                "The degraded spawn fallback must center on Penny's current working area.");
+            Assert.IsFalse(fallback.Contains("Left - 332") ||
+                fallback.Contains("Right + 12") ||
+                fallback.Contains("PreferredDisplayTargetKey"),
+                "The fallback must not use beside-pet placement or fabricate a durable identity.");
         }
 
         private static string ReadSource(string relativePath)
