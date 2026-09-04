@@ -2034,6 +2034,7 @@ namespace PennyPet
             internal bool ManagerMarqueeBatchDeleteOk;
             internal bool ManagerSortingOk;
             internal bool ManagerImportPreviewOk;
+            internal bool ManagerResponsiveLayoutOk;
             internal bool NativeSnapDisabledOk;
             internal bool SteadyDockGuideOk;
             internal bool OrdinaryLinkDetectionOk;
@@ -2072,10 +2073,22 @@ namespace PennyPet
                     "中文ｃｔｒｌＥｎｇｌｉｓｈ１２３") ==
                     "中文ctrlEnglish123";
             using (StickyNotesManagerForm manager = new StickyNotesManagerForm(
-                delegate { return repository.GetAll(); },
-                new StickyNotesManagerCommands()))
+                 delegate { return repository.GetAll(); },
+                 new StickyNotesManagerCommands()))
+            {
+                manager.StartPosition = FormStartPosition.Manual;
+                manager.Location = new Point(-32000, -32000);
+                manager.Opacity = 0D;
+                manager.Show();
+                bool defaultLayout = manager.HasNonOverlappingLayoutForTest &&
+                    manager.ImportActionMatchesModeForTest;
+                manager.ResizeToMinimumForTest();
+                result.ManagerResponsiveLayoutOk = defaultLayout &&
+                    manager.HasNonOverlappingLayoutForTest &&
+                    manager.ImportActionMatchesModeForTest;
                 result.ManagerMarqueeBatchDeleteOk =
                     manager.SupportsMarqueeBatchDelete;
+            }
             StickyNoteData sortAlpha = new StickyNoteData
             {
                 Id = "manager-sort-alpha",
@@ -2171,11 +2184,20 @@ namespace PennyPet
                     },
                     ConfirmImport = delegate { return false; },
                     DeleteNote = delegate { previewDeleteCalls++; }
-                }))
+                 }))
             {
+                manager.StartPosition = FormStartPosition.Manual;
+                manager.Location = new Point(-32000, -32000);
+                manager.Opacity = 0D;
+                manager.Show();
                 manager.BeginImportPreviewForTest(
                     new StickyNotesImportPreview(previewPlan,
                         previewImportedNotes));
+                manager.ResizeToMinimumForTest();
+                result.ManagerResponsiveLayoutOk =
+                    result.ManagerResponsiveLayoutOk &&
+                    manager.HasNonOverlappingLayoutForTest &&
+                    manager.ImportActionMatchesModeForTest;
                 List<string> previewBeforeDelete =
                     manager.DisplayedTitlesForTest();
                 manager.SelectAllForTest();
@@ -2190,6 +2212,10 @@ namespace PennyPet
                 List<string> searchedPreview = manager.DisplayedTitlesForTest();
                 manager.SearchForTest(String.Empty);
                 manager.CancelImportPreviewForTest();
+                result.ManagerResponsiveLayoutOk =
+                    result.ManagerResponsiveLayoutOk &&
+                    manager.HasNonOverlappingLayoutForTest &&
+                    manager.ImportActionMatchesModeForTest;
                 List<string> afterCancel = manager.DisplayedTitlesForTest();
                 result.ManagerImportPreviewOk =
                     !manager.IsImportPreviewForTest &&
@@ -5369,6 +5395,8 @@ namespace PennyPet
                     windowPolicyChecks.ManagerSortingOk) + ",\n" +
                 "  \"manager_import_preview_ok\": " + Bool(
                     windowPolicyChecks.ManagerImportPreviewOk) + ",\n" +
+                "  \"manager_responsive_layout_ok\": " + Bool(
+                    windowPolicyChecks.ManagerResponsiveLayoutOk) + ",\n" +
                 "  \"held_key_overlay_stays_constant_ok\": " + Bool(
                     keyboardOverlayChecks.HeldKeyStableOk) + ",\n" +
                 "  \"keyboard_hook_captures_own_process_ok\": " + Bool(

@@ -439,7 +439,7 @@ namespace PennyPet
             _list.Location = new Point(16, 54);
             _list.Size = new Size(668, 290);
             _list.Anchor = AnchorStyles.Top | AnchorStyles.Left |
-                AnchorStyles.Right;
+                AnchorStyles.Right | AnchorStyles.Bottom;
             _list.Columns.Add("名称 / 摘要", 310);
             _list.Columns.Add("状态", 80);
             _list.Columns.Add("提醒", 150);
@@ -487,6 +487,8 @@ namespace PennyPet
             _desktopGroup.Text = "桌面整理";
             _desktopGroup.Location = new Point(16, 350);
             _desktopGroup.Size = new Size(568, 62);
+            _desktopGroup.Anchor = AnchorStyles.Left | AnchorStyles.Right |
+                AnchorStyles.Bottom;
             Button collapseAll = Button("收起全部", 10, delegate
             {
                 if (_commands.CollapseAll != null) _commands.CollapseAll();
@@ -875,6 +877,48 @@ namespace PennyPet
                 ? _list.Columns[columnIndex].Text : String.Empty;
         }
 
+        internal void ResizeToMinimumForTest()
+        {
+            Size = MinimumSize;
+            PerformLayout();
+        }
+
+        internal bool HasNonOverlappingLayoutForTest
+        {
+            get
+            {
+                PerformLayout();
+                return _list.Bottom <= _desktopGroup.Top &&
+                    _desktopGroup.Bottom <= _deleteButton.Top &&
+                    !VisibleControlsOverlap(_importButton,
+                        _confirmImportButton) &&
+                    !VisibleControlsOverlap(_importButton, _closeButton) &&
+                    !VisibleControlsOverlap(_confirmImportButton,
+                        _closeButton);
+            }
+        }
+
+        internal bool ImportActionMatchesModeForTest
+        {
+            get
+            {
+                return (_mode == ManagerMode.Normal && _importButton.Visible &&
+                        !_confirmImportButton.Visible) ||
+                    (_mode == ManagerMode.ImportPreview &&
+                        !_importButton.Visible &&
+                        _confirmImportButton.Visible) ||
+                    (_mode == ManagerMode.Busy && !_importButton.Visible &&
+                        !_confirmImportButton.Visible);
+            }
+        }
+
+        private static bool VisibleControlsOverlap(Control left,
+            Control right)
+        {
+            return left.Visible && right.Visible &&
+                left.Bounds.IntersectsWith(right.Bounds);
+        }
+
         private void BeginImportPreview(StickyNotesImportPreview preview)
         {
             if (preview == null || preview.Merge == null ||
@@ -940,6 +984,7 @@ namespace PennyPet
             _desktopGroup.Enabled = normal;
             _exportButton.Enabled = normal;
             _importButton.Enabled = normal;
+            _importButton.Visible = normal;
             _confirmImportButton.Visible = preview;
             _confirmImportButton.Enabled = preview && _importPlan != null &&
                 _importPlan.AddedCount > 0;
