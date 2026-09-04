@@ -1293,6 +1293,37 @@ namespace PennyPet.Tests
                 "Core Dock rules must remain independent of Sticky content mode.");
         }
 
+        [TestMethod]
+        public void DynamicDisplayCoreContracts_RemainPlatformAndUiIndependent()
+        {
+            string topology = ReadSource(
+                "Core/Display/DisplayTopologyModels.cs");
+            string placement = ReadSource(
+                "Core/Display/DisplayPlacementModels.cs");
+            string rules = ReadSource(
+                "Core/Display/DisplayTopologyRules.cs");
+            string combined = topology + placement + rules;
+
+            Assert.IsFalse(combined.Contains("using System.Windows") ||
+                combined.Contains("IntPtr") ||
+                combined.Contains("DllImport") ||
+                combined.Contains("QueryDisplayConfig(") ||
+                combined.Contains("GetDpiForWindow("),
+                "DRT Core contracts must contain no Windows handle or UI dependency.");
+            Assert.IsTrue(topology.Contains(
+                    "IReadOnlyList<DisplaySurfaceSnapshot> Surfaces") &&
+                topology.Contains(
+                    "IReadOnlyList<DisplayTargetIdentity> Targets") &&
+                placement.Contains("WindowPlacementPreference Preferred") &&
+                placement.Contains("WindowFacts Effective"),
+                "Topology collections must be immutable and preferred/effective placement must stay separate.");
+            Assert.IsFalse(ReadSource("PetForm.cs").Contains(
+                    "DisplayTopologySnapshot") ||
+                ReadSource("StickyUiHost.cs").Contains(
+                    "DisplayTopologySnapshot"),
+                "DRT-1 contracts must not be wired into production UI yet.");
+        }
+
         private static string ReadSource(string relativePath)
         {
             string root = FindDesktopPetDirectory();
