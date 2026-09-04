@@ -211,5 +211,16 @@ namespace PennyPet
 
         [DllImport("user32.dll")]
         internal static extern bool ShowWindow(IntPtr hwnd, int command);
+
+        [DllImport("user32.dll")]
+        internal static extern IntPtr BeginDeferWindowPos(int windowCount);
+
+        [DllImport("user32.dll")]
+        internal static extern IntPtr DeferWindowPos(IntPtr info,
+            IntPtr hwnd, IntPtr hwndInsertAfter, int x, int y, int width,
+            int height, uint flags);
+
+        [DllImport("user32.dll")]
+        internal static extern bool EndDeferWindowPos(IntPtr info);
     }
 }

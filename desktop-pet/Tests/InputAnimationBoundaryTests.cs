@@ -1957,6 +1957,65 @@ namespace PennyPet.Tests
                 "The fallback must not use beside-pet placement or fabricate a durable identity.");
         }
 
+        [TestMethod]
+        public void Drt9_DockUsesImmutableMailboxAndNativeDeferBatch()
+        {
+            string host = ReadSource("StickyUiHost.cs");
+            string batch = ReadSource(
+                "Infrastructure/Display/WindowsBatchWindowPlacementExecutor.cs");
+            string native = ReadSource(
+                "Infrastructure/Display/NativeDisplayConfig.cs");
+            string dock = ReadSource(
+                "Features/StickyNotes/DockWindowFacts.cs");
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+
+            Assert.IsTrue(dock.Contains(
+                    "internal sealed class DockPlanMailbox") &&
+                dock.Contains("TakeLatest()") &&
+                !dock.Contains("DockBatchLayout"),
+                "The mutable DockBatchLayout must be retired for the immutable mailbox.");
+            Assert.IsTrue(host.Contains("PostLatestDockPlan(") &&
+                host.Contains("mailbox.TakeLatest()") &&
+                host.Contains("WindowsBatchWindowPlacementExecutor.Apply("),
+                "The host must apply the newest plan through the native batch executor.");
+            string apply = Between(host,
+                "private StickyUiCommandResult ApplyLatestDockPlan(",
+                "private void PostEvent");
+            Assert.IsFalse(apply.Contains("SetBounds(new StickyUiBounds"),
+                "The batch must not fall back to per-session SetBounds.");
+            Assert.IsTrue(batch.Contains("BeginDeferWindowPos(") &&
+                batch.Contains("DeferWindowPos(") &&
+                batch.Contains("EndDeferWindowPos(") &&
+                native.Contains(
+                    "static extern IntPtr BeginDeferWindowPos("),
+                "Followers must move in one native deferred batch.");
+            Assert.IsTrue(coordinator.Contains(
+                    "_stickyUiHost.PostLatestDockPlan(") &&
+                coordinator.Contains("new DockPlacementPlan("),
+                "The drag coordinator must post immutable plans into the mailbox.");
+        }
+
+        [TestMethod]
+        public void Drt9_LiveBatchNeverWritesDurablePreferred()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string batch = Between(coordinator,
+                "private void ApplyLiveDockBatch",
+                "private void SetActiveDockGroup");
+            Assert.IsFalse(batch.Contains("PreferredDisplayTargetKey") ||
+                batch.Contains("CommitHostedStickyPreferred"),
+                "A live drag batch must never commit the durable preferred placement.");
+
+            string host = ReadSource("StickyUiHost.cs");
+            string apply = Between(host,
+                "private StickyUiCommandResult ApplyLatestDockPlan(",
+                "private void PostEvent");
+            Assert.IsFalse(apply.Contains("Preferred"),
+                "The STA batch executor must not touch durable preferred fields.");
+        }
+
         private static string ReadSource(string relativePath)
         {
             string root = FindDesktopPetDirectory();

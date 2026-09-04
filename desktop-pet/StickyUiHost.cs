@@ -17,6 +17,7 @@ namespace PennyPet
         private readonly Dictionary<string, StickyWindowSession> _sessions =
             new Dictionary<string, StickyWindowSession>(
                 StringComparer.OrdinalIgnoreCase);
+        private long _lastDockPlanGeneration = -1;
 
         internal void Start()
         {
@@ -74,6 +75,19 @@ namespace PennyPet
             _threadHost.Post(command, handler, completed, completionContext);
         }
 
+        // Dedicated latest-wins entry for a live Dock drag. This is not a
+        // generic scheduler: the Pet thread replaces the immutable plan in
+        // the mailbox and only one deferred native batch runs at a time.
+        internal void PostLatestDockPlan(DockPlanMailbox mailbox,
+            Action<StickyUiCommandResult> completed,
+            SynchronizationContext completionContext)
+        {
+            if (mailbox == null)
+                throw new ArgumentNullException(nameof(mailbox));
+            _threadHost.PostDockPlan(mailbox, ApplyLatestDockPlan,
+                completed, completionContext);
+        }
+
         private StickyUiCommandResult HandleCommand(
             StickyUiCommand command)
         {
@@ -114,8 +128,6 @@ namespace PennyPet
                             ? session.Reproject(command.ReprojectTarget,
                                 command.Topology, command.Flag)
                             : StickyUiCommandResult.NotHandled();
-                    case StickyUiCommandKind.ApplyDockBoundsBatch:
-                        return ApplyDockBoundsBatch(command.DockBatchLayout);
                     case StickyUiCommandKind.UpdateReminders:
                         return TryGetSession(command.NoteId, out session)
                             ? session.UpdateReminders(command.Reminders)
@@ -231,69 +243,67 @@ namespace PennyPet
             }
         }
 
-        // One narrow dispatcher frame for a live dock drag: apply the latest
-        // follower layout once, then publish the final canonical snapshots.
-        // Intermediate geometry events are suppressed so the drag never yields
+        // One narrow dispatcher frame for a live dock drag: take the newest
+        // immutable plan, validate its topology generation, move every
+        // follower in one deferred native batch, then publish final detached
+        // snapshots. Geometry events stay suppressed so the drag never yields
         // a stale coordinate chase on the following members.
-        private StickyUiCommandResult ApplyDockBoundsBatch(
-            DockBatchLayout layout)
+        private StickyUiCommandResult ApplyLatestDockPlan(
+            DockPlanMailbox mailbox)
         {
-            if (layout == null) return StickyUiCommandResult.NotHandled();
-            List<DockLayoutTarget> targets;
-            string sourceNoteId;
-            lock (layout.Gate)
-            {
-                targets = new List<DockLayoutTarget>(layout.Targets);
-                sourceNoteId = layout.SourceNoteId ?? String.Empty;
-                layout.ApplyQueued = false;
-            }
-            if (targets.Count == 0) return StickyUiCommandResult.Handled();
+            DockPlacementPlan plan = mailbox == null
+                ? null : mailbox.TakeLatest();
+            if (plan == null || plan.WindowTargets.Count == 0)
+                return StickyUiCommandResult.Handled();
+            // A plan older than the newest generation already applied is
+            // stale; the mailbox itself guarantees latest-wins ordering.
+            if (plan.TopologyGeneration < _lastDockPlanGeneration)
+                return StickyUiCommandResult.Handled();
+            _lastDockPlanGeneration = plan.TopologyGeneration;
 
             List<StickyWindowSession> sessions =
                 new List<StickyWindowSession>();
-            List<DockLayoutTarget> followers =
-                new List<DockLayoutTarget>();
-            foreach (DockLayoutTarget target in targets)
+            List<IntPtr> handles = new List<IntPtr>();
+            List<PhysicalRect> rects = new List<PhysicalRect>();
+            foreach (DockWindowTarget target in plan.WindowTargets)
             {
-                if (String.Equals(target.NoteId, sourceNoteId,
+                if (String.Equals(target.NoteId, plan.SourceNoteId,
                     StringComparison.OrdinalIgnoreCase)) continue;
                 StickyWindowSession session;
                 if (!TryGetSession(target.NoteId, out session)) continue;
+                IntPtr handle = session.PlacementHwnd;
+                if (handle == IntPtr.Zero) continue;
                 sessions.Add(session);
-                followers.Add(target);
+                handles.Add(handle);
+                rects.Add(target.PhysicalBounds);
             }
-            if (followers.Count == 0) return StickyUiCommandResult.Handled();
+            if (sessions.Count == 0) return StickyUiCommandResult.Handled();
 
             foreach (StickyWindowSession session in sessions)
                 session.SetEventsSuppressed(true);
-            List<StickyUiCommandResult> results =
-                new List<StickyUiCommandResult>();
+            List<StickyUiFinalSnapshot> finals =
+                new List<StickyUiFinalSnapshot>();
             try
             {
-                for (int index = 0; index < followers.Count; index++)
+                if (!WindowsBatchWindowPlacementExecutor.Apply(
+                    handles, rects))
                 {
-                    DockLayoutTarget target = followers[index];
-                    results.Add(sessions[index].SetBounds(
-                        new StickyUiBounds(target.X, target.Y,
-                            target.Width, target.Height)));
+                    // The next mouse frame posts a newer plan; a failed
+                    // native batch must not fall back to a per-window chase.
+                    DisplayDiagnostics.Trace("DockBatchApplied",
+                        "defer failed plan=" + plan.PlanSequence +
+                        " followers=" + sessions.Count);
+                    return StickyUiCommandResult.Handled();
                 }
+                foreach (StickyWindowSession session in sessions)
+                    finals.Add(session.CaptureBatchFinal());
             }
             finally
             {
                 foreach (StickyWindowSession session in sessions)
                     session.SetEventsSuppressed(false);
             }
-
-            List<StickyUiFinalSnapshot> finals =
-                new List<StickyUiFinalSnapshot>();
-            foreach (StickyUiCommandResult result in results)
-            {
-                if (result == null || result.Snapshot == null) continue;
-                finals.Add(new StickyUiFinalSnapshot(
-                    result.Snapshot, result.Sequence));
-            }
-            return StickyUiCommandResult.Handled(
-                finals.ToArray());
+            return StickyUiCommandResult.Handled(finals.ToArray());
         }
 
         private void PostEvent(StickyUiEvent value)

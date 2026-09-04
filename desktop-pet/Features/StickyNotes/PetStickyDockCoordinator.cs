@@ -109,11 +109,10 @@ namespace PennyPet
             _activeNoteDetached = false;
             _activeNoteSplitEligible = false;
             _splitRemainderNoteId = null;
-            lock (_liveDockBatch.Gate)
+            lock (_dockPlanMailbox.Gate)
             {
-                _liveDockBatch.Targets = new List<DockLayoutTarget>();
-                _liveDockBatch.SourceNoteId = String.Empty;
-                _liveDockBatch.ApplyQueued = false;
+                _dockPlanMailbox.Current = null;
+                _dockPlanMailbox.ApplyQueued = false;
             }
             SetActiveDockGroup(BuildDockComponent(seed));
             _activeDockOriginalFacts.Clear();
@@ -295,11 +294,10 @@ namespace PennyPet
             _activeNoteDetached = false;
             _activeNoteSplitEligible = false;
             _splitRemainderNoteId = null;
-            lock (_liveDockBatch.Gate)
+            lock (_dockPlanMailbox.Gate)
             {
-                _liveDockBatch.Targets = new List<DockLayoutTarget>();
-                _liveDockBatch.SourceNoteId = String.Empty;
-                _liveDockBatch.ApplyQueued = false;
+                _dockPlanMailbox.Current = null;
+                _dockPlanMailbox.ApplyQueued = false;
             }
         }
 
@@ -336,33 +334,56 @@ namespace PennyPet
         }
 
         // P1-D: a narrow latest-wins frame for a live dock drag. Each mouse
-        // move replaces the pending follower layout; only one ApplyDockBoundsBatch
-        // is queued on the Sticky STA at a time, and it applies the newest
-        // follower bounds once instead of a SetBounds per member per move.
+        // move replaces the pending immutable plan in the mailbox; only one
+        // deferred native batch runs on the Sticky STA at a time, and it
+        // applies the newest follower rects once instead of a SetBounds per
+        // member per move. The live batch never writes a durable preferred.
         private void ApplyLiveDockBatch(IEnumerable<DockLayoutTarget> targets,
             string sourceNoteId)
         {
             if (targets == null) return;
-            List<DockLayoutTarget> followers = new List<DockLayoutTarget>();
+            List<DockWindowTarget> windowTargets =
+                new List<DockWindowTarget>();
             foreach (DockLayoutTarget target in targets)
             {
                 if (target == null) continue;
                 StickyNoteData note = _notes.Find(target.NoteId);
                 if (note == null) continue;
                 ApplyDockCanonicalFromPhysical(note, target);
-                if (String.Equals(target.NoteId, sourceNoteId,
-                    StringComparison.OrdinalIgnoreCase)) continue;
-                followers.Add(target);
+                windowTargets.Add(new DockWindowTarget(target.NoteId,
+                    new PhysicalRect(target.X, target.Y, target.Width,
+                        target.Height)));
             }
-            lock (_liveDockBatch.Gate)
+            if (windowTargets.Count == 0) return;
+            long generation = _displayTopologyRuntime == null
+                ? 0 : _displayTopologyRuntime.Generation;
+            WindowFacts sourceFacts =
+                _placementRuntime.GetEffective(sourceNoteId);
+            string targetSurfaceId = String.Empty;
+            int targetDpi = 0;
+            if (sourceFacts != null)
             {
-                _liveDockBatch.Targets = followers;
-                _liveDockBatch.SourceNoteId = sourceNoteId ?? String.Empty;
-                if (_liveDockBatch.ApplyQueued) return;
-                _liveDockBatch.ApplyQueued = true;
+                targetDpi = sourceFacts.Dpi;
+                DisplayTopologySnapshot topology =
+                    CurrentTopologySnapshot();
+                DisplaySurfaceSnapshot surface = topology == null
+                    ? null : topology.FindByRuntimeGdiName(
+                        sourceFacts.RuntimeGdiName);
+                if (surface != null)
+                    targetSurfaceId = surface.RuntimeSurfaceId;
             }
-            PostHostedStickyCommand(
-                StickyUiCommand.ApplyDockBoundsBatch(_liveDockBatch),
+            DockPlanMailbox mailbox = _dockPlanMailbox;
+            DockPlacementPlan plan;
+            lock (mailbox.Gate)
+            {
+                plan = new DockPlacementPlan(generation,
+                    mailbox.NextSequence(), sourceNoteId ?? String.Empty,
+                    targetSurfaceId, targetDpi, windowTargets);
+                mailbox.Current = plan;
+                if (mailbox.ApplyQueued) return;
+                mailbox.ApplyQueued = true;
+            }
+            _stickyUiHost.PostLatestDockPlan(mailbox,
                 delegate(StickyUiCommandResult result)
                 {
                     if (result == null) return;
@@ -381,7 +402,7 @@ namespace PennyPet
                                 finalSnapshot.Snapshot,
                                 finalSnapshot.Sequence, false);
                         }
-                });
+                }, _petUiContext);
         }
 
         private void SetActiveDockGroup(List<StickyNoteData> notes)

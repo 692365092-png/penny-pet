@@ -79,15 +79,30 @@ namespace PennyPet
         internal bool TopMost { get; private set; }
     }
 
-    // Latest-wins holder for a live dock drag frame. The UI thread replaces the
-    // desired follower layout on every mouse move; the Sticky STA applies the
-    // most recent snapshot in a single ApplyDockBoundsBatch callback.
-    internal sealed class DockBatchLayout
+    // Latest-wins mailbox for a live dock drag frame. The Pet UI thread
+    // replaces the immutable plan on every mouse move; the Sticky STA takes
+    // only the newest plan and applies it in one deferred native batch.
+    internal sealed class DockPlanMailbox
     {
         internal readonly object Gate = new object();
-        internal List<DockLayoutTarget> Targets =
-            new List<DockLayoutTarget>();
-        internal string SourceNoteId = String.Empty;
+        private long _nextSequence;
+        internal DockPlacementPlan Current;
         internal bool ApplyQueued;
+
+        internal long NextSequence()
+        {
+            return ++_nextSequence;
+        }
+
+        internal DockPlacementPlan TakeLatest()
+        {
+            lock (Gate)
+            {
+                DockPlacementPlan plan = Current;
+                Current = null;
+                ApplyQueued = false;
+                return plan;
+            }
+        }
     }
 }

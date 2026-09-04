@@ -13,7 +13,6 @@ namespace PennyPet
         SetDockResizeRole,
         SetBounds,
         Reproject,
-        ApplyDockBoundsBatch,
         Close,
         CloseAll,
         UpdateReminders
@@ -27,7 +26,6 @@ namespace PennyPet
             StickyUiBounds bounds = null,
             StickyUiDockResizeRole dockResizeRole = null,
             ReminderItem[] reminders = null,
-            DockBatchLayout dockBatchLayout = null,
             DisplayTopologySnapshot topology = null,
             StickyUiReprojectTarget reprojectTarget = null)
         {
@@ -38,7 +36,6 @@ namespace PennyPet
             Bounds = bounds;
             DockResizeRole = dockResizeRole;
             Reminders = CopyReminders(reminders);
-            DockBatchLayout = dockBatchLayout;
             Topology = topology;
             ReprojectTarget = reprojectTarget;
         }
@@ -52,7 +49,7 @@ namespace PennyPet
                 throw new ArgumentNullException(nameof(snapshot));
             return new StickyUiCommand(StickyUiCommandKind.Create,
                 snapshot.NoteId, focusEditor, snapshot, null, null,
-                CopyReminders(reminders), null, topology, reprojectTarget);
+                CopyReminders(reminders), topology, reprojectTarget);
         }
 
         internal static StickyUiCommand UpdateReminders(string noteId,
@@ -66,7 +63,7 @@ namespace PennyPet
             DisplayTopologySnapshot topology = null)
         {
             return new StickyUiCommand(StickyUiCommandKind.Show, noteId,
-                focusEditor, null, null, null, null, null, topology);
+                focusEditor, null, null, null, null, topology);
         }
 
         internal static StickyUiCommand Hide(string noteId)
@@ -101,7 +98,7 @@ namespace PennyPet
         {
             if (bounds == null) throw new ArgumentNullException(nameof(bounds));
             return new StickyUiCommand(StickyUiCommandKind.SetBounds, noteId,
-                false, null, bounds, null, null, null, topology);
+                false, null, bounds, null, null, topology);
         }
 
         internal static StickyUiCommand Reproject(string noteId,
@@ -110,17 +107,7 @@ namespace PennyPet
         {
             if (target == null) throw new ArgumentNullException(nameof(target));
             return new StickyUiCommand(StickyUiCommandKind.Reproject, noteId,
-                false, null, null, null, null, null, topology, target);
-        }
-
-        internal static StickyUiCommand ApplyDockBoundsBatch(
-            DockBatchLayout layout)
-        {
-            if (layout == null) throw new ArgumentNullException(nameof(layout));
-            return new StickyUiCommand(
-                StickyUiCommandKind.ApplyDockBoundsBatch,
-                layout.SourceNoteId ?? String.Empty, false,
-                null, null, null, null, layout);
+                false, null, null, null, null, topology, target);
         }
 
         internal static StickyUiCommand Close(string noteId)
@@ -142,7 +129,6 @@ namespace PennyPet
         internal StickyUiBounds Bounds { get; private set; }
         internal StickyUiDockResizeRole DockResizeRole { get; private set; }
         internal ReminderItem[] Reminders { get; private set; }
-        internal DockBatchLayout DockBatchLayout { get; private set; }
         internal DisplayTopologySnapshot Topology { get; private set; }
         internal StickyUiReprojectTarget ReprojectTarget { get; private set; }
 

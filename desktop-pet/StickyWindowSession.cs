@@ -343,6 +343,35 @@ namespace PennyPet
             return StickyUiCommandResult.Handled(_lastSnapshot, _sequence);
         }
 
+        // STA-local HWND for the native deferred batch executor. It never
+        // crosses to the Pet thread; only the Sticky STA orchestrator reads it.
+        internal IntPtr PlacementHwnd
+        {
+            get
+            {
+                if (!IsAvailable) return IntPtr.Zero;
+                try
+                {
+                    return new System.Windows.Interop.WindowInteropHelper(
+                        _window).Handle;
+                }
+                catch
+                {
+                    return IntPtr.Zero;
+                }
+            }
+        }
+
+        // Publishes one strictly newer final snapshot after a native batch
+        // placement without flushing content persistence, so a live drag
+        // frame never triggers an autosave per mouse move.
+        internal StickyUiFinalSnapshot CaptureBatchFinal()
+        {
+            _lastSnapshot = CaptureSnapshot();
+            _sequence++;
+            return new StickyUiFinalSnapshot(_lastSnapshot, _sequence);
+        }
+
         // Visible-safe native reprojection for hotplug rehome and preferred
         // return. The window is temporarily hidden before the target-surface
         // bootstrap so the work-area inset and the exact final rect can never

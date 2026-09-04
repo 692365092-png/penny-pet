@@ -4125,6 +4125,7 @@ namespace PennyPet
             internal bool NativePlacementOk;
             internal bool V11PreferredOk;
             internal bool TemporaryRehomeOk;
+            internal bool DockPlanMailboxOk;
         }
 
         private sealed class StickyHostedCheckResult
@@ -4739,6 +4740,47 @@ namespace PennyPet
                 returnedClearsFlags;
         }
 
+        // DRT-9 mailbox contract: the newest immutable plan wins, TakeLatest
+        // resets the in-flight flag, and DockPlacementPlan stays read-only.
+        private static bool RunDockPlanMailboxCheck()
+        {
+            DockPlanMailbox mailbox = new DockPlanMailbox();
+            lock (mailbox.Gate)
+            {
+                mailbox.Current = new DockPlacementPlan(3,
+                    mailbox.NextSequence(), "source", "surface-1", 96,
+                    new[]
+                    {
+                        new DockWindowTarget("a",
+                            new PhysicalRect(10, 20, 320, 300))
+                    });
+                mailbox.ApplyQueued = true;
+            }
+            lock (mailbox.Gate)
+            {
+                mailbox.Current = new DockPlacementPlan(3,
+                    mailbox.NextSequence(), "source", "surface-1", 96,
+                    new[]
+                    {
+                        new DockWindowTarget("b",
+                            new PhysicalRect(30, 40, 320, 300))
+                    });
+            }
+            DockPlacementPlan taken = mailbox.TakeLatest();
+            bool latestWins = taken != null &&
+                taken.PlanSequence == 2 &&
+                taken.WindowTargets.Count == 1 &&
+                taken.WindowTargets[0].NoteId == "b" &&
+                mailbox.Current == null &&
+                !mailbox.ApplyQueued;
+
+            bool planImmutable = true;
+            foreach (System.Reflection.PropertyInfo property in
+                typeof(DockPlacementPlan).GetProperties())
+                if (property.CanWrite) planImmutable = false;
+            return latestWins && planImmutable;
+        }
+
         private static WindowShellCheckResult RunWindowShellChecks(
             StickyNoteData restoredNote)
         {
@@ -4825,6 +4867,8 @@ namespace PennyPet
                 RunV11PreferredCheck();
             result.TemporaryRehomeOk =
                 RunTemporaryRehomeCheck();
+            result.DockPlanMailboxOk =
+                RunDockPlanMailboxCheck();
             result.ScaleRangeOk =
                 PetForm.NormalizeScalePercent(47) == 50 &&
                 PetForm.NormalizeScalePercent(104) == 100 &&
@@ -6140,6 +6184,8 @@ namespace PennyPet
                     shellChecks.V11PreferredOk) + ",\n" +
                 "  \"temporary_rehome_ok\": " + Bool(
                     shellChecks.TemporaryRehomeOk) + ",\n" +
+                "  \"dock_plan_mailbox_ok\": " + Bool(
+                    shellChecks.DockPlanMailboxOk) + ",\n" +
                 "  \"keyboard_hook_opt_in_and_default_off_ok\": " + Bool(
                     keyboardOverlayChecks.HookOptInDefaultOk) + ",\n" +
                 "  \"keyboard_privacy_notice_persistence_ok\": " + Bool(

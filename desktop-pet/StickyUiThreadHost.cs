@@ -61,6 +61,29 @@ namespace PennyPet
             SynchronizationContext completionContext)
         {
             if (command == null) throw new ArgumentNullException(nameof(command));
+            PostToDispatcher(delegate { return handler(command); },
+                completed, completionContext);
+        }
+
+        // Narrow latest-wins dispatch for one immutable Dock plan. This is a
+        // dedicated Dock entry, not a generic scheduler: only the newest
+        // mailbox plan is ever invoked.
+        internal void PostDockPlan(DockPlanMailbox mailbox,
+            Func<DockPlanMailbox, StickyUiCommandResult> handler,
+            Action<StickyUiCommandResult> completed,
+            SynchronizationContext completionContext)
+        {
+            if (mailbox == null)
+                throw new ArgumentNullException(nameof(mailbox));
+            PostToDispatcher(delegate { return handler(mailbox); },
+                completed, completionContext);
+        }
+
+        private void PostToDispatcher(
+            Func<StickyUiCommandResult> invoke,
+            Action<StickyUiCommandResult> completed,
+            SynchronizationContext completionContext)
+        {
             Dispatcher dispatcher;
             bool acceptingCommands;
             lock (_gate)
@@ -74,7 +97,7 @@ namespace PennyPet
                     StickyUiCommandResult.NotAccepted());
                 return;
             }
-            if (handler == null || dispatcher == null ||
+            if (invoke == null || dispatcher == null ||
                 dispatcher.HasShutdownStarted ||
                 dispatcher.HasShutdownFinished)
             {
@@ -90,7 +113,7 @@ namespace PennyPet
                         StickyUiCommandResult result;
                         try
                         {
-                            result = handler(command) ??
+                            result = invoke() ??
                                 StickyUiCommandResult.NotHandled();
                         }
                         catch (Exception error)
