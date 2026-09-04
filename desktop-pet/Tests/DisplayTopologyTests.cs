@@ -452,6 +452,176 @@ namespace PennyPet.Tests
                     new PhysicalRect(), String.Empty));
         }
 
+        [TestMethod]
+        public void DockPlacementPlanner_StacksLogicalMembersAt100And200Percent()
+        {
+            DockGroupLogicalState group = DockGroup(40, 50);
+            DisplaySurfaceSnapshot plain = Surface(2, true, 1920,
+                Target("mdp:plain"));
+            DockPlacementPlan at100 = DockPlacementPlanner.Plan(group,
+                Facts("A", plain, 96, 7), plain, 96, 7, 11);
+
+            AssertPlan(at100, 7, 11, "A", "surface-2", 96,
+                new PhysicalRect(1960, -50, 320, 300),
+                new PhysicalRect(1960, 250, 320, 400),
+                new PhysicalRect(1960, 650, 320, 260));
+
+            DisplaySurfaceSnapshot scaled = new DisplaySurfaceSnapshot(
+                "surface-7", "\\\\.\\DISPLAY7",
+                new PhysicalRect(3840, 0, 3840, 2160),
+                new PhysicalRect(3840, 0, 3840, 2080), false, 0,
+                new[] { Target("mdp:scaled") });
+            DockPlacementPlan at200 = DockPlacementPlanner.Plan(group,
+                Facts("B", scaled, 192, 8), scaled, 192, 8, 12);
+
+            AssertPlan(at200, 8, 12, "B", "surface-7", 192,
+                new PhysicalRect(3920, 100, 640, 600),
+                new PhysicalRect(3920, 700, 640, 800),
+                new PhysicalRect(3920, 1500, 640, 520));
+        }
+
+        [TestMethod]
+        [DataRow(120, 1.25)]
+        [DataRow(144, 1.50)]
+        [DataRow(168, 1.75)]
+        [DataRow(216, 2.25)]
+        public void DockPlacementPlanner_UsesOneScaleAndRoundingPolicy(
+            int dpi, double scale)
+        {
+            DisplaySurfaceSnapshot surface = Surface(4, true, -3840,
+                Target("mdp:fractional"));
+            DockGroupLogicalState group = new DockGroupLogicalState(
+                new LogicalPoint { X = 41, Y = 53 },
+                new[]
+                {
+                    new DockLogicalMember("A", 321, 301),
+                    new DockLogicalMember("B", 321, 399),
+                    new DockLogicalMember("C", 321, 261)
+                });
+            DockPlacementPlan plan = DockPlacementPlanner.Plan(
+                group, Facts("C", surface, dpi, 9),
+                surface, dpi, 9, 13);
+
+            Assert.AreEqual(-3840 + (int)Math.Round(41 * scale,
+                MidpointRounding.AwayFromZero),
+                plan.WindowTargets[0].PhysicalBounds.Left);
+            Assert.AreEqual(-100 + (int)Math.Round(53 * scale,
+                MidpointRounding.AwayFromZero),
+                plan.WindowTargets[0].PhysicalBounds.Top);
+            int expectedFirstBottom = -100 + (int)Math.Round(
+                (53 + 301) * scale, MidpointRounding.AwayFromZero);
+            Assert.AreEqual(expectedFirstBottom -
+                plan.WindowTargets[0].PhysicalBounds.Top,
+                plan.WindowTargets[0].PhysicalBounds.Height);
+            Assert.AreEqual(plan.WindowTargets[0].PhysicalBounds.Bottom,
+                plan.WindowTargets[1].PhysicalBounds.Top);
+            Assert.AreEqual(plan.WindowTargets[1].PhysicalBounds.Bottom,
+                plan.WindowTargets[2].PhysicalBounds.Top);
+        }
+
+        [TestMethod]
+        public void DockPlacementPlanner_UsesOnlyTheSourceTargetSurface()
+        {
+            DockGroupLogicalState group = DockGroup(20, 30);
+            DisplaySurfaceSnapshot a = Surface(1, true, 0,
+                Target("mdp:a"));
+            DisplaySurfaceSnapshot g = Surface(7, false, 11520,
+                Target("mdp:g"));
+            // Extra surfaces and their order never enter the planner.
+            DisplayTopologySnapshot many = new DisplayTopologySnapshot(10,
+                new[] { g, Surface(3, false, 3840, Target("mdp:c")), a });
+
+            DockPlacementPlan planA = DockPlacementPlanner.Plan(group,
+                Facts("A", a, 96, 10), a, 96, 10, 1);
+            DockPlacementPlan planG = DockPlacementPlanner.Plan(group,
+                Facts("A", many.FindByTargetKey("mdp:g"), 144, 10),
+                g, 144, 10, 2);
+
+            Assert.AreEqual("surface-1", planA.TargetSurfaceId);
+            Assert.AreEqual("surface-7", planG.TargetSurfaceId);
+            foreach (DockWindowTarget target in planG.WindowTargets)
+                Assert.IsTrue(target.PhysicalBounds.Left >= g.Bounds.Left);
+        }
+
+        [TestMethod]
+        public void DockPlacementPlanner_CopiesInputsAndRejectsStaleFacts()
+        {
+            List<DockLogicalMember> members = new List<DockLogicalMember>
+            {
+                new DockLogicalMember("A", 320, 300),
+                new DockLogicalMember("B", 320, 400)
+            };
+            DockGroupLogicalState group = new DockGroupLogicalState(
+                new LogicalPoint { X = 10, Y = 20 }, members);
+            members.Clear();
+            DisplaySurfaceSnapshot target = Surface(5, true, 0,
+                Target("mdp:target"));
+            DockPlacementPlan plan = DockPlacementPlanner.Plan(group,
+                Facts("A", target, 96, 12), target, 96, 12, 4);
+
+            Assert.AreEqual(2, group.Members.Count);
+            Assert.AreEqual(2, plan.WindowTargets.Count);
+            AssertRejectsArgument(delegate
+            {
+                DockPlacementPlanner.Plan(group,
+                    Facts("A", target, 120, 12), target, 96, 12, 5);
+            });
+            AssertRejectsArgument(delegate
+            {
+                DockPlacementPlanner.Plan(group,
+                    Facts("A", target, 96, 11), target, 96, 12, 5);
+            });
+            DisplaySurfaceSnapshot other = Surface(6, false, 1920,
+                Target("mdp:other"));
+            AssertRejectsArgument(delegate
+            {
+                DockPlacementPlanner.Plan(group,
+                    Facts("A", other, 96, 12), target, 96, 12, 5);
+            });
+        }
+
+        private static DockGroupLogicalState DockGroup(int x, int y)
+        {
+            return new DockGroupLogicalState(
+                new LogicalPoint { X = x, Y = y },
+                new[]
+                {
+                    new DockLogicalMember("A", 320, 300),
+                    new DockLogicalMember("B", 320, 400),
+                    new DockLogicalMember("C", 320, 260)
+                });
+        }
+
+        private static WindowFacts Facts(string noteId,
+            DisplaySurfaceSnapshot surface, int dpi, long generation)
+        {
+            return new WindowFacts(noteId,
+                surface.Targets.Count == 0
+                    ? String.Empty : surface.Targets[0].StableKey,
+                surface.RuntimeGdiName, surface.Bounds, dpi, generation, 1);
+        }
+
+        private static void AssertPlan(DockPlacementPlan plan,
+            long generation, long sequence, string sourceNoteId,
+            string surfaceId, int dpi, params PhysicalRect[] expected)
+        {
+            Assert.AreEqual(generation, plan.TopologyGeneration);
+            Assert.AreEqual(sequence, plan.PlanSequence);
+            Assert.AreEqual(sourceNoteId, plan.SourceNoteId);
+            Assert.AreEqual(surfaceId, plan.TargetSurfaceId);
+            Assert.AreEqual(dpi, plan.TargetDpi);
+            Assert.AreEqual(expected.Length, plan.WindowTargets.Count);
+            for (int index = 0; index < expected.Length; index++)
+            {
+                PhysicalRect actual =
+                    plan.WindowTargets[index].PhysicalBounds;
+                Assert.AreEqual(expected[index].Left, actual.Left);
+                Assert.AreEqual(expected[index].Top, actual.Top);
+                Assert.AreEqual(expected[index].Width, actual.Width);
+                Assert.AreEqual(expected[index].Height, actual.Height);
+            }
+        }
+
         private static DisplayTargetIdentity Target(string stableKey)
         {
             return new DisplayTargetIdentity(stableKey,
