@@ -312,6 +312,10 @@ namespace PennyPet
                     (topology == null ? -1 : topology.Generation));
                 return StickyUiCommandResult.NotHandled();
             }
+            DisplaySurfaceSnapshot targetSurface =
+                topology.FindByRuntimeSurfaceId(plan.TargetSurfaceId);
+            if (targetSurface == null || plan.TargetDpi <= 0)
+                return StickyUiCommandResult.NotHandled();
 
             List<StickyWindowSession> expectedSessions =
                 new List<StickyWindowSession>();
@@ -348,10 +352,34 @@ namespace PennyPet
             if (expectedSessions.Count != plan.WindowTargets.Count)
                 return StickyUiCommandResult.NotHandled();
 
+            List<StickyWindowSession> transitionSessions =
+                new List<StickyWindowSession>();
+            List<StickyWindowSession.DockDpiTransition> transitions =
+                new List<StickyWindowSession.DockDpiTransition>();
+            bool placementApplied = false;
             foreach (StickyWindowSession session in expectedSessions)
                 session.SetEventsSuppressed(true);
             try
             {
+                for (int index = 0;
+                    index < plan.WindowTargets.Count; index++)
+                {
+                    DockWindowTarget target = plan.WindowTargets[index];
+                    if (String.Equals(target.NoteId, plan.SourceNoteId,
+                        StringComparison.OrdinalIgnoreCase)) continue;
+                    StickyWindowSession.DockDpiTransition transition;
+                    StickyWindowSession session = expectedSessions[index];
+                    if (!session.TryPrepareDockTargetDpi(targetSurface,
+                        plan.TargetDpi, out transition))
+                    {
+                        DisplayDiagnostics.Trace("DockBatchApplied",
+                            "target DPI bootstrap failed note=" +
+                            target.NoteId + " plan=" + plan.PlanSequence);
+                        return StickyUiCommandResult.NotHandled();
+                    }
+                    transitionSessions.Add(session);
+                    transitions.Add(transition);
+                }
                 if (handles.Count > 0)
                 {
                     WindowsBatchPlacementStatus status =
@@ -390,15 +418,25 @@ namespace PennyPet
                 {
                     DockBatchMemberResult member =
                         session.CaptureDockMember(topology);
-                    if (member == null || member.Facts == null)
+                    if (member == null || member.Facts == null ||
+                        member.Facts.Dpi != plan.TargetDpi ||
+                        !String.Equals(member.Facts.RuntimeGdiName,
+                            targetSurface.RuntimeGdiName,
+                            StringComparison.OrdinalIgnoreCase))
                         return StickyUiCommandResult.NotHandled();
                     members.Add(member);
                 }
+                placementApplied = true;
                 return StickyUiCommandResult.Handled(new DockBatchResult(
-                    plan.PlanSequence, plan.TopologyGeneration, members));
+                    plan.PlanSequence, plan.TopologyGeneration,
+                    plan.TargetSurfaceId, plan.TargetDpi, members));
             }
             finally
             {
+                for (int index = transitions.Count - 1;
+                    index >= 0; index--)
+                    transitionSessions[index].CompleteDockTargetDpi(
+                        transitions[index], placementApplied);
                 foreach (StickyWindowSession session in expectedSessions)
                     session.SetEventsSuppressed(false);
             }

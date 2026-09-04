@@ -502,6 +502,32 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void DisplayGeometry_ConvertsActualPhysicalWidthAtMixedDpi()
+        {
+            Assert.AreEqual(320,
+                DisplayGeometry.PhysicalLengthToLogical(320, 1.0));
+            Assert.AreEqual(320,
+                DisplayGeometry.PhysicalLengthToLogical(400, 1.25));
+            Assert.AreEqual(320,
+                DisplayGeometry.PhysicalLengthToLogical(560, 1.75));
+            Assert.AreEqual(320,
+                DisplayGeometry.PhysicalLengthToLogical(640, 2.0));
+        }
+
+        [TestMethod]
+        public void TopologySnapshot_ResolvesRuntimeSurfaceIdentity()
+        {
+            DisplaySurfaceSnapshot target = Surface(7, false, 1920,
+                Target("mdp:target"));
+            DisplayTopologySnapshot topology = new DisplayTopologySnapshot(3,
+                new[] { Surface(1, true, 0, Target("mdp:primary")), target });
+
+            Assert.AreSame(target,
+                topology.FindByRuntimeSurfaceId("SURFACE-7"));
+            Assert.IsNull(topology.FindByRuntimeSurfaceId("surface-missing"));
+        }
+
+        [TestMethod]
         public void DockPlacementPlanner_StacksLogicalMembersAt100And200Percent()
         {
             DockGroupLogicalState group = DockGroup(40, 50);

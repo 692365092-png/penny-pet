@@ -120,6 +120,15 @@ namespace PennyPet
             return DisplayTopologyRules.FindByRuntimeGdiName(_surfaces, name);
         }
 
+        internal DisplaySurfaceSnapshot FindByRuntimeSurfaceId(string id)
+        {
+            if (String.IsNullOrWhiteSpace(id)) return null;
+            foreach (DisplaySurfaceSnapshot surface in _surfaces)
+                if (String.Equals(surface.RuntimeSurfaceId, id,
+                    StringComparison.OrdinalIgnoreCase)) return surface;
+            return null;
+        }
+
         internal DisplaySurfaceSnapshot PrimaryOrFirst()
         {
             return DisplayTopologyRules.PrimaryOrFirst(_surfaces);

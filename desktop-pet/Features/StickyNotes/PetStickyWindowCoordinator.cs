@@ -1119,9 +1119,18 @@ namespace PennyPet
             }
             DockBatchResult batch = result.DockBatchResult;
             if (batch.PlanSequence != expectedPlanSequence ||
-                batch.TopologyGeneration != value.Topology.Generation)
+                batch.TopologyGeneration != value.Topology.Generation ||
+                batch.TargetDpi <= 0)
             {
                 rejection = "final batch plan/topology mismatch";
+                return false;
+            }
+            DisplaySurfaceSnapshot targetSurface =
+                value.Topology.FindByRuntimeSurfaceId(
+                    batch.TargetSurfaceId);
+            if (targetSurface == null)
+            {
+                rejection = "final batch target surface unavailable";
                 return false;
             }
             HashSet<string> expected = new HashSet<string>(
@@ -1154,6 +1163,10 @@ namespace PennyPet
                 if (member.Facts.TopologyGeneration !=
                         value.Topology.Generation ||
                     member.Facts.WindowSequence != member.WindowSequence ||
+                    member.Facts.Dpi != batch.TargetDpi ||
+                    !String.Equals(member.Facts.RuntimeGdiName,
+                        targetSurface.RuntimeGdiName,
+                        StringComparison.OrdinalIgnoreCase) ||
                     !String.Equals(member.Facts.WindowId, member.NoteId,
                         StringComparison.OrdinalIgnoreCase) ||
                     !_hostedRuntime.CanApplySequence(member.NoteId,

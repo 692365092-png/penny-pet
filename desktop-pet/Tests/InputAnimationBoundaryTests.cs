@@ -2364,6 +2364,84 @@ namespace PennyPet.Tests
                     "StickyUiCommandStatus.Handled &&\n                        ApplyReprojectResult(result, rehomedNoteId)"));
         }
 
+        [TestMethod]
+        public void Drt910_DockPlanUsesSourceActualWidthForEveryMember()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string plan = Between(coordinator,
+                "private DockPlacementPlan PlanDockPlan",
+                "private List<DockLayoutTarget> PlanToDockTargets");
+
+            Assert.IsTrue(plan.Contains(
+                    "DisplayGeometry.PhysicalLengthToLogical(") &&
+                plan.Contains("sourceFacts.PhysicalBounds.Width") &&
+                plan.Contains("new DockLogicalMember(member.Id,\n                    unifiedLogicalWidth,"),
+                "Every member must use the source HWND's actual logical width.");
+            Assert.IsFalse(plan.Contains(
+                "new DockLogicalMember(member.Id,\n                    member.LocalLogicalWidth,"),
+                "Stale per-member widths must not fracture one Dock layout.");
+        }
+
+        [TestMethod]
+        public void Drt10_NativeBatchBootstrapsFollowersToPlanDpi()
+        {
+            string host = ReadSource("StickyUiHost.cs");
+            string apply = Between(host,
+                "private StickyUiCommandResult ApplyDockPlan(",
+                "private StickyUiCommandResult CaptureDockFactsForCommit");
+            string session = ReadSource("StickyWindowSession.cs");
+            string prepare = Between(session,
+                "internal bool TryPrepareDockTargetDpi(",
+                "internal void CompleteDockTargetDpi(");
+
+            int bootstrap = apply.IndexOf("TryPrepareDockTargetDpi(",
+                StringComparison.Ordinal);
+            int batch = apply.IndexOf(
+                "WindowsBatchWindowPlacementExecutor.Apply(",
+                StringComparison.Ordinal);
+            Assert.IsTrue(bootstrap >= 0 && batch > bootstrap &&
+                apply.Contains("topology.FindByRuntimeSurfaceId(") &&
+                apply.Contains("member.Facts.Dpi != plan.TargetDpi") &&
+                apply.Contains("targetSurface.RuntimeGdiName"),
+                "Followers must acquire the one plan DPI before the native batch, then be verified.");
+            Assert.IsTrue(prepare.Contains("_window.Hide()") &&
+                prepare.Contains("MoveHiddenToSurface(") &&
+                prepare.Contains("GetDpiForWindow() != targetDpi"),
+                "A cross-DPI follower must use the hidden target-surface bootstrap.");
+        }
+
+        [TestMethod]
+        public void Drt10_DpiBootstrapFailureRollsBackWholeFrame()
+        {
+            string host = ReadSource("StickyUiHost.cs");
+            string apply = Between(host,
+                "private StickyUiCommandResult ApplyDockPlan(",
+                "private StickyUiCommandResult CaptureDockFactsForCommit");
+            string session = ReadSource("StickyWindowSession.cs");
+            string complete = Between(session,
+                "internal void CompleteDockTargetDpi(",
+                "private void RollbackReproject(");
+
+            Assert.IsTrue(apply.Contains("bool placementApplied = false;") &&
+                apply.Contains("CompleteDockTargetDpi(\n                        transitions[index], placementApplied)") &&
+                complete.Contains("if (!placementApplied)") &&
+                complete.Contains("RollbackReproject("),
+                "A rejected frame must restore every follower's prior bounds and visibility.");
+        }
+
+        [TestMethod]
+        public void Drt10_DurableCommitRejectsMixedTargetFacts()
+        {
+            string validation = DockCommitValidationSource();
+
+            Assert.IsTrue(validation.Contains("batch.TargetDpi <= 0") &&
+                validation.Contains("FindByRuntimeSurfaceId(") &&
+                validation.Contains("member.Facts.Dpi != batch.TargetDpi") &&
+                validation.Contains("targetSurface.RuntimeGdiName"),
+                "A mixed-DPI or wrong-surface result must never become durable.");
+        }
+
         private static string DockCommitValidationSource()
         {
             string coordinator = ReadSource(

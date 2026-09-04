@@ -88,6 +88,17 @@ namespace PennyPet
             };
         }
 
+        internal static int PhysicalLengthToLogical(int physicalLength,
+            double scale)
+        {
+            if (physicalLength <= 0) return 0;
+            double safeScale = scale > 0.0 ? scale : 1.0;
+            double logical = Math.Round(physicalLength / safeScale,
+                MidpointRounding.AwayFromZero);
+            return logical >= Int32.MaxValue ? Int32.MaxValue :
+                Math.Max(1, (int)logical);
+        }
+
         // Single rounding policy for preferred-placement projection: long
         // arithmetic before multiplication and AwayFromZero rounding keep
         // extreme coordinates from overflowing and make roundtrips stable.

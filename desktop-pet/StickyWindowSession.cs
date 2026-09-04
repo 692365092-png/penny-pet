@@ -469,6 +469,68 @@ namespace PennyPet
             return facts;
         }
 
+        // A follower that is still owned by its previous monitor cannot be
+        // projected at the source DPI. Park it hidden on the plan's one
+        // target surface first; the host then moves every follower in one
+        // final batch and restores the original visibility.
+        internal bool TryPrepareDockTargetDpi(
+            DisplaySurfaceSnapshot surface, int targetDpi,
+            out DockDpiTransition transition)
+        {
+            transition = null;
+            if (!IsAvailable || surface == null || targetDpi <= 0)
+                return false;
+            _placementExecutor.EnsureHandle();
+            int currentDpi = _placementExecutor.GetDpiForWindow();
+            if (currentDpi <= 0) return false;
+            bool wasVisible = _window.IsVisible;
+            System.Drawing.Rectangle previousBounds =
+                _window.PhysicalBounds;
+            if (currentDpi == targetDpi)
+            {
+                transition = new DockDpiTransition(previousBounds,
+                    wasVisible, false);
+                return true;
+            }
+
+            bool previousApplying = _applyingBounds;
+            _applyingBounds = true;
+            try
+            {
+                if (wasVisible) _window.Hide();
+                if (!_placementExecutor.MoveHiddenToSurface(
+                        surface.WorkArea) ||
+                    _placementExecutor.GetDpiForWindow() != targetDpi)
+                {
+                    RollbackReproject(wasVisible, previousBounds);
+                    return false;
+                }
+                transition = new DockDpiTransition(previousBounds,
+                    wasVisible, true);
+                return true;
+            }
+            finally { _applyingBounds = previousApplying; }
+        }
+
+        internal void CompleteDockTargetDpi(DockDpiTransition transition,
+            bool placementApplied)
+        {
+            if (transition == null) return;
+            bool previousApplying = _applyingBounds;
+            _applyingBounds = true;
+            try
+            {
+                if (!placementApplied)
+                    RollbackReproject(transition.WasVisible,
+                        transition.PreviousBounds);
+                else if (transition.WasMoved && transition.WasVisible)
+                    _placementExecutor.Show();
+                else if (transition.WasMoved)
+                    _window.Hide();
+            }
+            finally { _applyingBounds = previousApplying; }
+        }
+
         // Transactional failure path: a reprojection must never leave a
         // repository-visible window hidden. Restore the previous physical
         // bounds and visibility whenever any bootstrap step fails.
@@ -528,6 +590,24 @@ namespace PennyPet
             long sequence = _sequence;
             _window.CloseForApplicationExit();
             return StickyUiCommandResult.Handled(snapshot, sequence);
+        }
+
+        internal sealed class DockDpiTransition
+        {
+            internal DockDpiTransition(
+                System.Drawing.Rectangle previousBounds,
+                bool wasVisible, bool wasMoved)
+            {
+                PreviousBounds = previousBounds;
+                WasVisible = wasVisible;
+                WasMoved = wasMoved;
+            }
+
+            internal System.Drawing.Rectangle PreviousBounds
+                { get; private set; }
+            internal bool WasVisible { get; private set; }
+            internal bool WasMoved { get; private set; }
+
         }
 
         internal StickyUiFinalSnapshot FlushAndCaptureFinal()

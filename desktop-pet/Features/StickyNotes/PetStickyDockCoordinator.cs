@@ -259,6 +259,14 @@ namespace PennyPet
             });
             if (sourceIndex < 0) return null;
 
+            // Dock has one width. Derive it from the source HWND facts so a
+            // stale or previously mixed-DPI member width cannot fracture the
+            // group or become a second geometry authority.
+            int unifiedLogicalWidth =
+                DisplayGeometry.PhysicalLengthToLogical(
+                    sourceFacts.PhysicalBounds.Width, sourceFacts.Scale);
+            if (unifiedLogicalWidth <= 0) return null;
+
             List<DockLogicalMember> members =
                 new List<DockLogicalMember>(ordered.Count);
             foreach (StickyNoteData member in ordered)
@@ -266,7 +274,7 @@ namespace PennyPet
                 if (member.LocalLogicalWidth <= 0 ||
                     member.LocalLogicalHeight <= 0) return null;
                 members.Add(new DockLogicalMember(member.Id,
-                    member.LocalLogicalWidth,
+                    unifiedLogicalWidth,
                     member.LocalLogicalHeight));
             }
 

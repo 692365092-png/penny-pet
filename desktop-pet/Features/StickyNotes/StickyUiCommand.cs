@@ -620,9 +620,18 @@ namespace PennyPet
 
         internal DockBatchResult(long planSequence, long topologyGeneration,
             IEnumerable<DockBatchMemberResult> members)
+            : this(planSequence, topologyGeneration, String.Empty, 0, members)
+        {
+        }
+
+        internal DockBatchResult(long planSequence, long topologyGeneration,
+            string targetSurfaceId, int targetDpi,
+            IEnumerable<DockBatchMemberResult> members)
         {
             PlanSequence = planSequence;
             TopologyGeneration = topologyGeneration;
+            TargetSurfaceId = targetSurfaceId ?? String.Empty;
+            TargetDpi = targetDpi;
             _members = members == null
                 ? new DockBatchMemberResult[0]
                 : new List<DockBatchMemberResult>(members).ToArray();
@@ -631,6 +640,8 @@ namespace PennyPet
 
         internal long PlanSequence { get; private set; }
         internal long TopologyGeneration { get; private set; }
+        internal string TargetSurfaceId { get; private set; }
+        internal int TargetDpi { get; private set; }
         internal IReadOnlyList<DockBatchMemberResult> Members
             { get; private set; }
     }
