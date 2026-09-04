@@ -43,36 +43,49 @@ namespace PennyPet
 
         private bool FlushPersistenceBeforeExit()
         {
-            _notes.WaitForPendingSaves();
+            bool notesResolved = false;
+            bool settingsResolved = false;
             while (true)
             {
-                PersistenceResult noteResult = _notes.Save();
-                PersistenceResult settingsResult = _settings.Save();
+                PersistenceResult pendingSaves = notesResolved
+                    ? PersistenceResult.Success()
+                    : _notes.WaitForPendingSaves();
+                PersistenceResult noteResult = notesResolved
+                    ? PersistenceResult.Success()
+                    : pendingSaves.Succeeded ? _notes.Save() : pendingSaves;
+                PersistenceResult settingsResult = settingsResolved
+                    ? PersistenceResult.Success() : _settings.Save();
                 if (noteResult.Succeeded && settingsResult.Succeeded)
                     return true;
-                if (noteResult.Succeeded)
+
+                if (!noteResult.Succeeded)
+                {
+                    DialogResult noteChoice = MessageBox.Show(this,
+                        "便利贴尚未写入磁盘。\n\n" + noteResult.ErrorMessage +
+                        "\n\n选择“是”重试，选择“否”导出当前内容后继续处理" +
+                        "其他未保存数据，选择“取消”返回程序。",
+                        "Penny pet - 有未保存内容",
+                        MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning);
+                    if (noteChoice == DialogResult.Yes) continue;
+                    if (noteChoice == DialogResult.Cancel) return false;
+                    if (!ExportUnsavedStickyNotes()) return false;
+                    notesResolved = true;
+                }
+
+                if (!settingsResult.Succeeded)
                 {
                     DialogResult settingsChoice = MessageBox.Show(this,
                         "程序设置尚未写入磁盘。\n\n" +
                         settingsResult.ErrorMessage +
-                        "\n\n选择“是”重试，选择“否”忽略本次设置变更并退出，" +
+                        "\n\n选择“是”重试，选择“否”明确放弃本次设置变更并退出，" +
                         "选择“取消”返回程序。",
                         "Penny pet - 有未保存设置",
                         MessageBoxButtons.YesNoCancel,
                         MessageBoxIcon.Warning);
                     if (settingsChoice == DialogResult.Yes) continue;
-                    if (settingsChoice == DialogResult.No) return true;
-                    return false;
+                    if (settingsChoice == DialogResult.Cancel) return false;
+                    settingsResolved = true;
                 }
-                DialogResult choice = MessageBox.Show(this,
-                    "便利贴尚未写入磁盘。\n\n" + noteResult.ErrorMessage +
-                    "\n\n选择“是”重试，选择“否”导出当前内容后退出，" +
-                    "选择“取消”返回程序。",
-                    "Penny pet - 有未保存内容", MessageBoxButtons.YesNoCancel,
-                    MessageBoxIcon.Warning);
-                if (choice == DialogResult.Yes) continue;
-                if (choice == DialogResult.Cancel) return false;
-                return ExportUnsavedStickyNotes();
             }
         }
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Text;
@@ -437,9 +438,33 @@ namespace PennyPet
                 ThreadPool.QueueUserWorkItem(delegate { AsyncWriterLoop(); });
         }
 
-        internal void WaitForPendingSaves()
+        internal PersistenceResult WaitForPendingSaves()
         {
-            while (HasPendingSaves) Thread.Sleep(10);
+            return WaitForPendingSaves(TimeSpan.FromSeconds(5));
+        }
+
+        internal PersistenceResult WaitForPendingSaves(TimeSpan timeout)
+        {
+            if (timeout < TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(timeout));
+            Stopwatch elapsed = Stopwatch.StartNew();
+            lock (_saveGate)
+            {
+                while (_writerRunning)
+                {
+                    TimeSpan remaining = timeout - elapsed.Elapsed;
+                    if (remaining <= TimeSpan.Zero)
+                    {
+                        TimeoutException error = new TimeoutException(
+                            "Timed out waiting for pending sticky-note saves.");
+                        ApplicationDiagnostics.ReportNonFatal(
+                            "sticky-notes-pending-save-timeout", error);
+                        return PersistenceResult.Failure(error);
+                    }
+                    Monitor.Wait(_saveGate, remaining);
+                }
+            }
+            return PersistenceResult.Success();
         }
 
         private void AsyncWriterLoop()
@@ -454,6 +479,7 @@ namespace PennyPet
                         _latestGeneration <= _lastWrittenGeneration)
                     {
                         _writerRunning = false;
+                        Monitor.PulseAll(_saveGate);
                         return;
                     }
                     snapshot = _latestSnapshot;
@@ -489,6 +515,7 @@ namespace PennyPet
                     {
                         _writerRunning = false;
                         _latestSnapshot = null;
+                        Monitor.PulseAll(_saveGate);
                     }
                     return;
                 }
@@ -619,6 +646,9 @@ namespace PennyPet
                 StringComparison.OrdinalIgnoreCase))
                 return PersistenceResult.Failure(new InvalidOperationException(
                     "Automatic backup path must differ from the data file."));
+
+            PersistenceResult pendingSaves = WaitForPendingSaves();
+            if (!pendingSaves.Succeeded) return pendingSaves;
 
             long generation;
             List<StickyNoteData> currentSnapshot;

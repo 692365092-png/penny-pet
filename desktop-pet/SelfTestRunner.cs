@@ -343,6 +343,8 @@ namespace PennyPet
             internal bool PersistenceOk;
             internal bool FailureDirtyRetryOk;
             internal bool GenerationMonotonicOk;
+            internal bool PendingSaveWaitBoundedOk;
+            internal bool CurrentBackupRoundTripOk;
             internal bool ImportMergeCommitOk;
             internal bool FullRestoreCommitOk;
             internal bool MultilingualOk;
@@ -390,6 +392,46 @@ namespace PennyPet
             result.Repository = StickyNoteRepository.LoadFromFile(
                 result.FilePath);
             List<StickyNoteData> restoredNotes = result.Repository.GetAll();
+
+            string currentBackupPath = outputPath +
+                ".sticky-current-backup-test.pennysticky";
+            try
+            {
+                PersistenceResult exported = result.Repository.ExportSnapshot(
+                    currentBackupPath);
+                StickyImportValidationResult imported =
+                    StickyBackupFileReader.Read(currentBackupPath);
+                result.CurrentBackupRoundTripOk = exported.Succeeded &&
+                    imported.Succeeded && imported.Notes.Count ==
+                    restoredNotes.Count && imported.Notes.Count == 1 &&
+                    StickyImportMergePlanner.PersistedContentEquals(
+                        restoredNotes[0], imported.Notes[0]);
+            }
+            finally
+            {
+                if (File.Exists(currentBackupPath))
+                    File.Delete(currentBackupPath);
+                if (File.Exists(currentBackupPath + ".bak"))
+                    File.Delete(currentBackupPath + ".bak");
+            }
+
+            string waitPath = outputPath + ".pending-save-wait-test.dat";
+            StickyNoteRepository waitRepository =
+                StickyNoteRepository.LoadFromFile(waitPath);
+            FieldInfo writerRunning = typeof(StickyNoteRepository).GetField(
+                "_writerRunning", BindingFlags.Instance |
+                BindingFlags.NonPublic);
+            writerRunning.SetValue(waitRepository, true);
+            Stopwatch waitTimer = Stopwatch.StartNew();
+            PersistenceResult timedOut = waitRepository.WaitForPendingSaves(
+                TimeSpan.FromMilliseconds(25));
+            waitTimer.Stop();
+            writerRunning.SetValue(waitRepository, false);
+            result.PendingSaveWaitBoundedOk = !timedOut.Succeeded &&
+                timedOut.Error is TimeoutException &&
+                waitTimer.Elapsed < TimeSpan.FromSeconds(1) &&
+                waitRepository.WaitForPendingSaves(
+                    TimeSpan.Zero).Succeeded;
 
             string persistenceStatePath = outputPath +
                 ".persistence-state-test.dat";
@@ -5066,6 +5108,8 @@ namespace PennyPet
                     stickyChecks.ImportMergeCommitOk) + ",\n" +
                 "  \"sticky_full_restore_commit_ok\": " + Bool(
                     stickyChecks.FullRestoreCommitOk) + ",\n" +
+                "  \"sticky_current_backup_strict_round_trip_ok\": " + Bool(
+                    stickyChecks.CurrentBackupRoundTripOk) + ",\n" +
                 "  \"sticky_pin_action_text_ok\": " + Bool(
                     shellChecks.PinActionTextOk) + ",\n" +
                 "  \"todo_sticky_pin_action_text_ok\": " + Bool(
@@ -5342,6 +5386,8 @@ namespace PennyPet
                     stickyChecks.FailureDirtyRetryOk) + ",\n" +
                 "  \"sticky_generation_monotonic_ok\": " + Bool(
                     stickyChecks.GenerationMonotonicOk) + ",\n" +
+                "  \"sticky_pending_save_wait_bounded_ok\": " + Bool(
+                    stickyChecks.PendingSaveWaitBoundedOk) + ",\n" +
                 "  \"failed_load_never_overwrites_ok\": " + Bool(
                     compatibilityChecks.FailedLoadNeverOverwritesOk) + ",\n" +
                 "  \"sticky_backup_recovery_allows_create_ok\": " + Bool(

@@ -10,6 +10,13 @@ namespace PennyPet
     // atomic replacement and diagnostics remain platform responsibilities.
     internal static class StickyNoteCodec
     {
+        internal const int VersionTen = 10;
+        internal const int VersionTenFieldCount = 32;
+        internal const int CurrentVersion = VersionTen;
+        internal const int CurrentFieldCount = VersionTenFieldCount;
+        internal const int MaximumDisplayIdCharacters = 1024;
+        internal const int MaximumLocalLogicalValue = 20000;
+
         private static readonly char[] LineSeparators = new char[] { '\n' };
 
         internal static string SerializeLine(StickyNoteData note)
@@ -17,7 +24,8 @@ namespace PennyPet
             if (note == null) throw new ArgumentNullException(nameof(note));
             return String.Join("|", new string[]
             {
-                "10", note.Id ?? String.Empty,
+                CurrentVersion.ToString(CultureInfo.InvariantCulture),
+                note.Id ?? String.Empty,
                 note.Visible ? "1" : "0",
                 note.AlwaysOnTop ? "1" : "0",
                 note.ColorArgb.ToString(CultureInfo.InvariantCulture),
@@ -216,7 +224,6 @@ namespace PennyPet
             // missing the placement is incomplete and must not claim canonical
             // status; otherwise clamp the local rect to a plausible window size
             // so a corrupt value can never overflow the display scale projection.
-            const int localLogicalLimit = 20000;
             if (String.IsNullOrWhiteSpace(note.DisplayId))
             {
                 if (note.LocalLogicalX != 0 || note.LocalLogicalY != 0 ||
@@ -233,9 +240,11 @@ namespace PennyPet
             else
             {
                 int localWidth = Math.Max(1,
-                    Math.Min(note.LocalLogicalWidth, localLogicalLimit));
+                    Math.Min(note.LocalLogicalWidth,
+                        MaximumLocalLogicalValue));
                 int localHeight = Math.Max(1,
-                    Math.Min(note.LocalLogicalHeight, localLogicalLimit));
+                    Math.Min(note.LocalLogicalHeight,
+                        MaximumLocalLogicalValue));
                 if (note.LocalLogicalWidth != localWidth)
                 {
                     note.LocalLogicalWidth = localWidth;

@@ -233,6 +233,41 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyPersistence_BarriersAreBoundedAndExitResolvesBothFailures()
+        {
+            string repository = ReadSource(
+                "Features/StickyNotes/StickyNoteRepository.cs");
+            string wait = Between(repository,
+                "internal PersistenceResult WaitForPendingSaves(TimeSpan timeout)",
+                "private void AsyncWriterLoop");
+            string commit = Between(repository,
+                "private PersistenceResult CommitPreparedSnapshot",
+                "internal PersistenceResult CommitImportedMerge");
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetPersistenceCoordinator.cs");
+            string exit = Between(coordinator,
+                "private bool FlushPersistenceBeforeExit()",
+                "private bool ExportUnsavedStickyNotes()");
+
+            Assert.IsTrue(wait.Contains("Monitor.Wait(_saveGate, remaining)") &&
+                wait.Contains("TimeoutException") &&
+                wait.Contains("PersistenceResult.Failure(error)"),
+                "Pending-save barriers must return a bounded failure.");
+            Assert.IsTrue(commit.Contains("WaitForPendingSaves()") &&
+                commit.Contains("if (!pendingSaves.Succeeded) return pendingSaves;"),
+                "Import and full restore must stop when pending saves time out.");
+            int emergencyExport = exit.IndexOf(
+                "if (!ExportUnsavedStickyNotes()) return false;",
+                StringComparison.Ordinal);
+            int settingsResolution = exit.IndexOf(
+                "if (!settingsResult.Succeeded)", StringComparison.Ordinal);
+            Assert.IsTrue(emergencyExport >= 0 &&
+                settingsResolution > emergencyExport &&
+                !exit.Contains("return ExportUnsavedStickyNotes();"),
+                "Emergency Sticky export must not silently resolve a Settings failure.");
+        }
+
+        [TestMethod]
         public void StickyUiHost_CommandBoundaryIsAsynchronous()
         {
             string host = ReadSource("StickyUiHost.cs");

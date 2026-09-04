@@ -1167,7 +1167,7 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void StickyNoteCodec_RoundTripsVersionNineWithoutWindowsTypes()
+        public void StickyNoteCodec_RoundTripsCurrentVersionWithoutWindowsTypes()
         {
             StickyNoteData source = new StickyNoteData
             {
@@ -1236,6 +1236,7 @@ namespace PennyPet.Tests
         [DataRow(7)]
         [DataRow(8)]
         [DataRow(9)]
+        [DataRow(10)]
         public void StickyNoteCodec_LoadsEveryHistoricalGoldenFixture(
             int version)
         {
@@ -1266,7 +1267,7 @@ namespace PennyPet.Tests
                 Assert.AreEqual("group-root", restored.DockGroupId);
                 Assert.AreEqual(3, restored.DockGroupOrder);
             }
-            if (version == 9)
+            if (version >= 9)
             {
                 Assert.IsTrue(restored.IsSchedule);
                 Assert.IsFalse(restored.IsTodoList);
@@ -1274,12 +1275,21 @@ namespace PennyPet.Tests
                 Assert.AreEqual("2030 schedule",
                     restored.ScheduleItems[0].Text);
             }
+            if (version >= 10)
+            {
+                Assert.AreEqual("\\\\.\\DISPLAY1", restored.DisplayId);
+                Assert.AreEqual(10, restored.LocalLogicalX);
+                Assert.AreEqual(20, restored.LocalLogicalY);
+                Assert.AreEqual(300, restored.LocalLogicalWidth);
+                Assert.AreEqual(240, restored.LocalLogicalHeight);
+            }
         }
 
         [TestMethod]
         public void StickyImportBackupValidator_AcceptsHistoricalCodecFixtures()
         {
-            for (int version = 1; version <= 9; version++)
+            for (int version = 1; version <= StickyNoteCodec.CurrentVersion;
+                version++)
             {
                 string fixture = Path.Combine(AppContext.BaseDirectory,
                     "Tests", "Fixtures", "sticky-v" + version + ".txt");
@@ -1292,6 +1302,133 @@ namespace PennyPet.Tests
                     "Fixture v" + version + " should validate: " +
                     result.ErrorMessage);
                 Assert.AreEqual(1, result.Notes.Count);
+            }
+        }
+
+        [TestMethod]
+        public void CurrentCodecOutput_IsAcceptedByImportValidator()
+        {
+            StickyNoteData note = new StickyNoteData { Id = "current-codec" };
+            string line = StickyNoteCodec.SerializeLine(note);
+
+            StickyImportValidationResult result =
+                StickyImportBackupValidator.Validate(new[] { line });
+
+            Assert.IsTrue(result.Succeeded, result.ErrorMessage);
+            Assert.AreEqual(StickyNoteCodec.CurrentFieldCount,
+                line.Split('|').Length);
+            Assert.AreEqual(1, result.Notes.Count);
+        }
+
+        [TestMethod]
+        public void V10Fixture_IsAccepted()
+        {
+            string fixture = Path.Combine(AppContext.BaseDirectory,
+                "Tests", "Fixtures", "sticky-v10.txt");
+
+            StickyImportValidationResult result =
+                StickyImportBackupValidator.Validate(new[]
+                {
+                    File.ReadAllText(fixture, Encoding.UTF8).Trim()
+                });
+
+            Assert.IsTrue(result.Succeeded, result.ErrorMessage);
+            Assert.AreEqual(1, result.Notes.Count);
+            Assert.AreEqual("legacy-v10", result.Notes[0].Id);
+        }
+
+        [TestMethod]
+        public void V10CanonicalPlacement_RoundTripsThroughStrictBackupValidator()
+        {
+            StickyNoteData note = new StickyNoteData
+            {
+                Id = "v10-canonical",
+                DisplayId = "\\\\.\\DISPLAY3",
+                LocalLogicalX = -150,
+                LocalLogicalY = 40,
+                LocalLogicalWidth = 320,
+                LocalLogicalHeight = 300
+            };
+
+            StickyImportValidationResult result =
+                StickyImportBackupValidator.Validate(new[]
+                {
+                    StickyNoteCodec.SerializeLine(note)
+                });
+
+            Assert.IsTrue(result.Succeeded, result.ErrorMessage);
+            StickyNoteData restored = result.Notes.Single();
+            Assert.AreEqual(note.DisplayId, restored.DisplayId);
+            Assert.AreEqual(note.LocalLogicalX, restored.LocalLogicalX);
+            Assert.AreEqual(note.LocalLogicalY, restored.LocalLogicalY);
+            Assert.AreEqual(note.LocalLogicalWidth,
+                restored.LocalLogicalWidth);
+            Assert.AreEqual(note.LocalLogicalHeight,
+                restored.LocalLogicalHeight);
+        }
+
+        [TestMethod]
+        public void V10MalformedCanonicalFields_AreRejected()
+        {
+            StickyNoteData note = new StickyNoteData
+            {
+                Id = "v10-malformed",
+                DisplayId = "\\\\.\\DISPLAY1",
+                LocalLogicalX = 10,
+                LocalLogicalY = 20,
+                LocalLogicalWidth = 320,
+                LocalLogicalHeight = 300
+            };
+            string[] valid = StickyNoteCodec.SerializeLine(note).Split('|');
+            List<string[]> malformed = new List<string[]>();
+
+            string[] badDisplayEncoding = (string[])valid.Clone();
+            badDisplayEncoding[27] = "%%%";
+            malformed.Add(badDisplayEncoding);
+
+            string[] oversizedDisplayId = (string[])valid.Clone();
+            oversizedDisplayId[27] = Convert.ToBase64String(
+                Encoding.UTF8.GetBytes(new String('D',
+                    StickyNoteCodec.MaximumDisplayIdCharacters + 1)));
+            malformed.Add(oversizedDisplayId);
+
+            string[] incompleteLegacy = (string[])valid.Clone();
+            incompleteLegacy[27] = String.Empty;
+            malformed.Add(incompleteLegacy);
+
+            string[] whitespaceDisplayId = (string[])valid.Clone();
+            whitespaceDisplayId[27] = Convert.ToBase64String(
+                Encoding.UTF8.GetBytes(" "));
+            malformed.Add(whitespaceDisplayId);
+
+            string[] zeroWidth = (string[])valid.Clone();
+            zeroWidth[30] = "0";
+            malformed.Add(zeroWidth);
+
+            string[] oversizedHeight = (string[])valid.Clone();
+            oversizedHeight[31] = (StickyNoteCodec.MaximumLocalLogicalValue + 1)
+                .ToString(System.Globalization.CultureInfo.InvariantCulture);
+            malformed.Add(oversizedHeight);
+
+            string[] nonNumericX = (string[])valid.Clone();
+            nonNumericX[28] = "not-a-number";
+            malformed.Add(nonNumericX);
+
+            string[] outOfRangeY = (string[])valid.Clone();
+            outOfRangeY[29] = (StickyNoteCodec.MaximumLocalLogicalValue + 1)
+                .ToString(System.Globalization.CultureInfo.InvariantCulture);
+            malformed.Add(outOfRangeY);
+
+            foreach (string[] fields in malformed)
+            {
+                StickyImportValidationResult result =
+                    StickyImportBackupValidator.Validate(new[]
+                    {
+                        String.Join("|", fields)
+                    });
+                Assert.IsFalse(result.Succeeded,
+                    "Malformed v10 canonical fields must fail strict validation.");
+                Assert.AreEqual(0, result.Notes.Count);
             }
         }
 

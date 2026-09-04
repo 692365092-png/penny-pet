@@ -137,6 +137,16 @@ namespace PennyPet
                 RequireBoolean(fields[25]);
                 ValidateSchedulePayload(RequireBase64(fields[26]));
             }
+            if (version >= 10)
+            {
+                string displayId = RequireBase64(fields[27]);
+                int localX = RequireInt32(fields, 28);
+                int localY = RequireInt32(fields, 29);
+                int localWidth = RequireInt32(fields, 30);
+                int localHeight = RequireInt32(fields, 31);
+                ValidateCanonicalPlacement(displayId, localX, localY,
+                    localWidth, localHeight);
+            }
         }
 
         private static int ExpectedFieldCount(int version)
@@ -152,6 +162,8 @@ namespace PennyPet
                 case 7: return 23;
                 case 8: return 25;
                 case 9: return 27;
+                case StickyNoteCodec.VersionTen:
+                    return StickyNoteCodec.VersionTenFieldCount;
                 default: return 0;
             }
         }
@@ -162,12 +174,36 @@ namespace PennyPet
                 throw new InvalidDataException("Malformed boolean field.");
         }
 
-        private static void RequireInt32(string[] fields, int index)
+        private static int RequireInt32(string[] fields, int index)
         {
             int value;
             if (!Int32.TryParse(fields[index], NumberStyles.Integer,
                 CultureInfo.InvariantCulture, out value))
                 throw new InvalidDataException("Malformed numeric field.");
+            return value;
+        }
+
+        private static void ValidateCanonicalPlacement(string displayId,
+            int localX, int localY, int localWidth, int localHeight)
+        {
+            if (displayId.Length > StickyNoteCodec.MaximumDisplayIdCharacters)
+                throw new InvalidDataException("Display identity is too long.");
+            if (displayId.Length == 0)
+            {
+                if (localX != 0 || localY != 0 || localWidth != 0 ||
+                    localHeight != 0)
+                    throw new InvalidDataException(
+                        "Incomplete canonical placement.");
+                return;
+            }
+            if (String.IsNullOrWhiteSpace(displayId))
+                throw new InvalidDataException("Invalid display identity.");
+
+            int limit = StickyNoteCodec.MaximumLocalLogicalValue;
+            if (localX < -limit || localX > limit || localY < -limit ||
+                localY > limit || localWidth <= 0 || localWidth > limit ||
+                localHeight <= 0 || localHeight > limit)
+                throw new InvalidDataException("Invalid canonical placement.");
         }
 
         private static void RequirePositiveInt64(string[] fields, int index)
