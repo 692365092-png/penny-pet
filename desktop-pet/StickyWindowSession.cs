@@ -82,8 +82,14 @@ namespace PennyPet
             // Only the canonical standalone path uses the native placement
             // executor. A dock member is repositioned by the owner via
             // SetBounds in the same batch, so its geometry stays untouched.
-            if (String.IsNullOrWhiteSpace(data.DisplayId) ||
-                data.LocalLogicalWidth <= 0 || data.LocalLogicalHeight <= 0 ||
+            bool hasCanonical =
+                !String.IsNullOrWhiteSpace(data.DisplayId) &&
+                data.LocalLogicalWidth > 0 && data.LocalLogicalHeight > 0;
+            bool hasPreferred =
+                !String.IsNullOrWhiteSpace(data.PreferredDisplayTargetKey) &&
+                data.PreferredLocalLogicalWidth > 0 &&
+                data.PreferredLocalLogicalHeight > 0;
+            if ((!hasCanonical && !hasPreferred) ||
                 !String.IsNullOrEmpty(data.DockGroupId)) return false;
             NativePlacementPlan plan = ResolvePlacementPlan(data);
             if (plan == null) return false;
@@ -299,9 +305,11 @@ namespace PennyPet
             return CurrentResult();
         }
 
-        internal StickyUiCommandResult SetBounds(StickyUiBounds bounds)
+        internal StickyUiCommandResult SetBounds(StickyUiBounds bounds,
+            DisplayTopologySnapshot topology = null)
         {
             if (bounds == null) return StickyUiCommandResult.NotHandled();
+            _topology = topology ?? _topology;
             _applyingBounds = true;
             try
             {
@@ -320,6 +328,18 @@ namespace PennyPet
             // collide with (or be overwritten by) a leaked intermediate event.
             _lastSnapshot = CaptureSnapshot();
             _sequence++;
+            // A topology-driven rehome needs actual HWND facts on the Pet
+            // side. Reuse the ordinary typed BoundsChanged path after the
+            // programmatic feedback guard has been released. Dock effects do
+            // not pass topology and therefore keep their existing behavior.
+            if (topology != null && !_eventsSuppressed)
+            {
+                WindowFacts facts = CaptureWindowFacts(_sequence);
+                TraceWindowFacts(facts, _lastSnapshot);
+                Raise(StickyUiEvent.FromSnapshot(
+                    StickyUiEventKind.BoundsChanged, _lastSnapshot,
+                    _sequence, facts, _topology));
+            }
             return StickyUiCommandResult.Handled(_lastSnapshot, _sequence);
         }
 

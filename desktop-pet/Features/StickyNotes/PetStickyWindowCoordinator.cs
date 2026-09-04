@@ -135,10 +135,11 @@ namespace PennyPet
                 : null;
             string key = DisplayTopologyRules.SelectPreferredTargetKey(
                 surface, note.PreferredDisplayTargetKey);
-            CommitHostedStickyPreferred(note, key,
+            if (CommitHostedStickyPreferred(note, key,
                 note.LocalLogicalX, note.LocalLogicalY,
                 note.LocalLogicalWidth, note.LocalLogicalHeight,
-                PlacementReason.ExpandAndTile);
+                PlacementReason.ExpandAndTile))
+                _placementRuntime.MarkUserPlacementCommit(note.Id);
         }
 
         internal static List<DockLayoutTarget>
@@ -402,6 +403,156 @@ namespace PennyPet
                 ? null : _displayTopologyRuntime.Current;
         }
 
+        // DRT-7: after a semantic topology change, every live standalone
+        // hosted Sticky is reconciled against its durable preferred target.
+        // Dock groups are deliberately excluded until group rehome lands.
+        private void HandleStickyTopologyChanged(
+            DisplayTopologySnapshot snapshot)
+        {
+            if (snapshot == null || IsDisposed || Disposing) return;
+            WindowFacts petFacts = CapturePetWindowFacts(snapshot);
+            foreach (StickyNoteData note in _notes.GetAll())
+            {
+                if (note == null || !note.Visible || !IsHostedSticky(note))
+                    continue;
+                if (!String.IsNullOrEmpty(note.DockGroupId)) continue;
+                ReconcileStandaloneSticky(note, snapshot, petFacts);
+            }
+        }
+
+        private void ReconcileStandaloneSticky(StickyNoteData note,
+            DisplayTopologySnapshot snapshot, WindowFacts petFacts)
+        {
+            bool hasPreferred =
+                !String.IsNullOrWhiteSpace(note.PreferredDisplayTargetKey) &&
+                note.PreferredLocalLogicalWidth > 0 &&
+                note.PreferredLocalLogicalHeight > 0;
+            DisplaySurfaceSnapshot preferredSurface = hasPreferred
+                ? snapshot.FindByTargetKey(note.PreferredDisplayTargetKey)
+                : null;
+            if (preferredSurface != null)
+            {
+                // Preferred display is active again. Only a note the user did
+                // not manually move away gets pulled back to its preference.
+                if (_placementRuntime.IsTemporaryRehome(note.Id) &&
+                    !_placementRuntime.UserMovedSinceRehome(note.Id))
+                {
+                    string noteId = note.Id;
+                    PostHostedStickyCommand(StickyUiCommand.Show(noteId,
+                        false, snapshot),
+                        delegate(StickyUiCommandResult result)
+                        {
+                            if (result != null && result.Status ==
+                                StickyUiCommandStatus.Handled)
+                            {
+                                ApplyHostedStickySnapshot(result.Snapshot,
+                                    result.Sequence);
+                                _placementRuntime.
+                                    MarkReturnedToPreferred(noteId);
+                                DisplayDiagnostics.Trace(
+                                    "PreferredReturned",
+                                    "note=" + noteId);
+                            }
+                        });
+                }
+                return;
+            }
+
+            if (_placementRuntime.IsTemporaryRehome(note.Id)) return;
+            DisplaySurfaceSnapshot fallback;
+            StickyCanonicalPlacement temporary;
+            if (!TryResolveTemporaryRehome(note, snapshot, petFacts,
+                out fallback, out temporary)) return;
+            string rehomedNoteId = note.Id;
+            PostHostedStickyCommand(StickyUiCommand.SetBounds(rehomedNoteId,
+                new StickyUiBounds(temporary.PhysicalLeft,
+                    temporary.PhysicalTop, temporary.PhysicalWidth,
+                    temporary.PhysicalHeight), snapshot),
+                delegate(StickyUiCommandResult result)
+                {
+                    if (result != null && result.Status ==
+                        StickyUiCommandStatus.Handled)
+                    {
+                        ApplyHostedStickySnapshot(result.Snapshot,
+                            result.Sequence);
+                        CompleteTemporaryRehome(rehomedNoteId, fallback,
+                            "preferred-display-missing", snapshot);
+                    }
+                });
+        }
+
+        private static bool TryResolveTemporaryRehome(StickyNoteData note,
+            DisplayTopologySnapshot topology, WindowFacts petFacts,
+            out DisplaySurfaceSnapshot fallback,
+            out StickyCanonicalPlacement temporary)
+        {
+            fallback = null;
+            temporary = null;
+            if (note == null || topology == null ||
+                !String.IsNullOrEmpty(note.DockGroupId) ||
+                String.IsNullOrWhiteSpace(
+                    note.PreferredDisplayTargetKey) ||
+                note.PreferredLocalLogicalWidth <= 0 ||
+                note.PreferredLocalLogicalHeight <= 0 ||
+                topology.FindByTargetKey(
+                    note.PreferredDisplayTargetKey) != null) return false;
+            fallback = FallbackDisplayPolicy.ResolveFallbackSurface(topology,
+                note.PreferredDisplayTargetKey,
+                new PhysicalRect(note.X, note.Y, note.Width, note.Height),
+                petFacts == null ? String.Empty : petFacts.RuntimeGdiName);
+            if (fallback == null) return false;
+            temporary = ResolveTemporaryRehomePlacement(note, fallback);
+            return temporary != null;
+        }
+
+        private void CompleteTemporaryRehome(string noteId,
+            DisplaySurfaceSnapshot fallback, string reason,
+            DisplayTopologySnapshot observedTopology)
+        {
+            _placementRuntime.MarkTemporaryRehome(noteId, reason);
+            DisplayDiagnostics.Trace("TemporaryRehome",
+                "note=" + noteId +
+                " target=" + fallback.RuntimeSurfaceId +
+                " work=(" + fallback.WorkArea.Left + "," +
+                fallback.WorkArea.Top + "," + fallback.WorkArea.Width + "," +
+                fallback.WorkArea.Height + ")");
+            DisplayTopologySnapshot current = CurrentTopologySnapshot();
+            if (current == null || observedTopology == null ||
+                current.Generation == observedTopology.Generation) return;
+            // The command completed against an older immutable snapshot.
+            // Clear that temporary decision and immediately reconcile against
+            // the newest topology so an async hotplug race cannot strand it.
+            _placementRuntime.ClearTemporaryRehome(noteId);
+            StickyNoteData note = _notes.Find(noteId);
+            if (note != null && note.Visible &&
+                String.IsNullOrEmpty(note.DockGroupId))
+                ReconcileStandaloneSticky(note, current,
+                    CapturePetWindowFacts(current));
+        }
+
+        // Temporary placement keeps the preferred logical size (fitted to the
+        // fallback work area) centered on that surface. The durable preferred
+        // fields stay untouched; the DPI here only shapes a visible fallback.
+        private static StickyCanonicalPlacement ResolveTemporaryRehomePlacement(
+            StickyNoteData note, DisplaySurfaceSnapshot fallback)
+        {
+            int logicalWidth = note.PreferredLocalLogicalWidth > 0
+                ? note.PreferredLocalLogicalWidth
+                : (note.LocalLogicalWidth > 0 ? note.LocalLogicalWidth : 320);
+            int logicalHeight = note.PreferredLocalLogicalHeight > 0
+                ? note.PreferredLocalLogicalHeight
+                : (note.LocalLogicalHeight > 0 ? note.LocalLogicalHeight : 300);
+            double scale = 1.0;
+            WindowsDisplayMetrics metrics =
+                WindowsDisplayResolver.ResolveDisplay(
+                    fallback.RuntimeGdiName);
+            if (metrics != null) scale = metrics.Scale;
+            return StickySpawnPolicy.PlanCenteredSpawn(
+                fallback.RuntimeGdiName, fallback.WorkArea,
+                fallback.Bounds.Left, fallback.Bounds.Top, scale,
+                logicalWidth, logicalHeight);
+        }
+
         private void StartHostedSticky(StickyNoteData note,
             bool focusEditor)
         {
@@ -413,9 +564,21 @@ namespace PennyPet
                 return;
             }
             HostedStickyWindowCreatedCount++;
+            DisplayTopologySnapshot topology = CurrentTopologySnapshot();
+            DisplaySurfaceSnapshot fallback;
+            StickyCanonicalPlacement temporary;
+            bool temporaryRehome = TryResolveTemporaryRehome(note, topology,
+                CapturePetWindowFacts(topology), out fallback, out temporary);
+            StickyNoteUiSnapshot createSnapshot =
+                StickyNoteUiSnapshot.FromData(note);
+            if (temporaryRehome)
+            {
+                StickyNoteData working = createSnapshot.CreateWorkingCopy();
+                temporary.ApplyTo(working);
+                createSnapshot = StickyNoteUiSnapshot.FromData(working);
+            }
             StickyUiCommand command = StickyUiCommand.Create(
-                StickyNoteUiSnapshot.FromData(note), focusEditor,
-                _reminders.GetItems(), CurrentTopologySnapshot());
+                createSnapshot, focusEditor, _reminders.GetItems(), topology);
             PostHostedStickyCommand(command,
                 delegate(StickyUiCommandResult result)
                 {
@@ -424,6 +587,10 @@ namespace PennyPet
                     {
                         ApplyHostedStickySnapshot(result.Snapshot,
                             result.Sequence);
+                        if (temporaryRehome)
+                            CompleteTemporaryRehome(noteId, fallback,
+                                "preferred-display-missing-at-restore",
+                                topology);
                         return;
                     }
                     HandleHostedStickyFailure(new string[] { noteId },
@@ -441,8 +608,39 @@ namespace PennyPet
         {
             if (!IsHostedSticky(note)) return false;
             string noteId = note.Id;
+            DisplayTopologySnapshot topology = CurrentTopologySnapshot();
+            DisplaySurfaceSnapshot fallback;
+            StickyCanonicalPlacement temporary;
+            if (TryResolveTemporaryRehome(note, topology,
+                CapturePetWindowFacts(topology), out fallback, out temporary))
+            {
+                PostHostedStickyCommand(StickyUiCommand.SetBounds(noteId,
+                    new StickyUiBounds(temporary.PhysicalLeft,
+                        temporary.PhysicalTop, temporary.PhysicalWidth,
+                        temporary.PhysicalHeight), topology),
+                    delegate(StickyUiCommandResult result)
+                    {
+                        if (result != null && result.Status ==
+                            StickyUiCommandStatus.Handled)
+                        {
+                            ApplyHostedStickySnapshot(result.Snapshot,
+                                result.Sequence);
+                            CompleteTemporaryRehome(noteId, fallback,
+                                "preferred-display-missing-at-reopen",
+                                topology);
+                            if (focusEditor)
+                                PostHostedStickyCommand(
+                                    StickyUiCommand.FocusPrimaryInput(noteId),
+                                    delegate(StickyUiCommandResult ignored) { });
+                            return;
+                        }
+                        HandleHostedStickyFailure(new string[] { noteId },
+                            "sticky-hosted-show", result);
+                    });
+                return true;
+            }
             PostHostedStickyCommand(StickyUiCommand.Show(noteId,
-                focusEditor, CurrentTopologySnapshot()),
+                focusEditor, topology),
                 delegate(StickyUiCommandResult result)
                 {
                     if (result != null &&
@@ -450,6 +648,10 @@ namespace PennyPet
                     {
                         ApplyHostedStickySnapshot(result.Snapshot,
                             result.Sequence);
+                        if (_placementRuntime.IsTemporaryRehome(noteId) &&
+                            topology != null && topology.FindByTargetKey(
+                                note.PreferredDisplayTargetKey) != null)
+                            _placementRuntime.MarkReturnedToPreferred(noteId);
                         return;
                     }
                     HandleHostedStickyFailure(new string[] { noteId },
@@ -625,7 +827,11 @@ namespace PennyPet
                     CommitHostedStickyPreferred(canonical, targetKey,
                         local.X, local.Y, local.Width, local.Height,
                         PlacementReason.UserResizeCommit))
+                {
+                    _placementRuntime.MarkUserPlacementCommit(
+                        value.NoteId);
                     _notes.SaveAsync();
+                }
                 return;
             }
             if (value.Kind == StickyUiEventKind.Closed)
@@ -844,10 +1050,11 @@ namespace PennyPet
                     : null;
                 string key = DisplayTopologyRules.SelectPreferredTargetKey(
                     surface, note.PreferredDisplayTargetKey);
-                CommitHostedStickyPreferred(note, key,
+                if (CommitHostedStickyPreferred(note, key,
                     note.LocalLogicalX, note.LocalLogicalY,
                     note.LocalLogicalWidth, note.LocalLogicalHeight,
-                    PlacementReason.DockCommit);
+                    PlacementReason.DockCommit))
+                    _placementRuntime.MarkUserPlacementCommit(id);
             }
         }
 

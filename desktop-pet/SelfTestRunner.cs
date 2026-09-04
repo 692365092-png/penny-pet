@@ -3913,6 +3913,7 @@ namespace PennyPet
             internal bool StickyContentApplySeparationOk;
             internal bool NativePlacementOk;
             internal bool V11PreferredOk;
+            internal bool TemporaryRehomeOk;
         }
 
         private sealed class StickyHostedCheckResult
@@ -4483,6 +4484,50 @@ namespace PennyPet
             return headerAndFields && roundTrip && reasonGuard && migrated;
         }
 
+        // DRT-7 state machine: a temporary rehome preserves Effective facts,
+        // a user placement commit ends it and blocks a later pull-back, and a
+        // fresh rehome resets the intent window.
+        private static bool RunTemporaryRehomeCheck()
+        {
+            StickyPlacementRuntime runtime = new StickyPlacementRuntime();
+            runtime.UpdateEffective("rehome-note",
+                new WindowFacts("rehome-note", "mdp:b", "\\\\.\\DISPLAY2",
+                    new PhysicalRect(1920, 0, 640, 600), 192, 4, 5));
+            runtime.MarkTemporaryRehome("rehome-note",
+                "preferred-display-missing");
+            bool marked = runtime.IsTemporaryRehome("rehome-note") &&
+                !runtime.UserMovedSinceRehome("rehome-note") &&
+                runtime.TemporaryReason("rehome-note") ==
+                    "preferred-display-missing";
+
+            runtime.UpdateEffective("rehome-note",
+                new WindowFacts("rehome-note", "mdp:fallback",
+                    "\\\\.\\DISPLAY1", new PhysicalRect(0, 0, 640, 600),
+                    96, 4, 6));
+            bool factsUpdatePreservesFlags =
+                runtime.IsTemporaryRehome("rehome-note") &&
+                runtime.GetEffective("rehome-note").Dpi == 96;
+
+            runtime.MarkUserPlacementCommit("rehome-note");
+            bool userMovedEndsRehome =
+                !runtime.IsTemporaryRehome("rehome-note") &&
+                runtime.UserMovedSinceRehome("rehome-note");
+
+            runtime.MarkTemporaryRehome("rehome-note", "again");
+            bool newRehomeResetsIntent =
+                runtime.IsTemporaryRehome("rehome-note") &&
+                !runtime.UserMovedSinceRehome("rehome-note");
+
+            runtime.MarkReturnedToPreferred("rehome-note");
+            bool returnedClearsFlags =
+                !runtime.IsTemporaryRehome("rehome-note") &&
+                !runtime.UserMovedSinceRehome("rehome-note");
+
+            return marked && factsUpdatePreservesFlags &&
+                userMovedEndsRehome && newRehomeResetsIntent &&
+                returnedClearsFlags;
+        }
+
         private static WindowShellCheckResult RunWindowShellChecks(
             StickyNoteData restoredNote)
         {
@@ -4567,6 +4612,8 @@ namespace PennyPet
                 RunNativePlacementCheck();
             result.V11PreferredOk =
                 RunV11PreferredCheck();
+            result.TemporaryRehomeOk =
+                RunTemporaryRehomeCheck();
             result.ScaleRangeOk =
                 PetForm.NormalizeScalePercent(47) == 50 &&
                 PetForm.NormalizeScalePercent(104) == 100 &&
@@ -5851,6 +5898,8 @@ namespace PennyPet
                     shellChecks.NativePlacementOk) + ",\n" +
                 "  \"v11_preferred_ok\": " + Bool(
                     shellChecks.V11PreferredOk) + ",\n" +
+                "  \"temporary_rehome_ok\": " + Bool(
+                    shellChecks.TemporaryRehomeOk) + ",\n" +
                 "  \"keyboard_hook_opt_in_and_default_off_ok\": " + Bool(
                     keyboardOverlayChecks.HookOptInDefaultOk) + ",\n" +
                 "  \"keyboard_privacy_notice_persistence_ok\": " + Bool(

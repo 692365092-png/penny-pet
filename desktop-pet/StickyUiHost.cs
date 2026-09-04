@@ -106,7 +106,8 @@ namespace PennyPet
                             : StickyUiCommandResult.NotHandled();
                     case StickyUiCommandKind.SetBounds:
                         return TryGetSession(command.NoteId, out session)
-                            ? session.SetBounds(command.Bounds)
+                            ? session.SetBounds(command.Bounds,
+                                command.Topology)
                             : StickyUiCommandResult.NotHandled();
                     case StickyUiCommandKind.ApplyDockBoundsBatch:
                         return ApplyDockBoundsBatch(command.DockBatchLayout);

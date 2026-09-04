@@ -541,6 +541,7 @@ namespace PennyPet
                 StringComparison.Ordinal))
                 DisplayDiagnostics.Trace("TopologyChanged",
                     details.ToString());
+            HandleStickyTopologyChanged(snapshot);
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)

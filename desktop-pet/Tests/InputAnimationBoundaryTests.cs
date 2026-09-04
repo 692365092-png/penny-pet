@@ -1623,7 +1623,7 @@ namespace PennyPet.Tests
                 "Features/StickyNotes/StickyPlacementRuntime.cs");
 
             Assert.IsTrue(runtime.Contains(
-                    "Dictionary<string, WindowFacts> _effective") &&
+                    "Dictionary<string, NotePlacementState> _states") &&
                 runtime.Contains("internal void UpdateEffective("),
                 "Effective WindowFacts must live in runtime memory.");
             Assert.IsFalse(runtime.Contains("StickyNoteRepository") ||
@@ -1704,6 +1704,109 @@ namespace PennyPet.Tests
                 spawn.Contains("_notes.GetAll().Count") ||
                 spawn.Contains("MonitorFromRect"),
                 "Spawn must follow the Pet surface, never display order or note count.");
+        }
+
+        [TestMethod]
+        public void Drt7_RehomeSkipsDockMembersAndUsesCorePolicy()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string reconcile = Between(coordinator,
+                "private void HandleStickyTopologyChanged",
+                "private static StickyCanonicalPlacement ResolveTemporaryRehomePlacement");
+
+            Assert.IsTrue(reconcile.Contains(
+                    "if (!String.IsNullOrEmpty(note.DockGroupId)) continue;") &&
+                reconcile.Contains(
+                    "FallbackDisplayPolicy.ResolveFallbackSurface("),
+                "DRT-7 must rehome standalone notes only through the Core fallback policy.");
+            Assert.IsFalse(reconcile.Contains(
+                    "CommitHostedStickyPreferred") ||
+                reconcile.Contains("PreferredDisplayTargetKey ="),
+                "Temporary rehome must never commit or rewrite the durable preferred.");
+        }
+
+        [TestMethod]
+        public void Drt7_FallbackPolicyIsPlatformIndependent()
+        {
+            string policy = ReadSource("Core/Display/FallbackDisplayPolicy.cs");
+
+            Assert.IsFalse(policy.Contains("System.Windows") ||
+                policy.Contains("IntPtr") ||
+                policy.Contains("DllImport") ||
+                policy.Contains("WindowsDisplay"),
+                "The fallback policy must stay pure Core.");
+            Assert.IsTrue(policy.Contains("PrimaryOrFirst()") &&
+                policy.Contains("FindByRuntimeGdiName("),
+                "The policy must fall back through Pet surface and primary.");
+        }
+
+        [TestMethod]
+        public void Drt7_UserCommitBlocksReturnButReturnRestores()
+        {
+            string runtime = ReadSource(
+                "Features/StickyNotes/StickyPlacementRuntime.cs");
+
+            Assert.IsTrue(runtime.Contains("MarkUserPlacementCommit(") &&
+                runtime.Contains("MarkReturnedToPreferred(") &&
+                runtime.Contains("MarkTemporaryRehome("),
+                "The runtime must model temporary, user-moved and returned states.");
+            string commit = Between(runtime,
+                "internal void MarkUserPlacementCommit(string noteId)",
+                "internal void MarkReturnedToPreferred(string noteId)");
+            Assert.IsTrue(commit.Contains(
+                    "userMoved = state.IsTemporaryRehome") &&
+                commit.Contains("state.UserMovedSinceRehome"),
+                "A commit during a temporary stay must record user intent.");
+        }
+
+        [TestMethod]
+        public void Drt7_TopologyRehomePublishesFreshWindowFacts()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string commands = ReadSource(
+                "Features/StickyNotes/StickyUiCommand.cs");
+            string host = ReadSource("StickyUiHost.cs");
+            string session = ReadSource("StickyWindowSession.cs");
+
+            Assert.IsTrue(coordinator.Contains(
+                    "temporary.PhysicalHeight), snapshot)") &&
+                commands.Contains(
+                    "DisplayTopologySnapshot topology = null") &&
+                host.Contains(
+                    "session.SetBounds(command.Bounds,") &&
+                host.Contains("command.Topology"),
+                "A topology rehome must carry its immutable snapshot to the Sticky STA.");
+            string setBounds = Between(session,
+                "internal StickyUiCommandResult SetBounds(",
+                "internal StickyUiCommandResult Close()");
+            Assert.IsTrue(setBounds.Contains(
+                    "_topology = topology ?? _topology") &&
+                setBounds.Contains(
+                    "StickyUiEventKind.BoundsChanged") &&
+                setBounds.Contains("CaptureWindowFacts(_sequence)"),
+                "The completed rehome must publish actual HWND facts through the existing typed path.");
+        }
+
+        [TestMethod]
+        public void Drt7_MissingStartupTargetUsesDetachedTemporarySnapshot()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string start = Between(coordinator,
+                "private void StartHostedSticky(",
+                "private bool IsHostedSticky(");
+
+            Assert.IsTrue(start.Contains(
+                    "TryResolveTemporaryRehome(note, topology") &&
+                start.Contains("createSnapshot.CreateWorkingCopy()") &&
+                start.Contains("temporary.ApplyTo(working)") &&
+                start.Contains(
+                    "preferred-display-missing-at-restore"),
+                "Startup restore must rehome a detached UI snapshot without rewriting the durable preferred target.");
+            Assert.IsFalse(start.Contains("temporary.ApplyTo(note)"),
+                "Temporary startup geometry must not mutate the canonical note before the hosted result succeeds.");
         }
 
         private static string ReadSource(string relativePath)

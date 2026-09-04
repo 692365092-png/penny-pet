@@ -412,6 +412,46 @@ namespace PennyPet.Tests
             Assert.AreEqual(450, placement.PhysicalHeight);
         }
 
+        [TestMethod]
+        public void FallbackDisplayPolicy_FollowsPreferenceThenRectThenPetThenPrimary()
+        {
+            DisplaySurfaceSnapshot left = Surface(1, false, -1920,
+                Target("mdp:left"));
+            DisplaySurfaceSnapshot primary = Surface(2, true, 0,
+                Target("mdp:primary"));
+            DisplaySurfaceSnapshot right = Surface(3, false, 1920,
+                Target("mdp:right"));
+            DisplayTopologySnapshot topology = new DisplayTopologySnapshot(1,
+                new[] { left, primary, right });
+
+            // 1. Preferred target active wins.
+            Assert.AreSame(right, FallbackDisplayPolicy.
+                ResolveFallbackSurface(topology, "mdp:right",
+                    new PhysicalRect(), String.Empty));
+
+            // 2. Last physical rect clearly inside an active work area wins.
+            Assert.AreSame(left, FallbackDisplayPolicy.
+                ResolveFallbackSurface(topology, "mdp:gone",
+                    new PhysicalRect(-1800, 100, 320, 300), String.Empty));
+
+            // 3. Rect off-screen: Pet's current surface wins.
+            Assert.AreSame(right, FallbackDisplayPolicy.
+                ResolveFallbackSurface(topology, "mdp:gone",
+                    new PhysicalRect(99999, 99999, 320, 300),
+                    "\\\\.\\DISPLAY3"));
+
+            // 4. Pet surface missing too: primary wins.
+            Assert.AreSame(primary, FallbackDisplayPolicy.
+                ResolveFallbackSurface(topology, "mdp:gone",
+                    new PhysicalRect(99999, 99999, 320, 300),
+                    "\\\\.\\DISPLAY9"));
+
+            // 5. Always one result as long as at least one surface exists.
+            Assert.AreSame(primary, FallbackDisplayPolicy.
+                ResolveFallbackSurface(topology, "mdp:gone",
+                    new PhysicalRect(), String.Empty));
+        }
+
         private static DisplayTargetIdentity Target(string stableKey)
         {
             return new DisplayTargetIdentity(stableKey,

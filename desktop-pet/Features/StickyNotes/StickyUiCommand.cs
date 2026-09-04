@@ -92,11 +92,12 @@ namespace PennyPet
         }
 
         internal static StickyUiCommand SetBounds(string noteId,
-            StickyUiBounds bounds)
+            StickyUiBounds bounds,
+            DisplayTopologySnapshot topology = null)
         {
             if (bounds == null) throw new ArgumentNullException(nameof(bounds));
             return new StickyUiCommand(StickyUiCommandKind.SetBounds, noteId,
-                false, null, bounds);
+                false, null, bounds, null, null, null, topology);
         }
 
         internal static StickyUiCommand ApplyDockBoundsBatch(
