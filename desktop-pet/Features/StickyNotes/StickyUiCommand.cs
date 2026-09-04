@@ -177,7 +177,8 @@ namespace PennyPet
     // mutable working copy; the repository-owned model never crosses threads.
     internal sealed class StickyNoteUiSnapshot
     {
-        private StickyNoteUiSnapshot(StickyNoteData source)
+        private StickyNoteUiSnapshot(StickyNoteData source,
+            bool includePlacement)
         {
             NoteId = source.Id ?? String.Empty;
             Title = source.Title ?? String.Empty;
@@ -192,22 +193,27 @@ namespace PennyPet
             AlwaysOnTop = source.AlwaysOnTop;
             IsTodoList = source.IsTodoList;
             IsSchedule = source.IsSchedule;
-            X = source.X;
-            Y = source.Y;
-            Width = source.Width;
-            Height = source.Height;
-            DisplayId = source.DisplayId ?? String.Empty;
-            LocalLogicalX = source.LocalLogicalX;
-            LocalLogicalY = source.LocalLogicalY;
-            LocalLogicalWidth = source.LocalLogicalWidth;
-            LocalLogicalHeight = source.LocalLogicalHeight;
-            PreferredDisplayTargetKey =
-                source.PreferredDisplayTargetKey ?? String.Empty;
-            PreferredLocalLogicalX = source.PreferredLocalLogicalX;
-            PreferredLocalLogicalY = source.PreferredLocalLogicalY;
-            PreferredLocalLogicalWidth = source.PreferredLocalLogicalWidth;
-            PreferredLocalLogicalHeight =
-                source.PreferredLocalLogicalHeight;
+            DisplayId = String.Empty;
+            PreferredDisplayTargetKey = String.Empty;
+            if (includePlacement)
+            {
+                X = source.X;
+                Y = source.Y;
+                Width = source.Width;
+                Height = source.Height;
+                DisplayId = source.DisplayId ?? String.Empty;
+                LocalLogicalX = source.LocalLogicalX;
+                LocalLogicalY = source.LocalLogicalY;
+                LocalLogicalWidth = source.LocalLogicalWidth;
+                LocalLogicalHeight = source.LocalLogicalHeight;
+                PreferredDisplayTargetKey =
+                    source.PreferredDisplayTargetKey ?? String.Empty;
+                PreferredLocalLogicalX = source.PreferredLocalLogicalX;
+                PreferredLocalLogicalY = source.PreferredLocalLogicalY;
+                PreferredLocalLogicalWidth = source.PreferredLocalLogicalWidth;
+                PreferredLocalLogicalHeight =
+                    source.PreferredLocalLogicalHeight;
+            }
             CreatedUtcTicks = source.CreatedUtcTicks;
             ModifiedUtcTicks = source.ModifiedUtcTicks;
             ReminderUtcTicks = source.ReminderUtcTicks;
@@ -261,7 +267,14 @@ namespace PennyPet
         internal static StickyNoteUiSnapshot FromData(StickyNoteData source)
         {
             if (source == null) throw new ArgumentNullException(nameof(source));
-            return new StickyNoteUiSnapshot(source);
+            return new StickyNoteUiSnapshot(source, true);
+        }
+
+        internal static StickyNoteUiSnapshot FromContentData(
+            StickyNoteData source)
+        {
+            if (source == null) throw new ArgumentNullException(nameof(source));
+            return new StickyNoteUiSnapshot(source, false);
         }
 
         internal StickyNoteData CreateWorkingCopy()

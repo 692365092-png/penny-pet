@@ -1829,7 +1829,8 @@ namespace PennyPet.Tests
                 "internal StickyUiCommandResult Reproject(",
                 "private WindowFacts CorrectReprojectionOnce");
             Assert.IsTrue(reproject.Contains(
-                    "StickyUiCommandResult.Handled(_lastSnapshot, _sequence") &&
+                    "StickyUiCommandResult.Handled(_lastSnapshot,") &&
+                reproject.Contains("resultSequence,") &&
                 reproject.Contains("facts, _topology") &&
                 reproject.Contains("RollbackReproject(wasVisible, previousBounds)"),
                 "Reproject must return captured facts and roll back on failure.");
@@ -1865,11 +1866,11 @@ namespace PennyPet.Tests
                 "private bool ApplyHostedStickySnapshot");
 
             Assert.IsTrue(commit.Contains(
-                    "CaptureDockFacts") ||
-                commit.Contains("ApplyDockCommitFacts(result.DockBatchResult"),
+                    "TryPrepareDockCommit(result, value,") &&
+                commit.Contains("result.DockBatchResult"),
                 "The dock durable commit must consume the captured actual-facts result.");
             Assert.IsTrue(commit.Contains(
-                    "TryBuildPreference(member.Facts, value.Topology,") &&
+                    "TryBuildPreferredPlacement(") &&
                 commit.Contains("PlacementReason.DockCommit") &&
                 commit.Contains("CommitVisibleDockOrder(") &&
                 commit.Contains("_notes.Save()"),
@@ -2081,7 +2082,7 @@ namespace PennyPet.Tests
                 rollback.Contains("if (wasVisible) _placementExecutor.Show()"),
                 "A failed reproject must restore previous bounds and visibility.");
             string apply = Between(coordinator,
-                "private void ApplyReprojectResult",
+                "private bool ApplyReprojectResult",
                 "private static bool TryBuildPreference");
             Assert.IsTrue(apply.Contains(
                     "ApplyHostedStickyFactsGeometry(canonical, result.Facts,") &&
@@ -2142,6 +2143,234 @@ namespace PennyPet.Tests
                     "ApplyHostedStickyFactsGeometry(canonical, member.Facts,") &&
                 !result.Contains("WindowsDisplayResolver"),
                 "Only actual facts derived from the same-generation topology may update geometry.");
+        }
+
+        [TestMethod]
+        public void FinalMouseUpPlanCannotBeClearedBeforeApply()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string mailbox = ReadSource(
+                "Features/StickyNotes/DockWindowFacts.cs");
+            string complete = Between(coordinator,
+                "private void CompleteStickyDockDrag",
+                "private static List<string> CollectExpectedPlanMemberIds");
+            string takeFinal = Between(mailbox,
+                "internal DockPlacementPlan TakeFinal(",
+                "internal void CompleteFinal(");
+            string takeLatest = Between(mailbox,
+                "internal DockPlacementPlan TakeLatest()",
+                "internal void ReplaceWithFinal(");
+
+            Assert.IsTrue(complete.Contains(
+                    "_dockPlanMailbox.ReplaceWithFinal(finalPlan)") &&
+                complete.Contains("_stickyUiHost.PostFinalDockPlan("),
+                "Mouse-up must replace pending live work with a final plan.");
+            Assert.IsFalse(takeFinal.Contains("Current = null") ||
+                takeFinal.Contains("ApplyQueued = false"),
+                "The final plan must remain owned until its apply completes.");
+            string finalBranch = Between(takeLatest,
+                "Current.PlanSequence == FinalPlanSequence)",
+                "DockPlacementPlan plan = Current;");
+            Assert.IsFalse(finalBranch.Contains("Current = null") ||
+                finalBranch.Contains("ApplyQueued = false"),
+                "A stale live callback must not release the final barrier.");
+        }
+
+        [TestMethod]
+        public void FinalMouseUpUsesHeaderDragCompletedFacts()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string complete = Between(coordinator,
+                "private void CompleteStickyDockDrag",
+                "private static List<string> CollectExpectedPlanMemberIds");
+            Assert.IsTrue(complete.Contains(
+                "PlanDockPlan(seed, value.Facts, value.Topology)"));
+            Assert.IsFalse(complete.Contains("CurrentTopologySnapshot()") ||
+                complete.Contains("_placementRuntime.GetEffective(") ||
+                complete.Contains("LayoutDockChain(") ||
+                complete.Contains("ApplyDockTarget("));
+        }
+
+        [TestMethod]
+        public void StandaloneDragCommitsDirectlyFromEventFacts()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string commit = Between(coordinator,
+                "private void CompleteStandaloneDragCommit",
+                "private void ResetDockDragState");
+            Assert.IsTrue(commit.Contains("value.Facts") &&
+                commit.Contains("value.Topology") &&
+                commit.Contains("PlacementReason.UserMoveCommit") &&
+                commit.Contains("MarkUserPlacementCommit(seed.Id)") &&
+                commit.Contains("_notes.Save()"));
+            Assert.IsFalse(commit.Contains("PostFinalDockPlan") ||
+                commit.Contains("CaptureDockFacts"));
+        }
+
+        [TestMethod]
+        public void DockCommitRejectsMissingMember()
+        {
+            string validation = DockCommitValidationSource();
+            Assert.IsTrue(validation.Contains(
+                    "batch.Members.Count != expected.Count") &&
+                validation.Contains("actual.Count != expected.Count"));
+        }
+
+        [TestMethod]
+        public void DockCommitRejectsNullFacts()
+        {
+            Assert.IsTrue(DockCommitValidationSource().Contains(
+                "member.Facts == null"));
+        }
+
+        [TestMethod]
+        public void DockCommitRejectsGenerationMismatch()
+        {
+            string validation = DockCommitValidationSource();
+            Assert.IsTrue(validation.Contains(
+                    "batch.TopologyGeneration != value.Topology.Generation") &&
+                validation.Contains(
+                    "member.Facts.TopologyGeneration !="));
+        }
+
+        [TestMethod]
+        public void DockCommitFailureDoesNotSaveOrCommitMembership()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string commit = Between(coordinator,
+                "private void CompleteDockDurableCommit",
+                "private bool TryPrepareDockCommit");
+            int rejectionReturn = commit.IndexOf(
+                "TraceDockCommitRejected(rejection);", StringComparison.Ordinal);
+            int membership = commit.IndexOf("CommitVisibleDockOrder(seed)",
+                StringComparison.Ordinal);
+            int save = commit.IndexOf("_notes.Save()", StringComparison.Ordinal);
+            Assert.IsTrue(rejectionReturn >= 0 && membership > rejectionReturn &&
+                save > membership);
+        }
+
+        [TestMethod]
+        public void LiveDockCaptureDoesNotReachWindowsDisplayResolver()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string live = Between(coordinator,
+                "private DockPlacementPlan PlanLiveDockPlan",
+                "private void CompleteStickyDockDrag");
+            Assert.IsFalse(live.Contains("WindowsDisplayResolver") ||
+                live.Contains("ApplyDockTarget("));
+        }
+
+        [TestMethod]
+        public void CaptureDockMemberDoesNotCallCaptureCanonicalPlacement()
+        {
+            string session = ReadSource("StickyWindowSession.cs");
+            string capture = Between(session,
+                "internal DockBatchMemberResult CaptureDockMember(",
+                "private WindowFacts CaptureFactsWith");
+            string helper = Between(session,
+                "private StickyNoteUiSnapshot CaptureContentSnapshotForNativeResult",
+                "private WindowFacts CaptureFactsWith");
+            Assert.IsTrue(capture.Contains(
+                    "CaptureContentSnapshotForNativeResult()") &&
+                helper.Contains("StickyNoteUiSnapshot.FromContentData("));
+            Assert.IsFalse(capture.Contains("CaptureSnapshot()") ||
+                capture.Contains("CaptureCanonicalPlacement") ||
+                helper.Contains("StickyNoteUiSnapshot.FromData(") ||
+                helper.Contains("CaptureCanonicalPlacement") ||
+                helper.Contains("WindowsDisplayResolver"));
+        }
+
+        [TestMethod]
+        public void NativeBatchRejectsPartialExpectedFollowers()
+        {
+            string host = ReadSource("StickyUiHost.cs");
+            string apply = Between(host,
+                "private StickyUiCommandResult ApplyDockPlan(",
+                "private StickyUiCommandResult CaptureDockFactsForCommit");
+            int missing = apply.IndexOf(
+                "!TryGetSession(target.NoteId, out session)",
+                StringComparison.Ordinal);
+            int zero = apply.IndexOf("handle == IntPtr.Zero",
+                StringComparison.Ordinal);
+            int nativeApply = apply.IndexOf(
+                "WindowsBatchWindowPlacementExecutor.Apply(",
+                StringComparison.Ordinal);
+            Assert.IsTrue(missing >= 0 && zero > missing &&
+                nativeApply > zero);
+        }
+
+        [TestMethod]
+        public void ReprojectHandledRequiresNonNullFacts()
+        {
+            string session = ReadSource("StickyWindowSession.cs");
+            string reproject = Between(session,
+                "internal StickyUiCommandResult Reproject(",
+                "private WindowFacts CorrectReprojectionOnce");
+            int factsGate = reproject.IndexOf("facts == null || _topology == null",
+                StringComparison.Ordinal);
+            int handled = reproject.IndexOf(
+                "StickyUiCommandResult.Handled(_lastSnapshot,",
+                StringComparison.Ordinal);
+            Assert.IsTrue(factsGate >= 0 && handled > factsGate);
+        }
+
+        [TestMethod]
+        public void ReprojectFactsSequenceEqualsResultSequence()
+        {
+            string session = ReadSource("StickyWindowSession.cs");
+            string reproject = Between(session,
+                "internal StickyUiCommandResult Reproject(",
+                "private WindowFacts CorrectReprojectionOnce");
+            Assert.IsTrue(reproject.Contains(
+                    "long resultSequence = ++_sequence;") &&
+                reproject.Contains(
+                    "CorrectReprojectionOnce(projected, resultSequence)") &&
+                reproject.Contains(
+                    "facts.WindowSequence != resultSequence") &&
+                reproject.Contains("resultSequence,\n                facts"));
+        }
+
+        [TestMethod]
+        public void ReprojectRollbackRestoresHiddenState()
+        {
+            string session = ReadSource("StickyWindowSession.cs");
+            string rollback = Between(session,
+                "private void RollbackReproject",
+                "internal DockBatchMemberResult CaptureDockMember");
+            Assert.IsTrue(rollback.Contains(
+                    "if (wasVisible) _placementExecutor.Show();") &&
+                rollback.Contains("else _window.Hide();"));
+        }
+
+        [TestMethod]
+        public void ReprojectRuntimeTransitionRequiresAppliedResult()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string apply = Between(coordinator,
+                "private bool ApplyReprojectResult",
+                "private static bool TryBuildPreference");
+            Assert.IsTrue(apply.Contains("result.Facts == null") &&
+                apply.Contains("result.Facts.WindowSequence != result.Sequence") &&
+                apply.Contains("return true;"));
+            Assert.IsTrue(coordinator.Contains(
+                    "StickyUiCommandStatus.Handled &&\n                                ApplyReprojectResult(result, noteId)") &&
+                coordinator.Contains(
+                    "StickyUiCommandStatus.Handled &&\n                        ApplyReprojectResult(result, rehomedNoteId)"));
+        }
+
+        private static string DockCommitValidationSource()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            return Between(coordinator,
+                "private bool TryPrepareDockCommit",
+                "private static void TraceDockCommitRejected");
         }
 
         private static string ReadSource(string relativePath)

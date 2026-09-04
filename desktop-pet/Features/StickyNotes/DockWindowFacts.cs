@@ -88,6 +88,7 @@ namespace PennyPet
         private long _nextSequence;
         internal DockPlacementPlan Current;
         internal bool ApplyQueued;
+        internal long FinalPlanSequence;
 
         internal long NextSequence()
         {
@@ -98,10 +99,47 @@ namespace PennyPet
         {
             lock (Gate)
             {
+                if (Current != null &&
+                    Current.PlanSequence == FinalPlanSequence)
+                {
+                    return null;
+                }
                 DockPlacementPlan plan = Current;
                 Current = null;
                 ApplyQueued = false;
                 return plan;
+            }
+        }
+
+        internal void ReplaceWithFinal(DockPlacementPlan plan)
+        {
+            if (plan == null) throw new ArgumentNullException(nameof(plan));
+            lock (Gate)
+            {
+                Current = plan;
+                FinalPlanSequence = plan.PlanSequence;
+                ApplyQueued = true;
+            }
+        }
+
+        internal DockPlacementPlan TakeFinal(long planSequence)
+        {
+            lock (Gate)
+            {
+                return Current != null && FinalPlanSequence == planSequence &&
+                    Current.PlanSequence == planSequence ? Current : null;
+            }
+        }
+
+        internal void CompleteFinal(long planSequence)
+        {
+            lock (Gate)
+            {
+                if (Current != null && Current.PlanSequence == planSequence)
+                    Current = null;
+                if (FinalPlanSequence == planSequence)
+                    FinalPlanSequence = 0;
+                ApplyQueued = false;
             }
         }
     }

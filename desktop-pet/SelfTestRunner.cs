@@ -4740,8 +4740,8 @@ namespace PennyPet
                 returnedClearsFlags;
         }
 
-        // DRT-9 mailbox contract: the newest immutable plan wins, TakeLatest
-        // resets the in-flight flag, and DockPlacementPlan stays read-only.
+        // DRT-9 mailbox contract: live frames are latest-wins, but a final
+        // mouse-up plan and its queued flag remain owned until final apply.
         private static bool RunDockPlanMailboxCheck()
         {
             DockPlanMailbox mailbox = new DockPlanMailbox();
@@ -4774,6 +4774,60 @@ namespace PennyPet
                 mailbox.Current == null &&
                 !mailbox.ApplyQueued;
 
+            DockPlacementPlan finalPlan = new DockPlacementPlan(3,
+                mailbox.NextSequence(), "source", "surface-1", 96,
+                new[]
+                {
+                    new DockWindowTarget("a",
+                        new PhysicalRect(50, 60, 320, 300)),
+                    new DockWindowTarget("b",
+                        new PhysicalRect(370, 60, 320, 300))
+                });
+            mailbox.ReplaceWithFinal(finalPlan);
+            DockPlacementPlan liveTake = mailbox.TakeLatest();
+            bool finalBarrierHolds = liveTake == null &&
+                object.ReferenceEquals(mailbox.Current, finalPlan) &&
+                mailbox.ApplyQueued &&
+                object.ReferenceEquals(
+                    mailbox.TakeFinal(finalPlan.PlanSequence), finalPlan) &&
+                object.ReferenceEquals(mailbox.Current, finalPlan) &&
+                mailbox.ApplyQueued;
+            mailbox.CompleteFinal(finalPlan.PlanSequence);
+            finalBarrierHolds = finalBarrierHolds &&
+                mailbox.Current == null && !mailbox.ApplyQueued &&
+                mailbox.FinalPlanSequence == 0;
+
+            StickyNoteData snapshotSource = new StickyNoteData
+            {
+                Title = "content-only",
+                Visible = true,
+                AlwaysOnTop = true,
+                X = 120,
+                Y = 240,
+                Width = 360,
+                Height = 480,
+                DisplayId = "legacy-display",
+                LocalLogicalWidth = 360,
+                LocalLogicalHeight = 480,
+                PreferredDisplayTargetKey = "preferred-target",
+                PreferredLocalLogicalWidth = 360,
+                PreferredLocalLogicalHeight = 480
+            };
+            StickyNoteUiSnapshot contentOnly =
+                StickyNoteUiSnapshot.FromContentData(snapshotSource);
+            bool contentSnapshotIsNarrow =
+                contentOnly.NoteId == snapshotSource.Id &&
+                contentOnly.Title == "content-only" &&
+                contentOnly.Visible && contentOnly.AlwaysOnTop &&
+                contentOnly.X == 0 && contentOnly.Y == 0 &&
+                contentOnly.Width == 0 && contentOnly.Height == 0 &&
+                contentOnly.DisplayId == String.Empty &&
+                contentOnly.LocalLogicalWidth == 0 &&
+                contentOnly.LocalLogicalHeight == 0 &&
+                contentOnly.PreferredDisplayTargetKey == String.Empty &&
+                contentOnly.PreferredLocalLogicalWidth == 0 &&
+                contentOnly.PreferredLocalLogicalHeight == 0;
+
             bool planImmutable = true;
             foreach (System.Reflection.PropertyInfo property in
                 typeof(DockPlacementPlan).GetProperties())
@@ -4785,7 +4839,8 @@ namespace PennyPet
             foreach (System.Reflection.PropertyInfo property in
                 typeof(DockBatchMemberResult).GetProperties())
                 if (property.CanWrite) batchResultImmutable = false;
-            return latestWins && planImmutable && batchResultImmutable;
+            return latestWins && finalBarrierHolds && contentSnapshotIsNarrow &&
+                planImmutable && batchResultImmutable;
         }
 
         private static WindowShellCheckResult RunWindowShellChecks(

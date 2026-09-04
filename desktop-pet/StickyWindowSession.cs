@@ -392,6 +392,7 @@ namespace PennyPet
             bool wasVisible = _window.IsVisible;
             System.Drawing.Rectangle previousBounds = _window.PhysicalBounds;
             bool previousApplying = _applyingBounds;
+            long resultSequence = ++_sequence;
             _applyingBounds = true;
             WindowFacts facts = null;
             bool succeeded = false;
@@ -416,11 +417,15 @@ namespace PennyPet
                     return StickyUiCommandResult.NotHandled();
                 if (wasVisible || target.ShowAfterPlacement)
                     _placementExecutor.Show();
-                facts = CorrectReprojectionOnce(projected);
+                facts = CorrectReprojectionOnce(projected, resultSequence);
                 if (facts == null)
                     facts = _placementExecutor.CaptureFacts(_noteId,
                         _topology == null ? 0 : _topology.Generation,
-                        _sequence, _topology);
+                        resultSequence, _topology);
+                if (facts == null || _topology == null ||
+                    facts.TopologyGeneration != _topology.Generation ||
+                    facts.WindowSequence != resultSequence)
+                    return StickyUiCommandResult.NotHandled();
                 succeeded = true;
                 if (focusPrimary)
                 {
@@ -435,17 +440,18 @@ namespace PennyPet
                 _applyingBounds = previousApplying;
             }
             if (!succeeded) return StickyUiCommandResult.NotHandled();
-            _lastSnapshot = CaptureSnapshot();
-            _sequence++;
-            return StickyUiCommandResult.Handled(_lastSnapshot, _sequence,
+            _lastSnapshot = CaptureContentSnapshotForNativeResult();
+            return StickyUiCommandResult.Handled(_lastSnapshot,
+                resultSequence,
                 facts, _topology);
         }
 
-        private WindowFacts CorrectReprojectionOnce(PhysicalRect requested)
+        private WindowFacts CorrectReprojectionOnce(PhysicalRect requested,
+            long resultSequence)
         {
             long generation = _topology == null ? 0 : _topology.Generation;
             WindowFacts facts = _placementExecutor.CaptureFacts(_noteId,
-                generation, _sequence, _topology);
+                generation, resultSequence, _topology);
             if (facts == null) return null;
             if (
                 DisplayGeometry.IsWithinPlacementTolerance(requested,
@@ -454,7 +460,7 @@ namespace PennyPet
                 return facts;
             _placementExecutor.SetWindowPosExact(requested);
             facts = _placementExecutor.CaptureFacts(_noteId, generation,
-                _sequence, _topology);
+                resultSequence, _topology);
             if (facts != null &&
                 !DisplayGeometry.IsWithinPlacementTolerance(requested,
                     facts.PhysicalBounds,
@@ -476,6 +482,7 @@ namespace PennyPet
                         previousBounds.Left, previousBounds.Top,
                         previousBounds.Width, previousBounds.Height));
                 if (wasVisible) _placementExecutor.Show();
+                else _window.Hide();
             }
             catch
             {
@@ -489,11 +496,16 @@ namespace PennyPet
         internal DockBatchMemberResult CaptureDockMember(
             DisplayTopologySnapshot topology)
         {
-            _lastSnapshot = CaptureSnapshot();
             _sequence++;
+            _lastSnapshot = CaptureContentSnapshotForNativeResult();
             WindowFacts facts = CaptureFactsWith(topology);
             return new DockBatchMemberResult(_noteId, _sequence, facts,
                 _lastSnapshot);
+        }
+
+        private StickyNoteUiSnapshot CaptureContentSnapshotForNativeResult()
+        {
+            return StickyNoteUiSnapshot.FromContentData(_window.Data);
         }
 
         private WindowFacts CaptureFactsWith(DisplayTopologySnapshot topology)

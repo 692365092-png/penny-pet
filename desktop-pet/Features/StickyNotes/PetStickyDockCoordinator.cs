@@ -97,7 +97,7 @@ namespace PennyPet
 
         private void BeginStickyDockDrag(DockWindowFacts facts)
         {
-            if (facts == null) return;
+            if (facts == null || _finalDockPlanPending) return;
             StickyNoteData seed = _notes.Find(facts.NoteId);
             if (seed == null) return;
             ClearDockPreview();
@@ -113,6 +113,7 @@ namespace PennyPet
             {
                 _dockPlanMailbox.Current = null;
                 _dockPlanMailbox.ApplyQueued = false;
+                _dockPlanMailbox.FinalPlanSequence = 0;
             }
             SetActiveDockGroup(BuildDockComponent(seed));
             _activeDockOriginalFacts.Clear();
@@ -235,7 +236,14 @@ namespace PennyPet
                 movedFacts.NoteId);
             if (sourceFacts == null) return null;
             DisplayTopologySnapshot topology = CurrentTopologySnapshot();
-            if (topology == null) return null;
+            return PlanDockPlan(seed, sourceFacts, topology);
+        }
+
+        private DockPlacementPlan PlanDockPlan(StickyNoteData seed,
+            WindowFacts sourceFacts, DisplayTopologySnapshot topology)
+        {
+            if (seed == null || sourceFacts == null || topology == null)
+                return null;
             DisplaySurfaceSnapshot surface =
                 topology.FindByRuntimeGdiName(sourceFacts.RuntimeGdiName);
             if (surface == null)
@@ -246,7 +254,7 @@ namespace PennyPet
             List<StickyNoteData> ordered = BuildDockChainOrder(seed);
             int sourceIndex = ordered.FindIndex(delegate(StickyNoteData note)
             {
-                return String.Equals(note.Id, movedFacts.NoteId,
+                return String.Equals(note.Id, sourceFacts.WindowId,
                     StringComparison.OrdinalIgnoreCase);
             });
             if (sourceIndex < 0) return null;
@@ -283,7 +291,7 @@ namespace PennyPet
             catch (ArgumentException)
             {
                 DisplayDiagnostics.Trace("DockPlanCreated",
-                    "stale frame note=" + movedFacts.NoteId +
+                    "stale frame note=" + sourceFacts.WindowId +
                     " generation=" + sourceFacts.TopologyGeneration);
                 return null;
             }
@@ -322,7 +330,6 @@ namespace PennyPet
             Dictionary<string, DockWindowFacts> currentFacts =
                 CaptureDockFacts(_notes.GetAll());
             currentFacts[facts.NoteId] = facts;
-            ApplyDockTarget(facts.ToTarget(facts.X, facts.Y), facts.NoteId);
             DockTarget target = FindDockTarget(seed, currentFacts);
             if (target != null &&
                 !String.IsNullOrEmpty(target.ParentNoteId))
@@ -334,34 +341,18 @@ namespace PennyPet
                 !String.IsNullOrEmpty(target.ParentNoteId))
             {
                 StickyNoteData parent = _notes.Find(target.ParentNoteId);
-                List<StickyNoteData> targetOrder = BuildDockChainOrder(
-                    parent);
                 List<StickyNoteData> targetSnapshot =
                     BuildDockChainOrderIncludingHidden(parent);
                 List<StickyNoteData> sourceSnapshot =
                     BuildDockChainOrderIncludingHidden(seed);
-                StickyNoteData targetRoot = targetOrder.Count == 0 ? parent :
-                    targetOrder[0];
-                DockWindowFacts targetRootFacts;
-                if (!currentFacts.TryGetValue(targetRoot.Id,
-                    out targetRootFacts))
-                    targetRootFacts = DockWindowFacts.FromData(targetRoot);
                 StickyNoteData tail = FindActiveDockTail(seed);
                 StickyNoteData tailData = tail ?? seed;
                 List<StickyNoteData> mergedSnapshot =
                     StickyDockOperations.MergeDockSnapshotsAfterParent(
                         targetSnapshot, parent, sourceSnapshot);
                 bool groupTopMost = targetSnapshot.Count == 0
-                    ? parent.AlwaysOnTop : targetSnapshot[0].AlwaysOnTop;
-                _synchronizingDockLayout = true;
-                try
-                {
-                    LayoutDockChain(mergedSnapshot, currentFacts,
-                        targetRootFacts.X, targetRootFacts.Y,
-                        targetRootFacts.Width);
-                    ApplyDockComponentTopMost(parent, groupTopMost, null);
-                }
-                finally { _synchronizingDockLayout = false; }
+                    ? parent.AlwaysOnTop : mergedSnapshot[0].AlwaysOnTop;
+                ApplyDockComponentTopMost(parent, groupTopMost, null);
                 StickyNoteData existingChild =
                     _notes.Find(target.ExistingChildNoteId);
                 if (existingChild != null)
@@ -376,16 +367,88 @@ namespace PennyPet
             ClearSplitGuide();
             RefreshDockResizeRoles();
             // Capture each member's actual facts once on the Sticky STA, then
-            // finish the durable commit in the completion continuation.
+            // finish the durable commit in the completion continuation. The
+            // final plan is built from the mouse-up event facts/topology and
+            // replaces every pending live frame in the mailbox.
             StickyNoteData remainderSeed =
                 _notes.Find(_splitRemainderNoteId);
-            PostHostedStickyCommand(StickyUiCommand.CaptureDockFacts(
-                CollectDockCommitMemberIds(seed)),
+            DockPlacementPlan finalPlan = value == null ? null :
+                PlanDockPlan(seed, value.Facts, value.Topology);
+            if (finalPlan == null)
+            {
+                TraceDockCommitRejected("final plan unavailable");
+                ResetDockDragState(true);
+                return;
+            }
+            List<string> expectedMemberIds =
+                CollectExpectedPlanMemberIds(finalPlan);
+            if (expectedMemberIds.Count == 1)
+            {
+                CompleteStandaloneDragCommit(value, seed, remainderSeed);
+                ResetDockDragState(true);
+                return;
+            }
+
+            _finalDockPlanPending = true;
+            _dockPlanMailbox.ReplaceWithFinal(finalPlan);
+            _stickyUiHost.PostFinalDockPlan(_dockPlanMailbox,
+                finalPlan.PlanSequence,
                 delegate(StickyUiCommandResult result)
                 {
-                    CompleteDockDurableCommit(result, value, seed,
-                        remainderSeed);
-                });
+                    try
+                    {
+                        CompleteDockDurableCommit(result, value, seed,
+                            remainderSeed, expectedMemberIds,
+                            finalPlan.PlanSequence);
+                    }
+                    finally
+                    {
+                        _dockPlanMailbox.CompleteFinal(
+                            finalPlan.PlanSequence);
+                        _finalDockPlanPending = false;
+                    }
+                }, _petUiContext);
+            ResetDockDragState(false);
+        }
+
+        private static List<string> CollectExpectedPlanMemberIds(
+            DockPlacementPlan plan)
+        {
+            List<string> result = new List<string>();
+            if (plan == null) return result;
+            foreach (DockWindowTarget target in plan.WindowTargets)
+                if (target != null) result.Add(target.NoteId);
+            return result;
+        }
+
+        private void CompleteStandaloneDragCommit(StickyUiEvent value,
+            StickyNoteData seed, StickyNoteData remainderSeed)
+        {
+            string targetKey;
+            LogicalRect local;
+            if (value == null || value.Facts == null ||
+                value.Topology == null ||
+                value.Facts.TopologyGeneration != value.Topology.Generation ||
+                value.Facts.WindowSequence != value.Sequence ||
+                !TryBuildPreference(value.Facts, value.Topology,
+                    seed.PreferredDisplayTargetKey, out targetKey,
+                    out local) ||
+                !CommitHostedStickyPreferred(seed, targetKey,
+                    local.X, local.Y, local.Width, local.Height,
+                    PlacementReason.UserMoveCommit))
+            {
+                TraceDockCommitRejected("standalone mouse-up facts invalid");
+                return;
+            }
+            _placementRuntime.MarkUserPlacementCommit(seed.Id);
+            CommitVisibleDockOrder(seed);
+            if (remainderSeed != null)
+                CommitVisibleDockOrder(remainderSeed);
+            _notes.Save();
+        }
+
+        private void ResetDockDragState(bool clearMailbox)
+        {
             _activeNoteDragId = null;
             _activeDockGroupIds.Clear();
             _activeDockOriginalFacts.Clear();
@@ -393,10 +456,12 @@ namespace PennyPet
             _activeNoteDetached = false;
             _activeNoteSplitEligible = false;
             _splitRemainderNoteId = null;
+            if (!clearMailbox) return;
             lock (_dockPlanMailbox.Gate)
             {
                 _dockPlanMailbox.Current = null;
                 _dockPlanMailbox.ApplyQueued = false;
+                _dockPlanMailbox.FinalPlanSequence = 0;
             }
         }
 
@@ -491,19 +556,6 @@ namespace PennyPet
                 _hostedRuntime.RecordSequence(member.NoteId,
                     member.WindowSequence);
             }
-        }
-
-        private List<string> CollectDockCommitMemberIds(StickyNoteData seed)
-        {
-            HashSet<string> ids = new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase);
-            if (seed != null) ids.Add(seed.Id);
-            foreach (string id in _activeDockGroupIds) ids.Add(id);
-            List<StickyNoteData> ordered =
-                StickyDockGroups.GetOrderedGroup(_notes.GetAll(), seed);
-            foreach (StickyNoteData note in ordered)
-                if (note != null) ids.Add(note.Id);
-            return new List<string>(ids);
         }
 
         private void SetActiveDockGroup(List<StickyNoteData> notes)

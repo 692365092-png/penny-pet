@@ -164,6 +164,7 @@ namespace PennyPet
         private readonly DockPlanMailbox _dockPlanMailbox =
             new DockPlanMailbox();
         private long _lastAppliedDockPlanSequence = -1;
+        private bool _finalDockPlanPending;
         private System.Windows.Forms.Timer _startupWorkTimer;
         private StartupWorkPhase _startupWorkPhase;
         private Queue<StickyNoteData> _startupVisibleNotes;
