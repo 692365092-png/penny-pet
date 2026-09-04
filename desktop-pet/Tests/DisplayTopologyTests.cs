@@ -295,6 +295,123 @@ namespace PennyPet.Tests
             Assert.AreNotSame(original, rebranded);
         }
 
+        [TestMethod]
+        public void SelectPreferredTargetKey_KeepsExistingKeyAndIsDeterministic()
+        {
+            DisplaySurfaceSnapshot mirror = Surface(6, true, 0,
+                Target("ephemeral:z"), Target("mdp:b"), Target("mdp:a"));
+            Assert.AreEqual("mdp:a", DisplayTopologyRules.
+                SelectPreferredTargetKey(mirror, null));
+            Assert.AreEqual("mdp:b", DisplayTopologyRules.
+                SelectPreferredTargetKey(mirror, "mdp:b"));
+            Assert.AreEqual("ephemeral:z", DisplayTopologyRules.
+                SelectPreferredTargetKey(mirror, "ephemeral:z"));
+
+            // Enumeration order must not change the chosen durable key.
+            DisplaySurfaceSnapshot reversed = Surface(7, true, 0,
+                Target("mdp:a"), Target("mdp:b"), Target("ephemeral:z"));
+            Assert.AreEqual("mdp:a", DisplayTopologyRules.
+                SelectPreferredTargetKey(reversed, null));
+
+            // Durable targets win over ephemeral targets without a preference.
+            DisplaySurfaceSnapshot mixed = Surface(8, true, 0,
+                Target("ephemeral:a"), Target("mdp:z"));
+            Assert.AreEqual("mdp:z", DisplayTopologyRules.
+                SelectPreferredTargetKey(mixed, null));
+        }
+
+        [TestMethod]
+        public void PreferenceFromPhysicalRect_UsesWindowScale()
+        {
+            WindowPlacementPreference preference =
+                StickyPlacementMath.PreferenceFromPhysicalRect("mdp:home",
+                    1920, 0, 1.5,
+                    new PhysicalRect(2070, 60, 480, 450));
+            Assert.AreEqual("mdp:home", preference.PreferredTargetKey);
+            Assert.AreEqual(100, preference.LocalLogicalRect.X);
+            Assert.AreEqual(40, preference.LocalLogicalRect.Y);
+            Assert.AreEqual(320, preference.LocalLogicalRect.Width);
+            Assert.AreEqual(300, preference.LocalLogicalRect.Height);
+            Assert.IsTrue(preference.IsValid);
+        }
+
+        [TestMethod]
+        public void SelectPreferredTargetKey_NeverFabricatesDurableFromEphemeral()
+        {
+            DisplaySurfaceSnapshot ephemeralOnly = Surface(9, true, 0,
+                Target("ephemeral:a"), Target("ephemeral:b"));
+            Assert.IsNull(DisplayTopologyRules.SelectPreferredTargetKey(
+                ephemeralOnly, null));
+            // An existing key that belongs to the surface is still kept.
+            Assert.AreEqual("ephemeral:b", DisplayTopologyRules.
+                SelectPreferredTargetKey(ephemeralOnly, "ephemeral:b"));
+
+            DisplaySurfaceSnapshot cased = new DisplaySurfaceSnapshot(
+                "surface-10", "\\\\.\\DISPLAY10",
+                new PhysicalRect(0, 0, 1920, 1080),
+                new PhysicalRect(0, 0, 1920, 1040), true, 0,
+                new[]
+                {
+                    new DisplayTargetIdentity("mdp:B", true,
+                        String.Empty, String.Empty, 0, 0, 0),
+                    new DisplayTargetIdentity("mdp:a", true,
+                        String.Empty, String.Empty, 0, 0, 0)
+                });
+            Assert.AreEqual("mdp:a", DisplayTopologyRules.
+                SelectPreferredTargetKey(cased, null));
+        }
+
+        [TestMethod]
+        public void StickySpawnPolicy_CentersInWorkAreaAcrossOriginsAndScales()
+        {
+            PhysicalRect plain = StickySpawnPolicy.CenterInWorkArea(
+                new PhysicalRect(0, 0, 1920, 1040), 320, 300);
+            Assert.AreEqual(800, plain.Left);
+            Assert.AreEqual(370, plain.Top);
+            Assert.AreEqual(320, plain.Width);
+            Assert.AreEqual(300, plain.Height);
+
+            PhysicalRect scaled = StickySpawnPolicy.CenterInWorkArea(
+                new PhysicalRect(0, 0, 1920, 1040), 640, 600);
+            Assert.AreEqual(640, scaled.Left);
+            Assert.AreEqual(220, scaled.Top);
+
+            PhysicalRect negativeX = StickySpawnPolicy.CenterInWorkArea(
+                new PhysicalRect(-2560, 0, 2560, 1400), 320, 300);
+            Assert.AreEqual(-1440, negativeX.Left);
+            Assert.AreEqual(550, negativeX.Top);
+
+            PhysicalRect negativeY = StickySpawnPolicy.CenterInWorkArea(
+                new PhysicalRect(0, -200, 1920, 1040), 320, 300);
+            Assert.AreEqual(800, negativeY.Left);
+            Assert.AreEqual(170, negativeY.Top);
+
+            PhysicalRect tiny = StickySpawnPolicy.CenterInWorkArea(
+                new PhysicalRect(0, 0, 200, 150), 320, 300);
+            Assert.AreEqual(0, tiny.Left);
+            Assert.AreEqual(0, tiny.Top);
+            Assert.AreEqual(200, tiny.Width);
+            Assert.AreEqual(150, tiny.Height);
+        }
+
+        [TestMethod]
+        public void StickySpawnPolicy_PlanCenteredSpawn_RoundTripsLocalRect()
+        {
+            StickyCanonicalPlacement placement =
+                StickySpawnPolicy.PlanCenteredSpawn("\\\\.\\DISPLAY2",
+                    new PhysicalRect(1920, 0, 1920, 1040), 1920, 0, 1.5,
+                    320, 300);
+            Assert.AreEqual("\\\\.\\DISPLAY2", placement.DisplayId);
+            Assert.AreEqual(480, placement.LocalX);
+            Assert.AreEqual(197, placement.LocalY);
+            Assert.AreEqual(320, placement.LocalWidth);
+            Assert.AreEqual(300, placement.LocalHeight);
+            Assert.AreEqual(2640, placement.PhysicalLeft);
+            Assert.AreEqual(295, placement.PhysicalTop);
+            Assert.AreEqual(480, placement.PhysicalWidth);
+            Assert.AreEqual(450, placement.PhysicalHeight);
+        }
+
         private static DisplayTargetIdentity Target(string stableKey)
         {
             return new DisplayTargetIdentity(stableKey,

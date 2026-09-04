@@ -83,6 +83,36 @@ namespace PennyPet
             return surfaces.Count == 0 ? null : surfaces[0];
         }
 
+        // Durable preferred-identity selection for one surface. An existing
+        // preferred key that still belongs to the (possibly mirrored) surface
+        // is always kept. Without a prior preference only durable targets are
+        // eligible and the smallest stable key wins (OrdinalIgnoreCase), never
+        // QueryDisplayConfig enumeration order. An ephemeral-only surface
+        // returns null: an ephemeral key must never masquerade as a durable
+        // preference.
+        internal static string SelectPreferredTargetKey(
+            DisplaySurfaceSnapshot surface, string existingPreferredKey)
+        {
+            if (surface == null || surface.Targets.Count == 0) return null;
+            string existing = (existingPreferredKey ?? String.Empty).Trim();
+            if (!String.IsNullOrEmpty(existing))
+            {
+                foreach (DisplayTargetIdentity target in surface.Targets)
+                    if (String.Equals(target.StableKey, existing,
+                        StringComparison.OrdinalIgnoreCase))
+                        return target.StableKey;
+            }
+            DisplayTargetIdentity best = null;
+            foreach (DisplayTargetIdentity target in surface.Targets)
+            {
+                if (!target.IsDurable) continue;
+                if (best == null || String.Compare(target.StableKey,
+                    best.StableKey, StringComparison.OrdinalIgnoreCase) < 0)
+                    best = target;
+            }
+            return best == null ? null : best.StableKey;
+        }
+
         private static bool IsRotationValid(int rotationDegrees)
         {
             return rotationDegrees == 0 || rotationDegrees == 90 ||

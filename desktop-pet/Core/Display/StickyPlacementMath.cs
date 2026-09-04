@@ -142,5 +142,27 @@ namespace PennyPet
                 Math.Max(1, (int)Math.Round(sizePhysicalHeight / safeScale)),
                 left, top, sizePhysicalWidth, sizePhysicalHeight);
         }
+
+        // Derives a durable placement preference from actual window facts:
+        // the durable target key plus the display-local logical rect computed
+        // with the window's real scale. Mirrors FromPhysicalRect so both the
+        // v10 compatibility geometry and the v11 preference share one math.
+        internal static WindowPlacementPreference PreferenceFromPhysicalRect(
+            string targetKey, int physicalOriginX, int physicalOriginY,
+            double scale, PhysicalRect physicalRect)
+        {
+            StickyCanonicalPlacement canonical = FromPhysicalRect(
+                targetKey ?? String.Empty, physicalOriginX, physicalOriginY,
+                scale, physicalRect.Left, physicalRect.Top,
+                physicalRect.Width, physicalRect.Height);
+            return new WindowPlacementPreference(targetKey ?? String.Empty,
+                new LogicalRect
+                {
+                    X = canonical.LocalX,
+                    Y = canonical.LocalY,
+                    Width = canonical.LocalWidth,
+                    Height = canonical.LocalHeight
+                });
+        }
     }
 }

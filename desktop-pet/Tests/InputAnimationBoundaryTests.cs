@@ -1543,6 +1543,169 @@ namespace PennyPet.Tests
                 "Mirrored-surface target order must never become an identity rule.");
         }
 
+        [TestMethod]
+        public void Drt6_CodecWritesV11WhileKeepingHistoricalVersions()
+        {
+            string codec = ReadSource("Core/StickyNotes/StickyNoteCodec.cs");
+
+            Assert.IsTrue(codec.Contains(
+                    "internal const int VersionElevenFieldCount = 37") &&
+                codec.Contains("CurrentVersion = VersionEleven") &&
+                codec.Contains("bool versionEleven = fields.Length >= 37") &&
+                codec.Contains("versionTen || versionEleven"),
+                "The codec must emit v11 and keep v1-v10 parsing paths intact.");
+            Assert.IsTrue(codec.Contains(
+                    "Encode(note.PreferredDisplayTargetKey") &&
+                codec.Contains("note.PreferredLocalLogicalWidth.ToString("),
+                "v11 must persist the durable preferred target and local rect.");
+        }
+
+        [TestMethod]
+        public void Drt6_SessionRestoresPreferredBeforeV10Display()
+        {
+            string session = ReadSource("StickyWindowSession.cs");
+            int preferred = session.IndexOf(
+                "data.PreferredDisplayTargetKey",
+                StringComparison.Ordinal);
+            int legacy = session.IndexOf(
+                "topology.FindByRuntimeGdiName(",
+                StringComparison.Ordinal);
+
+            Assert.IsTrue(preferred >= 0 && legacy > preferred,
+                "Restore must resolve the v11 preferred target before the v10 DisplayId.");
+            Assert.IsTrue(session.Contains(
+                    "data.PreferredLocalLogicalWidth > 0") &&
+                session.Contains("topology.FindByTargetKey("),
+                "The preferred local rect must be projected against its durable target.");
+        }
+
+        [TestMethod]
+        public void Drt6_OnlyUserReasonsCommitPreferred()
+        {
+            string rules = ReadSource(
+                "Core/StickyNotes/StickyPlacementRules.cs");
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+
+            Assert.IsTrue(rules.Contains("internal enum PlacementReason") &&
+                rules.Contains("CanCommitPreferred(PlacementReason reason)") &&
+                rules.Contains("case PlacementReason.UserMoveCommit:") &&
+                rules.Contains("case PlacementReason.DockCommit:"),
+                "Preferred commit must be gated by placement reason.");
+            Assert.IsTrue(coordinator.Contains(
+                    "PlacementReason.UserResizeCommit") &&
+                coordinator.Contains("PlacementReason.Spawn") &&
+                coordinator.Contains("PlacementReason.ExpandAndTile"),
+                "Pet must only commit preferred at user-gesture call sites.");
+        }
+
+        [TestMethod]
+        public void Drt6_PreferredStaysOutsideFullSnapshotApply()
+        {
+            string commands = ReadSource(
+                "Features/StickyNotes/StickyUiCommand.cs");
+            string apply = Between(commands,
+                "internal void ApplyTo(StickyNoteData target)",
+                "internal void ApplyPreferredTo(StickyNoteData target)");
+
+            Assert.IsTrue(commands.Contains(
+                    "internal void ApplyPreferredTo(StickyNoteData target)") &&
+                commands.Contains("ApplyPreferredTo(copy)"),
+                "Working copies must carry the preferred placement separately.");
+            Assert.IsFalse(apply.Contains("PreferredDisplayTargetKey"),
+                "Full snapshot application must never clobber preferred placement.");
+        }
+
+        [TestMethod]
+        public void Drt6_EffectiveRuntimeIsSeparateFromRepository()
+        {
+            string runtime = ReadSource(
+                "Features/StickyNotes/StickyPlacementRuntime.cs");
+
+            Assert.IsTrue(runtime.Contains(
+                    "Dictionary<string, WindowFacts> _effective") &&
+                runtime.Contains("internal void UpdateEffective("),
+                "Effective WindowFacts must live in runtime memory.");
+            Assert.IsFalse(runtime.Contains("StickyNoteRepository") ||
+                runtime.Contains("SaveAsync") ||
+                runtime.Contains("SetWindowPos") ||
+                runtime.Contains("WindowInteropHelper") ||
+                runtime.Contains("StickyNoteWindow("),
+                "The runtime store must not own persistence or UI objects.");
+        }
+
+        [TestMethod]
+        public void Drt6Supplement_SpawnUsesCenteredPolicyWithoutCascade()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+
+            Assert.IsTrue(coordinator.Contains(
+                    "StickySpawnPolicy.PlanCenteredSpawn(") &&
+                coordinator.Contains("PrepareStickyNoteDraft(") &&
+                coordinator.Contains("_notes.CreateDraft(text, Point.Empty)"),
+                "Spawn must route through the centered pure policy on a draft.");
+            Assert.IsFalse(coordinator.Contains("% 7) * 18") ||
+                coordinator.Contains("12 + offset") ||
+                coordinator.Contains("StickyPlacementMath.FromSpawn("),
+                "The cascade and beside-pet spawn paths must be retired.");
+        }
+
+        [TestMethod]
+        public void Drt6Supplement_CreateDraftDoesNotPersistIntermediateState()
+        {
+            string repository = ReadSource(
+                "Features/StickyNotes/StickyNoteRepository.cs");
+            string create = Between(repository,
+                "public StickyNoteData Create(string text, Point location)",
+                "public List<StickyNoteData> GetAll()");
+            string draft = Between(repository,
+                "internal StickyNoteData CreateDraft(string text, Point location)",
+                "public List<StickyNoteData> GetAll()");
+
+            Assert.IsTrue(create.Contains("CreateDraft(text, location)") &&
+                create.Contains("Save();"),
+                "Create() must delegate to CreateDraft and own the only save.");
+            Assert.IsTrue(draft.Contains("_notes.Add(note);") &&
+                !draft.Contains("Save()"),
+                "CreateDraft must add to memory without persisting.");
+        }
+
+        [TestMethod]
+        public void Drt6Supplement_PetFactsAlignedWithSingleTopologySnapshot()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+
+            Assert.IsTrue(coordinator.Contains(
+                    "DisplayTopologySnapshot topology = CurrentTopologySnapshot();") &&
+                coordinator.Contains("CapturePetWindowFacts(topology)") &&
+                coordinator.Contains(
+                    "WindowsWindowFactsReader.Capture(Handle, \"pet\","),
+                "Pet facts must be captured against the same attempt topology.");
+            string fallback = Between(coordinator,
+                "private void ApplyLegacySpawnFallback",
+                "private static void TraceSpawnPlacement");
+            Assert.IsFalse(fallback.Contains("PreferredDisplayTargetKey"),
+                "The legacy fallback must never fabricate a durable preference.");
+        }
+
+        [TestMethod]
+        public void Drt6Supplement_CreationDoesNotDependOnDisplayIndexOrCount()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string spawn = Between(coordinator,
+                "private StickyNoteData PrepareStickyNoteDraft",
+                "private void ApplyLegacySpawnFallback");
+
+            Assert.IsFalse(spawn.Contains("Screen.AllScreens") ||
+                spawn.Contains("Screen.PrimaryScreen") ||
+                spawn.Contains("_notes.GetAll().Count") ||
+                spawn.Contains("MonitorFromRect"),
+                "Spawn must follow the Pet surface, never display order or note count.");
+        }
+
         private static string ReadSource(string relativePath)
         {
             string root = FindDesktopPetDirectory();

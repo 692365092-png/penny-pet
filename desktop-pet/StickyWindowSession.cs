@@ -166,26 +166,44 @@ namespace PennyPet
         }
 
         // Resolve the v10 DisplayId + LocalLogicalRect against the currently
-        // live topology. When the saved display is gone the persisted
-        // physical compatibility rect is used as a visible fallback; DRT-5
-        // applies no rehome policy yet.
+        // live topology, preferring the v11 durable target key first. When
+        // neither resolves the persisted physical compatibility rect is used
+        // as a visible fallback; no rehome policy is applied yet.
         private NativePlacementPlan ResolvePlacementPlan(
             StickyNoteData data)
         {
             DisplayTopologySnapshot topology = _topology;
-            DisplaySurfaceSnapshot surface = topology != null
-                ? topology.FindByRuntimeGdiName(
-                    data.DisplayId ?? String.Empty)
-                : null;
+            DisplaySurfaceSnapshot surface = null;
+            LogicalRect preferred = new LogicalRect();
+            if (topology != null &&
+                !String.IsNullOrWhiteSpace(data.PreferredDisplayTargetKey) &&
+                data.PreferredLocalLogicalWidth > 0 &&
+                data.PreferredLocalLogicalHeight > 0)
+            {
+                surface = topology.FindByTargetKey(
+                    data.PreferredDisplayTargetKey);
+                if (surface != null)
+                {
+                    preferred.X = data.PreferredLocalLogicalX;
+                    preferred.Y = data.PreferredLocalLogicalY;
+                    preferred.Width = data.PreferredLocalLogicalWidth;
+                    preferred.Height = data.PreferredLocalLogicalHeight;
+                }
+            }
+            if (surface == null && topology != null)
+            {
+                surface = topology.FindByRuntimeGdiName(
+                    data.DisplayId ?? String.Empty);
+                if (surface != null)
+                {
+                    preferred.X = data.LocalLogicalX;
+                    preferred.Y = data.LocalLogicalY;
+                    preferred.Width = data.LocalLogicalWidth;
+                    preferred.Height = data.LocalLogicalHeight;
+                }
+            }
             if (surface != null)
             {
-                LogicalRect preferred = new LogicalRect
-                {
-                    X = data.LocalLogicalX,
-                    Y = data.LocalLogicalY,
-                    Width = data.LocalLogicalWidth,
-                    Height = data.LocalLogicalHeight
-                };
                 return NativePlacementPlan.Preferred(topology, surface,
                     preferred);
             }
@@ -380,6 +398,7 @@ namespace PennyPet
             _window.HeaderDragStarted += HeaderDragStarted;
             _window.HeaderDragMoved += HeaderDragMoved;
             _window.HeaderDragCompleted += HeaderDragCompleted;
+            _window.UserResizeCompleted += UserResizeCompleted;
             _window.DockHorizontalResizing += DockHorizontalResizing;
             _window.DockDividerResizeStarted += DockDividerResizeStarted;
             _window.DockDividerResizing += DockDividerResizing;
@@ -407,6 +426,7 @@ namespace PennyPet
             _window.HeaderDragStarted -= HeaderDragStarted;
             _window.HeaderDragMoved -= HeaderDragMoved;
             _window.HeaderDragCompleted -= HeaderDragCompleted;
+            _window.UserResizeCompleted -= UserResizeCompleted;
             _window.DockHorizontalResizing -= DockHorizontalResizing;
             _window.DockDividerResizeStarted -= DockDividerResizeStarted;
             _window.DockDividerResizing -= DockDividerResizing;
@@ -483,6 +503,19 @@ namespace PennyPet
         private void HeaderDragCompleted(object sender, EventArgs e)
         {
             EmitSnapshot(StickyUiEventKind.HeaderDragCompleted);
+        }
+
+        private void UserResizeCompleted(object sender, EventArgs e)
+        {
+            if (_eventsSuppressed || !IsAvailable) return;
+            StickyNoteUiSnapshot snapshot = CaptureSnapshot();
+            _lastSnapshot = snapshot;
+            _sequence++;
+            WindowFacts facts = CaptureWindowFacts(_sequence);
+            TraceWindowFacts(facts, snapshot);
+            Raise(StickyUiEvent.FromSnapshot(
+                StickyUiEventKind.UserResizeCompleted, snapshot, _sequence,
+                facts, _topology));
         }
 
         private void DockHorizontalResizing(object sender,

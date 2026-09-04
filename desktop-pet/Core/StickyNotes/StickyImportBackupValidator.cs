@@ -147,6 +147,16 @@ namespace PennyPet
                 ValidateCanonicalPlacement(displayId, localX, localY,
                     localWidth, localHeight);
             }
+            if (version >= 11)
+            {
+                string preferredKey = RequireBase64(fields[32]);
+                int preferredX = RequireInt32(fields, 33);
+                int preferredY = RequireInt32(fields, 34);
+                int preferredWidth = RequireInt32(fields, 35);
+                int preferredHeight = RequireInt32(fields, 36);
+                ValidateCanonicalPlacement(preferredKey, preferredX,
+                    preferredY, preferredWidth, preferredHeight);
+            }
         }
 
         private static int ExpectedFieldCount(int version)
@@ -164,6 +174,8 @@ namespace PennyPet
                 case 9: return 27;
                 case StickyNoteCodec.VersionTen:
                     return StickyNoteCodec.VersionTenFieldCount;
+                case StickyNoteCodec.VersionEleven:
+                    return StickyNoteCodec.VersionElevenFieldCount;
                 default: return 0;
             }
         }

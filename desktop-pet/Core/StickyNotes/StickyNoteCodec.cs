@@ -12,8 +12,10 @@ namespace PennyPet
     {
         internal const int VersionTen = 10;
         internal const int VersionTenFieldCount = 32;
-        internal const int CurrentVersion = VersionTen;
-        internal const int CurrentFieldCount = VersionTenFieldCount;
+        internal const int VersionEleven = 11;
+        internal const int VersionElevenFieldCount = 37;
+        internal const int CurrentVersion = VersionEleven;
+        internal const int CurrentFieldCount = VersionElevenFieldCount;
         internal const int MaximumDisplayIdCharacters = 1024;
         internal const int MaximumLocalLogicalValue = 20000;
 
@@ -57,7 +59,16 @@ namespace PennyPet
                 note.LocalLogicalX.ToString(CultureInfo.InvariantCulture),
                 note.LocalLogicalY.ToString(CultureInfo.InvariantCulture),
                 note.LocalLogicalWidth.ToString(CultureInfo.InvariantCulture),
-                note.LocalLogicalHeight.ToString(CultureInfo.InvariantCulture)
+                note.LocalLogicalHeight.ToString(CultureInfo.InvariantCulture),
+                Encode(note.PreferredDisplayTargetKey ?? String.Empty),
+                note.PreferredLocalLogicalX.ToString(
+                    CultureInfo.InvariantCulture),
+                note.PreferredLocalLogicalY.ToString(
+                    CultureInfo.InvariantCulture),
+                note.PreferredLocalLogicalWidth.ToString(
+                    CultureInfo.InvariantCulture),
+                note.PreferredLocalLogicalHeight.ToString(
+                    CultureInfo.InvariantCulture)
             });
         }
 
@@ -75,9 +86,11 @@ namespace PennyPet
             bool versionEight = fields.Length >= 25 && fields[0] == "8";
             bool versionNine = fields.Length >= 27 && fields[0] == "9";
             bool versionTen = fields.Length >= 32 && fields[0] == "10";
+            bool versionEleven = fields.Length >= 37 &&
+                fields[0] == "11";
             if (!versionOne && !versionTwo && !versionThree && !versionFour &&
                 !versionFive && !versionSix && !versionSeven && !versionEight &&
-                !versionNine && !versionTen) return null;
+                !versionNine && !versionTen && !versionEleven) return null;
 
             int number;
             long ticks;
@@ -113,42 +126,46 @@ namespace PennyPet
                 DecodeTodos(fields[14], note.TodoItems);
                 note.Text = Decode(fields[15]);
                 if ((versionThree || versionFour || versionFive || versionSix ||
-                    versionSeven || versionEight || versionNine || versionTen) &&
+                    versionSeven || versionEight || versionNine ||
+                    versionTen || versionEleven) &&
                     Int32.TryParse(fields[16], out number))
                     note.TabOrder = Math.Max(0, number);
                 if (versionFour || versionFive || versionSix || versionSeven ||
-                    versionEight || versionNine || versionTen)
+                    versionEight || versionNine || versionTen ||
+                    versionEleven)
                     note.RichTextRtf = NormalizeRtf(Decode(fields[17]));
                 if (versionFive || versionSix || versionSeven || versionEight ||
-                    versionNine || versionTen)
+                    versionNine || versionTen || versionEleven)
                 {
                     note.FontFamilyName = NormalizeFontFamily(Decode(fields[18]));
                     if (Int32.TryParse(fields[19], out number))
                         note.FontSizeTwips = Clamp(number, 120, 1440);
                 }
                 if (versionSix || versionSeven || versionEight || versionNine ||
-                    versionTen)
+                    versionTen || versionEleven)
                 {
                     if (Int32.TryParse(fields[20], out number))
                         note.BackgroundOpacityPercent = Clamp(number, 10, 100);
                     if (Int32.TryParse(fields[21], out number))
                         note.TextColorArgb = NormalizeTextColor(number);
                 }
-                if (versionSeven || versionEight || versionNine || versionTen)
+                if (versionSeven || versionEight || versionNine ||
+                    versionTen || versionEleven)
                     note.DockParentId = Decode(fields[22]);
-                if (versionEight || versionNine || versionTen)
+                if (versionEight || versionNine || versionTen ||
+                    versionEleven)
                 {
                     note.DockGroupId = Decode(fields[23]);
                     if (Int32.TryParse(fields[24], out number))
                         note.DockGroupOrder = Math.Max(-1, number);
                 }
-                if (versionNine || versionTen)
+                if (versionNine || versionTen || versionEleven)
                 {
                     note.IsSchedule = fields[25] == "1";
                     DecodeSchedules(fields[26], note.ScheduleItems);
                     if (note.IsSchedule) note.IsTodoList = false;
                 }
-                if (versionTen)
+                if (versionTen || versionEleven)
                 {
                     note.DisplayId = Decode(fields[27]);
                     if (Int32.TryParse(fields[28], out number))
@@ -160,10 +177,22 @@ namespace PennyPet
                     if (Int32.TryParse(fields[31], out number))
                         note.LocalLogicalHeight = number;
                 }
+                if (versionEleven)
+                {
+                    note.PreferredDisplayTargetKey = Decode(fields[32]);
+                    if (Int32.TryParse(fields[33], out number))
+                        note.PreferredLocalLogicalX = number;
+                    if (Int32.TryParse(fields[34], out number))
+                        note.PreferredLocalLogicalY = number;
+                    if (Int32.TryParse(fields[35], out number))
+                        note.PreferredLocalLogicalWidth = number;
+                    if (Int32.TryParse(fields[36], out number))
+                        note.PreferredLocalLogicalHeight = number;
+                }
             }
 
             if (!versionSix && !versionSeven && !versionEight && !versionNine &&
-                !versionTen)
+                !versionTen && !versionEleven)
                 note.TextColorArgb = IsLightPaper(note.ColorArgb)
                     ? WhiteArgb : BlackArgb;
             if (note.Title.Length > StickyNoteLimits.MaximumTitleCharacters ||
@@ -253,6 +282,64 @@ namespace PennyPet
                 if (note.LocalLogicalHeight != localHeight)
                 {
                     note.LocalLogicalHeight = localHeight;
+                    changed = true;
+                }
+            }
+            // v11 preferred placement safety mirrors the v10 canonical rule:
+            // an empty target key means no preference, and a valid preference
+            // clamps its local rect to a plausible window size so a corrupt
+            // value can never overflow the display scale projection.
+            note.PreferredDisplayTargetKey =
+                (note.PreferredDisplayTargetKey ?? String.Empty).Trim();
+            if (note.PreferredDisplayTargetKey.Length >
+                MaximumDisplayIdCharacters)
+            {
+                note.PreferredDisplayTargetKey = String.Empty;
+                changed = true;
+            }
+            if (String.IsNullOrWhiteSpace(note.PreferredDisplayTargetKey))
+            {
+                if (note.PreferredLocalLogicalX != 0 ||
+                    note.PreferredLocalLogicalY != 0 ||
+                    note.PreferredLocalLogicalWidth != 0 ||
+                    note.PreferredLocalLogicalHeight != 0)
+                {
+                    note.PreferredLocalLogicalX = 0;
+                    note.PreferredLocalLogicalY = 0;
+                    note.PreferredLocalLogicalWidth = 0;
+                    note.PreferredLocalLogicalHeight = 0;
+                    changed = true;
+                }
+            }
+            else if (note.PreferredLocalLogicalWidth <= 0 ||
+                note.PreferredLocalLogicalHeight <= 0)
+            {
+                // Strict state: a durable key without a positive local rect is
+                // not a valid preference and must degrade to unset instead of
+                // being repaired into a fake 1x1 placement.
+                note.PreferredDisplayTargetKey = String.Empty;
+                note.PreferredLocalLogicalX = 0;
+                note.PreferredLocalLogicalY = 0;
+                note.PreferredLocalLogicalWidth = 0;
+                note.PreferredLocalLogicalHeight = 0;
+                changed = true;
+            }
+            else
+            {
+                int preferredWidth = Math.Max(1,
+                    Math.Min(note.PreferredLocalLogicalWidth,
+                        MaximumLocalLogicalValue));
+                int preferredHeight = Math.Max(1,
+                    Math.Min(note.PreferredLocalLogicalHeight,
+                        MaximumLocalLogicalValue));
+                if (note.PreferredLocalLogicalWidth != preferredWidth)
+                {
+                    note.PreferredLocalLogicalWidth = preferredWidth;
+                    changed = true;
+                }
+                if (note.PreferredLocalLogicalHeight != preferredHeight)
+                {
+                    note.PreferredLocalLogicalHeight = preferredHeight;
                     changed = true;
                 }
             }

@@ -82,6 +82,8 @@ namespace PennyPet
         private SynchronizationContext _petUiContext;
         private readonly StickyHostedRuntime _hostedRuntime =
             new StickyHostedRuntime();
+        private readonly StickyPlacementRuntime _placementRuntime =
+            new StickyPlacementRuntime();
         private readonly HashSet<string> _expectedFirstRenderNoteIds =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _renderedFirstRenderNoteIds =

@@ -162,6 +162,15 @@ namespace PennyPet
         public int LocalLogicalY;
         public int LocalLogicalWidth;
         public int LocalLogicalHeight;
+        // v11 durable placement preference: a target identity plus its
+        // display-local logical rect. DisplayId/LocalLogical* remain v10
+        // migration/legacy fields and X/Y/Width/Height are the last known
+        // physical fallback, never the durable authority.
+        public string PreferredDisplayTargetKey = String.Empty;
+        public int PreferredLocalLogicalX;
+        public int PreferredLocalLogicalY;
+        public int PreferredLocalLogicalWidth;
+        public int PreferredLocalLogicalHeight;
         // Optional parent relationship for vertically docked notes.  Keeping
         // this in the data model (rather than merging windows) lets every note
         // retain its own editor, reminder state and transparency settings.
@@ -220,6 +229,11 @@ namespace PennyPet
             copy.LocalLogicalY = LocalLogicalY;
             copy.LocalLogicalWidth = LocalLogicalWidth;
             copy.LocalLogicalHeight = LocalLogicalHeight;
+            copy.PreferredDisplayTargetKey = PreferredDisplayTargetKey;
+            copy.PreferredLocalLogicalX = PreferredLocalLogicalX;
+            copy.PreferredLocalLogicalY = PreferredLocalLogicalY;
+            copy.PreferredLocalLogicalWidth = PreferredLocalLogicalWidth;
+            copy.PreferredLocalLogicalHeight = PreferredLocalLogicalHeight;
             copy.DockParentId = DockParentId;
             copy.DockGroupId = DockGroupId;
             copy.DockGroupOrder = DockGroupOrder;

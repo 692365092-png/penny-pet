@@ -816,9 +816,7 @@ namespace PennyPet
             versionFourRepository.SaveToFile(versionFourStickyPath);
             result.VersionFourMigrationOk = result.VersionFourMigrationOk &&
                 File.ReadAllText(versionFourStickyPath, Encoding.UTF8)
-                    .StartsWith("9|") ||
-                File.ReadAllText(versionFourStickyPath, Encoding.UTF8)
-                    .StartsWith("10|");
+                    .StartsWith(StickyNoteCodec.CurrentVersion + "|");
             if (File.Exists(versionFourStickyPath))
                 File.Delete(versionFourStickyPath);
             if (File.Exists(versionFourStickyPath + ".bak"))
@@ -842,9 +840,7 @@ namespace PennyPet
                 File.ReadAllText(preservedCorruptPath, Encoding.UTF8) ==
                     "this-is-not-a-note" &&
                 File.ReadAllText(corruptStickyPath, Encoding.UTF8)
-                    .StartsWith("9|") ||
-                File.ReadAllText(corruptStickyPath, Encoding.UTF8)
-                    .StartsWith("10|");
+                    .StartsWith(StickyNoteCodec.CurrentVersion + "|");
             if (File.Exists(corruptStickyPath)) File.Delete(corruptStickyPath);
             if (File.Exists(corruptStickyPath + ".bak"))
                 File.Delete(corruptStickyPath + ".bak");
@@ -868,9 +864,7 @@ namespace PennyPet
                 File.ReadAllText(backupRecoveryRepository.RecoveryBackupPath,
                     Encoding.UTF8) == "broken-primary" &&
                 File.ReadAllText(backupRecoveryPath, Encoding.UTF8)
-                    .StartsWith("9|") ||
-                File.ReadAllText(backupRecoveryPath, Encoding.UTF8)
-                    .StartsWith("10|");
+                    .StartsWith(StickyNoteCodec.CurrentVersion + "|");
             string preservedBackupPrimary =
                 backupRecoveryRepository.RecoveryBackupPath;
             if (File.Exists(backupRecoveryPath))
@@ -919,9 +913,8 @@ namespace PennyPet
             result.SideTabOrderOk = orderedTabs.Count == 3 &&
                 orderedTabs[0].Text == "B" && orderedTabs[1].Text == "C" &&
                 orderedTabs[2].Text == "A" &&
-                File.ReadAllText(tabOrderPath, Encoding.UTF8).StartsWith("9|") ||
-                    File.ReadAllText(tabOrderPath, Encoding.UTF8)
-                        .StartsWith("10|");
+                File.ReadAllText(tabOrderPath, Encoding.UTF8)
+                    .StartsWith(StickyNoteCodec.CurrentVersion + "|");
             if (File.Exists(tabOrderPath)) File.Delete(tabOrderPath);
             if (File.Exists(tabOrderPath + ".bak"))
                 File.Delete(tabOrderPath + ".bak");
@@ -997,9 +990,8 @@ namespace PennyPet
                 persistedDockOrder[0].DockGroupOrder == 0 &&
                 persistedDockOrder[1].DockGroupOrder == 1 &&
                 persistedDockOrder[2].DockGroupOrder == 2 &&
-                File.ReadAllText(dockPath, Encoding.UTF8).StartsWith("9|") ||
-                    File.ReadAllText(dockPath, Encoding.UTF8)
-                        .StartsWith("10|");
+                File.ReadAllText(dockPath, Encoding.UTF8)
+                    .StartsWith(StickyNoteCodec.CurrentVersion + "|");
             dockParent.Visible = true;
             dockInsertedTodo.Visible = true;
             dockChild.Visible = true;
@@ -3920,6 +3912,7 @@ namespace PennyPet
             internal bool DisplayTopologyRuntimeOk;
             internal bool StickyContentApplySeparationOk;
             internal bool NativePlacementOk;
+            internal bool V11PreferredOk;
         }
 
         private sealed class StickyHostedCheckResult
@@ -4402,21 +4395,92 @@ namespace PennyPet
             bool toleranceConstantOk =
                 WindowsWindowPlacementExecutor.PlacementTolerancePixels == 2;
 
-            DisplaySurfaceSnapshot surface = FakeSurface(1, 0, true,
-                1080, 1032, FakeTarget("mdp:spawn"));
+            // Centered spawn policy: a Schedule keeps its 320x360 logical
+            // size and lands in the WorkArea center (never beside the pet).
             StickyCanonicalPlacement schedule =
-                StickyPlacementMath.FromSpawn("\\\\.\\DISPLAY1",
-                    surface.Bounds.Left, surface.Bounds.Top, 1.0,
-                    new DockRect(800, 400, 96, 104),
-                    new DockRect(surface.WorkArea.Left,
-                        surface.WorkArea.Top, surface.WorkArea.Width,
-                        surface.WorkArea.Height),
-                    new DockSize(320, 360), 12);
-            bool scheduleSizeOk = schedule.LocalWidth == 320 &&
-                schedule.LocalHeight == 360;
+                StickySpawnPolicy.PlanCenteredSpawn("\\\\.\\DISPLAY1",
+                    new PhysicalRect(0, 0, 1920, 1040), 0, 0, 1.0,
+                    320, 360);
+            bool scheduleCenteredOk = schedule.LocalWidth == 320 &&
+                schedule.LocalHeight == 360 &&
+                schedule.PhysicalLeft == 800 &&
+                schedule.PhysicalTop == 340;
+            StickyCanonicalPlacement scaled = StickySpawnPolicy.
+                PlanCenteredSpawn("\\\\.\\DISPLAY1",
+                    new PhysicalRect(0, 0, 1920, 1040), 0, 0, 2.0,
+                    320, 300);
+            bool scaledCenteredOk = scaled.LocalWidth == 320 &&
+                scaled.LocalHeight == 300 &&
+                scaled.PhysicalWidth == 640 &&
+                scaled.PhysicalLeft == 640 &&
+                scaled.PhysicalTop == 220;
 
             return projectionOk && toleranceOk && toleranceConstantOk &&
-                scheduleSizeOk;
+                scheduleCenteredOk && scaledCenteredOk;
+        }
+
+        // DRT-6 v11 contract: codec round-trips the durable preferred fields,
+        // only user-gesture reasons may commit a preference, and a v10 note
+        // migrates its display-local rect into a durable target key without
+        // overwriting an existing preference.
+        private static bool RunV11PreferredCheck()
+        {
+            StickyNoteData source = new StickyNoteData
+            {
+                Id = "v11-check",
+                PreferredDisplayTargetKey = "mdp:home",
+                PreferredLocalLogicalX = -10,
+                PreferredLocalLogicalY = 30,
+                PreferredLocalLogicalWidth = 320,
+                PreferredLocalLogicalHeight = 300
+            };
+            string line = StickyNoteCodec.SerializeLine(source);
+            bool headerAndFields =
+                line.StartsWith("11|", StringComparison.Ordinal) &&
+                line.Split('|').Length ==
+                    StickyNoteCodec.CurrentFieldCount;
+            StickyNoteData parsed = StickyNoteCodec.ParseLine(line);
+            bool roundTrip = parsed != null &&
+                parsed.PreferredDisplayTargetKey == "mdp:home" &&
+                parsed.PreferredLocalLogicalX == -10 &&
+                parsed.PreferredLocalLogicalWidth == 320;
+
+            bool reasonGuard =
+                StickyPlacementRules.CanCommitPreferred(
+                    PlacementReason.UserMoveCommit) &&
+                StickyPlacementRules.CanCommitPreferred(
+                    PlacementReason.UserResizeCommit) &&
+                StickyPlacementRules.CanCommitPreferred(
+                    PlacementReason.Spawn) &&
+                !StickyPlacementRules.CanCommitPreferred(
+                    PlacementReason.Restore) &&
+                !StickyPlacementRules.CanCommitPreferred(
+                    PlacementReason.DockLiveFollower) &&
+                !StickyPlacementRules.CanCommitPreferred(
+                    PlacementReason.TemporaryRehome);
+
+            StickyNoteData v10 = new StickyNoteData
+            {
+                Id = "v10-check",
+                DisplayId = "\\\\.\\DISPLAY2",
+                LocalLogicalX = 5,
+                LocalLogicalY = 6,
+                LocalLogicalWidth = 320,
+                LocalLogicalHeight = 300
+            };
+            DisplayTopologySnapshot topology =
+                new DisplayTopologySnapshot(0, new[]
+                {
+                    FakeSurface(2, 1920, false, 1080, 1032,
+                        FakeTarget("mdp:fake-2"))
+                });
+            bool migrated = StickyPlacementRules.MigrateV10Preferred(
+                v10, topology) &&
+                v10.PreferredDisplayTargetKey == "mdp:fake-2" &&
+                v10.PreferredLocalLogicalX == 5 &&
+                v10.PreferredLocalLogicalWidth == 320;
+
+            return headerAndFields && roundTrip && reasonGuard && migrated;
         }
 
         private static WindowShellCheckResult RunWindowShellChecks(
@@ -4501,6 +4565,8 @@ namespace PennyPet
                 RunStickySnapshotSeparationCheck();
             result.NativePlacementOk =
                 RunNativePlacementCheck();
+            result.V11PreferredOk =
+                RunV11PreferredCheck();
             result.ScaleRangeOk =
                 PetForm.NormalizeScalePercent(47) == 50 &&
                 PetForm.NormalizeScalePercent(104) == 100 &&
@@ -5783,6 +5849,8 @@ namespace PennyPet
                     shellChecks.StickyContentApplySeparationOk) + ",\n" +
                 "  \"native_placement_ok\": " + Bool(
                     shellChecks.NativePlacementOk) + ",\n" +
+                "  \"v11_preferred_ok\": " + Bool(
+                    shellChecks.V11PreferredOk) + ",\n" +
                 "  \"keyboard_hook_opt_in_and_default_off_ok\": " + Bool(
                     keyboardOverlayChecks.HookOptInDefaultOk) + ",\n" +
                 "  \"keyboard_privacy_notice_persistence_ok\": " + Bool(

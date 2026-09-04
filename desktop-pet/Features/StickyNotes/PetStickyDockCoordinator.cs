@@ -286,6 +286,7 @@ namespace PennyPet
             ClearDockPreview();
             ClearSplitGuide();
             RefreshDockResizeRoles();
+            CommitUserMovedPreferred(seed);
             _notes.Save();
             _activeNoteDragId = null;
             _activeDockGroupIds.Clear();

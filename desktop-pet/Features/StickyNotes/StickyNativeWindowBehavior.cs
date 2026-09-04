@@ -277,6 +277,7 @@ namespace PennyPet
                 _lastResizeHitTest = 0;
                 if (dividerResize)
                     RaiseDockDividerResize(DockDividerResizeCompleted, Height);
+                else Raise(UserResizeCompleted);
                 return IntPtr.Zero;
             }
             if (message == WmSizing && _dockSplitBottom &&

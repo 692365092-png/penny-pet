@@ -338,6 +338,18 @@ namespace PennyPet
 
         public StickyNoteData Create(string text, Point location)
         {
+            StickyNoteData note = CreateDraft(text, location);
+            if (note != null) Save();
+            return note;
+        }
+
+        // Prepares a live in-memory draft without persisting it, so one
+        // creation attempt can fully configure type, v10 compatibility
+        // placement, v11 preferred placement and visibility before the single
+        // first disk write. The first persisted state must never be an
+        // intermediate model.
+        internal StickyNoteData CreateDraft(string text, Point location)
+        {
             if (!CanCreate) return null;
             StickyNoteData note = new StickyNoteData();
             string body = text ?? String.Empty;
@@ -347,7 +359,6 @@ namespace PennyPet
             note.Y = location.Y;
             note.TabOrder = NextTabOrder();
             _notes.Add(note);
-            Save();
             return note;
         }
 

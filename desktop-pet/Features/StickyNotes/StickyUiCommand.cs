@@ -181,6 +181,13 @@ namespace PennyPet
             LocalLogicalY = source.LocalLogicalY;
             LocalLogicalWidth = source.LocalLogicalWidth;
             LocalLogicalHeight = source.LocalLogicalHeight;
+            PreferredDisplayTargetKey =
+                source.PreferredDisplayTargetKey ?? String.Empty;
+            PreferredLocalLogicalX = source.PreferredLocalLogicalX;
+            PreferredLocalLogicalY = source.PreferredLocalLogicalY;
+            PreferredLocalLogicalWidth = source.PreferredLocalLogicalWidth;
+            PreferredLocalLogicalHeight =
+                source.PreferredLocalLogicalHeight;
             CreatedUtcTicks = source.CreatedUtcTicks;
             ModifiedUtcTicks = source.ModifiedUtcTicks;
             ReminderUtcTicks = source.ReminderUtcTicks;
@@ -220,6 +227,11 @@ namespace PennyPet
         internal int LocalLogicalY { get; private set; }
         internal int LocalLogicalWidth { get; private set; }
         internal int LocalLogicalHeight { get; private set; }
+        internal string PreferredDisplayTargetKey { get; private set; }
+        internal int PreferredLocalLogicalX { get; private set; }
+        internal int PreferredLocalLogicalY { get; private set; }
+        internal int PreferredLocalLogicalWidth { get; private set; }
+        internal int PreferredLocalLogicalHeight { get; private set; }
         internal long CreatedUtcTicks { get; private set; }
         internal long ModifiedUtcTicks { get; private set; }
         internal long ReminderUtcTicks { get; private set; }
@@ -236,6 +248,7 @@ namespace PennyPet
         {
             StickyNoteData copy = new StickyNoteData();
             ApplyTo(copy);
+            ApplyPreferredTo(copy);
             return copy;
         }
 
@@ -255,6 +268,21 @@ namespace PennyPet
             target.LocalLogicalY = LocalLogicalY;
             target.LocalLogicalWidth = LocalLogicalWidth;
             target.LocalLogicalHeight = LocalLogicalHeight;
+        }
+
+        // Preferred placement is deliberately separate from ApplyTo: full
+        // snapshot application paths (dock/lifecycle acks) must never let a
+        // stale working-copy preference overwrite a preference the Pet runtime
+        // committed from real user gestures.
+        internal void ApplyPreferredTo(StickyNoteData target)
+        {
+            if (target == null) throw new ArgumentNullException(nameof(target));
+            target.PreferredDisplayTargetKey =
+                PreferredDisplayTargetKey ?? String.Empty;
+            target.PreferredLocalLogicalX = PreferredLocalLogicalX;
+            target.PreferredLocalLogicalY = PreferredLocalLogicalY;
+            target.PreferredLocalLogicalWidth = PreferredLocalLogicalWidth;
+            target.PreferredLocalLogicalHeight = PreferredLocalLogicalHeight;
         }
 
         // Content-only apply: never touches identity, visibility, topmost or
@@ -374,6 +402,7 @@ namespace PennyPet
         HeaderDragMoved,
         HeaderDragCompleted,
         DockHorizontalResizing,
+        UserResizeCompleted,
         DockDividerResizeStarted,
         DockDividerResizing,
         DockDividerResizeCompleted,
