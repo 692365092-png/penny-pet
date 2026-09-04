@@ -29,6 +29,11 @@ namespace PennyPet
             if (TryCommand(args, "--solar-term-probe=", false,
                 delegate(string value) { SelfTest.RunSolarTermProbe(value); },
                 out exitCode)) return true;
+            if (TryCommand(args, "--self-test-display-topology=", false,
+                delegate(string value)
+                {
+                    SelfTest.RunDisplayTopologyProbe(value);
+                }, out exitCode)) return true;
             if (TryCommand(args, "--daily-briefing-probe=", false,
                 delegate(string value)
                 {

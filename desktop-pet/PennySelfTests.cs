@@ -1555,6 +1555,89 @@ namespace PennyPet
                 new UTF8Encoding(false));
         }
 
+        public static void RunDisplayTopologyProbe(string outputPath)
+        {
+            Stopwatch timer = Stopwatch.StartNew();
+            string failure = null;
+            DisplayTopologySnapshot snapshot = null;
+            WindowsDisplayTopologyProvider provider =
+                new WindowsDisplayTopologyProvider();
+            try
+            {
+                snapshot = provider.Capture();
+                if (snapshot == null && failure == null)
+                    failure = provider.LastCaptureError;
+            }
+            catch (Exception error)
+            {
+                failure = error.GetType().Name + ": " + error.Message;
+            }
+            timer.Stop();
+            bool ok = failure == null && snapshot != null;
+            StringBuilder json = new StringBuilder();
+            json.Append("  \"surfaces\": [\n");
+            if (snapshot != null)
+            {
+                IReadOnlyList<DisplaySurfaceSnapshot> surfaces =
+                    snapshot.Surfaces;
+                for (int index = 0; index < surfaces.Count; index++)
+                {
+                    DisplaySurfaceSnapshot surface = surfaces[index];
+                    json.Append("    { ");
+                    json.Append("\"surface_id\": " +
+                        JsonString(surface.RuntimeSurfaceId) + ", ");
+                    json.Append("\"gdi\": " +
+                        JsonString(surface.RuntimeGdiName) + ", ");
+                    json.Append("\"bounds\": { \"left\": " +
+                        surface.Bounds.Left + ", \"top\": " +
+                        surface.Bounds.Top + ", \"width\": " +
+                        surface.Bounds.Width + ", \"height\": " +
+                        surface.Bounds.Height + " }, ");
+                    json.Append("\"work_area\": { \"left\": " +
+                        surface.WorkArea.Left + ", \"top\": " +
+                        surface.WorkArea.Top + ", \"width\": " +
+                        surface.WorkArea.Width + ", \"height\": " +
+                        surface.WorkArea.Height + " }, ");
+                    json.Append("\"primary\": " +
+                        Bool(surface.IsPrimary) + ", ");
+                    json.Append("\"rotation_degrees\": " +
+                        surface.RotationDegrees + ", ");
+                    json.Append("\"targets\": [");
+                    for (int targetIndex = 0;
+                        targetIndex < surface.Targets.Count; targetIndex++)
+                    {
+                        DisplayTargetIdentity target =
+                            surface.Targets[targetIndex];
+                        if (targetIndex > 0) json.Append(", ");
+                        json.Append("{ \"key_prefix\": " + JsonString(
+                            target.StableKey.StartsWith("mdp:",
+                                StringComparison.OrdinalIgnoreCase)
+                                ? "mdp:" : "ephemeral:") +
+                            ", \"durable\": " + Bool(target.IsDurable) +
+                            ", \"friendly\": " +
+                            JsonString(target.FriendlyName) + " }");
+                    }
+                    json.Append("] }");
+                    if (index < surfaces.Count - 1) json.Append(",");
+                    json.Append("\n");
+                }
+            }
+            json.Append("  ]\n");
+            string escapedFailure = failure == null ? String.Empty :
+                failure.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            string prefix = "{\n  \"ok\": " + Bool(ok) + ",\n" +
+                "  \"surface_count\": " +
+                (snapshot == null ? 0 : snapshot.Surfaces.Count) + ",\n" +
+                "  \"elapsed_ms\": " + timer.ElapsedMilliseconds + ",\n" +
+                "  \"failure\": \"" + escapedFailure + "\",\n";
+            string parent = Path.GetDirectoryName(
+                Path.GetFullPath(outputPath));
+            if (!String.IsNullOrEmpty(parent))
+                Directory.CreateDirectory(parent);
+            File.WriteAllText(outputPath, prefix + json + "}\n",
+                new UTF8Encoding(false));
+        }
+
         private static string SolarTermProbeEntry(string label,
             DateTimeOffset local, SolarTermInfo? info, bool matched)
         {
