@@ -230,6 +230,22 @@ namespace PennyPet
             IntPtr lParam, ref bool handled)
         {
             if (_disposed) return IntPtr.Zero;
+            const int WmDpiChanged = 0x02E0;
+            if (message == WmDpiChanged)
+            {
+                // DRT-4 observer only: capture actual facts, never hand-scale.
+                WindowFacts facts = WindowsWindowFactsReader.Capture(hwnd,
+                    Data.Id, 0, 0);
+                if (facts != null)
+                    DisplayDiagnostics.Trace("WindowDpiChanged",
+                        "note=" + Data.Id + " dpi=" + facts.Dpi +
+                        " gdi=" + facts.RuntimeGdiName +
+                        " physical=(" + facts.PhysicalBounds.Left + "," +
+                        facts.PhysicalBounds.Top + "," +
+                        facts.PhysicalBounds.Width + "," +
+                        facts.PhysicalBounds.Height + ")");
+                return IntPtr.Zero;
+            }
             if (message == WmSysCommand &&
                 (wParam.ToInt64() & 0xFFF0L) == ScMaximize)
             {

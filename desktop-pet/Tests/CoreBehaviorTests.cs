@@ -852,6 +852,22 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void WindowFacts_ScaleUsesWindowDpiAndStaysImmutable()
+        {
+            WindowFacts facts = new WindowFacts("w", "mdp:x",
+                "\\\\.\\DISPLAY1", new PhysicalRect(2020, 100, 640, 600),
+                192, 7, 318);
+            Assert.AreEqual(2.0, facts.Scale, 0.0001);
+            WindowFacts baseFacts = new WindowFacts("w", String.Empty,
+                String.Empty, new PhysicalRect(0, 0, 320, 300), 96, 0, 0);
+            Assert.AreEqual(1.0, baseFacts.Scale, 0.0001);
+            foreach (PropertyInfo property in
+                typeof(WindowFacts).GetProperties())
+                Assert.IsFalse(property.CanWrite,
+                    property.Name + " must stay read-only.");
+        }
+
+        [TestMethod]
         public void StickyDockGeometry_RecoveryLayoutUsesWorkAreaCentering()
         {
             List<DockSize> sizes = new List<DockSize>

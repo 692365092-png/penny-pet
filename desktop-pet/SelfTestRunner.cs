@@ -3918,6 +3918,7 @@ namespace PennyPet
             internal bool SmallTalkAnimationProtectionOk;
             internal bool SolarPreservePlumbingOk;
             internal bool DisplayTopologyRuntimeOk;
+            internal bool StickyContentApplySeparationOk;
         }
 
         private sealed class StickyHostedCheckResult
@@ -4278,6 +4279,69 @@ namespace PennyPet
                 primary, 0, new[] { target });
         }
 
+        private static bool RunStickySnapshotSeparationCheck()
+        {
+            StickyNoteData source = new StickyNoteData();
+            source.Id = "separation-source";
+            source.Title = "新标题";
+            source.Text = "新正文";
+            source.X = 100;
+            source.Y = 200;
+            source.Width = 320;
+            source.Height = 300;
+            source.DisplayId = "\\\\.\\DISPLAY1";
+            source.LocalLogicalX = 10;
+            source.LocalLogicalY = 20;
+            source.LocalLogicalWidth = 320;
+            source.LocalLogicalHeight = 300;
+            StickyNoteUiSnapshot snapshot =
+                StickyNoteUiSnapshot.FromData(source);
+
+            StickyNoteData target = new StickyNoteData();
+            target.X = 999;
+            target.Y = 888;
+            target.Width = 123;
+            target.Height = 456;
+            target.DisplayId = "OLD-DISPLAY";
+            target.LocalLogicalX = 7;
+            target.LocalLogicalY = 8;
+            target.LocalLogicalWidth = 123;
+            target.LocalLogicalHeight = 456;
+            snapshot.ApplyContentTo(target);
+            bool contentOnly = target.Title == "新标题" &&
+                target.Text == "新正文" &&
+                target.Id != "separation-source" &&
+                target.X == 999 && target.Y == 888 &&
+                target.Width == 123 && target.Height == 456 &&
+                target.DisplayId == "OLD-DISPLAY" &&
+                target.LocalLogicalX == 7 &&
+                target.LocalLogicalY == 8 &&
+                target.LocalLogicalWidth == 123 &&
+                target.LocalLogicalHeight == 456;
+
+            snapshot.ApplyTo(target);
+            bool fullApply = target.Id == "separation-source" &&
+                target.X == 100 && target.Y == 200 &&
+                target.Width == 320 && target.Height == 300 &&
+                target.DisplayId == "\\\\.\\DISPLAY1" &&
+                target.LocalLogicalX == 10 &&
+                target.LocalLogicalY == 20 &&
+                target.LocalLogicalWidth == 320 &&
+                target.LocalLogicalHeight == 300;
+
+            StickyWindowFactsSnapshot facts =
+                new StickyWindowFactsSnapshot("sep-note",
+                    new WindowFacts("sep-note", "mdp:sep", "\\\\.\\DISPLAY2",
+                        new PhysicalRect(1920, 0, 640, 600), 144, 3, 5),
+                    true, true);
+            bool immutable = true;
+            foreach (System.Reflection.PropertyInfo property in
+                typeof(StickyWindowFactsSnapshot).GetProperties())
+                if (property.CanWrite) immutable = false;
+            return contentOnly && fullApply && immutable &&
+                facts.Facts.Scale == 1.5 && facts.NoteId == "sep-note";
+        }
+
         private static WindowShellCheckResult RunWindowShellChecks(
             StickyNoteData restoredNote)
         {
@@ -4356,6 +4420,8 @@ namespace PennyPet
                 RunSolarPreservePlumbingCheck();
             result.DisplayTopologyRuntimeOk =
                 RunDisplayTopologyRuntimeCheck();
+            result.StickyContentApplySeparationOk =
+                RunStickySnapshotSeparationCheck();
             result.ScaleRangeOk =
                 PetForm.NormalizeScalePercent(47) == 50 &&
                 PetForm.NormalizeScalePercent(104) == 100 &&
@@ -5634,6 +5700,8 @@ namespace PennyPet
                     shellChecks.SolarPreservePlumbingOk) + ",\n" +
                 "  \"display_topology_runtime_ok\": " + Bool(
                     shellChecks.DisplayTopologyRuntimeOk) + ",\n" +
+                "  \"sticky_content_apply_separation_ok\": " + Bool(
+                    shellChecks.StickyContentApplySeparationOk) + ",\n" +
                 "  \"keyboard_hook_opt_in_and_default_off_ok\": " + Bool(
                     keyboardOverlayChecks.HookOptInDefaultOk) + ",\n" +
                 "  \"keyboard_privacy_notice_persistence_ok\": " + Bool(

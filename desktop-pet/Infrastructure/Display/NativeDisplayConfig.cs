@@ -183,5 +183,16 @@ namespace PennyPet
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         internal static extern bool GetMonitorInfo(IntPtr monitor,
             ref NativeDisplayMonitorInfo info);
+
+        [DllImport("user32.dll")]
+        internal static extern int GetDpiForWindow(IntPtr hwnd);
+
+        [DllImport("user32.dll")]
+        internal static extern bool GetWindowRect(IntPtr hwnd,
+            out NativeDisplayRect rect);
+
+        [DllImport("user32.dll")]
+        internal static extern IntPtr MonitorFromWindow(IntPtr hwnd,
+            int flags);
     }
 }

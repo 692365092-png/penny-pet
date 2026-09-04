@@ -427,6 +427,7 @@ namespace PennyPet
         {
             if (value == null || IsDisposed || Disposing ||
                 !_hostedRuntime.ContainsNote(value.NoteId)) return;
+            TraceHostedWindowFacts(value);
             if (value.Kind == StickyUiEventKind.TypingActivity)
             {
                 if (!_exiting) TriggerTypingAnimation();
@@ -586,6 +587,32 @@ namespace PennyPet
                 return;
             }
             ApplyHostedStickySnapshot(value.Snapshot, value.Sequence);
+        }
+
+        private void TraceHostedWindowFacts(StickyUiEvent value)
+        {
+            if (value.Facts == null) return;
+            WindowFacts facts = value.Facts;
+            string targetKey = String.Empty;
+            long generation = 0;
+            DisplayTopologySnapshot topology = _displayTopologyRuntime == null
+                ? null : _displayTopologyRuntime.Current;
+            if (topology != null)
+            {
+                generation = topology.Generation;
+                DisplaySurfaceSnapshot surface =
+                    topology.FindByRuntimeGdiName(facts.RuntimeGdiName);
+                if (surface != null && surface.Targets.Count > 0)
+                    targetKey = surface.Targets[0].StableKey;
+            }
+            DisplayDiagnostics.Trace("WindowFacts",
+                "note=" + facts.WindowId + " topology=" + generation +
+                " target=" + targetKey + " seq=" + facts.WindowSequence +
+                " dpi=" + facts.Dpi + " gdi=" + facts.RuntimeGdiName +
+                " physical=(" + facts.PhysicalBounds.Left + "," +
+                facts.PhysicalBounds.Top + "," +
+                facts.PhysicalBounds.Width + "," +
+                facts.PhysicalBounds.Height + ")");
         }
 
         private bool ApplyHostedStickySnapshot(StickyNoteUiSnapshot snapshot,

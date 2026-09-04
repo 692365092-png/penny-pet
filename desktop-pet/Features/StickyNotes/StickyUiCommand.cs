@@ -237,19 +237,10 @@ namespace PennyPet
         internal void ApplyTo(StickyNoteData target)
         {
             if (target == null) throw new ArgumentNullException(nameof(target));
+            ApplyContentFields(target);
             target.Id = NoteId;
-            target.Title = Title;
-            target.Text = Text;
-            target.RichTextRtf = RichTextRtf;
-            target.FontFamilyName = FontFamilyName;
-            target.FontSizeTwips = FontSizeTwips;
-            target.ColorArgb = ColorArgb;
-            target.BackgroundOpacityPercent = BackgroundOpacityPercent;
-            target.TextColorArgb = TextColorArgb;
             target.Visible = Visible;
             target.AlwaysOnTop = AlwaysOnTop;
-            target.IsTodoList = IsTodoList;
-            target.IsSchedule = IsSchedule;
             target.X = X;
             target.Y = Y;
             target.Width = Width;
@@ -259,6 +250,28 @@ namespace PennyPet
             target.LocalLogicalY = LocalLogicalY;
             target.LocalLogicalWidth = LocalLogicalWidth;
             target.LocalLogicalHeight = LocalLogicalHeight;
+        }
+
+        // Content-only apply: never touches identity, visibility, topmost or
+        // any geometry field. Geometry must flow through WindowFacts instead.
+        internal void ApplyContentTo(StickyNoteData target)
+        {
+            if (target == null) throw new ArgumentNullException(nameof(target));
+            ApplyContentFields(target);
+        }
+
+        private void ApplyContentFields(StickyNoteData target)
+        {
+            target.Title = Title;
+            target.Text = Text;
+            target.RichTextRtf = RichTextRtf;
+            target.FontFamilyName = FontFamilyName;
+            target.FontSizeTwips = FontSizeTwips;
+            target.ColorArgb = ColorArgb;
+            target.BackgroundOpacityPercent = BackgroundOpacityPercent;
+            target.TextColorArgb = TextColorArgb;
+            target.IsTodoList = IsTodoList;
+            target.IsSchedule = IsSchedule;
             target.CreatedUtcTicks = CreatedUtcTicks;
             target.ModifiedUtcTicks = ModifiedUtcTicks;
             target.ReminderUtcTicks = ReminderUtcTicks;
@@ -376,7 +389,7 @@ namespace PennyPet
         internal StickyUiEvent(StickyUiEventKind kind, string noteId,
             StickyNoteUiSnapshot snapshot, bool flag, long sequence,
             ReminderItem reminder = null, int left = 0, int width = 0,
-            int height = 0)
+            int height = 0, WindowFacts facts = null)
         {
             Kind = kind;
             NoteId = noteId ?? String.Empty;
@@ -387,6 +400,7 @@ namespace PennyPet
             Left = left;
             Width = width;
             Height = height;
+            Facts = facts;
         }
 
         internal static StickyUiEvent Signal(StickyUiEventKind kind,
@@ -402,6 +416,15 @@ namespace PennyPet
                 throw new ArgumentNullException(nameof(snapshot));
             return new StickyUiEvent(kind, snapshot.NoteId, snapshot,
                 snapshot.Visible, sequence);
+        }
+
+        internal static StickyUiEvent FromSnapshot(StickyUiEventKind kind,
+            StickyNoteUiSnapshot snapshot, long sequence, WindowFacts facts)
+        {
+            if (snapshot == null)
+                throw new ArgumentNullException(nameof(snapshot));
+            return new StickyUiEvent(kind, snapshot.NoteId, snapshot,
+                snapshot.Visible, sequence, null, 0, 0, 0, facts);
         }
 
         internal static StickyUiEvent ReminderRequest(StickyUiEventKind kind,
@@ -443,6 +466,7 @@ namespace PennyPet
         internal int Left { get; private set; }
         internal int Width { get; private set; }
         internal int Height { get; private set; }
+        internal WindowFacts Facts { get; private set; }
     }
 
     internal enum StickyUiCommandStatus

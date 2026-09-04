@@ -522,7 +522,51 @@ namespace PennyPet
             StickyNoteUiSnapshot snapshot = CaptureSnapshot();
             _lastSnapshot = snapshot;
             _sequence++;
-            Raise(StickyUiEvent.FromSnapshot(kind, snapshot, _sequence));
+            WindowFacts facts = CaptureWindowFacts(_sequence);
+            TraceWindowFacts(facts, snapshot);
+            Raise(StickyUiEvent.FromSnapshot(kind, snapshot, _sequence,
+                facts));
+        }
+
+        private WindowFacts CaptureWindowFacts(long sequence)
+        {
+            IntPtr hwnd = IntPtr.Zero;
+            try
+            {
+                hwnd = new System.Windows.Interop.WindowInteropHelper(
+                    _window).Handle;
+            }
+            catch
+            {
+                return null;
+            }
+            return WindowsWindowFactsReader.Capture(hwnd, _noteId,
+                0, sequence);
+        }
+
+        private void TraceWindowFacts(WindowFacts facts,
+            StickyNoteUiSnapshot snapshot)
+        {
+            if (facts == null) return;
+            string oldScale = snapshot != null &&
+                snapshot.LocalLogicalWidth > 0 && snapshot.X != 0
+                    ? ((double)snapshot.X /
+                        snapshot.LocalLogicalWidth).ToString("0.###")
+                    : "-";
+            DisplayDiagnostics.Trace("WindowFacts",
+                "note=" + _noteId + " seq=" + facts.WindowSequence +
+                " dpi=" + facts.Dpi + " gdi=" + facts.RuntimeGdiName +
+                " physical=(" + facts.PhysicalBounds.Left + "," +
+                facts.PhysicalBounds.Top + "," +
+                facts.PhysicalBounds.Width + "," +
+                facts.PhysicalBounds.Height + ")" +
+                " oldPhysical=(" +
+                (snapshot == null ? "-" :
+                    snapshot.X + "," + snapshot.Y + "," +
+                    snapshot.Width + "," + snapshot.Height) + ")" +
+                " oldDisplay=" +
+                (snapshot == null ? "-" : snapshot.DisplayId ?? "-") +
+                " oldScale=" + oldScale);
         }
 
         private StickyNoteUiSnapshot CaptureSnapshot()
