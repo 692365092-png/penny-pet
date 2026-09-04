@@ -9,6 +9,8 @@ namespace PennyPet
     {
         private readonly string _noteId;
         private readonly StickyNoteWindow _window;
+        private readonly WindowsWindowPlacementExecutor
+            _placementExecutor;
         private readonly Action<StickyWindowSession, StickyUiEvent>
             _eventHandler;
         private StickyNoteUiSnapshot _lastSnapshot;
@@ -25,7 +27,12 @@ namespace PennyPet
             _noteId = snapshot.NoteId;
             _lastSnapshot = snapshot;
             _eventHandler = eventHandler;
-            _window = new StickyNoteWindow(snapshot.CreateWorkingCopy());
+            // Hosted windows never derive desktop placement from WPF Left/Top;
+            // the native placement executor owns the real HWND geometry.
+            _window = new StickyNoteWindow(snapshot.CreateWorkingCopy(),
+                false, false, true);
+            _placementExecutor = new WindowsWindowPlacementExecutor(
+                _window);
             WireEvents();
         }
 
@@ -66,78 +73,125 @@ namespace PennyPet
         {
             if (!IsAvailable) return false;
             StickyNoteData data = _window.Data;
-            // Only the canonical standalone path uses the physical placement
-            // executor. A dock member is repositioned by the owner via SetBounds
-            // in the same batch, so we leave the dock geometry untouched here.
+            // Only the canonical standalone path uses the native placement
+            // executor. A dock member is repositioned by the owner via
+            // SetBounds in the same batch, so its geometry stays untouched.
             if (String.IsNullOrWhiteSpace(data.DisplayId) ||
                 data.LocalLogicalWidth <= 0 || data.LocalLogicalHeight <= 0 ||
                 !String.IsNullOrEmpty(data.DockGroupId)) return false;
-            System.Drawing.Rectangle physical =
-                ResolveCanonicalPhysical(data);
-            if (physical == System.Drawing.Rectangle.Empty) return false;
+            NativePlacementPlan plan = ResolvePlacementPlan(data);
+            if (plan == null) return false;
             // Suppress the intermediate BoundsChanged echo raised while the
-            // HWND is first shown, so the wrong transient position can never
-            // leak a corrupt canonical placement before SetWindowPos lands.
+            // HWND is placed, so the transient position can never leak a
+            // corrupt canonical placement before the final rect lands.
             bool previousApplying = _applyingBounds;
             _applyingBounds = true;
             try
             {
-                _window.ShowAtPhysicalBounds(physical, edit);
+                return PlaceAtNativeBounds(plan, edit);
             }
             finally { _applyingBounds = previousApplying; }
+        }
+
+        // Bootstrap sequence for one standalone window:
+        //   resolve target surface -> EnsureHandle -> hidden MOVE into the
+        //   target work area -> GetDpiForWindow -> project preferred logical
+        //   rect to physical pixels -> SetWindowPos exact rect -> Show ->
+        //   capture actual facts -> at most one corrective placement.
+        private bool PlaceAtNativeBounds(NativePlacementPlan plan, bool edit)
+        {
+            StickyNoteData data = _window.Data;
+            data.Visible = true;
+            _window.ApplyTopMostWindowState(data.AlwaysOnTop);
+            _placementExecutor.EnsureHandle();
+            if (plan.WorkArea.IsValid &&
+                !_placementExecutor.MoveHiddenToSurface(plan.WorkArea))
+                return false;
+            int dpi = _placementExecutor.GetDpiForWindow();
+            if (dpi <= 0) return false;
+            PhysicalRect requested = plan.Resolve(dpi);
+            if (!requested.IsValid ||
+                !_placementExecutor.SetWindowPosExact(requested)) return false;
+            _placementExecutor.Show();
+
+            // Verify the actual facts once. A single corrective placement is
+            // allowed outside tolerance; after that the real Windows facts
+            // win and a remaining mismatch is only reported as diagnostics.
+            long generation = plan.Topology == null
+                ? 0 : plan.Topology.Generation;
+            WindowFacts facts = _placementExecutor.CaptureFacts(_noteId,
+                generation, _sequence, plan.Topology);
+            if (facts != null &&
+                !DisplayGeometry.IsWithinPlacementTolerance(requested,
+                    facts.PhysicalBounds,
+                    WindowsWindowPlacementExecutor.PlacementTolerancePixels))
+            {
+                _placementExecutor.SetWindowPosExact(requested);
+                facts = _placementExecutor.CaptureFacts(_noteId,
+                    generation, _sequence, plan.Topology);
+                if (facts != null &&
+                    !DisplayGeometry.IsWithinPlacementTolerance(requested,
+                        facts.PhysicalBounds,
+                        WindowsWindowPlacementExecutor.PlacementTolerancePixels))
+                {
+                    TracePlacementMismatch(requested, facts);
+                }
+            }
+
+            if (edit)
+            {
+                _window.Activate();
+                _window.FocusPrimaryInputForTest();
+            }
             return true;
         }
 
-        // New-contract restore authority: when the canonical contract is valid
-        // the DisplayId + LocalLogicalRect are the source of truth. Resolve the
-        // display, project the display-local logical rect back to physical
-        // pixels with the current display scale, and hand it to the native
-        // physical placement executor. The persisted X/Y/Width/Height are a
-        // compatibility projection only and are used as a visible fallback only
-        // when the canonical contract is invalid or the target display is gone.
-        private System.Drawing.Rectangle ResolveCanonicalPhysical(
+        private void TracePlacementMismatch(PhysicalRect requested,
+            WindowFacts facts)
+        {
+            if (facts == null) return;
+            DisplayDiagnostics.Trace("PlacementResolved",
+                "note=" + _noteId + " correctiveMismatch requested=(" +
+                requested.Left + "," + requested.Top + "," +
+                requested.Width + "," + requested.Height + ") actual=(" +
+                facts.PhysicalBounds.Left + "," + facts.PhysicalBounds.Top +
+                "," + facts.PhysicalBounds.Width + "," +
+                facts.PhysicalBounds.Height + ") dpi=" + facts.Dpi);
+        }
+
+        // Resolve the v10 DisplayId + LocalLogicalRect against the currently
+        // live topology. When the saved display is gone the persisted
+        // physical compatibility rect is used as a visible fallback; DRT-5
+        // applies no rehome policy yet.
+        private NativePlacementPlan ResolvePlacementPlan(
             StickyNoteData data)
         {
-            // The capture records the canonical placement by resolving the real
-            // physical window with ResolvePhysicalRect, so that same resolver
-            // must be used to project LocalLogicalRect back to physical pixels
-            // (otherwise a mixed-DPI monitor can report a scale that skews the
-            // projection and lands the note in a far corner). Prefer the
-            // persisted physical rect's display when it still matches the saved
-            // DisplayId; only then fall back to a DisplayId lookup for a
-            // rearranged monitor layout.
-            WindowsDisplayMetrics metricsByRect = (data.Width > 0 &&
-                data.Height > 0)
-                ? WindowsDisplayResolver.ResolvePhysicalRect(
-                    data.X, data.Y,
-                    data.X + data.Width, data.Y + data.Height)
-                : null;
-            WindowsDisplayMetrics metricsByDisplay =
-                WindowsDisplayResolver.ResolveDisplay(
-                    data.DisplayId ?? String.Empty);
-            WindowsDisplayMetrics metrics =
-                metricsByRect != null &&
-                String.Equals(metricsByRect.DisplayId,
-                    data.DisplayId ?? String.Empty,
-                    StringComparison.OrdinalIgnoreCase)
-                    ? metricsByRect : metricsByDisplay;
-            if (metrics != null)
+            DisplayTopologySnapshot topology = null;
+            try
             {
-                int left = metrics.PhysicalLeft + (int)Math.Round(
-                    data.LocalLogicalX * metrics.Scale);
-                int top = metrics.PhysicalTop + (int)Math.Round(
-                    data.LocalLogicalY * metrics.Scale);
-                int width = Math.Max(1, (int)Math.Round(
-                    Math.Max(1, data.LocalLogicalWidth) * metrics.Scale));
-                int height = Math.Max(1, (int)Math.Round(
-                    Math.Max(1, data.LocalLogicalHeight) * metrics.Scale));
-                return new System.Drawing.Rectangle(
-                    left, top, width, height);
+                topology = new WindowsDisplayTopologyProvider().Capture();
+            }
+            catch
+            {
+                topology = null;
+            }
+            DisplaySurfaceSnapshot surface = topology != null
+                ? topology.FindByRuntimeGdiName(
+                    data.DisplayId ?? String.Empty)
+                : null;
+            if (surface != null)
+            {
+                LogicalRect preferred = new LogicalRect
+                {
+                    X = data.LocalLogicalX,
+                    Y = data.LocalLogicalY,
+                    Width = data.LocalLogicalWidth,
+                    Height = data.LocalLogicalHeight
+                };
+                return NativePlacementPlan.Preferred(topology, surface,
+                    preferred);
             }
 
-            // Canonical contract invalid, or the saved DisplayId no longer
-            // exists: reuse the persisted physical compatibility rect clamped
-            // into the nearest work area so the note stays visible.
             if (data.Width > 0 && data.Height > 0)
             {
                 System.Drawing.Rectangle persisted =
@@ -147,19 +201,25 @@ namespace PennyPet
                     WindowsDisplayResolver.ResolvePhysicalRect(
                         persisted.Left, persisted.Top,
                         persisted.Right, persisted.Bottom);
-                if (nearest == null) return persisted;
+                PhysicalRect fallback = new PhysicalRect(
+                    persisted.Left, persisted.Top,
+                    persisted.Width, persisted.Height);
+                if (nearest == null)
+                    return NativePlacementPlan.Physical(topology, fallback);
                 int left = Math.Max(nearest.WorkLeft,
-                    Math.Min(persisted.Left,
-                        nearest.WorkLeft + nearest.WorkWidth -
-                            persisted.Width));
+                    Math.Min(persisted.Left, nearest.WorkLeft +
+                        nearest.WorkWidth - persisted.Width));
                 int top = Math.Max(nearest.WorkTop,
-                    Math.Min(persisted.Top,
-                        nearest.WorkTop + nearest.WorkHeight -
-                            persisted.Height));
-                return new System.Drawing.Rectangle(
-                    left, top, persisted.Width, persisted.Height);
+                    Math.Min(persisted.Top, nearest.WorkTop +
+                        nearest.WorkHeight - persisted.Height));
+                PhysicalRect workArea = new PhysicalRect(
+                    nearest.WorkLeft, nearest.WorkTop,
+                    nearest.WorkWidth, nearest.WorkHeight);
+                return NativePlacementPlan.Physical(topology, workArea,
+                    new PhysicalRect(left, top, persisted.Width,
+                        persisted.Height));
             }
-            return System.Drawing.Rectangle.Empty;
+            return null;
         }
 
         internal StickyUiCommandResult Hide()
@@ -631,6 +691,61 @@ namespace PennyPet
         {
             if (_eventsSuppressed || _eventHandler == null) return;
             _eventHandler(this, value);
+        }
+
+        // Immutable placement intent resolved for one show: either the v10
+        // preferred display-local logical rect (projected with the real HWND
+        // DPI) or a persisted physical fallback when the saved display is gone.
+        private sealed class NativePlacementPlan
+        {
+            private NativePlacementPlan(DisplayTopologySnapshot topology,
+                DisplaySurfaceSnapshot surface, LogicalRect preferredLocal,
+                PhysicalRect workArea, PhysicalRect physicalFallback)
+            {
+                Topology = topology;
+                Surface = surface;
+                PreferredLocal = preferredLocal;
+                WorkArea = workArea;
+                PhysicalFallback = physicalFallback;
+            }
+
+            internal DisplayTopologySnapshot Topology { get; private set; }
+            internal DisplaySurfaceSnapshot Surface { get; private set; }
+            internal LogicalRect PreferredLocal { get; private set; }
+            internal PhysicalRect WorkArea { get; private set; }
+            internal PhysicalRect PhysicalFallback { get; private set; }
+
+            internal static NativePlacementPlan Preferred(
+                DisplayTopologySnapshot topology,
+                DisplaySurfaceSnapshot surface, LogicalRect preferredLocal)
+            {
+                return new NativePlacementPlan(topology, surface,
+                    preferredLocal, surface.WorkArea,
+                    new PhysicalRect());
+            }
+
+            internal static NativePlacementPlan Physical(
+                DisplayTopologySnapshot topology,
+                PhysicalRect workArea, PhysicalRect physicalFallback)
+            {
+                return new NativePlacementPlan(topology, null,
+                    new LogicalRect(), workArea, physicalFallback);
+            }
+
+            internal static NativePlacementPlan Physical(
+                DisplayTopologySnapshot topology, PhysicalRect physicalFallback)
+            {
+                return Physical(topology, new PhysicalRect(),
+                    physicalFallback);
+            }
+
+            internal PhysicalRect Resolve(int dpi)
+            {
+                if (Surface == null) return PhysicalFallback;
+                double scale = dpi > 0 ? dpi / 96.0 : 1.0;
+                return DisplayGeometry.ProjectLocalRect(PreferredLocal,
+                    Surface.Bounds.Left, Surface.Bounds.Top, scale);
+            }
         }
     }
 }

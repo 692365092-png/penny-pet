@@ -1329,6 +1329,97 @@ namespace PennyPet.Tests
                 "DRT-3 wiring must go through DisplayTopologyRuntime only.");
         }
 
+        [TestMethod]
+        public void Drt5_NativePlacementExecutor_OwnsTypedHiddenBootstrap()
+        {
+            string executor = ReadSource(
+                "Infrastructure/Display/WindowsWindowPlacementExecutor.cs");
+            string native = ReadSource(
+                "Infrastructure/Display/NativeDisplayConfig.cs");
+
+            Assert.IsTrue(executor.Contains("WindowInteropHelper") &&
+                executor.Contains(".EnsureHandle()") &&
+                executor.Contains("internal int GetDpiForWindow()") &&
+                executor.Contains("internal bool SetWindowPosExact(") &&
+                executor.Contains("internal void Show()") &&
+                executor.Contains("WindowsWindowFactsReader.Capture("),
+                "The executor must own the typed native placement bootstrap.");
+            string hiddenMove = Between(executor,
+                "internal bool MoveHiddenToSurface(PhysicalRect workArea)",
+                "internal int GetDpiForWindow()");
+            Assert.IsTrue(hiddenMove.Contains("SWP_NOACTIVATE") &&
+                hiddenMove.Contains("SWP_NOZORDER") &&
+                hiddenMove.Contains("SWP_NOSIZE"),
+                "The hidden move must never activate, reorder or resize.");
+            Assert.IsFalse(hiddenMove.Contains("SWP_SHOWWINDOW") ||
+                hiddenMove.Contains("SW_SHOW"),
+                "The hidden bootstrap move must never show the window.");
+            Assert.IsTrue(native.Contains(
+                    "static extern bool SetWindowPos(") &&
+                native.Contains("static extern bool ShowWindow("),
+                "SetWindowPos/ShowWindow must be declared as typed natives.");
+        }
+
+        [TestMethod]
+        public void Drt5_HostedWindowConstructor_DoesNotOwnDesktopPlacement()
+        {
+            string wpf = ReadSource(
+                "Features/StickyNotes/StickyNoteWpf.cs");
+            string session = ReadSource("StickyWindowSession.cs");
+
+            Assert.IsTrue(wpf.Contains("hostedNativePlacement") &&
+                wpf.Contains("data.LocalLogicalWidth") &&
+                wpf.Contains("data.LocalLogicalHeight"),
+                "Hosted construction must size from the logical DIP model.");
+            string hostedBranch = Between(wpf,
+                "if (hostedNativePlacement)", "else");
+            Assert.IsFalse(hostedBranch.Contains("base.Left = data.X") ||
+                hostedBranch.Contains("base.Top = data.Y") ||
+                hostedBranch.Contains("data.Width") ||
+                hostedBranch.Contains("data.Height"),
+                "The hosted path must not feed physical fields into WPF placement.");
+            Assert.IsTrue(session.Contains(
+                    "new StickyNoteWindow(snapshot.CreateWorkingCopy(),") &&
+                session.Contains("false, false, true)"),
+                "Hosted sessions must use the native-placement constructor.");
+        }
+
+        [TestMethod]
+        public void Drt5_Session_PlacesExactlyBeforeShowAndVerifiesFacts()
+        {
+            string session = ReadSource("StickyWindowSession.cs");
+            int ensure = session.IndexOf(
+                "_placementExecutor.EnsureHandle()",
+                StringComparison.Ordinal);
+            int setExact = session.IndexOf(
+                "_placementExecutor.SetWindowPosExact(requested)",
+                StringComparison.Ordinal);
+            int show = session.IndexOf("_placementExecutor.Show()",
+                StringComparison.Ordinal);
+            int capture = session.IndexOf(
+                "_placementExecutor.CaptureFacts(",
+                StringComparison.Ordinal);
+
+            Assert.IsTrue(ensure >= 0 && show > ensure,
+                "The HWND must be created before the window is shown.");
+            Assert.IsTrue(setExact > ensure && show > setExact,
+                "The exact physical rect must land before Show.");
+            Assert.IsTrue(capture > show,
+                "Actual WindowFacts must be captured after Show.");
+            Assert.IsTrue(session.Contains(
+                    "IsWithinPlacementTolerance") &&
+                session.Contains("MoveHiddenToSurface(plan.WorkArea)") &&
+                session.Contains("GetDpiForWindow()"),
+                "The standalone path must run the full hidden bootstrap.");
+
+            string placement = Between(session,
+                "private bool PlaceAtNativeBounds(NativePlacementPlan plan, bool edit)",
+                "private void TracePlacementMismatch");
+            Assert.IsFalse(placement.Contains("_window.ShowAtPhysicalBounds") ||
+                placement.Contains("ShowRestoredAtPhysicalBounds"),
+                "The standalone native path must not reuse the legacy show helper.");
+        }
+
         private static string ReadSource(string relativePath)
         {
             string root = FindDesktopPetDirectory();

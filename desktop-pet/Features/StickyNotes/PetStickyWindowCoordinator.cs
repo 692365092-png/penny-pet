@@ -284,6 +284,45 @@ namespace PennyPet
         private StickyNoteData CreateStickyNoteDataWithPlacement(
             string text, int offset, DockSize logicalSize)
         {
+            // Spawn target comes from the Pet's actual HWND facts, never from
+            // a second Screen.FromRectangle guess: the window's real monitor,
+            // DPI and physical bounds are authoritative.
+            WindowFacts petFacts = CapturePetWindowFacts();
+            DisplaySurfaceSnapshot petSurface = null;
+            if (petFacts != null && _displayTopologyRuntime != null &&
+                _displayTopologyRuntime.Current != null)
+            {
+                petSurface = _displayTopologyRuntime.Current.
+                    FindByRuntimeGdiName(petFacts.RuntimeGdiName);
+            }
+            if (petFacts != null && petSurface != null)
+            {
+                DockRect petPhysical = new DockRect(
+                    petFacts.PhysicalBounds.Left,
+                    petFacts.PhysicalBounds.Top,
+                    Math.Max(1, petFacts.PhysicalBounds.Width),
+                    Math.Max(1, petFacts.PhysicalBounds.Height));
+                DockRect workPhysical = new DockRect(
+                    petSurface.WorkArea.Left, petSurface.WorkArea.Top,
+                    Math.Max(1, petSurface.WorkArea.Width),
+                    Math.Max(1, petSurface.WorkArea.Height));
+                StickyCanonicalPlacement placement =
+                    StickyPlacementMath.FromSpawn(
+                        petFacts.RuntimeGdiName,
+                        petSurface.Bounds.Left, petSurface.Bounds.Top,
+                        petFacts.Scale, petPhysical, workPhysical,
+                        logicalSize, 12 + offset);
+                StickyNoteData note = _notes.Create(
+                    text, new Point(placement.LocalX, placement.LocalY));
+                if (note == null) return null;
+                placement.ApplyTo(note);
+                note.Visible = true;
+                return note;
+            }
+
+            // Legacy fallback when the Pet facts or topology runtime is
+            // unavailable. Keeps the note visible without fabricating a
+            // historical DPI.
             WindowsDisplayMetrics metrics =
                 WindowsDisplayResolver.ResolvePhysicalRect(
                     Bounds.Left, Bounds.Top, Bounds.Right, Bounds.Bottom);
@@ -326,6 +365,22 @@ namespace PennyPet
                 legacy.Visible = true;
             }
             return legacy;
+        }
+
+        private WindowFacts CapturePetWindowFacts()
+        {
+            if (IsDisposed || Disposing || Handle == IntPtr.Zero) return null;
+            try
+            {
+                long generation = _displayTopologyRuntime == null
+                    ? 0 : _displayTopologyRuntime.Generation;
+                return WindowsWindowFactsReader.Capture(Handle, "pet",
+                    generation, 0);
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private void StartHostedSticky(StickyNoteData note,

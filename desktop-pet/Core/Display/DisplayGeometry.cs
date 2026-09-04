@@ -87,5 +87,47 @@ namespace PennyPet
                     (int)Math.Round(logicalY * safeScale)
             };
         }
+
+        // Single rounding policy for preferred-placement projection: long
+        // arithmetic before multiplication and AwayFromZero rounding keep
+        // extreme coordinates from overflowing and make roundtrips stable.
+        internal static PhysicalRect ProjectLocalRect(
+            LogicalRect local, int physicalOriginX, int physicalOriginY,
+            double scale)
+        {
+            double safeScale = scale > 0.0 ? scale : 1.0;
+            long x = physicalOriginX + (long)Math.Round(
+                local.X * safeScale, MidpointRounding.AwayFromZero);
+            long y = physicalOriginY + (long)Math.Round(
+                local.Y * safeScale, MidpointRounding.AwayFromZero);
+            long width = (long)Math.Round(
+                local.Width * safeScale, MidpointRounding.AwayFromZero);
+            long height = (long)Math.Round(
+                local.Height * safeScale, MidpointRounding.AwayFromZero);
+            return new PhysicalRect(ClampToInt32(x), ClampToInt32(y),
+                ClampToInt32(Math.Max(1, width)),
+                ClampToInt32(Math.Max(1, height)));
+        }
+
+        private static int ClampToInt32(long value)
+        {
+            if (value < Int32.MinValue) return Int32.MinValue;
+            if (value > Int32.MaxValue) return Int32.MaxValue;
+            return (int)value;
+        }
+
+        // True when an actual window rect sits inside the accepted tolerance
+        // of the rect that was requested by an exact native placement. The
+        // caller may issue at most one corrective placement when this fails,
+        // then must accept the actual Windows facts instead of fighting them.
+        internal static bool IsWithinPlacementTolerance(
+            PhysicalRect expected, PhysicalRect actual, int tolerancePixels)
+        {
+            int tolerance = Math.Max(0, tolerancePixels);
+            return Math.Abs(actual.Left - expected.Left) <= tolerance &&
+                Math.Abs(actual.Top - expected.Top) <= tolerance &&
+                Math.Abs(actual.Width - expected.Width) <= tolerance &&
+                Math.Abs(actual.Height - expected.Height) <= tolerance;
+        }
     }
 }

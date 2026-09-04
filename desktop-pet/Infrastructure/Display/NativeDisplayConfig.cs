@@ -155,6 +155,15 @@ namespace PennyPet
 
         internal const int MONITORINFOF_PRIMARY = 1;
 
+        internal const uint SWP_NOSIZE = 0x0001;
+        internal const uint SWP_NOMOVE = 0x0002;
+        internal const uint SWP_NOZORDER = 0x0004;
+        internal const uint SWP_NOACTIVATE = 0x0010;
+        internal const uint SWP_SHOWWINDOW = 0x0040;
+
+        internal const int SW_SHOW = 5;
+        internal const int SW_RESTORE = 9;
+
         [DllImport("user32.dll")]
         internal static extern int GetDisplayConfigBufferSizes(
             uint flags, out uint numPathArrayElements,
@@ -194,5 +203,13 @@ namespace PennyPet
         [DllImport("user32.dll")]
         internal static extern IntPtr MonitorFromWindow(IntPtr hwnd,
             int flags);
+
+        [DllImport("user32.dll")]
+        internal static extern bool SetWindowPos(IntPtr hwnd,
+            IntPtr hwndInsertAfter, int x, int y, int width, int height,
+            uint flags);
+
+        [DllImport("user32.dll")]
+        internal static extern bool ShowWindow(IntPtr hwnd, int command);
     }
 }

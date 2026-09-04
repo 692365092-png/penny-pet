@@ -190,6 +190,16 @@ namespace PennyPet
 
         internal StickyNoteWindow(StickyNoteData data, bool opaqueQaHost,
             bool showInTaskbarForQa)
+            : this(data, opaqueQaHost, showInTaskbarForQa, false)
+        {
+        }
+
+        // Hosted production path: desktop placement belongs to the native
+        // placement executor, never to WPF Left/Top. Width/Height use the
+        // logical DIP size; physical compatibility fields must not be fed
+        // into WPF DIP because that double-scales on a high-DPI display.
+        internal StickyNoteWindow(StickyNoteData data, bool opaqueQaHost,
+            bool showInTaskbarForQa, bool hostedNativePlacement)
         {
             if (data == null) throw new ArgumentNullException("data");
             Data = data;
@@ -215,10 +225,22 @@ namespace PennyPet
             MinHeight = 220;
             MaxWidth = 900;
             MaxHeight = 700;
-            base.Left = data.X;
-            base.Top = data.Y;
-            base.Width = Math.Max(MinWidth, data.Width);
-            base.Height = Math.Max(MinHeight, data.Height);
+            if (hostedNativePlacement)
+            {
+                // Left/Top stay unset so the HWND is created without claiming
+                // any desktop position; the executor parks and places it.
+                base.Width = Math.Max(MinWidth,
+                    Math.Max(1, data.LocalLogicalWidth));
+                base.Height = Math.Max(MinHeight,
+                    Math.Max(1, data.LocalLogicalHeight));
+            }
+            else
+            {
+                base.Left = data.X;
+                base.Top = data.Y;
+                base.Width = Math.Max(MinWidth, data.Width);
+                base.Height = Math.Max(MinHeight, data.Height);
+            }
             Topmost = data.AlwaysOnTop;
             SnapsToDevicePixels = true;
             UseLayoutRounding = true;

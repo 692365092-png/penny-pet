@@ -213,6 +213,71 @@ namespace PennyPet.Tests
                 state.TemporaryReason);
         }
 
+        [TestMethod]
+        public void ProjectLocalRect_RoundsAwayFromZeroAndClampsOverflow()
+        {
+            // 150% projection of a 320x300 logical note on a monitor whose
+            // physical origin sits at (1920, 0).
+            PhysicalRect projected = DisplayGeometry.ProjectLocalRect(
+                new LogicalRect
+                {
+                    X = 100,
+                    Y = 50,
+                    Width = 320,
+                    Height = 300
+                }, 1920, 0, 1.5);
+            Assert.AreEqual(1920 + 150, projected.Left);
+            Assert.AreEqual(75, projected.Top);
+            Assert.AreEqual(480, projected.Width);
+            Assert.AreEqual(450, projected.Height);
+
+            // Half-pixel boundaries round away from zero in both directions.
+            PhysicalRect half = DisplayGeometry.ProjectLocalRect(
+                new LogicalRect { X = 1, Y = 1, Width = 3, Height = 3 },
+                0, 0, 1.5);
+            Assert.AreEqual(2, half.Left);
+            Assert.AreEqual(2, half.Top);
+            Assert.AreEqual(5, half.Width);
+            Assert.AreEqual(5, half.Height);
+            PhysicalRect negativeHalf = DisplayGeometry.ProjectLocalRect(
+                new LogicalRect { X = -1, Y = -1, Width = 1, Height = 1 },
+                0, 0, 1.5);
+            Assert.AreEqual(-2, negativeHalf.Left);
+            Assert.AreEqual(-2, negativeHalf.Top);
+
+            // Extreme coordinates clamp to Int32 bounds instead of wrapping.
+            PhysicalRect extreme = DisplayGeometry.ProjectLocalRect(
+                new LogicalRect
+                {
+                    X = int.MaxValue,
+                    Y = int.MinValue,
+                    Width = int.MaxValue,
+                    Height = int.MaxValue
+                }, int.MaxValue, int.MinValue, 8.0);
+            Assert.AreEqual(int.MaxValue, extreme.Left);
+            Assert.AreEqual(int.MinValue, extreme.Top);
+            Assert.AreEqual(int.MaxValue, extreme.Width);
+            Assert.AreEqual(int.MaxValue, extreme.Height);
+        }
+
+        [TestMethod]
+        public void IsWithinPlacementTolerance_ChecksAllFourEdges()
+        {
+            PhysicalRect requested = new PhysicalRect(100, 200, 480, 450);
+            Assert.IsTrue(DisplayGeometry.IsWithinPlacementTolerance(
+                requested, new PhysicalRect(102, 202, 480, 450), 2));
+            Assert.IsFalse(DisplayGeometry.IsWithinPlacementTolerance(
+                requested, new PhysicalRect(103, 200, 480, 450), 2));
+            Assert.IsFalse(DisplayGeometry.IsWithinPlacementTolerance(
+                requested, new PhysicalRect(100, 200, 483, 450), 2));
+            Assert.IsFalse(DisplayGeometry.IsWithinPlacementTolerance(
+                requested, new PhysicalRect(100, 200, 480, 453), 2));
+            Assert.IsTrue(DisplayGeometry.IsWithinPlacementTolerance(
+                requested, requested, -5));
+            Assert.IsFalse(DisplayGeometry.IsWithinPlacementTolerance(
+                requested, new PhysicalRect(101, 200, 480, 450), -5));
+        }
+
         private static DisplayTargetIdentity Target(string stableKey)
         {
             return new DisplayTargetIdentity(stableKey,

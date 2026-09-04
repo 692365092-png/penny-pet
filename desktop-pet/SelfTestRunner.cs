@@ -3919,6 +3919,7 @@ namespace PennyPet
             internal bool SolarPreservePlumbingOk;
             internal bool DisplayTopologyRuntimeOk;
             internal bool StickyContentApplySeparationOk;
+            internal bool NativePlacementOk;
         }
 
         private sealed class StickyHostedCheckResult
@@ -4342,6 +4343,53 @@ namespace PennyPet
                 facts.Facts.Scale == 1.5 && facts.NoteId == "sep-note";
         }
 
+        // DRT-5 pure placement contract: the logical rect is projected with a
+        // long-arithmetic rounding policy, the tolerance gate drives the one
+        // corrective placement, and a Schedule keeps its 320x360 logical size
+        // from spawn time (never 300 first).
+        private static bool RunNativePlacementCheck()
+        {
+            PhysicalRect projected = DisplayGeometry.ProjectLocalRect(
+                new LogicalRect
+                {
+                    X = 100,
+                    Y = 50,
+                    Width = 320,
+                    Height = 300
+                }, 1920, 0, 1.5);
+            bool projectionOk = projected.Left == 1920 + 150 &&
+                projected.Top == 75 &&
+                projected.Width == 480 && projected.Height == 450;
+
+            PhysicalRect requested = new PhysicalRect(100, 200, 480, 450);
+            bool toleranceOk =
+                DisplayGeometry.IsWithinPlacementTolerance(requested,
+                    new PhysicalRect(102, 202, 480, 450), 2) &&
+                !DisplayGeometry.IsWithinPlacementTolerance(requested,
+                    new PhysicalRect(103, 200, 480, 450), 2) &&
+                !DisplayGeometry.IsWithinPlacementTolerance(requested,
+                    new PhysicalRect(100, 200, 483, 450), 2);
+
+            bool toleranceConstantOk =
+                WindowsWindowPlacementExecutor.PlacementTolerancePixels == 2;
+
+            DisplaySurfaceSnapshot surface = FakeSurface(1, 0, true,
+                1080, 1032, FakeTarget("mdp:spawn"));
+            StickyCanonicalPlacement schedule =
+                StickyPlacementMath.FromSpawn("\\\\.\\DISPLAY1",
+                    surface.Bounds.Left, surface.Bounds.Top, 1.0,
+                    new DockRect(800, 400, 96, 104),
+                    new DockRect(surface.WorkArea.Left,
+                        surface.WorkArea.Top, surface.WorkArea.Width,
+                        surface.WorkArea.Height),
+                    new DockSize(320, 360), 12);
+            bool scheduleSizeOk = schedule.LocalWidth == 320 &&
+                schedule.LocalHeight == 360;
+
+            return projectionOk && toleranceOk && toleranceConstantOk &&
+                scheduleSizeOk;
+        }
+
         private static WindowShellCheckResult RunWindowShellChecks(
             StickyNoteData restoredNote)
         {
@@ -4422,6 +4470,8 @@ namespace PennyPet
                 RunDisplayTopologyRuntimeCheck();
             result.StickyContentApplySeparationOk =
                 RunStickySnapshotSeparationCheck();
+            result.NativePlacementOk =
+                RunNativePlacementCheck();
             result.ScaleRangeOk =
                 PetForm.NormalizeScalePercent(47) == 50 &&
                 PetForm.NormalizeScalePercent(104) == 100 &&
@@ -5702,6 +5752,8 @@ namespace PennyPet
                     shellChecks.DisplayTopologyRuntimeOk) + ",\n" +
                 "  \"sticky_content_apply_separation_ok\": " + Bool(
                     shellChecks.StickyContentApplySeparationOk) + ",\n" +
+                "  \"native_placement_ok\": " + Bool(
+                    shellChecks.NativePlacementOk) + ",\n" +
                 "  \"keyboard_hook_opt_in_and_default_off_ok\": " + Bool(
                     keyboardOverlayChecks.HookOptInDefaultOk) + ",\n" +
                 "  \"keyboard_privacy_notice_persistence_ok\": " + Bool(
