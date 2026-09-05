@@ -146,15 +146,12 @@ namespace PennyPet
                     if (result == null ||
                         result.Status != StickyUiCommandStatus.Handled ||
                         result.DockBatchResult == null) return;
-                    DisplayTopologySnapshot topology =
-                        CurrentTopologySnapshot();
-                    if (topology == null) return;
                     foreach (DockBatchMemberResult member in
                         result.DockBatchResult.Members)
                     {
                         if (member == null || member.Facts == null ||
-                            member.Facts.TopologyGeneration !=
-                                topology.Generation) continue;
+                            String.IsNullOrWhiteSpace(
+                                member.Facts.RuntimeGdiName)) continue;
                         _placementRuntime.UpdateEffective(member.NoteId,
                             member.Facts);
                     }
@@ -318,7 +315,8 @@ namespace PennyPet
             try
             {
                 plan = DockPlacementPlanner.Plan(group, sourceFacts,
-                    surface, sourceFacts.Dpi, topology.Generation,
+                    surface, sourceFacts.Dpi,
+                    sourceFacts.TopologyGeneration,
                     _dockPlanMailbox.NextSequence());
             }
             catch (ArgumentException)
