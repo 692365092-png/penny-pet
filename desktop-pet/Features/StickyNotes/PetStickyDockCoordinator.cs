@@ -134,6 +134,31 @@ namespace PennyPet
                     _activeDockGroupIds.Count);
             if (_activeNoteSplitEligible)
                 ShowSplitGuide(seed, groupFacts);
+            // A display change that happened while the group was idle can
+            // leave the runtime effective facts on the previous topology
+            // generation; every live plan would then be rejected as stale and
+            // the group scatters. Refresh effective facts for the group now,
+            // at drag start, from the actual HWNDs at the current generation.
+            string[] refreshIds = _activeDockGroupIds.ToArray();
+            PostHostedStickyCommand(StickyUiCommand.CaptureDockFacts(
+                refreshIds), delegate(StickyUiCommandResult result)
+                {
+                    if (result == null ||
+                        result.Status != StickyUiCommandStatus.Handled ||
+                        result.DockBatchResult == null) return;
+                    DisplayTopologySnapshot topology =
+                        CurrentTopologySnapshot();
+                    if (topology == null) return;
+                    foreach (DockBatchMemberResult member in
+                        result.DockBatchResult.Members)
+                    {
+                        if (member == null || member.Facts == null ||
+                            member.Facts.TopologyGeneration !=
+                                topology.Generation) continue;
+                        _placementRuntime.UpdateEffective(member.NoteId,
+                            member.Facts);
+                    }
+                });
         }
 
         private void MoveStickyDockDrag(DockWindowFacts facts)
