@@ -521,7 +521,13 @@ namespace PennyPet
             });
             if (preferred != null)
             {
-                if (!temporary || group.Exists(delegate(StickyNoteData member)
+                // A same-surface DPI / work-area change can still scatter the
+                // actual windows: WM_DPICHANGED moves each member independently
+                // even though the preferred surface still exists. Re-project
+                // the whole group back to its preferred local-logical stack
+                // unless a member was explicitly moved during a temporary
+                // rehome (respect that newer user intent).
+                if (group.Exists(delegate(StickyNoteData member)
                 {
                     return _placementRuntime.UserMovedSinceRehome(member.Id);
                 })) return;
