@@ -407,13 +407,15 @@ namespace PennyPet
                 ? null : _displayTopologyRuntime.Current;
         }
 
-        // DRT-7: after a semantic topology change, every live standalone
-        // hosted Sticky is reconciled against its durable preferred target.
-        // Dock groups are deliberately excluded until group rehome lands.
+        // DRT-7/11: publish the new generation as a hard Dock barrier, resume
+        // an active drag from freshly captured source facts, then reconcile
+        // standalone windows and whole persisted Dock groups independently.
         private void HandleStickyTopologyChanged(
             DisplayTopologySnapshot snapshot)
         {
             if (snapshot == null || IsDisposed || Disposing) return;
+            InvalidateDockPlansForTopologyChange(snapshot);
+            ResumeDockDragAfterTopologyChange(snapshot);
             WindowFacts petFacts = CapturePetWindowFacts(snapshot);
             foreach (StickyNoteData note in _notes.GetAll())
             {
@@ -422,6 +424,297 @@ namespace PennyPet
                 if (!String.IsNullOrEmpty(note.DockGroupId)) continue;
                 ReconcileStandaloneSticky(note, snapshot, petFacts);
             }
+            ReconcileDockGroups(snapshot, petFacts);
+        }
+
+        private void InvalidateDockPlansForTopologyChange(
+            DisplayTopologySnapshot snapshot)
+        {
+            lock (_dockPlanMailbox.Gate)
+            {
+                _dockPlanMailbox.Current = null;
+                _dockPlanMailbox.ApplyQueued = false;
+                _dockPlanMailbox.FinalPlanSequence = 0;
+            }
+            _finalDockPlanPending = false;
+            DisplayDiagnostics.Trace("DockPlanStale",
+                "topology invalidated generation=" + snapshot.Generation);
+        }
+
+        private void ResumeDockDragAfterTopologyChange(
+            DisplayTopologySnapshot snapshot)
+        {
+            if (String.IsNullOrEmpty(_activeNoteDragId) ||
+                _activeDockGroupIds.Count == 0) return;
+            string sourceId = _activeNoteDragId;
+            DockWindowFacts observedFacts = _activeNoteDragLastFacts;
+            string[] expectedIds = _activeDockGroupIds.ToArray();
+            PostHostedStickyCommand(StickyUiCommand.CaptureDockFacts(
+                expectedIds), delegate(StickyUiCommandResult result)
+                {
+                    if (!String.Equals(_activeNoteDragId, sourceId,
+                            StringComparison.OrdinalIgnoreCase) ||
+                        !Object.ReferenceEquals(_activeNoteDragLastFacts,
+                            observedFacts) || result == null ||
+                        result.Status != StickyUiCommandStatus.Handled ||
+                        result.DockBatchResult == null ||
+                        result.DockBatchResult.TopologyGeneration !=
+                            snapshot.Generation ||
+                        CurrentTopologySnapshot() == null ||
+                        CurrentTopologySnapshot().Generation !=
+                            snapshot.Generation)
+                        return;
+                    WindowFacts sourceFacts = null;
+                    foreach (DockBatchMemberResult member in
+                        result.DockBatchResult.Members)
+                        if (member != null && String.Equals(member.NoteId,
+                            sourceId, StringComparison.OrdinalIgnoreCase))
+                            sourceFacts = member.Facts;
+                    StickyNoteData seed = _notes.Find(sourceId);
+                    DockPlacementPlan plan = PlanDockPlan(seed,
+                        sourceFacts, snapshot);
+                    if (plan == null) return;
+                    ApplyLiveDockPlan(plan);
+                    RememberActiveDockFacts(PlanToDockTargets(plan));
+                });
+        }
+
+        private void ReconcileDockGroups(DisplayTopologySnapshot snapshot,
+            WindowFacts petFacts)
+        {
+            HashSet<string> visited = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+            foreach (StickyNoteData note in _notes.GetAll())
+            {
+                if (note == null || !note.Visible || !IsHostedSticky(note) ||
+                    String.IsNullOrEmpty(note.DockGroupId) ||
+                    !visited.Add(note.DockGroupId) ||
+                    _pendingDockTopologyGroups.Contains(note.DockGroupId))
+                    continue;
+                List<StickyNoteData> group =
+                    BuildDockChainOrderIncludingHidden(note);
+                group.RemoveAll(delegate(StickyNoteData member)
+                {
+                    return member == null || !member.Visible ||
+                        !IsHostedSticky(member);
+                });
+                if (group.Count < 2) continue;
+                if (!String.IsNullOrEmpty(_activeNoteDragId) &&
+                    group.Exists(delegate(StickyNoteData member)
+                    {
+                        return String.Equals(member.Id, _activeNoteDragId,
+                            StringComparison.OrdinalIgnoreCase);
+                    })) continue;
+                ReconcileDockGroup(group, snapshot, petFacts);
+            }
+        }
+
+        private void ReconcileDockGroup(List<StickyNoteData> group,
+            DisplayTopologySnapshot snapshot, WindowFacts petFacts)
+        {
+            if (group == null || group.Count < 2 || snapshot == null) return;
+            DisplaySurfaceSnapshot preferred =
+                FindCommonDockPreferredSurface(group, snapshot);
+            bool temporary = group.Exists(delegate(StickyNoteData member)
+            {
+                return _placementRuntime.IsTemporaryRehome(member.Id);
+            });
+            if (preferred != null)
+            {
+                if (!temporary || group.Exists(delegate(StickyNoteData member)
+                {
+                    return _placementRuntime.UserMovedSinceRehome(member.Id);
+                })) return;
+                PostDockGroupTopologyReproject(group, snapshot, preferred,
+                    false, false);
+                return;
+            }
+            if (temporary) return;
+
+            StickyNoteData root = group[0];
+            DisplaySurfaceSnapshot fallback =
+                FallbackDisplayPolicy.ResolveFallbackSurface(snapshot,
+                    root.PreferredDisplayTargetKey,
+                    new PhysicalRect(root.X, root.Y,
+                        root.Width, root.Height),
+                    petFacts == null ? String.Empty :
+                        petFacts.RuntimeGdiName);
+            if (fallback != null)
+                PostDockGroupTopologyReproject(group, snapshot, fallback,
+                    true, true);
+        }
+
+        private static DisplaySurfaceSnapshot FindCommonDockPreferredSurface(
+            IList<StickyNoteData> group,
+            DisplayTopologySnapshot snapshot)
+        {
+            DisplaySurfaceSnapshot result = null;
+            foreach (StickyNoteData member in group)
+            {
+                if (member == null ||
+                    String.IsNullOrWhiteSpace(
+                        member.PreferredDisplayTargetKey) ||
+                    member.PreferredLocalLogicalWidth <= 0 ||
+                    member.PreferredLocalLogicalHeight <= 0)
+                    return null;
+                DisplaySurfaceSnapshot surface = snapshot.FindByTargetKey(
+                    member.PreferredDisplayTargetKey);
+                if (surface == null) return null;
+                if (result != null && !String.Equals(
+                    result.RuntimeSurfaceId, surface.RuntimeSurfaceId,
+                    StringComparison.OrdinalIgnoreCase)) return null;
+                result = surface;
+            }
+            return result;
+        }
+
+        private void PostDockGroupTopologyReproject(
+            List<StickyNoteData> group, DisplayTopologySnapshot snapshot,
+            DisplaySurfaceSnapshot targetSurface, bool centerInWorkArea,
+            bool temporaryRehome)
+        {
+            StickyNoteData root = group[0];
+            string groupId = root.DockGroupId;
+            int width = root.PreferredLocalLogicalWidth > 0
+                ? root.PreferredLocalLogicalWidth : root.LocalLogicalWidth;
+            List<DockLogicalMember> members =
+                new List<DockLogicalMember>();
+            List<string> expectedIds = new List<string>();
+            foreach (StickyNoteData member in group)
+            {
+                int height = member.PreferredLocalLogicalHeight > 0
+                    ? member.PreferredLocalLogicalHeight :
+                    member.LocalLogicalHeight;
+                if (width <= 0 || height <= 0) return;
+                members.Add(new DockLogicalMember(member.Id, width, height));
+                expectedIds.Add(member.Id);
+            }
+            LogicalPoint rootAnchor = new LogicalPoint
+            {
+                X = root.PreferredLocalLogicalX,
+                Y = root.PreferredLocalLogicalY
+            };
+            DockGroupReprojectPlan plan = new DockGroupReprojectPlan(
+                snapshot.Generation, _dockPlanMailbox.NextSequence(),
+                targetSurface.RuntimeSurfaceId,
+                new DockGroupLogicalState(rootAnchor, members),
+                centerInWorkArea);
+            _pendingDockTopologyGroups.Add(groupId);
+            PostHostedStickyCommand(StickyUiCommand.ReprojectDockGroup(
+                plan, snapshot), delegate(StickyUiCommandResult result)
+                {
+                    try
+                    {
+                        if (!TryApplyDockTopologyResult(result, snapshot,
+                            targetSurface, expectedIds, plan.PlanSequence))
+                        {
+                            DisplayDiagnostics.Trace("DockReprojectRejected",
+                                "group=" + groupId + " generation=" +
+                                snapshot.Generation);
+                            return;
+                        }
+                        foreach (string noteId in expectedIds)
+                        {
+                            if (temporaryRehome)
+                                _placementRuntime.MarkTemporaryRehome(noteId,
+                                    "dock-preferred-display-missing");
+                            else
+                                _placementRuntime.MarkReturnedToPreferred(
+                                    noteId);
+                        }
+                        DisplayDiagnostics.Trace(temporaryRehome
+                            ? "TemporaryRehome" : "PreferredReturned",
+                            "dockGroup=" + groupId + " members=" +
+                            expectedIds.Count + " target=" +
+                            targetSurface.RuntimeSurfaceId);
+                    }
+                    finally
+                    {
+                        _pendingDockTopologyGroups.Remove(groupId);
+                        DisplayTopologySnapshot current =
+                            CurrentTopologySnapshot();
+                        StickyNoteData currentRoot = _notes.Find(root.Id);
+                        if (current != null && currentRoot != null &&
+                            current.Generation != snapshot.Generation)
+                        {
+                            List<StickyNoteData> currentGroup =
+                                BuildDockChainOrderIncludingHidden(
+                                    currentRoot);
+                            currentGroup.RemoveAll(
+                                delegate(StickyNoteData member)
+                                {
+                                    return member == null || !member.Visible ||
+                                        !IsHostedSticky(member);
+                                });
+                            ReconcileDockGroup(currentGroup, current,
+                                CapturePetWindowFacts(current));
+                        }
+                    }
+                });
+        }
+
+        private bool TryApplyDockTopologyResult(StickyUiCommandResult result,
+            DisplayTopologySnapshot snapshot,
+            DisplaySurfaceSnapshot targetSurface,
+            IList<string> expectedIds, long expectedPlanSequence)
+        {
+            if (result == null ||
+                result.Status != StickyUiCommandStatus.Handled ||
+                result.DockBatchResult == null || snapshot == null ||
+                targetSurface == null || CurrentTopologySnapshot() == null ||
+                CurrentTopologySnapshot().Generation != snapshot.Generation)
+                return false;
+            DockBatchResult batch = result.DockBatchResult;
+            if (batch.PlanSequence != expectedPlanSequence ||
+                batch.TopologyGeneration != snapshot.Generation ||
+                !String.Equals(batch.TargetSurfaceId,
+                    targetSurface.RuntimeSurfaceId,
+                    StringComparison.OrdinalIgnoreCase) ||
+                batch.TargetDpi <= 0 ||
+                batch.Members.Count != expectedIds.Count)
+                return false;
+            HashSet<string> expected = new HashSet<string>(expectedIds,
+                StringComparer.OrdinalIgnoreCase);
+            HashSet<string> actual = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+            List<DockCommitCandidate> candidates =
+                new List<DockCommitCandidate>();
+            foreach (DockBatchMemberResult member in batch.Members)
+            {
+                StickyNoteData canonical = member == null ? null :
+                    _notes.Find(member.NoteId);
+                if (member == null || member.Snapshot == null ||
+                    member.Facts == null || canonical == null ||
+                    !expected.Contains(member.NoteId) ||
+                    !actual.Add(member.NoteId) ||
+                    member.Facts.TopologyGeneration != snapshot.Generation ||
+                    member.Facts.WindowSequence != member.WindowSequence ||
+                    member.Facts.Dpi != batch.TargetDpi ||
+                    !String.Equals(member.Facts.RuntimeGdiName,
+                        targetSurface.RuntimeGdiName,
+                        StringComparison.OrdinalIgnoreCase) ||
+                    !_hostedRuntime.CanApplySequence(member.NoteId,
+                        member.WindowSequence)) return false;
+                candidates.Add(new DockCommitCandidate(member, canonical,
+                    null));
+            }
+            if (actual.Count != expected.Count) return false;
+            foreach (DockCommitCandidate candidate in candidates)
+            {
+                DockBatchMemberResult member = candidate.Member;
+                member.Snapshot.ApplyContentTo(candidate.Canonical);
+                candidate.Canonical.Visible = member.Snapshot.Visible;
+                candidate.Canonical.AlwaysOnTop =
+                    member.Snapshot.AlwaysOnTop;
+                ApplyHostedStickyFactsGeometry(candidate.Canonical,
+                    member.Facts, snapshot);
+                _placementRuntime.UpdateEffective(member.NoteId,
+                    member.Facts);
+                _hostedRuntime.RecordSequence(member.NoteId,
+                    member.WindowSequence);
+            }
+            _notes.SaveAsync();
+            return true;
         }
 
         private void ReconcileStandaloneSticky(StickyNoteData note,

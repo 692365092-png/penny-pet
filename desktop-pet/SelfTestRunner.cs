@@ -4126,6 +4126,7 @@ namespace PennyPet
             internal bool V11PreferredOk;
             internal bool TemporaryRehomeOk;
             internal bool DockPlanMailboxOk;
+            internal bool DockTopologyReprojectOk;
         }
 
         private sealed class StickyHostedCheckResult
@@ -4843,6 +4844,36 @@ namespace PennyPet
                 planImmutable && batchResultImmutable;
         }
 
+        private static bool RunDockTopologyReprojectCheck()
+        {
+            DisplaySurfaceSnapshot surface = new DisplaySurfaceSnapshot(
+                "surface-hotplug", "\\\\.\\DISPLAY9",
+                new PhysicalRect(-1920, 0, 1920, 1080),
+                new PhysicalRect(-1920, 0, 1920, 1040), false, 0,
+                new[]
+                {
+                    new DisplayTargetIdentity("mdp:hotplug", true,
+                        "path", "Hotplug", 0, 0, 0)
+                });
+            DockGroupLogicalState group = new DockGroupLogicalState(
+                new LogicalPoint { X = 10, Y = 20 }, new[]
+                {
+                    new DockLogicalMember("a", 320, 300),
+                    new DockLogicalMember("b", 320, 400)
+                });
+            DockPlacementPlan plan = DockPlacementPlanner.PlanReproject(
+                new DockGroupReprojectPlan(7, 11, "surface-hotplug",
+                    group, true), surface, 192);
+            return plan.TopologyGeneration == 7 &&
+                plan.PlanSequence == 11 &&
+                plan.SourceNoteId == String.Empty &&
+                plan.TargetDpi == 192 &&
+                plan.WindowTargets.Count == 2 &&
+                plan.WindowTargets[0].PhysicalBounds.Width == 640 &&
+                plan.WindowTargets[0].PhysicalBounds.Bottom ==
+                    plan.WindowTargets[1].PhysicalBounds.Top;
+        }
+
         private static WindowShellCheckResult RunWindowShellChecks(
             StickyNoteData restoredNote)
         {
@@ -4931,6 +4962,8 @@ namespace PennyPet
                 RunTemporaryRehomeCheck();
             result.DockPlanMailboxOk =
                 RunDockPlanMailboxCheck();
+            result.DockTopologyReprojectOk =
+                RunDockTopologyReprojectCheck();
             result.ScaleRangeOk =
                 PetForm.NormalizeScalePercent(47) == 50 &&
                 PetForm.NormalizeScalePercent(104) == 100 &&
@@ -6248,6 +6281,8 @@ namespace PennyPet
                     shellChecks.TemporaryRehomeOk) + ",\n" +
                 "  \"dock_plan_mailbox_ok\": " + Bool(
                     shellChecks.DockPlanMailboxOk) + ",\n" +
+                "  \"dock_topology_reproject_ok\": " + Bool(
+                    shellChecks.DockTopologyReprojectOk) + ",\n" +
                 "  \"keyboard_hook_opt_in_and_default_off_ok\": " + Bool(
                     keyboardOverlayChecks.HookOptInDefaultOk) + ",\n" +
                 "  \"keyboard_privacy_notice_persistence_ok\": " + Bool(

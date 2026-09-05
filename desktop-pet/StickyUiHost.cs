@@ -147,6 +147,8 @@ namespace PennyPet
                             ? session.Reproject(command.ReprojectTarget,
                                 command.Topology, command.Flag)
                             : StickyUiCommandResult.NotHandled();
+                    case StickyUiCommandKind.ReprojectDockGroup:
+                        return ApplyDockGroupReproject(command);
                     case StickyUiCommandKind.CaptureDockFacts:
                         return CaptureDockFactsForCommit(command);
                     case StickyUiCommandKind.UpdateReminders:
@@ -426,6 +428,11 @@ namespace PennyPet
                         return StickyUiCommandResult.NotHandled();
                     members.Add(member);
                 }
+                DisplayTopologySnapshot finalTopology;
+                lock (_configurationGate) finalTopology = _currentTopology;
+                if (finalTopology == null ||
+                    finalTopology.Generation != plan.TopologyGeneration)
+                    return StickyUiCommandResult.NotHandled();
                 placementApplied = true;
                 return StickyUiCommandResult.Handled(new DockBatchResult(
                     plan.PlanSequence, plan.TopologyGeneration,
@@ -438,6 +445,119 @@ namespace PennyPet
                     transitionSessions[index].CompleteDockTargetDpi(
                         transitions[index], placementApplied);
                 foreach (StickyWindowSession session in expectedSessions)
+                    session.SetEventsSuppressed(false);
+            }
+        }
+
+        // DRT-11 group topology transition. All members are hidden and
+        // bootstrapped onto one surface before its real HWND DPI is known;
+        // only then is one physical plan built and applied in one native
+        // batch. Any failure restores every original rect and visibility.
+        private StickyUiCommandResult ApplyDockGroupReproject(
+            StickyUiCommand command)
+        {
+            DockGroupReprojectPlan request = command == null ? null :
+                command.DockGroupReprojectPlan;
+            DisplayTopologySnapshot topology;
+            lock (_configurationGate) topology = _currentTopology;
+            if (request == null || command.Topology == null ||
+                topology == null ||
+                request.TopologyGeneration != topology.Generation ||
+                command.Topology.Generation != topology.Generation)
+                return StickyUiCommandResult.NotHandled();
+            DisplaySurfaceSnapshot targetSurface =
+                topology.FindByRuntimeSurfaceId(request.TargetSurfaceId);
+            if (targetSurface == null) return StickyUiCommandResult.NotHandled();
+
+            List<StickyWindowSession> sessions =
+                new List<StickyWindowSession>();
+            List<IntPtr> handles = new List<IntPtr>();
+            foreach (DockLogicalMember member in request.Group.Members)
+            {
+                StickyWindowSession session;
+                if (member == null ||
+                    !TryGetSession(member.NoteId, out session) ||
+                    session.PlacementHwnd == IntPtr.Zero)
+                    return StickyUiCommandResult.NotHandled();
+                sessions.Add(session);
+                handles.Add(session.PlacementHwnd);
+            }
+            if (sessions.Count != request.Group.Members.Count)
+                return StickyUiCommandResult.NotHandled();
+
+            List<StickyWindowSession.DockDpiTransition> transitions =
+                new List<StickyWindowSession.DockDpiTransition>();
+            bool placementApplied = false;
+            foreach (StickyWindowSession session in sessions)
+                session.SetEventsSuppressed(true);
+            try
+            {
+                int targetDpi = 0;
+                foreach (StickyWindowSession session in sessions)
+                {
+                    StickyWindowSession.DockDpiTransition transition;
+                    int memberDpi;
+                    if (!session.TryPrepareDockTargetSurface(targetSurface,
+                        out transition, out memberDpi))
+                        return StickyUiCommandResult.NotHandled();
+                    transitions.Add(transition);
+                    if (targetDpi > 0 && memberDpi != targetDpi)
+                        return StickyUiCommandResult.NotHandled();
+                    if (targetDpi == 0) targetDpi = memberDpi;
+                }
+
+                DockPlacementPlan plan;
+                try
+                {
+                    plan = DockPlacementPlanner.PlanReproject(request,
+                        targetSurface, targetDpi);
+                }
+                catch (ArgumentException)
+                {
+                    return StickyUiCommandResult.NotHandled();
+                }
+                List<PhysicalRect> rects = new List<PhysicalRect>();
+                foreach (DockWindowTarget target in plan.WindowTargets)
+                    rects.Add(target.PhysicalBounds);
+                if (WindowsBatchWindowPlacementExecutor.Apply(handles,
+                    rects) != WindowsBatchPlacementStatus.Applied)
+                    return StickyUiCommandResult.NotHandled();
+
+                DisplayTopologySnapshot current;
+                lock (_configurationGate) current = _currentTopology;
+                if (current == null ||
+                    current.Generation != request.TopologyGeneration)
+                    return StickyUiCommandResult.NotHandled();
+                List<DockBatchMemberResult> members =
+                    new List<DockBatchMemberResult>();
+                foreach (StickyWindowSession session in sessions)
+                {
+                    DockBatchMemberResult member =
+                        session.CaptureDockMember(topology);
+                    if (member == null || member.Facts == null ||
+                        member.Facts.Dpi != targetDpi ||
+                        !String.Equals(member.Facts.RuntimeGdiName,
+                            targetSurface.RuntimeGdiName,
+                            StringComparison.OrdinalIgnoreCase))
+                        return StickyUiCommandResult.NotHandled();
+                    members.Add(member);
+                }
+                lock (_configurationGate) current = _currentTopology;
+                if (current == null ||
+                    current.Generation != request.TopologyGeneration)
+                    return StickyUiCommandResult.NotHandled();
+                placementApplied = true;
+                return StickyUiCommandResult.Handled(new DockBatchResult(
+                    request.PlanSequence, request.TopologyGeneration,
+                    request.TargetSurfaceId, targetDpi, members));
+            }
+            finally
+            {
+                for (int index = transitions.Count - 1;
+                    index >= 0; index--)
+                    sessions[index].CompleteDockTargetDpi(
+                        transitions[index], placementApplied);
+                foreach (StickyWindowSession session in sessions)
                     session.SetEventsSuppressed(false);
             }
         }

@@ -99,8 +99,99 @@ namespace PennyPet
             { get; private set; }
     }
 
+    // Logical request for a whole-group topology reproject. The Sticky STA
+    // resolves the real target DPI after every HWND is parked on the one
+    // target surface, then turns this request into a physical Dock plan.
+    internal sealed class DockGroupReprojectPlan
+    {
+        internal DockGroupReprojectPlan(long topologyGeneration,
+            long planSequence, string targetSurfaceId,
+            DockGroupLogicalState group, bool centerInWorkArea)
+        {
+            if (group == null) throw new ArgumentNullException(nameof(group));
+            TopologyGeneration = topologyGeneration;
+            PlanSequence = planSequence;
+            TargetSurfaceId = targetSurfaceId ?? String.Empty;
+            Group = group;
+            CenterInWorkArea = centerInWorkArea;
+        }
+
+        internal long TopologyGeneration { get; private set; }
+        internal long PlanSequence { get; private set; }
+        internal string TargetSurfaceId { get; private set; }
+        internal DockGroupLogicalState Group { get; private set; }
+        internal bool CenterInWorkArea { get; private set; }
+    }
+
     internal static class DockPlacementPlanner
     {
+        internal static DockPlacementPlan PlanReproject(
+            DockGroupReprojectPlan request,
+            DisplaySurfaceSnapshot targetSurface, int targetDpi)
+        {
+            if (request == null)
+                throw new ArgumentNullException(nameof(request));
+            if (targetSurface == null)
+                throw new ArgumentNullException(nameof(targetSurface));
+            if (request.TopologyGeneration < 0 || targetDpi <= 0 ||
+                !String.Equals(request.TargetSurfaceId,
+                    targetSurface.RuntimeSurfaceId,
+                    StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException(
+                    "The topology reproject target is invalid.",
+                    nameof(request));
+
+            DockGroupLogicalState group = request.Group;
+            LogicalPoint anchor = group.RootAnchor;
+            if (request.CenterInWorkArea)
+            {
+                int logicalWidth = 1;
+                long logicalHeight = 0;
+                foreach (DockLogicalMember member in group.Members)
+                {
+                    logicalWidth = Math.Max(logicalWidth, member.Width);
+                    logicalHeight += member.Height;
+                }
+                double scale = targetDpi / 96.0;
+                int physicalWidth = Math.Max(1, (int)Math.Min(Int32.MaxValue,
+                    Math.Round(logicalWidth * scale,
+                        MidpointRounding.AwayFromZero)));
+                int physicalHeight = Math.Max(1, (int)Math.Min(Int32.MaxValue,
+                    Math.Round(logicalHeight * scale,
+                        MidpointRounding.AwayFromZero)));
+                int left = targetSurface.WorkArea.Left + Math.Max(0,
+                    (targetSurface.WorkArea.Width - physicalWidth) / 2);
+                int top = targetSurface.WorkArea.Top + Math.Max(0,
+                    (targetSurface.WorkArea.Height - physicalHeight) / 2);
+                anchor = DisplayGeometry.PhysicalToLocal(left, top,
+                    targetSurface.Bounds.Left, targetSurface.Bounds.Top,
+                    scale);
+                group = new DockGroupLogicalState(anchor, group.Members);
+            }
+
+            DockLogicalMember source = group.Members[0];
+            PhysicalRect sourceRect = DisplayGeometry.ProjectLocalRect(
+                new LogicalRect
+                {
+                    X = group.RootAnchor.X,
+                    Y = group.RootAnchor.Y,
+                    Width = source.Width,
+                    Height = source.Height
+                }, targetSurface.Bounds.Left, targetSurface.Bounds.Top,
+                targetDpi / 96.0);
+            WindowFacts facts = new WindowFacts(source.NoteId,
+                targetSurface.Targets[0].StableKey,
+                targetSurface.RuntimeGdiName, sourceRect, targetDpi,
+                request.TopologyGeneration, 0);
+            DockPlacementPlan physical = Plan(group, facts, targetSurface,
+                targetDpi, request.TopologyGeneration,
+                request.PlanSequence);
+            return new DockPlacementPlan(physical.TopologyGeneration,
+                physical.PlanSequence, String.Empty,
+                physical.TargetSurfaceId, physical.TargetDpi,
+                physical.WindowTargets);
+        }
+
         internal static DockPlacementPlan Plan(
             DockGroupLogicalState group, WindowFacts sourceFacts,
             DisplaySurfaceSnapshot targetSurface, int targetDpi,

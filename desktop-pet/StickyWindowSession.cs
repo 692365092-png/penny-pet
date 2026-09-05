@@ -512,6 +512,41 @@ namespace PennyPet
             finally { _applyingBounds = previousApplying; }
         }
 
+        internal bool TryPrepareDockTargetSurface(
+            DisplaySurfaceSnapshot surface,
+            out DockDpiTransition transition, out int targetDpi)
+        {
+            transition = null;
+            targetDpi = 0;
+            if (!IsAvailable || surface == null) return false;
+            _placementExecutor.EnsureHandle();
+            bool wasVisible = _window.IsVisible;
+            System.Drawing.Rectangle previousBounds =
+                _window.PhysicalBounds;
+            bool previousApplying = _applyingBounds;
+            _applyingBounds = true;
+            try
+            {
+                if (wasVisible) _window.Hide();
+                if (!_placementExecutor.MoveHiddenToSurface(
+                    surface.WorkArea))
+                {
+                    RollbackReproject(wasVisible, previousBounds);
+                    return false;
+                }
+                targetDpi = _placementExecutor.GetDpiForWindow();
+                if (targetDpi <= 0)
+                {
+                    RollbackReproject(wasVisible, previousBounds);
+                    return false;
+                }
+                transition = new DockDpiTransition(previousBounds,
+                    wasVisible, true);
+                return true;
+            }
+            finally { _applyingBounds = previousApplying; }
+        }
+
         internal void CompleteDockTargetDpi(DockDpiTransition transition,
             bool placementApplied)
         {

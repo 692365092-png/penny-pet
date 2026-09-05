@@ -655,6 +655,33 @@ namespace PennyPet.Tests
             });
         }
 
+        [TestMethod]
+        public void DockPlacementPlanner_ReprojectsWholeGroupAtOneTargetDpi()
+        {
+            DisplaySurfaceSnapshot target = Surface(8, false, 1000,
+                Target("mdp:target"));
+            DockGroupLogicalState group = new DockGroupLogicalState(
+                new LogicalPoint { X = 10, Y = 20 }, new[]
+                {
+                    new DockLogicalMember("A", 320, 300),
+                    new DockLogicalMember("B", 320, 400)
+                });
+
+            DockPlacementPlan returned = DockPlacementPlanner.PlanReproject(
+                new DockGroupReprojectPlan(15, 21, "surface-8", group,
+                    false), target, 192);
+            AssertPlan(returned, 15, 21, String.Empty, "surface-8", 192,
+                new PhysicalRect(1020, -60, 640, 600),
+                new PhysicalRect(1020, 540, 640, 800));
+
+            DockPlacementPlan centered = DockPlacementPlanner.PlanReproject(
+                new DockGroupReprojectPlan(15, 22, "surface-8", group,
+                    true), target, 192);
+            AssertPlan(centered, 15, 22, String.Empty, "surface-8", 192,
+                new PhysicalRect(1640, -100, 640, 600),
+                new PhysicalRect(1640, 500, 640, 800));
+        }
+
         private static DockGroupLogicalState DockGroup(int x, int y)
         {
             return new DockGroupLogicalState(

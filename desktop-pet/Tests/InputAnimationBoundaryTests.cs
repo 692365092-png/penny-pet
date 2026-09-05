@@ -2442,6 +2442,124 @@ namespace PennyPet.Tests
                 "A mixed-DPI or wrong-surface result must never become durable.");
         }
 
+        [TestMethod]
+        public void Drt11_TopologyChangeInvalidatesMailboxBeforeReconcile()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string changed = Between(coordinator,
+                "private void HandleStickyTopologyChanged(",
+                "private void InvalidateDockPlansForTopologyChange(");
+            string invalidate = Between(coordinator,
+                "private void InvalidateDockPlansForTopologyChange(",
+                "private void ResumeDockDragAfterTopologyChange(");
+
+            Assert.IsTrue(changed.IndexOf(
+                    "InvalidateDockPlansForTopologyChange(snapshot)",
+                    StringComparison.Ordinal) < changed.IndexOf(
+                    "ReconcileDockGroups(snapshot, petFacts)",
+                    StringComparison.Ordinal));
+            Assert.IsTrue(invalidate.Contains(
+                    "_dockPlanMailbox.Current = null") &&
+                invalidate.Contains("_dockPlanMailbox.ApplyQueued = false") &&
+                invalidate.Contains(
+                    "_dockPlanMailbox.FinalPlanSequence = 0"));
+        }
+
+        [TestMethod]
+        public void Drt11_ActiveDragRecapturesSourceAfterSettledTopology()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string resume = Between(coordinator,
+                "private void ResumeDockDragAfterTopologyChange(",
+                "private void ReconcileDockGroups(");
+
+            Assert.IsTrue(resume.Contains(
+                    "StickyUiCommand.CaptureDockFacts(") &&
+                resume.Contains("result.DockBatchResult.TopologyGeneration") &&
+                resume.Contains("PlanDockPlan(seed,") &&
+                resume.Contains("ApplyLiveDockPlan(plan)"));
+            Assert.IsFalse(resume.Contains("StickyDockGroups.") ||
+                resume.Contains("CommitVisibleDockOrder("),
+                "A topology barrier must preserve membership during a drag.");
+        }
+
+        [TestMethod]
+        public void Drt11_GroupReprojectUsesOneAtomicNativeBatch()
+        {
+            string host = ReadSource("StickyUiHost.cs");
+            string apply = Between(host,
+                "private StickyUiCommandResult ApplyDockGroupReproject(",
+                "private StickyUiCommandResult CaptureDockFactsForCommit");
+
+            Assert.IsTrue(apply.Contains(
+                    "session.TryPrepareDockTargetSurface(") &&
+                apply.Contains("DockPlacementPlanner.PlanReproject(") &&
+                apply.Contains(
+                    "WindowsBatchWindowPlacementExecutor.Apply(handles,") &&
+                apply.Contains("CompleteDockTargetDpi(") &&
+                apply.Contains("placementApplied"));
+            Assert.IsFalse(apply.Contains("SetBounds("),
+                "Group topology placement must not degrade to partial moves.");
+        }
+
+        [TestMethod]
+        public void Drt11_GroupRehomePreservesDurablePreferred()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string apply = Between(coordinator,
+                "private bool TryApplyDockTopologyResult(",
+                "private void ReconcileStandaloneSticky(");
+
+            Assert.IsTrue(apply.Contains(
+                    "ApplyHostedStickyFactsGeometry(") &&
+                apply.Contains("_placementRuntime.UpdateEffective(") &&
+                apply.Contains("_notes.SaveAsync()"));
+            Assert.IsFalse(apply.Contains("CommitHostedStickyPreferred(") ||
+                apply.Contains("PreferredLocalLogical") ||
+                apply.Contains("PreferredDisplayTargetKey"),
+                "Temporary group geometry must never overwrite preference.");
+        }
+
+        [TestMethod]
+        public void Drt11_GroupReturnRequiresNoUserMove()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string reconcile = Between(coordinator,
+                "private void ReconcileDockGroup(",
+                "private static DisplaySurfaceSnapshot FindCommonDockPreferredSurface(");
+            string complete = Between(coordinator,
+                "private void PostDockGroupTopologyReproject(",
+                "private bool TryApplyDockTopologyResult(");
+
+            Assert.IsTrue(reconcile.Contains(
+                    "_placementRuntime.UserMovedSinceRehome(member.Id)") &&
+                reconcile.Contains(
+                    "PostDockGroupTopologyReproject(group, snapshot, preferred,") &&
+                complete.Contains("MarkReturnedToPreferred(") &&
+                complete.Contains("MarkTemporaryRehome("));
+        }
+
+        [TestMethod]
+        public void Drt11_GroupResultRejectsStaleOrIncompleteGeneration()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string apply = Between(coordinator,
+                "private bool TryApplyDockTopologyResult(",
+                "private void ReconcileStandaloneSticky(");
+
+            Assert.IsTrue(apply.Contains(
+                    "CurrentTopologySnapshot().Generation != snapshot.Generation") &&
+                apply.Contains("batch.Members.Count != expectedIds.Count") &&
+                apply.Contains(
+                    "member.Facts.TopologyGeneration != snapshot.Generation") &&
+                apply.Contains("actual.Count != expected.Count"));
+        }
+
         private static string DockCommitValidationSource()
         {
             string coordinator = ReadSource(

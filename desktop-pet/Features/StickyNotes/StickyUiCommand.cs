@@ -13,6 +13,7 @@ namespace PennyPet
         SetDockResizeRole,
         SetBounds,
         Reproject,
+        ReprojectDockGroup,
         CaptureDockFacts,
         Close,
         CloseAll,
@@ -29,7 +30,8 @@ namespace PennyPet
             ReminderItem[] reminders = null,
             DisplayTopologySnapshot topology = null,
             StickyUiReprojectTarget reprojectTarget = null,
-            string[] dockNoteIds = null)
+            string[] dockNoteIds = null,
+            DockGroupReprojectPlan dockGroupReprojectPlan = null)
         {
             Kind = kind;
             NoteId = noteId ?? String.Empty;
@@ -43,6 +45,7 @@ namespace PennyPet
             DockNoteIds = dockNoteIds == null
                 ? null
                 : (string[])dockNoteIds.Clone();
+            DockGroupReprojectPlan = dockGroupReprojectPlan;
         }
 
         internal static StickyUiCommand Create(StickyNoteUiSnapshot snapshot,
@@ -128,6 +131,16 @@ namespace PennyPet
                 null, null, null, null, null, null, ids.ToArray());
         }
 
+        internal static StickyUiCommand ReprojectDockGroup(
+            DockGroupReprojectPlan plan,
+            DisplayTopologySnapshot topology)
+        {
+            if (plan == null) throw new ArgumentNullException(nameof(plan));
+            return new StickyUiCommand(
+                StickyUiCommandKind.ReprojectDockGroup, String.Empty, false,
+                null, null, null, null, topology, null, null, plan);
+        }
+
         internal static StickyUiCommand Close(string noteId)
         {
             return new StickyUiCommand(StickyUiCommandKind.Close, noteId,
@@ -150,6 +163,8 @@ namespace PennyPet
         internal DisplayTopologySnapshot Topology { get; private set; }
         internal StickyUiReprojectTarget ReprojectTarget { get; private set; }
         internal string[] DockNoteIds { get; private set; }
+        internal DockGroupReprojectPlan DockGroupReprojectPlan
+            { get; private set; }
 
         private static ReminderItem[] CopyReminders(
             IEnumerable<ReminderItem> reminders)
