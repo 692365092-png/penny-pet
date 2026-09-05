@@ -134,7 +134,6 @@ namespace PennyPet
         internal NativeDisplayRect Monitor;
         internal NativeDisplayRect Work;
         internal int Flags;
-        internal int Dpi;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
         internal string DeviceName;
     }

@@ -26,60 +26,60 @@ namespace PennyPet
             bool configPathsCaptured = TryCaptureConfigPaths(
                 targetsByGdi, rotationByGdi);
 
-            List<NativeDisplayMonitorInfo> monitors =
-                EnumerateMonitors();
+            List<NativeDisplayMonitor> monitors = EnumerateMonitors();
             if (monitors.Count == 0)
             {
                 LastCaptureError = "no display monitors";
                 return null;
             }
 
-            monitors.Sort(delegate(NativeDisplayMonitorInfo left,
-                NativeDisplayMonitorInfo right)
+            monitors.Sort(delegate(NativeDisplayMonitor left,
+                NativeDisplayMonitor right)
             {
-                return String.CompareOrdinal(left.DeviceName,
-                    right.DeviceName);
+                return String.CompareOrdinal(left.Info.DeviceName,
+                    right.Info.DeviceName);
             });
 
             List<DisplaySurfaceSnapshot> surfaces =
                 new List<DisplaySurfaceSnapshot>(monitors.Count);
             int surfaceIndex = 0;
-            foreach (NativeDisplayMonitorInfo monitor in monitors)
+            foreach (NativeDisplayMonitor monitor in monitors)
             {
                 surfaceIndex++;
-                PhysicalRect bounds = new PhysicalRect(monitor.Monitor.Left,
-                    monitor.Monitor.Top,
-                    monitor.Monitor.Right - monitor.Monitor.Left,
-                    monitor.Monitor.Bottom - monitor.Monitor.Top);
-                PhysicalRect workArea = new PhysicalRect(monitor.Work.Left,
-                    monitor.Work.Top,
-                    monitor.Work.Right - monitor.Work.Left,
-                    monitor.Work.Bottom - monitor.Work.Top);
-                bool primary = (monitor.Flags &
+                NativeDisplayMonitorInfo info = monitor.Info;
+                PhysicalRect bounds = new PhysicalRect(info.Monitor.Left,
+                    info.Monitor.Top,
+                    info.Monitor.Right - info.Monitor.Left,
+                    info.Monitor.Bottom - info.Monitor.Top);
+                PhysicalRect workArea = new PhysicalRect(info.Work.Left,
+                    info.Work.Top,
+                    info.Work.Right - info.Work.Left,
+                    info.Work.Bottom - info.Work.Top);
+                bool primary = (info.Flags &
                     NativeDisplayConfig.MONITORINFOF_PRIMARY) != 0;
 
                 List<DisplayTargetIdentity> targets;
                 if (!configPathsCaptured ||
-                    !targetsByGdi.TryGetValue(monitor.DeviceName,
+                    !targetsByGdi.TryGetValue(info.DeviceName,
                         out targets))
                 {
                     targets = new List<DisplayTargetIdentity>
                     {
                         new DisplayTargetIdentity(
                             "ephemeral:enum:" +
-                            (monitor.DeviceName ?? String.Empty).Trim(),
+                            (info.DeviceName ?? String.Empty).Trim(),
                             false, String.Empty, String.Empty, 0, 0, 0)
                     };
                 }
 
                 int rotation = 0;
-                rotationByGdi.TryGetValue(monitor.DeviceName,
+                rotationByGdi.TryGetValue(info.DeviceName,
                     out rotation);
                 double scale = monitor.Dpi > 0 ? monitor.Dpi / 96.0 : 1.0;
 
                 surfaces.Add(new DisplaySurfaceSnapshot(
                     "surface-" + surfaceIndex,
-                    monitor.DeviceName, bounds, workArea, primary,
+                    info.DeviceName, bounds, workArea, primary,
                     RotationDegrees(rotation), targets, scale));
             }
 
@@ -202,10 +202,16 @@ namespace PennyPet
                 false, String.Empty, String.Empty, 0, 0, 0);
         }
 
-        private static List<NativeDisplayMonitorInfo> EnumerateMonitors()
+        private sealed class NativeDisplayMonitor
         {
-            List<NativeDisplayMonitorInfo> monitors =
-                new List<NativeDisplayMonitorInfo>();
+            internal NativeDisplayMonitorInfo Info;
+            internal int Dpi;
+        }
+
+        private static List<NativeDisplayMonitor> EnumerateMonitors()
+        {
+            List<NativeDisplayMonitor> monitors =
+                new List<NativeDisplayMonitor>();
             DisplayMonitorEnumProc callback =
                 delegate(IntPtr hMonitor, IntPtr hdcMonitor,
                     ref NativeDisplayRect clip, IntPtr data)
@@ -222,8 +228,11 @@ namespace PennyPet
                         if (NativeDisplayConfig.GetDpiForMonitor(hMonitor,
                             NativeDisplayConfig.MDT_EFFECTIVE_DPI,
                             out dpiX, out dpiY) != 0) dpiX = 96;
-                        info.Dpi = dpiX;
-                        monitors.Add(info);
+                        monitors.Add(new NativeDisplayMonitor
+                        {
+                            Info = info,
+                            Dpi = dpiX
+                        });
                     }
                     return true;
                 };
