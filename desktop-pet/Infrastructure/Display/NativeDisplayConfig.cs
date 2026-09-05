@@ -134,6 +134,7 @@ namespace PennyPet
         internal NativeDisplayRect Monitor;
         internal NativeDisplayRect Work;
         internal int Flags;
+        internal int Dpi;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
         internal string DeviceName;
     }
@@ -154,6 +155,7 @@ namespace PennyPet
         internal const int DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME = 2;
 
         internal const int MONITORINFOF_PRIMARY = 1;
+        internal const int MDT_EFFECTIVE_DPI = 0;
 
         internal const uint SWP_NOSIZE = 0x0001;
         internal const uint SWP_NOMOVE = 0x0002;
@@ -195,6 +197,10 @@ namespace PennyPet
 
         [DllImport("user32.dll")]
         internal static extern int GetDpiForWindow(IntPtr hwnd);
+
+        [DllImport("shcore.dll")]
+        internal static extern int GetDpiForMonitor(IntPtr monitor,
+            int dpiType, out int dpiX, out int dpiY);
 
         [DllImport("user32.dll")]
         internal static extern bool GetWindowRect(IntPtr hwnd,

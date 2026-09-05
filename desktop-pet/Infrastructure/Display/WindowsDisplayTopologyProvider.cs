@@ -75,11 +75,12 @@ namespace PennyPet
                 int rotation = 0;
                 rotationByGdi.TryGetValue(monitor.DeviceName,
                     out rotation);
+                double scale = monitor.Dpi > 0 ? monitor.Dpi / 96.0 : 1.0;
 
                 surfaces.Add(new DisplaySurfaceSnapshot(
                     "surface-" + surfaceIndex,
                     monitor.DeviceName, bounds, workArea, primary,
-                    RotationDegrees(rotation), targets));
+                    RotationDegrees(rotation), targets, scale));
             }
 
             // Generation belongs to the topology runtime (DRT-3), which
@@ -215,7 +216,15 @@ namespace PennyPet
                         typeof(NativeDisplayMonitorInfo));
                     if (NativeDisplayConfig.GetMonitorInfo(hMonitor,
                         ref info))
+                    {
+                        int dpiX;
+                        int dpiY;
+                        if (NativeDisplayConfig.GetDpiForMonitor(hMonitor,
+                            NativeDisplayConfig.MDT_EFFECTIVE_DPI,
+                            out dpiX, out dpiY) != 0) dpiX = 96;
+                        info.Dpi = dpiX;
                         monitors.Add(info);
+                    }
                     return true;
                 };
             NativeDisplayConfig.EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero,

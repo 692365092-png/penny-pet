@@ -105,6 +105,7 @@ namespace PennyPet
                 if (!RectEquals(a.WorkArea, b.WorkArea)) return false;
                 if (a.IsPrimary != b.IsPrimary) return false;
                 if (a.RotationDegrees != b.RotationDegrees) return false;
+                if (Math.Abs(a.Scale - b.Scale) > 0.0001) return false;
                 if (!TargetsEqual(a.Targets, b.Targets)) return false;
             }
             return true;

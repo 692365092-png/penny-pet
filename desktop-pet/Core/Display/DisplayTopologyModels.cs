@@ -59,7 +59,8 @@ namespace PennyPet
         internal DisplaySurfaceSnapshot(string runtimeSurfaceId,
             string runtimeGdiName, PhysicalRect bounds,
             PhysicalRect workArea, bool isPrimary, int rotationDegrees,
-            IEnumerable<DisplayTargetIdentity> targets)
+            IEnumerable<DisplayTargetIdentity> targets,
+            double scale = 1.0)
         {
             RuntimeSurfaceId = (runtimeSurfaceId ?? String.Empty).Trim();
             RuntimeGdiName = (runtimeGdiName ?? String.Empty).Trim();
@@ -67,6 +68,7 @@ namespace PennyPet
             WorkArea = workArea;
             IsPrimary = isPrimary;
             RotationDegrees = rotationDegrees;
+            Scale = scale > 0.0 && scale < 8.0 ? scale : 1.0;
             _targets = targets == null
                 ? new DisplayTargetIdentity[0]
                 : new List<DisplayTargetIdentity>(targets).ToArray();
@@ -79,6 +81,7 @@ namespace PennyPet
         internal PhysicalRect WorkArea { get; private set; }
         internal bool IsPrimary { get; private set; }
         internal int RotationDegrees { get; private set; }
+        internal double Scale { get; private set; }
         internal IReadOnlyList<DisplayTargetIdentity> Targets
             { get; private set; }
 
