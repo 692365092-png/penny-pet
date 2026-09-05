@@ -68,9 +68,9 @@ namespace PennyPet
             return new LogicalPoint
             {
                 X = (int)Math.Round((physicalX - physicalOriginX) /
-                    safeScale),
+                    safeScale, MidpointRounding.AwayFromZero),
                 Y = (int)Math.Round((physicalY - physicalOriginY) /
-                    safeScale)
+                    safeScale, MidpointRounding.AwayFromZero)
             };
         }
 
@@ -82,9 +82,11 @@ namespace PennyPet
             return new PhysicalPoint
             {
                 X = physicalOriginX +
-                    (int)Math.Round(logicalX * safeScale),
+                    (int)Math.Round(logicalX * safeScale,
+                        MidpointRounding.AwayFromZero),
                 Y = physicalOriginY +
-                    (int)Math.Round(logicalY * safeScale)
+                    (int)Math.Round(logicalY * safeScale,
+                        MidpointRounding.AwayFromZero)
             };
         }
 

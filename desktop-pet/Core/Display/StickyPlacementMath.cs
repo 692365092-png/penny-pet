@@ -87,9 +87,11 @@ namespace PennyPet
                 physicalLeft, physicalTop, physicalOriginX, physicalOriginY,
                 safeScale);
             int localWidth = Math.Max(1,
-                (int)Math.Round(Math.Max(1, physicalWidth) / safeScale));
+                (int)Math.Round(Math.Max(1, physicalWidth) / safeScale,
+                    MidpointRounding.AwayFromZero));
             int localHeight = Math.Max(1,
-                (int)Math.Round(Math.Max(1, physicalHeight) / safeScale));
+                (int)Math.Round(Math.Max(1, physicalHeight) / safeScale,
+                    MidpointRounding.AwayFromZero));
             PhysicalPoint compatTopLeft = DisplayGeometry.LocalToPhysical(
                 localTopLeft.X, localTopLeft.Y, physicalOriginX,
                 physicalOriginY, safeScale);
@@ -98,8 +100,10 @@ namespace PennyPet
                 localTopLeft.X, localTopLeft.Y,
                 localWidth, localHeight,
                 compatTopLeft.X, compatTopLeft.Y,
-                (int)Math.Round(localWidth * safeScale),
-                (int)Math.Round(localHeight * safeScale));
+                (int)Math.Round(localWidth * safeScale,
+                    MidpointRounding.AwayFromZero),
+                (int)Math.Round(localHeight * safeScale,
+                    MidpointRounding.AwayFromZero));
         }
 
         internal static StickyCanonicalPlacement FromSpawn(
@@ -109,11 +113,14 @@ namespace PennyPet
         {
             double safeScale = scale > 0.0 ? scale : 1.0;
             int sizePhysicalWidth = Math.Max(1,
-                (int)Math.Round(Math.Max(1, sizeLogical.Width) * safeScale));
+                (int)Math.Round(Math.Max(1, sizeLogical.Width) * safeScale,
+                    MidpointRounding.AwayFromZero));
             int sizePhysicalHeight = Math.Max(1,
-                (int)Math.Round(Math.Max(1, sizeLogical.Height) * safeScale));
+                (int)Math.Round(Math.Max(1, sizeLogical.Height) * safeScale,
+                    MidpointRounding.AwayFromZero));
             int gapPhysical = Math.Max(0,
-                (int)Math.Round(Math.Max(0, gap) * safeScale));
+                (int)Math.Round(Math.Max(0, gap) * safeScale,
+                    MidpointRounding.AwayFromZero));
 
             // Prefer the left of the pet, else the right; reject a horizontal
             // placement that would clip the note under the taskbar or off-screen.
@@ -138,8 +145,10 @@ namespace PennyPet
             return new StickyCanonicalPlacement(
                 displayId ?? String.Empty,
                 localTopLeft.X, localTopLeft.Y,
-                Math.Max(1, (int)Math.Round(sizePhysicalWidth / safeScale)),
-                Math.Max(1, (int)Math.Round(sizePhysicalHeight / safeScale)),
+                Math.Max(1, (int)Math.Round(sizePhysicalWidth / safeScale,
+                    MidpointRounding.AwayFromZero)),
+                Math.Max(1, (int)Math.Round(sizePhysicalHeight / safeScale,
+                    MidpointRounding.AwayFromZero)),
                 left, top, sizePhysicalWidth, sizePhysicalHeight);
         }
 
