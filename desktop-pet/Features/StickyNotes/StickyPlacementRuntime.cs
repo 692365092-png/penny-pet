@@ -21,19 +21,24 @@ namespace PennyPet
                 ? state.Effective : null;
         }
 
-        internal void UpdateEffective(string noteId, WindowFacts facts)
+        internal bool TryUpdateEffective(string noteId, WindowFacts facts)
         {
-            if (String.IsNullOrEmpty(noteId) || facts == null) return;
+            if (String.IsNullOrWhiteSpace(noteId) || facts == null) return false;
             NotePlacementState state;
             if (!_states.TryGetValue(noteId, out state))
             {
                 _states[noteId] = new NotePlacementState(facts, false,
                     false, String.Empty);
-                return;
+                return true;
             }
+            WindowFacts current = state.Effective;
+            if (current != null && (facts.TopologyGeneration < current.TopologyGeneration ||
+                (facts.TopologyGeneration == current.TopologyGeneration &&
+                 facts.WindowSequence <= current.WindowSequence))) return false;
             _states[noteId] = new NotePlacementState(facts,
                 state.IsTemporaryRehome, state.UserMovedSinceRehome,
                 state.TemporaryReason);
+            return true;
         }
 
         internal bool IsTemporaryRehome(string noteId)

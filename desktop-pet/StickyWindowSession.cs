@@ -343,6 +343,25 @@ namespace PennyPet
             return StickyUiCommandResult.Handled(_lastSnapshot, _sequence);
         }
 
+        // Geometry is captured from the HWND; the detached snapshot deliberately
+        // excludes legacy canonical placement capture.
+        internal StickyUiCommandResult CaptureCurrentFacts(
+            DisplayTopologySnapshot topology)
+        {
+            if (!IsAvailable || topology == null)
+                return StickyUiCommandResult.NotHandled();
+            _topology = topology;
+            long resultSequence = ++_sequence;
+            _lastSnapshot = CaptureContentSnapshotForNativeResult();
+            WindowFacts facts = CaptureWindowFacts(resultSequence);
+            if (facts == null || facts.TopologyGeneration != topology.Generation ||
+                facts.WindowSequence != resultSequence || !String.Equals(facts.WindowId,
+                    _noteId, StringComparison.OrdinalIgnoreCase))
+                return StickyUiCommandResult.NotHandled();
+            return StickyUiCommandResult.Handled(_lastSnapshot, resultSequence,
+                facts, topology);
+        }
+
         // STA-local HWND for the native deferred batch executor. It never
         // crosses to the Pet thread; only the Sticky STA orchestrator reads it.
         internal IntPtr PlacementHwnd
