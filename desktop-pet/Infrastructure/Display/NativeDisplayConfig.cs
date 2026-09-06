@@ -108,10 +108,9 @@ namespace PennyPet
         internal DisplayConfigDeviceInfoHeader Header;
         internal int Flags;
         internal int OutputTechnology;
-        internal short EdidManufactureId;
-        internal short EdidProductCodeId;
-        internal short ConnectorInstance;
-        internal short Reserved;
+        internal ushort EdidManufactureId;
+        internal ushort EdidProductCodeId;
+        internal uint ConnectorInstance;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)]
         internal string MonitorFriendlyDeviceName;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]

@@ -6,6 +6,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Net.Http;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -4123,6 +4124,7 @@ namespace PennyPet
             internal bool DisplayTopologyRuntimeOk;
             internal bool StickyContentApplySeparationOk;
             internal bool NativePlacementOk;
+            internal bool NativeDisplayAbiOk;
             internal bool V11PreferredOk;
             internal bool TemporaryRehomeOk;
             internal bool DockPlanMailboxOk;
@@ -4703,7 +4705,7 @@ namespace PennyPet
         private static bool RunTemporaryRehomeCheck()
         {
             StickyPlacementRuntime runtime = new StickyPlacementRuntime();
-            runtime.UpdateEffective("rehome-note",
+            runtime.TryUpdateEffective("rehome-note",
                 new WindowFacts("rehome-note", "mdp:b", "\\\\.\\DISPLAY2",
                     new PhysicalRect(1920, 0, 640, 600), 192, 4, 5));
             runtime.MarkTemporaryRehome("rehome-note",
@@ -4713,7 +4715,7 @@ namespace PennyPet
                 runtime.TemporaryReason("rehome-note") ==
                     "preferred-display-missing";
 
-            runtime.UpdateEffective("rehome-note",
+            runtime.TryUpdateEffective("rehome-note",
                 new WindowFacts("rehome-note", "mdp:fallback",
                     "\\\\.\\DISPLAY1", new PhysicalRect(0, 0, 640, 600),
                     96, 4, 6));
@@ -4844,6 +4846,25 @@ namespace PennyPet
                 planImmutable && batchResultImmutable;
         }
 
+        // DISPLAYCONFIG_TARGET_DEVICE_NAME is a wire ABI passed directly to
+        // DisplayConfigGetDeviceInfo.  Verify field widths and offsets so a
+        // future harmless-looking managed refactor cannot corrupt monitor
+        // identity reads on mixed-DPI topologies.
+        private static bool RunNativeDisplayAbiCheck()
+        {
+            return Marshal.SizeOf(typeof(DisplayConfigTargetDeviceName)) == 420 &&
+                Marshal.OffsetOf(typeof(DisplayConfigTargetDeviceName),
+                    "EdidManufactureId").ToInt32() == 28 &&
+                Marshal.OffsetOf(typeof(DisplayConfigTargetDeviceName),
+                    "EdidProductCodeId").ToInt32() == 30 &&
+                Marshal.OffsetOf(typeof(DisplayConfigTargetDeviceName),
+                    "ConnectorInstance").ToInt32() == 32 &&
+                Marshal.OffsetOf(typeof(DisplayConfigTargetDeviceName),
+                    "MonitorFriendlyDeviceName").ToInt32() == 36 &&
+                Marshal.OffsetOf(typeof(DisplayConfigTargetDeviceName),
+                    "MonitorDevicePath").ToInt32() == 164;
+        }
+
         private static bool RunDockTopologyReprojectCheck()
         {
             DisplaySurfaceSnapshot surface = new DisplaySurfaceSnapshot(
@@ -4956,6 +4977,7 @@ namespace PennyPet
                 RunStickySnapshotSeparationCheck();
             result.NativePlacementOk =
                 RunNativePlacementCheck();
+            result.NativeDisplayAbiOk = RunNativeDisplayAbiCheck();
             result.V11PreferredOk =
                 RunV11PreferredCheck();
             result.TemporaryRehomeOk =
@@ -6275,6 +6297,8 @@ namespace PennyPet
                     shellChecks.StickyContentApplySeparationOk) + ",\n" +
                 "  \"native_placement_ok\": " + Bool(
                     shellChecks.NativePlacementOk) + ",\n" +
+                "  \"native_display_abi_ok\": " + Bool(
+                    shellChecks.NativeDisplayAbiOk) + ",\n" +
                 "  \"v11_preferred_ok\": " + Bool(
                     shellChecks.V11PreferredOk) + ",\n" +
                 "  \"temporary_rehome_ok\": " + Bool(

@@ -188,9 +188,9 @@ namespace PennyPet
                     true,
                     name.MonitorDevicePath.Trim(),
                     name.MonitorFriendlyDeviceName,
-                    unchecked((ushort)name.EdidManufactureId),
-                    unchecked((ushort)name.EdidProductCodeId),
-                    unchecked((uint)(ushort)name.ConnectorInstance));
+                    name.EdidManufactureId,
+                    name.EdidProductCodeId,
+                    name.ConnectorInstance);
             }
 
             // Durable identity unavailable: runtime-only ephemeral key.
