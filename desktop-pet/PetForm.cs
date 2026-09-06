@@ -163,9 +163,12 @@ namespace PennyPet
         private bool _synchronizingDockLayout;
         private readonly DockPlanMailbox _dockPlanMailbox =
             new DockPlanMailbox();
+        private readonly DockInteractionSession _dockInteraction =
+            new DockInteractionSession();
         private long _lastAppliedDockPlanSequence = -1;
-        private bool _finalDockPlanPending;
         private readonly HashSet<string> _pendingDockTopologyGroups =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _pendingStandaloneTopologyNotes =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private System.Windows.Forms.Timer _startupWorkTimer;
         private StartupWorkPhase _startupWorkPhase;

@@ -18,6 +18,7 @@ namespace PennyPet
             new Dictionary<string, StickyWindowSession>(
                 StringComparer.OrdinalIgnoreCase);
         private DisplayTopologySnapshot _currentTopology;
+        private long _currentDockInteractionEpoch;
 
         internal void Start()
         {
@@ -107,6 +108,19 @@ namespace PennyPet
             lock (_configurationGate) _currentTopology = snapshot;
         }
 
+        internal void SetCurrentDockInteractionEpoch(long epoch)
+        {
+            lock (_configurationGate) _currentDockInteractionEpoch = epoch;
+        }
+
+        private bool IsCurrentTopology(DisplayTopologySnapshot topology)
+        {
+            if (topology == null) return false;
+            DisplayTopologySnapshot current;
+            lock (_configurationGate) current = _currentTopology;
+            return current != null && current.Generation == topology.Generation;
+        }
+
         private StickyUiCommandResult HandleCommand(
             StickyUiCommand command)
         {
@@ -138,17 +152,27 @@ namespace PennyPet
                             ? session.SetDockResizeRole(command.DockResizeRole)
                             : StickyUiCommandResult.NotHandled();
                     case StickyUiCommandKind.SetBounds:
+                        if (command.Topology != null && !IsCurrentTopology(command.Topology))
+                            return StickyUiCommandResult.NotHandled();
                         return TryGetSession(command.NoteId, out session)
                             ? session.SetBounds(command.Bounds,
                                 command.Topology)
                             : StickyUiCommandResult.NotHandled();
                     case StickyUiCommandKind.Reproject:
+                        if (command.Topology == null || !IsCurrentTopology(command.Topology))
+                            return StickyUiCommandResult.NotHandled();
                         return TryGetSession(command.NoteId, out session)
                             ? session.Reproject(command.ReprojectTarget,
                                 command.Topology, command.Flag)
                             : StickyUiCommandResult.NotHandled();
                     case StickyUiCommandKind.ReprojectDockGroup:
                         return ApplyDockGroupReproject(command);
+                    case StickyUiCommandKind.CaptureWindowFacts:
+                        if (!IsCurrentTopology(command.Topology))
+                            return StickyUiCommandResult.NotHandled();
+                        return TryGetSession(command.NoteId, out session)
+                            ? session.CaptureCurrentFacts(command.Topology)
+                            : StickyUiCommandResult.NotHandled();
                     case StickyUiCommandKind.CaptureDockFacts:
                         return CaptureDockFactsForCommit(command);
                     case StickyUiCommandKind.UpdateReminders:
@@ -314,6 +338,20 @@ namespace PennyPet
                     (topology == null ? -1 : topology.Generation));
                 return StickyUiCommandResult.NotHandled();
             }
+            long currentEpoch;
+            lock (_configurationGate) currentEpoch = _currentDockInteractionEpoch;
+            // Topology-reprojection plans predate the interaction-epoch
+            // protocol and intentionally carry epoch zero.  Only a live
+            // gesture plan is constrained by the current gesture token.
+            if (plan.InteractionEpoch != 0 &&
+                !DockExecutionRules.CanExecute(plan, topology.Generation,
+                    currentEpoch))
+            {
+                DisplayDiagnostics.Trace("DockPlanStale", "plan=" +
+                    plan.PlanSequence + " epoch=" + plan.InteractionEpoch +
+                    " currentEpoch=" + currentEpoch);
+                return StickyUiCommandResult.NotHandled();
+            }
             DisplaySurfaceSnapshot targetSurface =
                 topology.FindByRuntimeSurfaceId(plan.TargetSurfaceId);
             if (targetSurface == null || plan.TargetDpi <= 0)
@@ -436,7 +474,8 @@ namespace PennyPet
                 placementApplied = true;
                 return StickyUiCommandResult.Handled(new DockBatchResult(
                     plan.PlanSequence, plan.TopologyGeneration,
-                    plan.TargetSurfaceId, plan.TargetDpi, members));
+                    plan.TargetSurfaceId, plan.TargetDpi, members,
+                    plan.InteractionEpoch));
             }
             finally
             {
@@ -568,23 +607,25 @@ namespace PennyPet
         private StickyUiCommandResult CaptureDockFactsForCommit(
             StickyUiCommand command)
         {
-            if (command == null || command.DockNoteIds == null ||
+            if (command == null || command.Topology == null ||
+                !IsCurrentTopology(command.Topology) || command.DockNoteIds == null ||
                 command.DockNoteIds.Length == 0)
                 return StickyUiCommandResult.Handled();
-            DisplayTopologySnapshot topology;
-            lock (_configurationGate) topology = _currentTopology;
+            DisplayTopologySnapshot topology = command.Topology;
             List<DockBatchMemberResult> members =
                 new List<DockBatchMemberResult>();
             foreach (string noteId in command.DockNoteIds)
             {
                 StickyWindowSession session;
-                if (!TryGetSession(noteId, out session)) continue;
+                if (!TryGetSession(noteId, out session))
+                    return StickyUiCommandResult.NotHandled();
                 DockBatchMemberResult member =
                     session.CaptureDockMember(topology);
                 if (member != null) members.Add(member);
             }
             return StickyUiCommandResult.Handled(new DockBatchResult(0,
-                topology == null ? 0 : topology.Generation, members));
+                topology.Generation, String.Empty, 0, members,
+                command.InteractionEpoch));
         }
 
         private void PostEvent(StickyUiEvent value)

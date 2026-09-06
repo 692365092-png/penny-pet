@@ -77,13 +77,15 @@ namespace PennyPet
 
         internal DockPlacementPlan(long topologyGeneration,
             long planSequence, string sourceNoteId, string targetSurfaceId,
-            int targetDpi, IEnumerable<DockWindowTarget> windowTargets)
+            int targetDpi, IEnumerable<DockWindowTarget> windowTargets,
+            long interactionEpoch = 0)
         {
             TopologyGeneration = topologyGeneration;
             PlanSequence = planSequence;
             SourceNoteId = sourceNoteId ?? String.Empty;
             TargetSurfaceId = targetSurfaceId ?? String.Empty;
             TargetDpi = targetDpi;
+            InteractionEpoch = interactionEpoch;
             _windowTargets = windowTargets == null
                 ? new DockWindowTarget[0]
                 : new List<DockWindowTarget>(windowTargets).ToArray();
@@ -95,6 +97,7 @@ namespace PennyPet
         internal string SourceNoteId { get; private set; }
         internal string TargetSurfaceId { get; private set; }
         internal int TargetDpi { get; private set; }
+        internal long InteractionEpoch { get; private set; }
         internal IReadOnlyList<DockWindowTarget> WindowTargets
             { get; private set; }
     }
@@ -189,13 +192,14 @@ namespace PennyPet
             return new DockPlacementPlan(physical.TopologyGeneration,
                 physical.PlanSequence, String.Empty,
                 physical.TargetSurfaceId, physical.TargetDpi,
-                physical.WindowTargets);
+                physical.WindowTargets, 0);
         }
 
         internal static DockPlacementPlan Plan(
             DockGroupLogicalState group, WindowFacts sourceFacts,
             DisplaySurfaceSnapshot targetSurface, int targetDpi,
-            long topologyGeneration, long planSequence)
+            long topologyGeneration, long planSequence,
+            long interactionEpoch = 0)
         {
             if (group == null) throw new ArgumentNullException(nameof(group));
             if (sourceFacts == null)
@@ -255,7 +259,7 @@ namespace PennyPet
 
             return new DockPlacementPlan(topologyGeneration, planSequence,
                 sourceFacts.WindowId, targetSurface.RuntimeSurfaceId,
-                targetDpi, targets);
+                targetDpi, targets, interactionEpoch);
         }
 
         private static int ProjectEdge(int physicalOrigin,

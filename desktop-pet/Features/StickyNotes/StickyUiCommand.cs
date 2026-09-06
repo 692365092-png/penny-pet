@@ -14,6 +14,7 @@ namespace PennyPet
         SetBounds,
         Reproject,
         ReprojectDockGroup,
+        CaptureWindowFacts,
         CaptureDockFacts,
         Close,
         CloseAll,
@@ -31,7 +32,8 @@ namespace PennyPet
             DisplayTopologySnapshot topology = null,
             StickyUiReprojectTarget reprojectTarget = null,
             string[] dockNoteIds = null,
-            DockGroupReprojectPlan dockGroupReprojectPlan = null)
+            DockGroupReprojectPlan dockGroupReprojectPlan = null,
+            long interactionEpoch = 0)
         {
             Kind = kind;
             NoteId = noteId ?? String.Empty;
@@ -46,6 +48,7 @@ namespace PennyPet
                 ? null
                 : (string[])dockNoteIds.Clone();
             DockGroupReprojectPlan = dockGroupReprojectPlan;
+            InteractionEpoch = interactionEpoch;
         }
 
         internal static StickyUiCommand Create(StickyNoteUiSnapshot snapshot,
@@ -119,7 +122,8 @@ namespace PennyPet
         }
 
         internal static StickyUiCommand CaptureDockFacts(
-            IEnumerable<string> noteIds)
+            IEnumerable<string> noteIds, DisplayTopologySnapshot topology,
+            long interactionEpoch)
         {
             List<string> ids = new List<string>();
             if (noteIds != null)
@@ -128,7 +132,18 @@ namespace PennyPet
             return new StickyUiCommand(
                 StickyUiCommandKind.CaptureDockFacts,
                 ids.Count > 0 ? ids[0] : String.Empty, false,
-                null, null, null, null, null, null, ids.ToArray());
+                null, null, null, null, topology, null, ids.ToArray(), null,
+                interactionEpoch);
+        }
+
+        internal static StickyUiCommand CaptureWindowFacts(string noteId,
+            DisplayTopologySnapshot topology)
+        {
+            if (String.IsNullOrWhiteSpace(noteId))
+                throw new ArgumentException("A note id is required.", nameof(noteId));
+            if (topology == null) throw new ArgumentNullException(nameof(topology));
+            return new StickyUiCommand(StickyUiCommandKind.CaptureWindowFacts,
+                noteId, false, null, null, null, null, topology);
         }
 
         internal static StickyUiCommand ReprojectDockGroup(
@@ -165,6 +180,7 @@ namespace PennyPet
         internal string[] DockNoteIds { get; private set; }
         internal DockGroupReprojectPlan DockGroupReprojectPlan
             { get; private set; }
+        internal long InteractionEpoch { get; private set; }
 
         private static ReminderItem[] CopyReminders(
             IEnumerable<ReminderItem> reminders)
@@ -635,18 +651,20 @@ namespace PennyPet
 
         internal DockBatchResult(long planSequence, long topologyGeneration,
             IEnumerable<DockBatchMemberResult> members)
-            : this(planSequence, topologyGeneration, String.Empty, 0, members)
+            : this(planSequence, topologyGeneration, String.Empty, 0, members, 0)
         {
         }
 
         internal DockBatchResult(long planSequence, long topologyGeneration,
             string targetSurfaceId, int targetDpi,
-            IEnumerable<DockBatchMemberResult> members)
+            IEnumerable<DockBatchMemberResult> members,
+            long interactionEpoch = 0)
         {
             PlanSequence = planSequence;
             TopologyGeneration = topologyGeneration;
             TargetSurfaceId = targetSurfaceId ?? String.Empty;
             TargetDpi = targetDpi;
+            InteractionEpoch = interactionEpoch;
             _members = members == null
                 ? new DockBatchMemberResult[0]
                 : new List<DockBatchMemberResult>(members).ToArray();
@@ -657,6 +675,7 @@ namespace PennyPet
         internal long TopologyGeneration { get; private set; }
         internal string TargetSurfaceId { get; private set; }
         internal int TargetDpi { get; private set; }
+        internal long InteractionEpoch { get; private set; }
         internal IReadOnlyList<DockBatchMemberResult> Members
             { get; private set; }
     }

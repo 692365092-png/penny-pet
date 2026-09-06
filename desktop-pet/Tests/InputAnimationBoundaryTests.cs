@@ -1179,8 +1179,8 @@ namespace PennyPet.Tests
                 "Features/StickyNotes/PetStickyDockCoordinator.cs");
 
             Assert.IsTrue(windowCoordinator.Contains(
-                "BeginStickyDockDrag(facts)") &&
-                windowCoordinator.Contains("MoveStickyDockDrag(facts)") &&
+                "BeginStickyDockDrag(facts, value.Facts, value.Topology)") &&
+                windowCoordinator.Contains("MoveStickyDockDrag(facts, value.Facts, value.Topology)") &&
                 windowCoordinator.Contains(
                     "CompleteStickyDockDrag(facts, value)"),
                 "Hosted drag facts must enter the existing Dock session.");
@@ -1533,7 +1533,7 @@ namespace PennyPet.Tests
                 "if (value.Kind == StickyUiEventKind.HeaderDragStarted ||",
                 "if (value.Kind == StickyUiEventKind.BoundsChanged)");
             Assert.IsTrue(dragHandler.Contains(
-                    "DockWindowFacts.FromData(canonical)") &&
+                    "DockWindowFacts.FromWindowFacts(") &&
                 !dragHandler.Contains("ApplyHostedStickySnapshot"),
                 "Drag geometry must flow from facts-derived canonical state.");
             string boundsHandler = Between(coordinator,
@@ -1678,7 +1678,7 @@ namespace PennyPet.Tests
 
             Assert.IsTrue(runtime.Contains(
                     "Dictionary<string, NotePlacementState> _states") &&
-                runtime.Contains("internal void UpdateEffective("),
+                runtime.Contains("internal bool TryUpdateEffective("),
                 "Effective WindowFacts must live in runtime memory.");
             Assert.IsFalse(runtime.Contains("StickyNoteRepository") ||
                 runtime.Contains("SaveAsync") ||
@@ -1823,7 +1823,7 @@ namespace PennyPet.Tests
 
             Assert.IsTrue(coordinator.Contains(
                     "StickyUiCommand.Reproject(rehomedNoteId,") &&
-                coordinator.Contains("ApplyReprojectResult(result, rehomedNoteId)"),
+                coordinator.Contains("ApplyReprojectResult(result, rehomedNoteId, snapshot)"),
                 "A topology rehome must complete through the actual-facts result path.");
             string reproject = Between(session,
                 "internal StickyUiCommandResult Reproject(",
@@ -1866,7 +1866,7 @@ namespace PennyPet.Tests
                 "private bool ApplyHostedStickySnapshot");
 
             Assert.IsTrue(commit.Contains(
-                    "TryPrepareDockCommit(result, value,") &&
+                    "TryPrepareDockCommit(result, expectedTopology, expectedEpoch,") &&
                 commit.Contains("result.DockBatchResult"),
                 "The dock durable commit must consume the captured actual-facts result.");
             Assert.IsTrue(commit.Contains(
@@ -1874,7 +1874,7 @@ namespace PennyPet.Tests
                 commit.Contains("PlacementReason.DockCommit") &&
                 commit.Contains("CommitVisibleDockOrder(") &&
                 commit.Contains("_notes.Save()"),
-                "Every member preferred must derive from captured facts plus the event topology, then persist once.");
+                "Every member preferred must derive from captured facts plus the finalizing topology, then persist once.");
             Assert.IsFalse(commit.Contains("CurrentTopologySnapshot("),
                 "A G-generation dock commit must never read a later Current generation.");
         }
@@ -2022,7 +2022,7 @@ namespace PennyPet.Tests
                 "private void CompleteStickyDockDrag");
 
             Assert.IsTrue(plannerPath.Contains(
-                    "_placementRuntime.GetEffective(") &&
+                    "WindowFacts sourceFacts") &&
                 plannerPath.Contains("DockPlacementPlanner.Plan(") &&
                 plannerPath.Contains("DisplayGeometry.PhysicalToLocal(") &&
                 plannerPath.Contains("BuildDockChainOrder(seed)"),
@@ -2034,7 +2034,7 @@ namespace PennyPet.Tests
             string move = Between(coordinator,
                 "private void MoveStickyDockDrag",
                 "private DockPlacementPlan PlanLiveDockPlan");
-            Assert.IsTrue(move.Contains("PlanLiveDockPlan(seed, facts)") &&
+            Assert.IsTrue(move.Contains("PlanLiveDockPlan(seed, sourceFacts,") &&
                 !move.Contains("CalculateDockTranslationTargets("),
                 "The live move path must route through the planner.");
         }
@@ -2049,10 +2049,10 @@ namespace PennyPet.Tests
                 "private void CompleteStickyDockDrag");
 
             Assert.IsTrue(batch.Contains(
-                    "_placementRuntime.GetEffective(") &&
+                    "WindowFacts sourceFacts") &&
                 batch.Contains("DockPlacementPlanner.Plan(") &&
                 batch.Contains("sourceFacts.Dpi") &&
-                batch.Contains("CurrentTopologySnapshot()") &&
+                batch.Contains("_dockInteraction.CanPlan(") &&
                 batch.Contains("_dockPlanMailbox.NextSequence()"),
                 "One plan must carry one capture-time generation, surface, DPI and sequence.");
             Assert.IsFalse(batch.Contains("WindowsDisplayResolver") ||
@@ -2086,7 +2086,7 @@ namespace PennyPet.Tests
                 "private static bool TryBuildPreference");
             Assert.IsTrue(apply.Contains(
                     "ApplyHostedStickyFactsGeometry(canonical, result.Facts,") &&
-                apply.Contains("_placementRuntime.UpdateEffective("),
+                apply.Contains("_placementRuntime.TryUpdateEffective("),
                 "A reproject result must update geometry and Effective from actual facts.");
         }
 
@@ -2186,28 +2186,27 @@ namespace PennyPet.Tests
                 "private void CompleteStickyDockDrag",
                 "private static List<string> CollectExpectedPlanMemberIds");
             Assert.IsTrue(complete.Contains(
-                "PlanDockPlan(seed, value.Facts, value.Topology)"));
-            Assert.IsFalse(complete.Contains("CurrentTopologySnapshot()") ||
+                "StartDockFinalization(seed, remainderSeed)") &&
+                complete.Contains("CaptureDockFacts(expectedIds,") &&
+                complete.Contains("PostFinalDockPlan"));
+            Assert.IsFalse(complete.Contains("value.Facts") ||
                 complete.Contains("_placementRuntime.GetEffective(") ||
                 complete.Contains("LayoutDockChain(") ||
                 complete.Contains("ApplyDockTarget("));
         }
 
         [TestMethod]
-        public void StandaloneDragCommitsDirectlyFromEventFacts()
+        public void StandaloneDragUsesFinalStaCaptureBarrier()
         {
             string coordinator = ReadSource(
                 "Features/StickyNotes/PetStickyDockCoordinator.cs");
-            string commit = Between(coordinator,
-                "private void CompleteStandaloneDragCommit",
-                "private void ResetDockDragState");
-            Assert.IsTrue(commit.Contains("value.Facts") &&
-                commit.Contains("value.Topology") &&
-                commit.Contains("PlacementReason.UserMoveCommit") &&
-                commit.Contains("MarkUserPlacementCommit(seed.Id)") &&
-                commit.Contains("_notes.Save()"));
-            Assert.IsFalse(commit.Contains("PostFinalDockPlan") ||
-                commit.Contains("CaptureDockFacts"));
+            string finalization = Between(coordinator,
+                "private void StartDockFinalization",
+                "private static List<string> CollectExpectedPlanMemberIds");
+            Assert.IsTrue(finalization.Contains("CaptureDockFacts(expectedIds,") &&
+                finalization.Contains("PostFinalDockPlan") &&
+                finalization.Contains("CompleteDockDurableCommit("));
+            Assert.IsFalse(coordinator.Contains("CompleteStandaloneDragCommit"));
         }
 
         [TestMethod]
@@ -2231,7 +2230,7 @@ namespace PennyPet.Tests
         {
             string validation = DockCommitValidationSource();
             Assert.IsTrue(validation.Contains(
-                    "batch.TopologyGeneration != value.Topology.Generation") &&
+                    "batch.TopologyGeneration != expectedTopology.Generation") &&
                 validation.Contains(
                     "member.Facts.TopologyGeneration !="));
         }
@@ -2356,12 +2355,12 @@ namespace PennyPet.Tests
                 "private bool ApplyReprojectResult",
                 "private static bool TryBuildPreference");
             Assert.IsTrue(apply.Contains("result.Facts == null") &&
-                apply.Contains("result.Facts.WindowSequence != result.Sequence") &&
+                apply.Contains("WindowFactsVersionRules.Classify(noteId, result.Sequence,") &&
                 apply.Contains("return true;"));
             Assert.IsTrue(coordinator.Contains(
-                    "StickyUiCommandStatus.Handled &&\n                                ApplyReprojectResult(result, noteId)") &&
+                    "ApplyReprojectResult(result, noteId, snapshot)") &&
                 coordinator.Contains(
-                    "StickyUiCommandStatus.Handled &&\n                        ApplyReprojectResult(result, rehomedNoteId)"));
+                    "ApplyReprojectResult(result, rehomedNoteId, snapshot)"));
         }
 
         [TestMethod]
@@ -2478,8 +2477,7 @@ namespace PennyPet.Tests
             Assert.IsTrue(resume.Contains(
                     "StickyUiCommand.CaptureDockFacts(") &&
                 resume.Contains("result.DockBatchResult.TopologyGeneration") &&
-                resume.Contains("PlanDockPlan(seed,") &&
-                resume.Contains("ApplyLiveDockPlan(plan)"));
+                resume.Contains("_dockInteraction.TryEnterDragging(epoch,"));
             Assert.IsFalse(resume.Contains("StickyDockGroups.") ||
                 resume.Contains("CommitVisibleDockOrder("),
                 "A topology barrier must preserve membership during a drag.");
@@ -2515,7 +2513,7 @@ namespace PennyPet.Tests
 
             Assert.IsTrue(apply.Contains(
                     "ApplyHostedStickyFactsGeometry(") &&
-                apply.Contains("_placementRuntime.UpdateEffective(") &&
+                apply.Contains("_placementRuntime.TryUpdateEffective(") &&
                 apply.Contains("_notes.SaveAsync()"));
             Assert.IsFalse(apply.Contains("CommitHostedStickyPreferred(") ||
                 apply.Contains("PreferredLocalLogical") ||

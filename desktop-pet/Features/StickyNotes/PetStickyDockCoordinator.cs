@@ -95,11 +95,17 @@ namespace PennyPet
             RefreshMenuText();
         }
 
-        private void BeginStickyDockDrag(DockWindowFacts facts)
+        private void BeginStickyDockDrag(DockWindowFacts facts,
+            WindowFacts sourceFacts, DisplayTopologySnapshot topology)
         {
-            if (facts == null || _finalDockPlanPending) return;
+            if (facts == null || sourceFacts == null || topology == null ||
+                !DockExecutionRules.IsSameGeneration(sourceFacts, topology)) return;
             StickyNoteData seed = _notes.Find(facts.NoteId);
             if (seed == null) return;
+            long epoch = _dockInteraction.BeginPreparing(facts.NoteId,
+                topology.Generation);
+            if (epoch == 0) return;
+            _stickyUiHost.SetCurrentDockInteractionEpoch(epoch);
             ClearDockPreview();
             ClearSplitGuide();
             _activeNoteDragId = facts.NoteId;
@@ -141,24 +147,27 @@ namespace PennyPet
             // at drag start, from the actual HWNDs at the current generation.
             string[] refreshIds = _activeDockGroupIds.ToArray();
             PostHostedStickyCommand(StickyUiCommand.CaptureDockFacts(
-                refreshIds), delegate(StickyUiCommandResult result)
+                refreshIds, topology, epoch), delegate(StickyUiCommandResult result)
                 {
                     if (result == null ||
                         result.Status != StickyUiCommandStatus.Handled ||
-                        result.DockBatchResult == null) return;
+                        result.DockBatchResult == null ||
+                        !_dockInteraction.TryEnterDragging(epoch,
+                            topology.Generation)) return;
                     foreach (DockBatchMemberResult member in
                         result.DockBatchResult.Members)
                     {
                         if (member == null || member.Facts == null ||
                             String.IsNullOrWhiteSpace(
                                 member.Facts.RuntimeGdiName)) continue;
-                        _placementRuntime.UpdateEffective(member.NoteId,
+                        _placementRuntime.TryUpdateEffective(member.NoteId,
                             member.Facts);
                     }
                 });
         }
 
-        private void MoveStickyDockDrag(DockWindowFacts facts)
+        private void MoveStickyDockDrag(DockWindowFacts facts,
+            WindowFacts sourceFacts, DisplayTopologySnapshot topology)
         {
             if (facts == null) return;
             StickyNoteData seed = _notes.Find(facts.NoteId);
@@ -166,6 +175,9 @@ namespace PennyPet
             if (_movingDockGroup ||
                 !String.Equals(facts.NoteId, _activeNoteDragId,
                     StringComparison.OrdinalIgnoreCase)) return;
+            if (topology == null ||
+                !_dockInteraction.CanPlan(facts.NoteId, topology.Generation) ||
+                !DockExecutionRules.IsSameGeneration(sourceFacts, topology)) return;
             int dx = facts.X - _activeNoteDragLastFacts.X;
             int dy = facts.Y - _activeNoteDragLastFacts.Y;
             if (dx == 0 && dy == 0) return;
@@ -224,7 +236,8 @@ namespace PennyPet
                 }
             }
 
-            DockPlacementPlan livePlan = PlanLiveDockPlan(seed, facts);
+            DockPlacementPlan livePlan = PlanLiveDockPlan(seed, sourceFacts,
+                topology);
             if (livePlan != null)
             {
                 _movingDockGroup = true;
@@ -251,20 +264,23 @@ namespace PennyPet
         // capture-time topology generation and one mailbox sequence; nothing
         // downstream may re-stamp it against a later Current generation.
         private DockPlacementPlan PlanLiveDockPlan(
-            StickyNoteData seed, DockWindowFacts movedFacts)
+            StickyNoteData seed, WindowFacts sourceFacts,
+            DisplayTopologySnapshot topology)
         {
-            if (seed == null || movedFacts == null) return null;
-            WindowFacts sourceFacts = _placementRuntime.GetEffective(
-                movedFacts.NoteId);
-            if (sourceFacts == null) return null;
-            DisplayTopologySnapshot topology = CurrentTopologySnapshot();
-            return PlanDockPlan(seed, sourceFacts, topology);
+            if (seed == null || sourceFacts == null || topology == null ||
+                !_dockInteraction.CanPlan(sourceFacts.WindowId,
+                    topology.Generation)) return null;
+            return PlanDockPlan(seed, sourceFacts, topology,
+                _dockInteraction.Epoch);
         }
 
         private DockPlacementPlan PlanDockPlan(StickyNoteData seed,
-            WindowFacts sourceFacts, DisplayTopologySnapshot topology)
+            WindowFacts sourceFacts, DisplayTopologySnapshot topology,
+            long interactionEpoch = 0)
         {
             if (seed == null || sourceFacts == null || topology == null)
+                return null;
+            if (!DockExecutionRules.IsSameGeneration(sourceFacts, topology))
                 return null;
             DisplaySurfaceSnapshot surface =
                 topology.FindByRuntimeGdiName(sourceFacts.RuntimeGdiName);
@@ -317,7 +333,7 @@ namespace PennyPet
                 plan = DockPlacementPlanner.Plan(group, sourceFacts,
                     surface, sourceFacts.Dpi,
                     sourceFacts.TopologyGeneration,
-                    _dockPlanMailbox.NextSequence());
+                    _dockPlanMailbox.NextSequence(), interactionEpoch);
             }
             catch (ArgumentException)
             {
@@ -397,49 +413,56 @@ namespace PennyPet
             ClearDockPreview();
             ClearSplitGuide();
             RefreshDockResizeRoles();
-            // Capture each member's actual facts once on the Sticky STA, then
-            // finish the durable commit in the completion continuation. The
-            // final plan is built from the mouse-up event facts/topology and
-            // replaces every pending live frame in the mailbox.
             StickyNoteData remainderSeed =
                 _notes.Find(_splitRemainderNoteId);
-            DockPlacementPlan finalPlan = value == null ? null :
-                PlanDockPlan(seed, value.Facts, value.Topology);
-            if (finalPlan == null)
-            {
-                TraceDockCommitRejected("final plan unavailable");
-                ResetDockDragState(true);
-                return;
-            }
-            List<string> expectedMemberIds =
-                CollectExpectedPlanMemberIds(finalPlan);
-            if (expectedMemberIds.Count == 1)
-            {
-                CompleteStandaloneDragCommit(value, seed, remainderSeed);
-                ResetDockDragState(true);
-                return;
-            }
+            StartDockFinalization(seed, remainderSeed);
+        }
 
-            _finalDockPlanPending = true;
-            _dockPlanMailbox.ReplaceWithFinal(finalPlan);
-            _stickyUiHost.PostFinalDockPlan(_dockPlanMailbox,
-                finalPlan.PlanSequence,
-                delegate(StickyUiCommandResult result)
+        // Mouse-up is an interaction signal, never geometry authority.  A
+        // distinct finalizing epoch first captures current HWND facts, then
+        // replaces every pending live plan with the one final native frame.
+        private void StartDockFinalization(StickyNoteData seed,
+            StickyNoteData remainderSeed)
+        {
+            DisplayTopologySnapshot topology = CurrentTopologySnapshot();
+            if (seed == null || topology == null) { ResetDockDragState(true); return; }
+            long epoch = _dockInteraction.BeginFinalizing(topology.Generation,
+                _splitRemainderNoteId);
+            if (epoch == 0) { ResetDockDragState(true); return; }
+            _stickyUiHost.SetCurrentDockInteractionEpoch(epoch);
+            string sourceId = seed.Id;
+            string[] expectedIds = _activeDockGroupIds.ToArray();
+            PostHostedStickyCommand(StickyUiCommand.CaptureDockFacts(expectedIds,
+                topology, epoch), delegate(StickyUiCommandResult capture)
                 {
-                    try
-                    {
-                        CompleteDockDurableCommit(result, value, seed,
-                            remainderSeed, expectedMemberIds,
-                            finalPlan.PlanSequence);
-                    }
-                    finally
-                    {
-                        _dockPlanMailbox.CompleteFinal(
-                            finalPlan.PlanSequence);
-                        _finalDockPlanPending = false;
-                    }
-                }, _petUiContext);
-            ResetDockDragState(false);
+                    if (!_dockInteraction.Matches(epoch, topology.Generation,
+                        DockInteractionPhase.Finalizing) || capture == null ||
+                        capture.Status != StickyUiCommandStatus.Handled ||
+                        capture.DockBatchResult == null) return;
+                    WindowFacts sourceFacts = null;
+                    foreach (DockBatchMemberResult member in capture.DockBatchResult.Members)
+                        if (member != null && String.Equals(member.NoteId, sourceId,
+                            StringComparison.OrdinalIgnoreCase)) sourceFacts = member.Facts;
+                    DockPlacementPlan finalPlan = PlanDockPlan(seed, sourceFacts,
+                        topology, epoch);
+                    if (finalPlan == null) { TraceDockCommitRejected("final capture unavailable"); ResetDockDragState(true); return; }
+                    List<string> expectedMemberIds = CollectExpectedPlanMemberIds(finalPlan);
+                    _dockPlanMailbox.ReplaceWithFinal(finalPlan);
+                    _stickyUiHost.PostFinalDockPlan(_dockPlanMailbox,
+                        finalPlan.PlanSequence, delegate(StickyUiCommandResult result)
+                        {
+                            try
+                            {
+                                if (_dockInteraction.Matches(epoch,
+                                    topology.Generation,
+                                    DockInteractionPhase.Finalizing))
+                                    CompleteDockDurableCommit(result, topology,
+                                        epoch, seed, remainderSeed,
+                                        expectedMemberIds, finalPlan.PlanSequence);
+                            }
+                            finally { _dockPlanMailbox.CompleteFinal(finalPlan.PlanSequence); ResetDockDragState(false); }
+                        }, _petUiContext);
+                });
         }
 
         private static List<string> CollectExpectedPlanMemberIds(
@@ -452,34 +475,10 @@ namespace PennyPet
             return result;
         }
 
-        private void CompleteStandaloneDragCommit(StickyUiEvent value,
-            StickyNoteData seed, StickyNoteData remainderSeed)
-        {
-            string targetKey;
-            LogicalRect local;
-            if (value == null || value.Facts == null ||
-                value.Topology == null ||
-                value.Facts.TopologyGeneration != value.Topology.Generation ||
-                value.Facts.WindowSequence != value.Sequence ||
-                !TryBuildPreference(value.Facts, value.Topology,
-                    seed.PreferredDisplayTargetKey, out targetKey,
-                    out local) ||
-                !CommitHostedStickyPreferred(seed, targetKey,
-                    local.X, local.Y, local.Width, local.Height,
-                    PlacementReason.UserMoveCommit))
-            {
-                TraceDockCommitRejected("standalone mouse-up facts invalid");
-                return;
-            }
-            _placementRuntime.MarkUserPlacementCommit(seed.Id);
-            CommitVisibleDockOrder(seed);
-            if (remainderSeed != null)
-                CommitVisibleDockOrder(remainderSeed);
-            _notes.Save();
-        }
-
         private void ResetDockDragState(bool clearMailbox)
         {
+            long invalidatingEpoch = _dockInteraction.Reset();
+            _stickyUiHost.SetCurrentDockInteractionEpoch(invalidatingEpoch);
             _activeNoteDragId = null;
             _activeDockGroupIds.Clear();
             _activeDockOriginalFacts.Clear();
@@ -534,7 +533,9 @@ namespace PennyPet
         // come from the batch's actual facts in the completion callback.
         private void ApplyLiveDockPlan(DockPlacementPlan plan)
         {
-            if (plan == null) return;
+            if (plan == null || !_dockInteraction.Matches(
+                plan.InteractionEpoch, plan.TopologyGeneration,
+                DockInteractionPhase.Dragging)) return;
             DockPlanMailbox mailbox = _dockPlanMailbox;
             lock (mailbox.Gate)
             {
@@ -546,6 +547,9 @@ namespace PennyPet
                 delegate(StickyUiCommandResult result)
                 {
                     if (result == null) return;
+                    if (!_dockInteraction.Matches(plan.InteractionEpoch,
+                        plan.TopologyGeneration,
+                        DockInteractionPhase.Dragging)) return;
                     if (result.Status != StickyUiCommandStatus.Handled)
                     {
                         ReportHostedStickyCommandFailure(
@@ -562,6 +566,8 @@ namespace PennyPet
         private void ApplyDockBatchResult(DockBatchResult batch)
         {
             if (batch == null || batch.Members.Count == 0) return;
+            if (!_dockInteraction.Matches(batch.InteractionEpoch,
+                batch.TopologyGeneration, DockInteractionPhase.Dragging)) return;
             if (_displayTopologyRuntime == null ||
                 _displayTopologyRuntime.Current == null ||
                 _displayTopologyRuntime.Current.Generation !=
@@ -582,7 +588,7 @@ namespace PennyPet
                 canonical.AlwaysOnTop = member.Snapshot.AlwaysOnTop;
                 ApplyHostedStickyFactsGeometry(canonical, member.Facts,
                     topology);
-                _placementRuntime.UpdateEffective(member.NoteId,
+                _placementRuntime.TryUpdateEffective(member.NoteId,
                     member.Facts);
                 _hostedRuntime.RecordSequence(member.NoteId,
                     member.WindowSequence);

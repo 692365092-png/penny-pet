@@ -54,6 +54,15 @@ namespace PennyPet
             return new DockWindowFacts(target.NoteId, target.X, target.Y,
                 target.Width, target.Height, target.Visible, target.TopMost);
         }
+
+        internal static DockWindowFacts FromWindowFacts(WindowFacts facts,
+            bool visible, bool topMost)
+        {
+            if (facts == null) return null;
+            PhysicalRect rect = facts.PhysicalBounds;
+            return new DockWindowFacts(facts.WindowId, rect.Left, rect.Top,
+                rect.Width, rect.Height, visible, topMost);
+        }
     }
 
     internal sealed class DockLayoutTarget
