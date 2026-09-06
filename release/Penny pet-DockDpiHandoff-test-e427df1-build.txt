@@ -1,0 +1,6 @@
+branch=codex/display-scale-v2
+source_commit=e427df16d4de4c80b134340029c9af29a4d7d38b
+baseline=45812f50547b270e573c065bd820346e65bc900d
+purpose=DRT-10/11 DPI Dock session topology handoff manual test
+platform=x64
+DRT-12=NOT STARTED
