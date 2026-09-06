@@ -2109,7 +2109,8 @@ namespace PennyPet.Tests
             string member = Between(session,
                 "internal DockBatchMemberResult CaptureDockMember(",
                 "private WindowFacts CaptureFactsWith");
-            Assert.IsTrue(member.Contains("CaptureFactsWith(topology)") &&
+            Assert.IsTrue(member.Contains("AdoptTopology(topology)") &&
+                member.Contains("CaptureFactsWith(_topology)") &&
                 member.Contains("new DockBatchMemberResult("),
                 "The member result must carry facts plus a content snapshot.");
 
@@ -2476,7 +2477,7 @@ namespace PennyPet.Tests
 
             Assert.IsTrue(resume.Contains(
                     "StickyUiCommand.CaptureDockFacts(") &&
-                resume.Contains("result.DockBatchResult.TopologyGeneration") &&
+                resume.Contains("TryApplyDockFactsBarrier(result, expectedIds") &&
                 resume.Contains("_dockInteraction.TryEnterDragging(epoch,"));
             Assert.IsFalse(resume.Contains("StickyDockGroups.") ||
                 resume.Contains("CommitVisibleDockOrder("),

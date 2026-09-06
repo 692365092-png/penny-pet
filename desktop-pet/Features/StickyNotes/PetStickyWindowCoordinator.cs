@@ -491,20 +491,36 @@ namespace PennyPet
                 expectedIds, snapshot, epoch), delegate(StickyUiCommandResult result)
                 {
                     if (!_dockInteraction.Matches(epoch, snapshot.Generation,
-                            DockInteractionPhase.Rebasing) || result == null ||
-                        result.Status != StickyUiCommandStatus.Handled ||
-                        result.DockBatchResult == null ||
-                        result.DockBatchResult.InteractionEpoch != epoch ||
-                        result.DockBatchResult.TopologyGeneration !=
-                            snapshot.Generation || !IsTopologyCurrent(snapshot))
+                        DockInteractionPhase.Rebasing) ||
+                        !IsTopologyCurrent(snapshot))
                         return;
-                    foreach (DockBatchMemberResult member in
-                        result.DockBatchResult.Members)
-                        if (member != null && member.Facts != null)
-                            _placementRuntime.TryUpdateEffective(member.NoteId,
-                                member.Facts);
-                    _dockInteraction.TryEnterDragging(epoch,
-                        snapshot.Generation);
+                    WindowFacts sourceFacts;
+                    if (!TryApplyDockFactsBarrier(result, expectedIds, snapshot,
+                        epoch, sourceId, true, out sourceFacts))
+                    {
+                        DisplayDiagnostics.Trace("DockFactsBarrierRejected",
+                            "phase=Rebasing epoch=" + epoch + " generation=" +
+                            snapshot.Generation + " source=" + sourceId);
+                        return;
+                    }
+                    DockWindowFacts sourceRuntime;
+                    if (!_activeDockCurrentFacts.TryGetValue(sourceId,
+                        out sourceRuntime) || sourceRuntime == null) return;
+                    _activeNoteDragStartFacts = sourceRuntime;
+                    _activeNoteDragLastFacts = sourceRuntime;
+                    _activeNoteDragStartedUtc = DateTime.UtcNow;
+                    _activeNoteSplitEligible = false;
+                    ClearSplitGuide();
+                    if (!_dockInteraction.TryEnterDragging(epoch,
+                        snapshot.Generation)) return;
+                    StickyNoteData seed = _notes.Find(sourceId);
+                    DockPlacementPlan plan = PlanDockPlan(seed, sourceFacts,
+                        snapshot, epoch);
+                    if (plan != null && plan.WindowTargets.Count > 1)
+                    {
+                        ApplyLiveDockPlan(plan);
+                        RememberActiveDockFacts(PlanToDockTargets(plan));
+                    }
                 });
         }
 

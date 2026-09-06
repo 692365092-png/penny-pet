@@ -95,6 +95,94 @@ namespace PennyPet
             RefreshMenuText();
         }
 
+        private sealed class DockFactsBarrierCandidate
+        {
+            internal DockFactsBarrierCandidate(DockBatchMemberResult member,
+                StickyNoteData canonical, DockWindowFacts runtimeFacts)
+            {
+                Member = member;
+                Canonical = canonical;
+                RuntimeFacts = runtimeFacts;
+            }
+            internal DockBatchMemberResult Member { get; private set; }
+            internal StickyNoteData Canonical { get; private set; }
+            internal DockWindowFacts RuntimeFacts { get; private set; }
+        }
+
+        // A Dock interaction is allowed to advance only after every expected
+        // HWND has yielded exact current-generation facts.  Validate the
+        // whole barrier before updating Pet-side mirrors.
+        private bool TryApplyDockFactsBarrier(StickyUiCommandResult result,
+            IList<string> expectedIds, DisplayTopologySnapshot topology,
+            long epoch, string sourceNoteId, bool resetOriginalFacts,
+            out WindowFacts sourceFacts)
+        {
+            sourceFacts = null;
+            if (result == null || result.Status != StickyUiCommandStatus.Handled ||
+                result.DockBatchResult == null || expectedIds == null ||
+                expectedIds.Count == 0 || topology == null || epoch <= 0)
+                return false;
+            DisplayTopologySnapshot current = CurrentTopologySnapshot();
+            if (current == null || current.Generation != topology.Generation)
+                return false;
+            DockBatchResult batch = result.DockBatchResult;
+            if (batch.InteractionEpoch != epoch || batch.PlanSequence != 0 ||
+                batch.TopologyGeneration != topology.Generation ||
+                batch.Members.Count != expectedIds.Count) return false;
+            HashSet<string> expected = new HashSet<string>(expectedIds,
+                StringComparer.OrdinalIgnoreCase);
+            HashSet<string> actual = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+            List<DockFactsBarrierCandidate> candidates =
+                new List<DockFactsBarrierCandidate>();
+            foreach (DockBatchMemberResult member in batch.Members)
+            {
+                StickyNoteData canonical = member == null ? null :
+                    _notes.Find(member.NoteId);
+                if (member == null || member.Snapshot == null ||
+                    member.Facts == null || canonical == null ||
+                    !expected.Contains(member.NoteId) || !actual.Add(member.NoteId) ||
+                    member.WindowSequence != member.Facts.WindowSequence ||
+                    member.Facts.TopologyGeneration != topology.Generation ||
+                    !String.Equals(member.NoteId, member.Facts.WindowId,
+                        StringComparison.OrdinalIgnoreCase) ||
+                    !_hostedRuntime.CanApplySequence(member.NoteId,
+                        member.WindowSequence)) return false;
+                DockWindowFacts runtimeFacts = DockWindowFacts.FromWindowFacts(
+                    member.Facts, member.Snapshot.Visible,
+                    member.Snapshot.AlwaysOnTop);
+                if (runtimeFacts == null) return false;
+                if (String.Equals(member.NoteId, sourceNoteId,
+                    StringComparison.OrdinalIgnoreCase)) sourceFacts = member.Facts;
+                candidates.Add(new DockFactsBarrierCandidate(member, canonical,
+                    runtimeFacts));
+            }
+            if (actual.Count != expected.Count || sourceFacts == null) return false;
+            if (resetOriginalFacts)
+            {
+                _activeDockOriginalFacts.Clear();
+                _activeDockCurrentFacts.Clear();
+            }
+            foreach (DockFactsBarrierCandidate candidate in candidates)
+            {
+                DockBatchMemberResult member = candidate.Member;
+                member.Snapshot.ApplyContentTo(candidate.Canonical);
+                candidate.Canonical.Visible = member.Snapshot.Visible;
+                candidate.Canonical.AlwaysOnTop = member.Snapshot.AlwaysOnTop;
+                ApplyHostedStickyFactsGeometry(candidate.Canonical, member.Facts,
+                    topology);
+                if (!_placementRuntime.TryUpdateEffective(member.NoteId,
+                    member.Facts)) return false;
+                _hostedRuntime.RecordSequence(member.NoteId,
+                    member.WindowSequence);
+                _activeDockCurrentFacts[member.NoteId] = candidate.RuntimeFacts;
+                if (resetOriginalFacts)
+                    _activeDockOriginalFacts[member.NoteId] =
+                        candidate.RuntimeFacts;
+            }
+            return true;
+        }
+
         private void BeginStickyDockDrag(DockWindowFacts facts,
             WindowFacts sourceFacts, DisplayTopologySnapshot topology)
         {
@@ -149,20 +237,30 @@ namespace PennyPet
             PostHostedStickyCommand(StickyUiCommand.CaptureDockFacts(
                 refreshIds, topology, epoch), delegate(StickyUiCommandResult result)
                 {
-                    if (result == null ||
-                        result.Status != StickyUiCommandStatus.Handled ||
-                        result.DockBatchResult == null ||
-                        !_dockInteraction.TryEnterDragging(epoch,
-                            topology.Generation)) return;
-                    foreach (DockBatchMemberResult member in
-                        result.DockBatchResult.Members)
+                    if (!_dockInteraction.Matches(epoch, topology.Generation,
+                        DockInteractionPhase.Preparing)) return;
+                    WindowFacts capturedSource;
+                    if (!TryApplyDockFactsBarrier(result, refreshIds, topology,
+                        epoch, facts.NoteId, true, out capturedSource))
                     {
-                        if (member == null || member.Facts == null ||
-                            String.IsNullOrWhiteSpace(
-                                member.Facts.RuntimeGdiName)) continue;
-                        _placementRuntime.TryUpdateEffective(member.NoteId,
-                            member.Facts);
+                        DisplayDiagnostics.Trace("DockFactsBarrierRejected",
+                            "phase=Preparing epoch=" + epoch + " generation=" +
+                            topology.Generation + " source=" + facts.NoteId);
+                        ResetDockDragState(true);
+                        return;
                     }
+                    DockWindowFacts sourceRuntime;
+                    if (!_activeDockCurrentFacts.TryGetValue(facts.NoteId,
+                        out sourceRuntime) || sourceRuntime == null)
+                    {
+                        ResetDockDragState(true);
+                        return;
+                    }
+                    _activeNoteDragStartFacts = sourceRuntime;
+                    _activeNoteDragLastFacts = sourceRuntime;
+                    _activeNoteDragStartedUtc = DateTime.UtcNow;
+                    if (!_dockInteraction.TryEnterDragging(epoch,
+                        topology.Generation)) ResetDockDragState(true);
                 });
         }
 
@@ -436,13 +534,15 @@ namespace PennyPet
                 topology, epoch), delegate(StickyUiCommandResult capture)
                 {
                     if (!_dockInteraction.Matches(epoch, topology.Generation,
-                        DockInteractionPhase.Finalizing) || capture == null ||
-                        capture.Status != StickyUiCommandStatus.Handled ||
-                        capture.DockBatchResult == null) return;
-                    WindowFacts sourceFacts = null;
-                    foreach (DockBatchMemberResult member in capture.DockBatchResult.Members)
-                        if (member != null && String.Equals(member.NoteId, sourceId,
-                            StringComparison.OrdinalIgnoreCase)) sourceFacts = member.Facts;
+                        DockInteractionPhase.Finalizing)) return;
+                    WindowFacts sourceFacts;
+                    if (!TryApplyDockFactsBarrier(capture, expectedIds, topology,
+                        epoch, sourceId, false, out sourceFacts))
+                    {
+                        TraceDockCommitRejected("final facts barrier rejected");
+                        ResetDockDragState(true);
+                        return;
+                    }
                     DockPlacementPlan finalPlan = PlanDockPlan(seed, sourceFacts,
                         topology, epoch);
                     if (finalPlan == null) { TraceDockCommitRejected("final capture unavailable"); ResetDockDragState(true); return; }
@@ -578,7 +678,12 @@ namespace PennyPet
                 _displayTopologyRuntime.Current;
             foreach (DockBatchMemberResult member in batch.Members)
             {
-                if (member == null || member.Snapshot == null) continue;
+                if (member == null || member.Snapshot == null ||
+                    member.Facts == null || member.WindowSequence !=
+                    member.Facts.WindowSequence || member.Facts.TopologyGeneration !=
+                    batch.TopologyGeneration || !String.Equals(member.NoteId,
+                    member.Facts.WindowId, StringComparison.OrdinalIgnoreCase))
+                    continue;
                 if (!_hostedRuntime.CanApplySequence(member.NoteId,
                     member.WindowSequence)) continue;
                 StickyNoteData canonical = _notes.Find(member.NoteId);

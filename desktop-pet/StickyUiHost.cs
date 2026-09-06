@@ -392,6 +392,10 @@ namespace PennyPet
             if (expectedSessions.Count != plan.WindowTargets.Count)
                 return StickyUiCommandResult.NotHandled();
 
+            foreach (StickyWindowSession session in expectedSessions)
+                if (!session.AdoptTopology(topology))
+                    return StickyUiCommandResult.NotHandled();
+
             List<StickyWindowSession> transitionSessions =
                 new List<StickyWindowSession>();
             List<StickyWindowSession.DockDpiTransition> transitions =
@@ -524,6 +528,10 @@ namespace PennyPet
             if (sessions.Count != request.Group.Members.Count)
                 return StickyUiCommandResult.NotHandled();
 
+            foreach (StickyWindowSession session in sessions)
+                if (!session.AdoptTopology(topology))
+                    return StickyUiCommandResult.NotHandled();
+
             List<StickyWindowSession.DockDpiTransition> transitions =
                 new List<StickyWindowSession.DockDpiTransition>();
             bool placementApplied = false;
@@ -608,23 +616,57 @@ namespace PennyPet
             StickyUiCommand command)
         {
             if (command == null || command.Topology == null ||
-                !IsCurrentTopology(command.Topology) || command.DockNoteIds == null ||
-                command.DockNoteIds.Length == 0)
-                return StickyUiCommandResult.Handled();
-            DisplayTopologySnapshot topology = command.Topology;
+                command.DockNoteIds == null || command.DockNoteIds.Length == 0 ||
+                command.InteractionEpoch <= 0)
+                return StickyUiCommandResult.NotHandled();
+            DisplayTopologySnapshot topology;
+            long currentEpoch;
+            lock (_configurationGate)
+            {
+                topology = _currentTopology;
+                currentEpoch = _currentDockInteractionEpoch;
+            }
+            if (topology == null || topology.Generation !=
+                command.Topology.Generation || currentEpoch !=
+                command.InteractionEpoch)
+                return StickyUiCommandResult.NotHandled();
+            HashSet<string> expected = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
             List<DockBatchMemberResult> members =
                 new List<DockBatchMemberResult>();
             foreach (string noteId in command.DockNoteIds)
             {
+                if (String.IsNullOrWhiteSpace(noteId) || !expected.Add(noteId))
+                    return StickyUiCommandResult.NotHandled();
                 StickyWindowSession session;
                 if (!TryGetSession(noteId, out session))
                     return StickyUiCommandResult.NotHandled();
                 DockBatchMemberResult member =
-                    session.CaptureDockMember(topology);
-                if (member != null) members.Add(member);
+                session.CaptureDockMember(topology);
+                if (member == null || member.Snapshot == null ||
+                    member.Facts == null || member.WindowSequence !=
+                    member.Facts.WindowSequence || member.Facts.TopologyGeneration !=
+                    command.Topology.Generation || !String.Equals(member.NoteId,
+                    noteId, StringComparison.OrdinalIgnoreCase) ||
+                    !String.Equals(member.Facts.WindowId, noteId,
+                    StringComparison.OrdinalIgnoreCase))
+                    return StickyUiCommandResult.NotHandled();
+                members.Add(member);
             }
+            DisplayTopologySnapshot finalTopology;
+            long finalEpoch;
+            lock (_configurationGate)
+            {
+                finalTopology = _currentTopology;
+                finalEpoch = _currentDockInteractionEpoch;
+            }
+            if (finalTopology == null || finalTopology.Generation !=
+                command.Topology.Generation || finalEpoch !=
+                command.InteractionEpoch || members.Count !=
+                command.DockNoteIds.Length)
+                return StickyUiCommandResult.NotHandled();
             return StickyUiCommandResult.Handled(new DockBatchResult(0,
-                topology.Generation, String.Empty, 0, members,
+                command.Topology.Generation, String.Empty, 0, members,
                 command.InteractionEpoch));
         }
 

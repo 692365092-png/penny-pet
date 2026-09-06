@@ -343,6 +343,21 @@ namespace PennyPet
             return StickyUiCommandResult.Handled(_lastSnapshot, _sequence);
         }
 
+        // The Pet owns display topology.  The Sticky STA only adopts its
+        // immutable snapshot as provenance for future HWND events; adoption
+        // is independent of whether a subsequent placement succeeds.
+        internal bool AdoptTopology(DisplayTopologySnapshot topology)
+        {
+            if (!IsAvailable || topology == null) return false;
+            long oldGeneration = _topology == null ? -1 : _topology.Generation;
+            _topology = topology;
+            if (oldGeneration != topology.Generation)
+                DisplayDiagnostics.Trace("StickySessionTopology", "note=" +
+                    _noteId + " old=" + oldGeneration + " new=" +
+                    topology.Generation);
+            return true;
+        }
+
         // Geometry is captured from the HWND; the detached snapshot deliberately
         // excludes legacy canonical placement capture.
         internal StickyUiCommandResult CaptureCurrentFacts(
@@ -612,9 +627,14 @@ namespace PennyPet
         internal DockBatchMemberResult CaptureDockMember(
             DisplayTopologySnapshot topology)
         {
+            if (!AdoptTopology(topology)) return null;
             _sequence++;
             _lastSnapshot = CaptureContentSnapshotForNativeResult();
-            WindowFacts facts = CaptureFactsWith(topology);
+            WindowFacts facts = CaptureFactsWith(_topology);
+            if (facts == null || facts.TopologyGeneration !=
+                _topology.Generation || facts.WindowSequence != _sequence ||
+                !String.Equals(facts.WindowId, _noteId,
+                    StringComparison.OrdinalIgnoreCase)) return null;
             return new DockBatchMemberResult(_noteId, _sequence, facts,
                 _lastSnapshot);
         }
