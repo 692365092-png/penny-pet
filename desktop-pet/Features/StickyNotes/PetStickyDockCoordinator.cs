@@ -696,7 +696,16 @@ namespace PennyPet
             DockPlanMailbox mailbox = _dockPlanMailbox;
             lock (mailbox.Gate)
             {
+                // Diagnostic-only evidence for latest-wins: a newer plan
+                // replacing a still-pending one is a supersede transition.
+                bool superseded =
+                    mailbox.ApplyQueued && mailbox.Current != null;
                 mailbox.Current = plan;
+                if (superseded)
+                    DisplayDiagnostics.Trace("DockPlanSuperseded",
+                        "source=" + plan.SourceNoteId +
+                        " sequence=" + plan.PlanSequence +
+                        " epoch=" + plan.InteractionEpoch);
                 if (mailbox.ApplyQueued) return;
                 mailbox.ApplyQueued = true;
             }
