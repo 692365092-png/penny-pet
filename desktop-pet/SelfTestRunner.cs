@@ -4129,6 +4129,7 @@ namespace PennyPet
             internal bool TemporaryRehomeOk;
             internal bool DockPlanMailboxOk;
             internal bool DockTopologyReprojectOk;
+            internal bool DockZOrderOk;
         }
 
         private sealed class StickyHostedCheckResult
@@ -4992,6 +4993,91 @@ namespace PennyPet
                 reasonOwnedGeometry;
         }
 
+        // Z-order band contract: the pure raise sequence preserves membership
+        // and puts the source last for root/middle/tail drags, and the typed
+        // command factory rejects duplicates, missing source and short groups.
+        private static bool RunDockZOrderCheck()
+        {
+            string[] order;
+
+            bool rootSource =
+                StickyUiHost.TryBuildDockDragRaiseOrder(
+                    new[] { "a", "b", "c" }, "a", out order) &&
+                order.Length == 3 &&
+                order[0] == "c" && order[1] == "b" && order[2] == "a";
+
+            bool middleSource =
+                StickyUiHost.TryBuildDockDragRaiseOrder(
+                    new[] { "a", "b", "c" }, "b", out order) &&
+                order.Length == 3 &&
+                order[0] == "c" && order[1] == "a" && order[2] == "b";
+
+            bool tailSource =
+                StickyUiHost.TryBuildDockDragRaiseOrder(
+                    new[] { "a", "b", "c" }, "c", out order) &&
+                order.Length == 3 &&
+                order[0] == "b" && order[1] == "a" && order[2] == "c";
+
+            bool duplicateRejected =
+                !StickyUiHost.TryBuildDockDragRaiseOrder(
+                    new[] { "a", "b", "b" }, "a", out order) &&
+                order == null;
+
+            bool missingSourceRejected =
+                !StickyUiHost.TryBuildDockDragRaiseOrder(
+                    new[] { "a", "b" }, "x", out order) &&
+                order == null;
+
+            bool shortGroupRejected =
+                !StickyUiHost.TryBuildDockDragRaiseOrder(
+                    new[] { "a" }, "a", out order) &&
+                order == null;
+
+            DisplayTopologySnapshot topology =
+                new DisplayTopologySnapshot(0, new[]
+                {
+                    FakeSurface(1, 0, true, 1080, 1032,
+                        FakeTarget("mdp:zorder"))
+                });
+            bool factoryRejectsDuplicate = false;
+            try
+            {
+                StickyUiCommand.RaiseDockGroupForDrag(
+                    new[] { "a", "a" }, "a", topology, 1);
+            }
+            catch (ArgumentException)
+            {
+                factoryRejectsDuplicate = true;
+            }
+            bool factoryRejectsMissingSource = false;
+            try
+            {
+                StickyUiCommand.RaiseDockGroupForDrag(
+                    new[] { "a", "b" }, "x", topology, 1);
+            }
+            catch (ArgumentException)
+            {
+                factoryRejectsMissingSource = true;
+            }
+            bool factoryPreserves = false;
+            StickyUiCommand command = StickyUiCommand.RaiseDockGroupForDrag(
+                new[] { "a", "b", "c" }, "b", topology, 7);
+            factoryPreserves =
+                command.Kind == StickyUiCommandKind.RaiseDockGroupForDrag &&
+                command.NoteId == "b" &&
+                command.DockNoteIds != null &&
+                command.DockNoteIds.Length == 3 &&
+                command.DockNoteIds[0] == "a" &&
+                command.DockNoteIds[2] == "c" &&
+                command.InteractionEpoch == 7 &&
+                command.Topology != null;
+
+            return rootSource && middleSource && tailSource &&
+                duplicateRejected && missingSourceRejected &&
+                shortGroupRejected && factoryRejectsDuplicate &&
+                factoryRejectsMissingSource && factoryPreserves;
+        }
+
         private static WindowShellCheckResult RunWindowShellChecks(
             StickyNoteData restoredNote)
         {
@@ -5083,6 +5169,8 @@ namespace PennyPet
                 RunDockPlanMailboxCheck();
             result.DockTopologyReprojectOk =
                 RunDockTopologyReprojectCheck();
+            result.DockZOrderOk =
+                RunDockZOrderCheck();
             result.ScaleRangeOk =
                 PetForm.NormalizeScalePercent(47) == 50 &&
                 PetForm.NormalizeScalePercent(104) == 100 &&
@@ -6404,6 +6492,8 @@ namespace PennyPet
                     shellChecks.DockPlanMailboxOk) + ",\n" +
                 "  \"dock_topology_reproject_ok\": " + Bool(
                     shellChecks.DockTopologyReprojectOk) + ",\n" +
+                "  \"dock_zorder_ok\": " + Bool(
+                    shellChecks.DockZOrderOk) + ",\n" +
                 "  \"keyboard_hook_opt_in_and_default_off_ok\": " + Bool(
                     keyboardOverlayChecks.HookOptInDefaultOk) + ",\n" +
                 "  \"keyboard_privacy_notice_persistence_ok\": " + Bool(

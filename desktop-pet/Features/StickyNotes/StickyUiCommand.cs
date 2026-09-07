@@ -11,6 +11,7 @@ namespace PennyPet
         FocusPrimaryInput,
         SetTopMost,
         SetDockResizeRole,
+        RaiseDockGroupForDrag,
         SetBounds,
         Reproject,
         ReprojectDockGroup,
@@ -101,6 +102,72 @@ namespace PennyPet
             if (role == null) throw new ArgumentNullException(nameof(role));
             return new StickyUiCommand(StickyUiCommandKind.SetDockResizeRole,
                 noteId, false, null, null, role);
+        }
+
+        internal static StickyUiCommand RaiseDockGroupForDrag(
+            IEnumerable<string> orderedNoteIds,
+            string sourceNoteId,
+            DisplayTopologySnapshot topology,
+            long interactionEpoch)
+        {
+            if (String.IsNullOrWhiteSpace(sourceNoteId))
+                throw new ArgumentException(
+                    "A source note id is required.",
+                    nameof(sourceNoteId));
+
+            if (topology == null)
+                throw new ArgumentNullException(nameof(topology));
+
+            if (interactionEpoch <= 0)
+                throw new ArgumentOutOfRangeException(
+                    nameof(interactionEpoch));
+
+            List<string> ids = new List<string>();
+            HashSet<string> seen = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+            bool sourceFound = false;
+
+            if (orderedNoteIds != null)
+            {
+                foreach (string noteId in orderedNoteIds)
+                {
+                    if (String.IsNullOrWhiteSpace(noteId) ||
+                        !seen.Add(noteId))
+                        throw new ArgumentException(
+                            "Dock Z-order ids must be unique and non-empty.",
+                            nameof(orderedNoteIds));
+
+                    if (String.Equals(noteId, sourceNoteId,
+                        StringComparison.OrdinalIgnoreCase))
+                        sourceFound = true;
+
+                    ids.Add(noteId);
+                }
+            }
+
+            if (ids.Count < 2)
+                throw new ArgumentException(
+                    "A Dock Z-order command requires at least two members.",
+                    nameof(orderedNoteIds));
+
+            if (!sourceFound)
+                throw new ArgumentException(
+                    "The source note must belong to the Dock group.",
+                    nameof(sourceNoteId));
+
+            return new StickyUiCommand(
+                StickyUiCommandKind.RaiseDockGroupForDrag,
+                sourceNoteId,
+                false,
+                null,
+                null,
+                null,
+                null,
+                topology,
+                null,
+                ids.ToArray(),
+                null,
+                interactionEpoch);
         }
 
         internal static StickyUiCommand SetBounds(string noteId,

@@ -286,6 +286,23 @@ namespace PennyPet
             return CurrentResult();
         }
 
+        // Pure Z-order effect bridge. No sequence bump, snapshot capture,
+        // topology adoption, persistence or event may ride along: raising a
+        // Dock band must never masquerade as a geometry/content mutation.
+        internal bool RaiseForDockDragWithoutActivation()
+        {
+            if (!IsAvailable) return false;
+            try
+            {
+                _window.RaiseForDockDragWithoutActivation();
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         internal StickyUiCommandResult SetDockResizeRole(
             StickyUiDockResizeRole role)
         {

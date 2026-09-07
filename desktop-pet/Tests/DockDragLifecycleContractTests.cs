@@ -21,7 +21,11 @@ namespace PennyPet.Tests
             Assert.IsTrue(method.Contains("CaptureDockInteractionBaseline("));
             Assert.IsFalse(method.Contains("StickyUiCommand.CaptureDockFacts("));
             Assert.IsFalse(method.Contains("TryApplyDockFactsBarrier("));
-            Assert.IsFalse(method.Contains("PostHostedStickyCommand("));
+            // The async facts barrier is gone; the only post allowed at drag
+            // start is the one-time Z-order band request, which is a visual
+            // effect and never delays the first move.
+            Assert.IsTrue(method.Contains(
+                "StickyUiCommand.RaiseDockGroupForDrag("));
         }
 
         [TestMethod]

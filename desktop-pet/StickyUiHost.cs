@@ -121,6 +121,55 @@ namespace PennyPet
             return current != null && current.Generation == topology.Generation;
         }
 
+        // Pure Z-order sequence for one drag: the mature legacy invariant is
+        // tail-to-root for the non-source members, then the source last, so a
+        // moving Dock occupies one contiguous band with the dragged header on
+        // top. Membership order is semantic and must never be re-sorted.
+        internal static bool TryBuildDockDragRaiseOrder(
+            IList<string> orderedNoteIds,
+            string sourceNoteId,
+            out string[] raiseOrder)
+        {
+            raiseOrder = null;
+            if (orderedNoteIds == null ||
+                orderedNoteIds.Count < 2 ||
+                String.IsNullOrWhiteSpace(sourceNoteId))
+                return false;
+
+            HashSet<string> seen = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+            bool sourceFound = false;
+            for (int index = 0; index < orderedNoteIds.Count; index++)
+            {
+                string noteId = orderedNoteIds[index];
+                if (String.IsNullOrWhiteSpace(noteId) ||
+                    !seen.Add(noteId))
+                    return false;
+                if (String.Equals(noteId, sourceNoteId,
+                    StringComparison.OrdinalIgnoreCase))
+                    sourceFound = true;
+            }
+            if (!sourceFound) return false;
+
+            List<string> result = new List<string>(
+                orderedNoteIds.Count);
+            for (int index = orderedNoteIds.Count - 1;
+                index >= 0; index--)
+            {
+                string noteId = orderedNoteIds[index];
+                if (String.Equals(noteId, sourceNoteId,
+                    StringComparison.OrdinalIgnoreCase))
+                    continue;
+                result.Add(noteId);
+            }
+            result.Add(sourceNoteId);
+
+            if (result.Count != orderedNoteIds.Count)
+                return false;
+            raiseOrder = result.ToArray();
+            return true;
+        }
+
         private StickyUiCommandResult HandleCommand(
             StickyUiCommand command)
         {
@@ -151,6 +200,8 @@ namespace PennyPet
                         return TryGetSession(command.NoteId, out session)
                             ? session.SetDockResizeRole(command.DockResizeRole)
                             : StickyUiCommandResult.NotHandled();
+                    case StickyUiCommandKind.RaiseDockGroupForDrag:
+                        return RaiseDockGroupForDrag(command);
                     case StickyUiCommandKind.SetBounds:
                         if (command.Topology != null && !IsCurrentTopology(command.Topology))
                             return StickyUiCommandResult.NotHandled();
@@ -238,6 +289,110 @@ namespace PennyPet
         {
             return _sessions.TryGetValue(noteId ?? String.Empty, out session) &&
                 session != null && session.IsAvailable;
+        }
+
+        // One drag-start Z-order transaction for a whole Dock group. The
+        // entire expected member set is validated first (ids, sessions, HWNDs,
+        // current generation and epoch), then the tail-to-root non-source
+        // members are raised and the source is raised last. No geometry,
+        // persistence or focus effect may ride along.
+        private StickyUiCommandResult RaiseDockGroupForDrag(
+            StickyUiCommand command)
+        {
+            if (command == null ||
+                command.Topology == null ||
+                command.DockNoteIds == null ||
+                command.DockNoteIds.Length < 2 ||
+                String.IsNullOrWhiteSpace(command.NoteId) ||
+                command.InteractionEpoch <= 0)
+                return StickyUiCommandResult.NotHandled();
+
+            DisplayTopologySnapshot currentTopology;
+            long currentEpoch;
+            lock (_configurationGate)
+            {
+                currentTopology = _currentTopology;
+                currentEpoch = _currentDockInteractionEpoch;
+            }
+
+            if (currentTopology == null ||
+                command.Topology.Generation != currentTopology.Generation ||
+                command.InteractionEpoch != currentEpoch)
+            {
+                DisplayDiagnostics.Trace("DockZOrderRaiseRejected",
+                    "reason=stale source=" + command.NoteId +
+                    " commandGeneration=" + command.Topology.Generation +
+                    " currentGeneration=" +
+                    (currentTopology == null ? -1 : currentTopology.Generation) +
+                    " commandEpoch=" + command.InteractionEpoch +
+                    " currentEpoch=" + currentEpoch);
+                return StickyUiCommandResult.NotHandled();
+            }
+
+            string[] raiseOrder;
+            if (!TryBuildDockDragRaiseOrder(command.DockNoteIds,
+                command.NoteId, out raiseOrder))
+            {
+                DisplayDiagnostics.Trace("DockZOrderRaiseRejected",
+                    "reason=invalid-order source=" + command.NoteId +
+                    " epoch=" + command.InteractionEpoch);
+                return StickyUiCommandResult.NotHandled();
+            }
+
+            Dictionary<string, StickyWindowSession> sessions =
+                new Dictionary<string, StickyWindowSession>(
+                    StringComparer.OrdinalIgnoreCase);
+            foreach (string noteId in command.DockNoteIds)
+            {
+                StickyWindowSession session;
+                if (!TryGetSession(noteId, out session) ||
+                    session.PlacementHwnd == IntPtr.Zero)
+                {
+                    DisplayDiagnostics.Trace("DockZOrderRaiseRejected",
+                        "reason=missing-session source=" + command.NoteId +
+                        " missing=" + noteId +
+                        " epoch=" + command.InteractionEpoch);
+                    return StickyUiCommandResult.NotHandled();
+                }
+                sessions[noteId] = session;
+            }
+
+            // Recheck the two stale tokens immediately before the effect.
+            lock (_configurationGate)
+            {
+                if (_currentTopology == null ||
+                    _currentTopology.Generation !=
+                        command.Topology.Generation ||
+                    _currentDockInteractionEpoch !=
+                        command.InteractionEpoch)
+                {
+                    DisplayDiagnostics.Trace("DockZOrderRaiseRejected",
+                        "reason=stale-before-effect source=" +
+                        command.NoteId +
+                        " epoch=" + command.InteractionEpoch);
+                    return StickyUiCommandResult.NotHandled();
+                }
+            }
+
+            foreach (string noteId in raiseOrder)
+            {
+                if (!sessions[noteId]
+                    .RaiseForDockDragWithoutActivation())
+                {
+                    DisplayDiagnostics.Trace("DockZOrderRaiseRejected",
+                        "reason=native-failure source=" + command.NoteId +
+                        " member=" + noteId +
+                        " epoch=" + command.InteractionEpoch);
+                    return StickyUiCommandResult.NotHandled();
+                }
+            }
+
+            DisplayDiagnostics.Trace("DockZOrderRaised",
+                "source=" + command.NoteId +
+                " members=" + command.DockNoteIds.Length +
+                " generation=" + command.Topology.Generation +
+                " epoch=" + command.InteractionEpoch);
+            return StickyUiCommandResult.Handled();
         }
 
         private void SessionEventRaised(StickyWindowSession session,

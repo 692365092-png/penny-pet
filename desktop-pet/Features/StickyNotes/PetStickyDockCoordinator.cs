@@ -208,6 +208,41 @@ namespace PennyPet
             return result;
         }
 
+        // Semantic Dock-chain order of the visible active members, filtered to
+        // the exact active set. A partial group is never sent silently: the
+        // Z-order command must cover the whole moving band or nothing.
+        private string[] BuildActiveDockZOrderIds(StickyNoteData seed)
+        {
+            if (seed == null || _activeDockGroupIds.Count < 2)
+                return new string[0];
+
+            HashSet<string> active = new HashSet<string>(
+                _activeDockGroupIds, StringComparer.OrdinalIgnoreCase);
+            List<StickyNoteData> ordered =
+                BuildAuthoritativeVisibleDockOrder(seed);
+            List<string> result = new List<string>();
+            HashSet<string> seen = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+            foreach (StickyNoteData note in ordered)
+            {
+                if (note == null || !note.Visible ||
+                    !active.Contains(note.Id) || !seen.Add(note.Id))
+                    continue;
+                result.Add(note.Id);
+            }
+
+            if (result.Count != active.Count)
+            {
+                DisplayDiagnostics.Trace("DockZOrderRaiseRejected",
+                    "reason=pet-order-mismatch source=" +
+                    (seed.Id ?? String.Empty) +
+                    " active=" + active.Count +
+                    " ordered=" + result.Count);
+                return new string[0];
+            }
+            return result.ToArray();
+        }
+
         private void BeginStickyDockDrag(DockWindowFacts facts,
             WindowFacts sourceFacts, DisplayTopologySnapshot topology)
         {
@@ -259,6 +294,28 @@ namespace PennyPet
                     _activeDockGroupIds.Count);
             if (_activeNoteSplitEligible)
                 ShowSplitGuide(seed, groupFacts);
+            // One drag-start Z-order transaction: restore the contiguous
+            // moving-group band before the live geometry drag is armed. Only
+            // this single request may reorder Z; live batches stay SWP_NOZORDER.
+            string[] zOrderIds = BuildActiveDockZOrderIds(seed);
+            if (zOrderIds.Length > 1)
+            {
+                PostHostedStickyCommand(
+                    StickyUiCommand.RaiseDockGroupForDrag(zOrderIds,
+                        facts.NoteId, topology, epoch),
+                    delegate(StickyUiCommandResult result)
+                    {
+                        if (result != null && result.Status ==
+                            StickyUiCommandStatus.Handled) return;
+                        // Z-order failure must not corrupt or cancel the
+                        // geometry drag; it stays a visible manual-test
+                        // failure diagnosed separately from placement.
+                        DisplayDiagnostics.Trace("DockZOrderRaiseRejected",
+                            "reason=host-result source=" + facts.NoteId +
+                            " generation=" + topology.Generation +
+                            " epoch=" + epoch);
+                    });
+            }
             // Arm the first move in this callback; the source HWND is already
             // following the user and cannot wait for a follower capture.
             if (!_dockInteraction.TryEnterDragging(epoch, topology.Generation))
