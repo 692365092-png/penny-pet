@@ -180,6 +180,8 @@ namespace PennyPet
                 {
                     case StickyUiCommandKind.Create:
                         return CreateSession(command);
+                    case StickyUiCommandKind.EnsureSession:
+                        return EnsureSession(command);
                     case StickyUiCommandKind.Show:
                         return TryGetSession(command.NoteId, out session)
                             ? session.Show(command.Flag, command.Topology)
@@ -275,6 +277,65 @@ namespace PennyPet
                     return session.Reproject(command.ReprojectTarget,
                         command.Topology, command.Flag);
                 return session.Show(command.Flag, command.Topology);
+            }
+            catch
+            {
+                session.CloseAfterFailure();
+                _sessions.Remove(command.NoteId);
+                throw;
+            }
+        }
+
+        private StickyUiCommandResult EnsureSession(
+            StickyUiCommand command)
+        {
+            if (command == null ||
+                command.Snapshot == null ||
+                !String.Equals(command.NoteId,
+                    command.Snapshot.NoteId,
+                    StringComparison.OrdinalIgnoreCase))
+                return StickyUiCommandResult.NotHandled();
+
+            StickyWindowSession existing;
+
+            if (TryGetSession(command.NoteId, out existing))
+            {
+                if (command.Topology != null)
+                    existing.AdoptTopology(command.Topology);
+
+                if (command.Reminders != null)
+                    existing.UpdateReminders(command.Reminders);
+
+                DisplayDiagnostics.Trace(
+                    "StickySessionEnsured",
+                    "note=" + command.NoteId + " created=0");
+
+                return existing.CurrentResult();
+            }
+
+            StickyWindowSession session =
+                new StickyWindowSession(
+                    command.Snapshot,
+                    SessionEventRaised);
+
+            _sessions[command.NoteId] = session;
+
+            try
+            {
+                if (command.Topology != null &&
+                    !session.AdoptTopology(command.Topology))
+                    throw new InvalidOperationException(
+                        "Could not adopt topology.");
+
+                if (command.Reminders != null)
+                    session.UpdateReminders(command.Reminders);
+
+                DisplayDiagnostics.Trace(
+                    "StickySessionEnsured",
+                    "note=" + command.NoteId + " created=1");
+
+                // No Show(), no placement, no focus.
+                return session.CurrentResult();
             }
             catch
             {
@@ -669,16 +730,13 @@ namespace PennyPet
 
             List<StickyWindowSession> sessions =
                 new List<StickyWindowSession>();
-            List<IntPtr> handles = new List<IntPtr>();
             foreach (DockLogicalMember member in request.Group.Members)
             {
                 StickyWindowSession session;
                 if (member == null ||
-                    !TryGetSession(member.NoteId, out session) ||
-                    session.PlacementHwnd == IntPtr.Zero)
+                    !TryGetSession(member.NoteId, out session))
                     return StickyUiCommandResult.NotHandled();
                 sessions.Add(session);
-                handles.Add(session.PlacementHwnd);
             }
             if (sessions.Count != request.Group.Members.Count)
                 return StickyUiCommandResult.NotHandled();
@@ -706,6 +764,21 @@ namespace PennyPet
                     if (targetDpi > 0 && memberDpi != targetDpi)
                         return StickyUiCommandResult.NotHandled();
                     if (targetDpi == 0) targetDpi = memberDpi;
+                }
+
+                List<IntPtr> handles = new List<IntPtr>();
+                foreach (StickyWindowSession session in sessions)
+                {
+                    IntPtr hwnd = session.PlacementHwnd;
+                    if (hwnd == IntPtr.Zero)
+                    {
+                        DisplayDiagnostics.Trace(
+                            "DockRestoreGroupRejected",
+                            "stage=handle-after-bootstrap note=" +
+                            session.NoteId);
+                        return StickyUiCommandResult.NotHandled();
+                    }
+                    handles.Add(hwnd);
                 }
 
                 DockPlacementPlan plan;

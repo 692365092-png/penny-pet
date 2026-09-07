@@ -218,16 +218,10 @@ namespace PennyPet
         {
             if (Controls.Count == 0) return;
 
-            int transparentMargin =
-                (int)Math.Round(
-                    Math.Max(0, petBounds.Width) * 44.0 / 192.0,
-                    MidpointRounding.AwayFromZero);
-
-            int logicalGapPhysical =
-                _metrics.ScaleLength(20);
-
             int overlap =
-                (logicalGapPhysical + transparentMargin) / 2;
+                SideTabLayoutPolicy.CalculatePhysicalOverlap(
+                    petBounds.Width,
+                    _metrics);
 
             DockPoint location =
                 StickyDockGeometry.CalculateSideTabLocation(

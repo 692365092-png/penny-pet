@@ -11,7 +11,11 @@ namespace PennyPet
     {
         CurrentRuntimeRepair,
         PreferredReturn,
-        TemporaryRehome
+        TemporaryRehome,
+
+        // Reopen a hidden Dock component from its durable v11 preference.
+        // This is not a user placement commit.
+        RestorePreferred
     }
 
     // Coordinates sticky-note window lifetime and placement from the pet.
@@ -646,8 +650,10 @@ namespace PennyPet
             if (group == null || group.Count < 2) return false;
             StickyNoteData root = group[0];
             if (root == null) return false;
-            bool usePreferred = reason == DockTopologyReprojectReason.PreferredReturn ||
-                reason == DockTopologyReprojectReason.TemporaryRehome;
+            bool usePreferred =
+                reason == DockTopologyReprojectReason.PreferredReturn ||
+                reason == DockTopologyReprojectReason.TemporaryRehome ||
+                reason == DockTopologyReprojectReason.RestorePreferred;
             int rootX = usePreferred ? root.PreferredLocalLogicalX : root.LocalLogicalX;
             int rootY = usePreferred ? root.PreferredLocalLogicalY : root.LocalLogicalY;
             int unifiedWidth = usePreferred ? root.PreferredLocalLogicalWidth : root.LocalLogicalWidth;
@@ -2002,10 +2008,436 @@ namespace PennyPet
             RefreshMenuText();
         }
 
+        private sealed class HostedDockRestorePreparation
+        {
+            internal HostedDockRestorePreparation(
+                IList<StickyNoteData> ordered, StickyNoteData focus,
+                bool focusEditor, bool persistVisibility)
+            {
+                Ordered = new List<StickyNoteData>(ordered);
+                Focus = focus;
+                FocusEditor = focusEditor;
+                PersistVisibility = persistVisibility;
+                Pending = Ordered.Count;
+            }
+
+            internal List<StickyNoteData> Ordered;
+            internal StickyNoteData Focus;
+            internal bool FocusEditor;
+            internal bool PersistVisibility;
+            internal int Pending;
+            internal bool Failed;
+            internal string FailedNoteId;
+            internal StickyUiCommandResult FailureResult;
+            internal long PlanSequence;
+        }
+
         private bool TryRestoreHostedDockComponent(
             List<StickyNoteData> ordered, StickyNoteData focus,
             bool focusEditor, bool persistVisibility)
         {
+            if (ordered == null || ordered.Count < 2) return false;
+
+            DisplayTopologySnapshot topology = CurrentTopologySnapshot();
+            if (topology == null) return false;
+
+            bool migrated = MigrateDockRestorePreferredIfNeeded(
+                ordered, topology);
+
+            if (!HasCompleteDockPreferredGeometry(ordered))
+            {
+                DisplayDiagnostics.Trace("DockRestoreLegacyFallback",
+                    "reason=incomplete-preferred members=" + ordered.Count);
+                return TryRestoreHostedDockComponentLegacyFallback(
+                    ordered, focus, focusEditor, persistVisibility);
+            }
+
+            if (migrated) _notes.Save();
+
+            return PrepareHostedDockRestoreSessions(
+                ordered, focus, focusEditor, persistVisibility);
+        }
+
+        private static bool HasCompleteDockPreferredGeometry(
+            IList<StickyNoteData> group)
+        {
+            if (group == null || group.Count < 2) return false;
+            foreach (StickyNoteData member in group)
+            {
+                if (member == null ||
+                    String.IsNullOrWhiteSpace(
+                        member.PreferredDisplayTargetKey) ||
+                    member.PreferredLocalLogicalWidth <= 0 ||
+                    member.PreferredLocalLogicalHeight <= 0)
+                    return false;
+            }
+            return true;
+        }
+
+        private bool MigrateDockRestorePreferredIfNeeded(
+            IList<StickyNoteData> group,
+            DisplayTopologySnapshot topology)
+        {
+            if (group == null || topology == null) return false;
+            bool changed = false;
+            foreach (StickyNoteData member in group)
+            {
+                if (member == null) continue;
+                bool hasPreferred =
+                    !String.IsNullOrWhiteSpace(
+                        member.PreferredDisplayTargetKey) &&
+                    member.PreferredLocalLogicalWidth > 0 &&
+                    member.PreferredLocalLogicalHeight > 0;
+                if (hasPreferred) continue;
+                if (StickyPlacementRules.MigrateV10Preferred(
+                    member, topology)) changed = true;
+            }
+            return changed;
+        }
+
+        private bool TryResolveDockRestoreTarget(
+            IList<StickyNoteData> group,
+            DisplayTopologySnapshot topology,
+            WindowFacts petFacts,
+            out DisplaySurfaceSnapshot targetSurface,
+            out DockTopologyReprojectReason reason)
+        {
+            targetSurface = null;
+            reason = DockTopologyReprojectReason.RestorePreferred;
+
+            if (group == null || group.Count < 2 || topology == null)
+                return false;
+
+            DisplaySurfaceSnapshot preferred =
+                FindCommonDockPreferredSurface(group, topology);
+
+            if (preferred != null)
+            {
+                targetSurface = preferred;
+                reason = DockTopologyReprojectReason.RestorePreferred;
+                return true;
+            }
+
+            if (!HasCompleteDockPreferredGeometry(group)) return false;
+
+            StickyNoteData root = group[0];
+            if (root == null) return false;
+
+            DisplaySurfaceSnapshot fallback =
+                FallbackDisplayPolicy.ResolveFallbackSurface(
+                    topology,
+                    root.PreferredDisplayTargetKey,
+                    new PhysicalRect(root.X, root.Y, root.Width, root.Height),
+                    petFacts == null ? String.Empty :
+                        petFacts.RuntimeGdiName);
+
+            if (fallback == null) return false;
+
+            targetSurface = fallback;
+            reason = DockTopologyReprojectReason.TemporaryRehome;
+            return true;
+        }
+
+        private bool PrepareHostedDockRestoreSessions(
+            List<StickyNoteData> ordered, StickyNoteData focus,
+            bool focusEditor, bool persistVisibility)
+        {
+            if (ordered == null || ordered.Count < 2) return false;
+
+            DisplayTopologySnapshot topology = CurrentTopologySnapshot();
+            if (topology == null) return false;
+
+            HostedDockRestorePreparation state =
+                new HostedDockRestorePreparation(
+                    ordered, focus, focusEditor, persistVisibility);
+
+            foreach (StickyNoteData member in state.Ordered)
+            {
+                if (member == null || String.IsNullOrWhiteSpace(member.Id))
+                    return false;
+
+                _hostedRuntime.RemoveNote(member.Id);
+                _hostedRuntime.AddNote(member.Id);
+
+                DisplayDiagnostics.Trace("DockRestoreMemberPrepare",
+                    "note=" + member.Id +
+                    " generation=" + topology.Generation);
+
+                StickyNoteData memberCopy = member;
+                StickyUiCommand command = StickyUiCommand.EnsureSession(
+                    StickyNoteUiSnapshot.FromData(memberCopy),
+                    _reminders.GetItems(), topology);
+
+                PostHostedStickyCommand(command,
+                    delegate(StickyUiCommandResult result)
+                    {
+                        if (result == null ||
+                            result.Status != StickyUiCommandStatus.Handled)
+                        {
+                            state.Failed = true;
+                            if (state.FailureResult == null)
+                            {
+                                state.FailureResult = result;
+                                state.FailedNoteId = memberCopy.Id;
+                            }
+                            DisplayDiagnostics.Trace(
+                                "DockRestoreMemberRejected",
+                                "stage=ensure-session note=" + memberCopy.Id +
+                                " generation=" + topology.Generation +
+                                " status=" +
+                                (result == null ? "null" :
+                                    result.Status.ToString()));
+                        }
+                        else
+                        {
+                            _hostedRuntime.RecordSequence(
+                                memberCopy.Id, result.Sequence);
+                        }
+
+                        state.Pending--;
+                        if (state.Pending != 0) return;
+
+                        if (state.Failed)
+                        {
+                            FailHostedDockRestore(state, "ensure-session");
+                            return;
+                        }
+
+                        CompleteHostedDockRestorePlacement(state);
+                    });
+            }
+
+            return true;
+        }
+
+        private void CompleteHostedDockRestorePlacement(
+            HostedDockRestorePreparation state)
+        {
+            if (state == null || state.Ordered == null ||
+                state.Ordered.Count < 2) return;
+
+            DisplayTopologySnapshot topology = CurrentTopologySnapshot();
+            if (topology == null)
+            {
+                FailHostedDockRestore(state, "missing-topology");
+                return;
+            }
+
+            bool migrated = MigrateDockRestorePreferredIfNeeded(
+                state.Ordered, topology);
+            if (migrated) _notes.Save();
+
+            DisplaySurfaceSnapshot targetSurface;
+            DockTopologyReprojectReason reason;
+            if (!TryResolveDockRestoreTarget(
+                state.Ordered, topology, CapturePetWindowFacts(topology),
+                out targetSurface, out reason))
+            {
+                FailHostedDockRestore(state, "resolve-target");
+                return;
+            }
+
+            DockGroupLogicalState logical;
+            if (!TryBuildDockTopologyLogicalState(
+                state.Ordered, reason, out logical))
+            {
+                FailHostedDockRestore(state, "logical-state");
+                return;
+            }
+
+            StickyDockGroups.ApplyOrderedGroup(state.Ordered);
+
+            DisplayDiagnostics.Trace("DockRestoreGroupQueued",
+                "stage=reproject members=" + state.Ordered.Count +
+                " generation=" + topology.Generation +
+                " target=" + targetSurface.RuntimeSurfaceId +
+                " reason=" + reason);
+
+            bool posted = PostDockGroupRestoreReproject(
+                state, topology, targetSurface, reason, logical);
+            if (!posted) FailHostedDockRestore(state, "reproject-post");
+        }
+
+        private bool PostDockGroupRestoreReproject(
+            HostedDockRestorePreparation state,
+            DisplayTopologySnapshot topology,
+            DisplaySurfaceSnapshot targetSurface,
+            DockTopologyReprojectReason reason,
+            DockGroupLogicalState logical)
+        {
+            if (state == null || topology == null ||
+                targetSurface == null || logical == null) return false;
+
+            long planSequence = _dockPlanMailbox.NextSequence();
+            state.PlanSequence = planSequence;
+            bool centerInWorkArea =
+                reason == DockTopologyReprojectReason.TemporaryRehome;
+
+            DockGroupReprojectPlan plan = new DockGroupReprojectPlan(
+                topology.Generation, planSequence,
+                targetSurface.RuntimeSurfaceId, logical, centerInWorkArea);
+
+            PostHostedStickyCommand(
+                StickyUiCommand.ReprojectDockGroup(plan, topology),
+                delegate(StickyUiCommandResult result)
+                {
+                    CompleteHostedDockRestoreReproject(
+                        state, topology, targetSurface, reason, result);
+                });
+
+            return true;
+        }
+
+        private void CompleteHostedDockRestoreReproject(
+            HostedDockRestorePreparation state,
+            DisplayTopologySnapshot topology,
+            DisplaySurfaceSnapshot targetSurface,
+            DockTopologyReprojectReason reason,
+            StickyUiCommandResult result)
+        {
+            List<string> expectedIds = new List<string>();
+            foreach (StickyNoteData member in state.Ordered)
+                if (member != null && !String.IsNullOrWhiteSpace(member.Id))
+                    expectedIds.Add(member.Id);
+
+            if (!TryApplyDockTopologyResult(result, topology, targetSurface,
+                expectedIds, state.PlanSequence))
+            {
+                DisplayDiagnostics.Trace("DockRestoreGroupRejected",
+                    "stage=reproject members=" + expectedIds.Count);
+                FailHostedDockRestore(state, "reproject", result);
+                return;
+            }
+
+            if (reason == DockTopologyReprojectReason.TemporaryRehome)
+            {
+                foreach (string noteId in expectedIds)
+                    _placementRuntime.MarkTemporaryRehome(noteId,
+                        "dock-preferred-display-missing");
+            }
+            else if (reason == DockTopologyReprojectReason.RestorePreferred)
+            {
+                foreach (string noteId in expectedIds)
+                    _placementRuntime.ClearTemporaryRehome(noteId);
+            }
+
+            ShowRestoredDockGroup(state, topology);
+        }
+
+        private void ShowRestoredDockGroup(
+            HostedDockRestorePreparation state,
+            DisplayTopologySnapshot topology)
+        {
+            int pending = state.Ordered.Count;
+            bool failed = false;
+            StickyUiCommandResult firstFailure = null;
+
+            foreach (StickyNoteData member in state.Ordered)
+            {
+                StickyNoteData memberCopy = member;
+                bool focus = state.FocusEditor && state.Focus != null &&
+                    String.Equals(memberCopy.Id, state.Focus.Id,
+                        StringComparison.OrdinalIgnoreCase);
+
+                PostHostedStickyCommand(
+                    StickyUiCommand.Show(memberCopy.Id, focus, topology),
+                    delegate(StickyUiCommandResult result)
+                    {
+                        if (result == null ||
+                            result.Status != StickyUiCommandStatus.Handled)
+                        {
+                            failed = true;
+                            if (firstFailure == null) firstFailure = result;
+                            DisplayDiagnostics.Trace(
+                                "DockRestoreMemberRejected",
+                                "stage=final-show note=" + memberCopy.Id);
+                        }
+                        else
+                        {
+                            ApplyHostedStickySnapshot(
+                                result.Snapshot, result.Sequence, false);
+                        }
+
+                        pending--;
+                        if (pending != 0) return;
+
+                        if (failed)
+                        {
+                            FailHostedDockRestore(state, "final-show",
+                                firstFailure);
+                            return;
+                        }
+
+                        CompleteHostedDockRestoreSuccess(state);
+                    });
+            }
+        }
+
+        private void CompleteHostedDockRestoreSuccess(
+            HostedDockRestorePreparation state)
+        {
+            foreach (StickyNoteData member in state.Ordered)
+            {
+                if (member == null) continue;
+                member.Visible = true;
+                member.AlwaysOnTop = state.Ordered[0].AlwaysOnTop;
+            }
+
+            StickyDockGroups.ApplyOrderedGroup(state.Ordered);
+
+            if (state.PersistVisibility) _notes.Save();
+
+            RefreshDockResizeRoles();
+            RefreshNoteTabs();
+            RefreshMenuText();
+
+            DisplayDiagnostics.Trace("DockRestoreCompleted",
+                "members=" + state.Ordered.Count);
+        }
+
+        private void FailHostedDockRestore(
+            HostedDockRestorePreparation state, string stage,
+            StickyUiCommandResult result = null)
+        {
+            List<string> ids = new List<string>();
+            foreach (StickyNoteData member in state.Ordered)
+                if (member != null && !String.IsNullOrWhiteSpace(member.Id))
+                    ids.Add(member.Id);
+
+            DisplayDiagnostics.Trace("DockRestoreGroupRejected",
+                "stage=" + (stage ?? String.Empty) +
+                " members=" + ids.Count);
+
+            ReportHostedStickyCommandFailure(
+                "sticky-hosted-dock-restore-" + (stage ?? "unknown"),
+                result);
+
+            foreach (string noteId in ids)
+            {
+                _hostedRuntime.RemoveNote(noteId);
+                StickyNoteData canonical = _notes.Find(noteId);
+                if (canonical != null) canonical.Visible = false;
+                PostHostedStickyCommand(StickyUiCommand.Close(noteId),
+                    delegate(StickyUiCommandResult ignored) { });
+            }
+
+            _notes.SaveAsync();
+            RefreshNoteTabs();
+            RefreshMenuText();
+
+            ShowBubble("Dock 便利贴组恢复失败，内容已保留在侧边页签中。");
+        }
+
+        private bool TryRestoreHostedDockComponentLegacyFallback(
+            List<StickyNoteData> ordered, StickyNoteData focus,
+            bool focusEditor, bool persistVisibility)
+        {
+            // Compatibility-only restore path for data that cannot yet
+            // produce a complete durable v11 Dock preference. Normal
+            // current-schema restore must never enter this method.
+            // Scheduled for retirement after PC-3/PC-9.
+            DisplayDiagnostics.Trace("DockRestoreLegacyFallback",
+                "members=" + (ordered == null ? 0 : ordered.Count));
             if (ordered == null || ordered.Count == 0) return false;
             StickyNoteData rootData = ordered[0];
             int rootWidth = Math.Max(280, Math.Min(900, rootData.Width));
@@ -2223,6 +2655,20 @@ namespace PennyPet
             _leftNoteTabs.ApplyPhysicalMetrics(metrics);
             _rightNoteTabs.ApplyPhysicalMetrics(metrics);
 
+            DockRect petRect = new DockRect(
+                petFacts.PhysicalBounds.Left,
+                petFacts.PhysicalBounds.Top,
+                petFacts.PhysicalBounds.Width,
+                petFacts.PhysicalBounds.Height);
+            DockRect workRect = new DockRect(
+                workArea.Left, workArea.Top,
+                workArea.Width, workArea.Height);
+            int overlap = SideTabLayoutPolicy.CalculatePhysicalOverlap(
+                petRect.Width, metrics);
+            int leftCount = SideTabLayoutPolicy.CalculateEdgeAwareLeftCount(
+                hidden.Count, petRect, workRect, metrics.Width, overlap,
+                metrics.WindowMarginX);
+
             StringBuilder signatureBuilder = new StringBuilder();
             foreach (SideTabSnapshot note in hidden)
             {
@@ -2233,6 +2679,9 @@ namespace PennyPet
             signatureBuilder.Append("dpi=")
                 .Append(metrics.Dpi)
                 .Append('\n');
+            signatureBuilder.Append("left=")
+                .Append(leftCount)
+                .Append('\n');
             string signature = signatureBuilder.ToString();
             if (String.Equals(signature, _noteTabsSignature,
                 StringComparison.Ordinal))
@@ -2242,9 +2691,6 @@ namespace PennyPet
                 return;
             }
             _noteTabsSignature = signature;
-            int leftCount =
-                SideTabLayoutPolicy.CalculateBalancedLeftCount(
-                    hidden.Count);
 
             int logicalWorkHeight =
                 SideTabLayoutPolicy.PhysicalWorkHeightToLogical(
@@ -2260,6 +2706,12 @@ namespace PennyPet
                 " total=" + hidden.Count +
                 " left=" + leftCount +
                 " right=" + (hidden.Count - leftCount) +
+                " petLeft=" + petRect.Left +
+                " petRight=" + petRect.Right +
+                " workLeft=" + workRect.Left +
+                " workRight=" + workRect.Right +
+                " stripWidth=" + metrics.Width +
+                " overlap=" + overlap +
                 " logicalCapacity=" + logicalCapacity +
                 " surface=" + petSurface.RuntimeSurfaceId);
             List<SideTabSnapshot> left = hidden.GetRange(0, leftCount);
@@ -2336,9 +2788,28 @@ namespace PennyPet
                 out metrics))
                 return;
 
-            if (!StickyNoteTabsForm.IsLayoutSplitCurrent(
-                _leftNoteTabs.Controls.Count,
-                _rightNoteTabs.Controls.Count))
+            Rectangle petBounds = new Rectangle(
+                petFacts.PhysicalBounds.Left,
+                petFacts.PhysicalBounds.Top,
+                petFacts.PhysicalBounds.Width,
+                petFacts.PhysicalBounds.Height);
+            DockRect petRect = new DockRect(
+                petBounds.Left, petBounds.Top,
+                petBounds.Width, petBounds.Height);
+            DockRect workRect = new DockRect(
+                work.Left, work.Top, work.Width, work.Height);
+            int total = _leftNoteTabs.Controls.Count +
+                _rightNoteTabs.Controls.Count;
+            int overlap = SideTabLayoutPolicy.CalculatePhysicalOverlap(
+                petBounds.Width, metrics);
+            int desiredLeftCount =
+                SideTabLayoutPolicy.CalculateEdgeAwareLeftCount(
+                    total, petRect, workRect, metrics.Width, overlap,
+                    metrics.WindowMarginX);
+
+            if (_leftNoteTabs.Controls.Count != desiredLeftCount ||
+                _rightNoteTabs.Controls.Count !=
+                    total - desiredLeftCount)
             {
                 _noteTabsSignature = String.Empty;
                 RefreshNoteTabs();
@@ -2351,12 +2822,6 @@ namespace PennyPet
             {
                 _leftNoteTabs.ApplyPhysicalMetrics(metrics);
                 _rightNoteTabs.ApplyPhysicalMetrics(metrics);
-
-                Rectangle petBounds = new Rectangle(
-                    petFacts.PhysicalBounds.Left,
-                    petFacts.PhysicalBounds.Top,
-                    petFacts.PhysicalBounds.Width,
-                    petFacts.PhysicalBounds.Height);
 
                 _leftNoteTabs.ShowNear(petBounds, work);
                 _rightNoteTabs.ShowNear(petBounds, work);
@@ -2380,8 +2845,9 @@ namespace PennyPet
                 {
                     HideNote = delegate(StickyNoteData note)
                     { HideStickyNote(note); },
-                    DeleteNote = delegate(StickyNoteData note)
-                    { DeleteStickyNote(note); },
+                    DeleteNote = delegate(StickyNoteData note,
+                        Action<bool> completed)
+                    { DeleteStickyNote(note, completed); },
                     CollapseAll = CollapseAllStickyNotes,
                     ExpandAll = ExpandAllStickyNoteTabs,
                     TileAll = delegate

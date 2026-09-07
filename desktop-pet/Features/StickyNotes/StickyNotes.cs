@@ -314,7 +314,7 @@ namespace PennyPet
     internal sealed class StickyNotesManagerCommands
     {
         internal Action<StickyNoteData> HideNote;
-        internal Action<StickyNoteData> DeleteNote;
+        internal Action<StickyNoteData, Action<bool>> DeleteNote;
         internal Action CollapseAll;
         internal Action ExpandAll;
         internal Action TileAll;
@@ -359,6 +359,7 @@ namespace PennyPet
         private List<StickyNoteData> _importedNotes;
         private int _sortColumn = -1;
         private bool _sortAscending = true;
+        private string _busyMessage = String.Empty;
 
         private enum ManagerMode
         {
@@ -552,6 +553,7 @@ namespace PennyPet
             {
                 if (_mode != ManagerMode.ImportPreview || _importPlan == null ||
                     _commands.ConfirmImport == null) return;
+                _busyMessage = "正在导入…";
                 _mode = ManagerMode.Busy;
                 UpdateModeControls();
                 bool succeeded = _commands.ConfirmImport(
@@ -996,7 +998,9 @@ namespace PennyPet
             _closeButton.Enabled = !busy;
             _closeButton.Text = preview ? "取消" : "关闭";
             if (busy)
-                _multiHint.Text = "正在导入…";
+                _multiHint.Text = String.IsNullOrEmpty(_busyMessage)
+                    ? "正在处理…"
+                    : _busyMessage;
             else if (preview)
             {
                 _multiHint.Text = "新增 " + _importPlan.AddedCount +
@@ -1020,9 +1024,35 @@ namespace PennyPet
             if (MessageBox.Show(this, message, "批量删除便利贴",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Warning) !=
                 DialogResult.Yes) return;
+            if (_commands.DeleteNote == null) return;
+
+            _busyMessage = "正在删除便利贴…";
+            _mode = ManagerMode.Busy;
+            UpdateModeControls();
+
+            int pending = selected.Count;
+            int failed = 0;
             foreach (StickyNoteData note in selected)
-                if (_commands.DeleteNote != null) _commands.DeleteNote(note);
-            RefreshList();
+            {
+                StickyNoteData noteCopy = note;
+                _commands.DeleteNote(
+                    noteCopy,
+                    delegate(bool succeeded)
+                    {
+                        if (!succeeded) failed++;
+                        pending--;
+                        if (pending != 0) return;
+                        _mode = ManagerMode.Normal;
+                        _busyMessage = String.Empty;
+                        UpdateModeControls();
+                        RefreshList();
+                        if (failed > 0)
+                            MessageBox.Show(this,
+                                failed + " 张便利贴未能删除，已保留在列表中。",
+                                "删除便利贴", MessageBoxButtons.OK,
+                                MessageBoxIcon.Warning);
+                    });
+            }
         }
 
         private List<StickyNoteData> SelectedNotes()

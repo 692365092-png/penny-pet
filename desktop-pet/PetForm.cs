@@ -384,6 +384,12 @@ namespace PennyPet
                 }, "sticky-schedule-menu-create");
             };
             menuCommands.ManageNotes = ShowStickyNotesManager;
+            menuCommands.TileAllNotes = delegate
+            {
+                QueueStickyWindowAction(
+                    ExpandAndTileAllStickyNotesToPetScreen,
+                    "sticky-menu-expand-and-tile");
+            };
             menuCommands.ShowDailyContentSettings =
                 ShowDailyContentSettingsDialog;
             menuCommands.ShowScale = ShowScaleDialog;

@@ -125,7 +125,7 @@ namespace PennyPet.Tests
             Assert.IsTrue(tabs.Contains("ShowWithoutActivation") &&
                 tabs.Contains("WS_EX_NOACTIVATE"),
                 "Stable TopMost tabs must remain non-activating.");
-            Assert.IsTrue(position.Contains("IsLayoutSplitCurrent") &&
+            Assert.IsTrue(position.Contains("CalculateEdgeAwareLeftCount") &&
                 position.Contains("_noteTabsSignature = String.Empty") &&
                 position.Contains("RefreshNoteTabs();") &&
                 position.Contains("ShowNear(petBounds, work)") &&

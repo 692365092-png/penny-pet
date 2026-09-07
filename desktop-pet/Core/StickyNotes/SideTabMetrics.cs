@@ -72,6 +72,59 @@ namespace PennyPet
             return (Math.Max(0, totalCount) + 1) / 2;
         }
 
+        internal static int CalculatePhysicalOverlap(
+            int petPhysicalWidth, SideTabPhysicalMetrics metrics)
+        {
+            if (metrics == null)
+                throw new ArgumentNullException(nameof(metrics));
+
+            int transparentMargin = (int)Math.Round(
+                Math.Max(0, petPhysicalWidth) * 44.0 / 192.0,
+                MidpointRounding.AwayFromZero);
+
+            int physicalGap = metrics.ScaleLength(20);
+
+            return Math.Max(0, (physicalGap + transparentMargin) / 2);
+        }
+
+        internal static int CalculateEdgeAwareLeftCount(
+            int totalCount, DockRect pet, DockRect work,
+            int stripPhysicalWidth, int overlap, int marginX)
+        {
+            int total = Math.Max(0, totalCount);
+            if (total == 0) return 0;
+
+            int balanced = CalculateBalancedLeftCount(total);
+            int width = Math.Max(1, stripPhysicalWidth);
+            int safeOverlap = Math.Max(0, overlap);
+            int safeMargin = Math.Max(0, marginX);
+
+            int minX = work.Left + safeMargin;
+            int maxRight = work.Right - safeMargin;
+
+            int naturalLeft = pet.Left - width + safeOverlap;
+            int naturalRight = pet.Right - safeOverlap;
+
+            long leftRight = (long)naturalLeft + width;
+            long rightRight = (long)naturalRight + width;
+
+            bool leftFits = naturalLeft >= minX && leftRight <= maxRight;
+            bool rightFits = naturalRight >= minX && rightRight <= maxRight;
+
+            if (leftFits && rightFits) return balanced;
+            if (leftFits) return total;
+            if (rightFits) return 0;
+
+            long leftOverflow =
+                Math.Max(0L, (long)minX - naturalLeft) +
+                Math.Max(0L, leftRight - maxRight);
+            long rightOverflow =
+                Math.Max(0L, (long)minX - naturalRight) +
+                Math.Max(0L, rightRight - maxRight);
+
+            return leftOverflow <= rightOverflow ? total : 0;
+        }
+
         internal static int LogicalScreenCapacity(int logicalWorkHeight)
         {
             return Math.Max(1,

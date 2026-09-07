@@ -33,6 +33,13 @@ namespace PennyPet
             NewScheduleItem.Click += delegate { _commands.CreateSchedule(); };
             ManageNotesItem = new ToolStripMenuItem("便利贴管理…");
             ManageNotesItem.Click += delegate { _commands.ManageNotes(); };
+            TileAllNotesItem = new ToolStripMenuItem(
+                "平铺全部便利贴到当前屏幕");
+            TileAllNotesItem.Click += delegate
+            {
+                if (_commands.TileAllNotes != null)
+                    _commands.TileAllNotes();
+            };
             DailyContentItem = new ToolStripMenuItem("个性化每日内容…");
             DailyContentItem.Click += delegate
             {
@@ -65,6 +72,7 @@ namespace PennyPet
             Menu.Items.Add(NewTodoItem);
             Menu.Items.Add(NewScheduleItem);
             Menu.Items.Add(ManageNotesItem);
+            Menu.Items.Add(TileAllNotesItem);
             Menu.Items.Add(new ToolStripSeparator());
             Menu.Items.Add(SetReminderItem);
             Menu.Items.Add(CancelItem);
@@ -91,6 +99,7 @@ namespace PennyPet
         internal ToolStripMenuItem NewTodoItem { get; private set; }
         internal ToolStripMenuItem NewScheduleItem { get; private set; }
         internal ToolStripMenuItem ManageNotesItem { get; private set; }
+        internal ToolStripMenuItem TileAllNotesItem { get; private set; }
         internal ToolStripMenuItem DailyContentItem { get; private set; }
         internal ToolStripMenuItem ScaleItem { get; private set; }
         internal ToolStripMenuItem StartupItem { get; private set; }
@@ -113,6 +122,7 @@ namespace PennyPet
         internal Action CreateTodo;
         internal Action CreateSchedule;
         internal Action ManageNotes;
+        internal Action TileAllNotes;
         internal Action ShowDailyContentSettings;
         internal Action ShowScale;
         internal EventHandler StartupClick;

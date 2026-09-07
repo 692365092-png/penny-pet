@@ -6,6 +6,11 @@ namespace PennyPet
     internal enum StickyUiCommandKind
     {
         Create,
+
+        // Idempotently ensure a hosted Sticky session exists on the Sticky STA,
+        // but do not show or place the HWND yet.
+        EnsureSession,
+
         Show,
         Hide,
         FocusPrimaryInput,
@@ -62,6 +67,25 @@ namespace PennyPet
             return new StickyUiCommand(StickyUiCommandKind.Create,
                 snapshot.NoteId, focusEditor, snapshot, null, null,
                 CopyReminders(reminders), topology, reprojectTarget);
+        }
+
+        internal static StickyUiCommand EnsureSession(
+            StickyNoteUiSnapshot snapshot,
+            IEnumerable<ReminderItem> reminders = null,
+            DisplayTopologySnapshot topology = null)
+        {
+            if (snapshot == null)
+                throw new ArgumentNullException(nameof(snapshot));
+
+            return new StickyUiCommand(
+                StickyUiCommandKind.EnsureSession,
+                snapshot.NoteId,
+                false,
+                snapshot,
+                null,
+                null,
+                CopyReminders(reminders),
+                topology);
         }
 
         internal static StickyUiCommand UpdateReminders(string noteId,

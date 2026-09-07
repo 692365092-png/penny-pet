@@ -1621,19 +1621,45 @@ namespace PennyPet
 
         private void DeleteStickyNote(StickyNoteData note)
         {
-            if (note == null) return;
+            DeleteStickyNote(note, null);
+        }
+
+        private void DeleteStickyNote(StickyNoteData note,
+            Action<bool> completed)
+        {
+            if (note == null)
+            {
+                if (completed != null) completed(false);
+                return;
+            }
             if (IsHostedSticky(note))
             {
-                BeginHostedStickyDelete(note);
+                BeginHostedStickyDelete(note, completed);
                 return;
             }
             DeleteStickyNoteAfterWindowClosed(note);
+            if (completed != null) completed(true);
         }
 
         private void BeginHostedStickyDelete(StickyNoteData note)
         {
+            BeginHostedStickyDelete(note, null);
+        }
+
+        private void BeginHostedStickyDelete(StickyNoteData note,
+            Action<bool> completed)
+        {
+            if (note == null)
+            {
+                if (completed != null) completed(false);
+                return;
+            }
             string noteId = note.Id;
-            if (!_hostedRuntime.TryBeginDelete(noteId)) return;
+            if (!_hostedRuntime.TryBeginDelete(noteId))
+            {
+                if (completed != null) completed(false);
+                return;
+            }
             PostHostedStickyCommand(StickyUiCommand.Close(noteId),
                 delegate(StickyUiCommandResult result)
                 {
@@ -1644,6 +1670,7 @@ namespace PennyPet
                         ReportHostedStickyCommandFailure(
                             "sticky-hosted-delete", result);
                         ShowBubble("便利贴仍在编辑，删除已取消。");
+                        if (completed != null) completed(false);
                         return;
                     }
                     ApplyHostedStickySnapshot(result.Snapshot,
@@ -1652,6 +1679,7 @@ namespace PennyPet
                     StickyNoteData canonical = _notes.Find(noteId);
                     if (canonical != null)
                         DeleteStickyNoteAfterWindowClosed(canonical);
+                    if (completed != null) completed(true);
                 });
         }
 
