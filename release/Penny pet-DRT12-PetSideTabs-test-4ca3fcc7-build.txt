@@ -1,0 +1,14 @@
+branch=codex/display-scale-v2
+source_commit=4ca3fcc78e9818c5cfbf3a788bd06da03d34cd45
+baseline=9488dce29f520759a7bd96f37e12e8b5e90d1c08
+production_baseline=f9a170f6cb6b894bf7390b46ca534d7c0162cee7
+checkpoint=DRT-12
+purpose=Pet + SideTabs dynamic display migration manual test
+platform=x64
+Release=PASS (0 warnings, 0 errors)
+Core_Architecture=PASS (282 tests)
+modular_SelfTests=PASS (ok=true, 292 *_ok checks)
+single_file_package_SelfTests=PASS (exit=0, ok=true, 292 *_ok checks)
+git_diff_check=PASS
+manual=HUMAN PENDING
+DRT-13=NOT STARTED
