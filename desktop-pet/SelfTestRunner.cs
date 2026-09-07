@@ -2260,6 +2260,12 @@ namespace PennyPet
                         if (tab == null || tab.Bounds != new Rectangle(
                             0, tab.ListIndex * row, metrics.Width, metrics.Height))
                             return false;
+                        if (tab.Font.Unit != GraphicsUnit.Pixel ||
+                            Math.Abs(tab.Font.Size - 8.5F * dpi / 72F) > 0.001F ||
+                            tab.Font.Style != FontStyle.Bold) return false;
+                        Font sameDpiFont = tab.Font;
+                        tab.ApplyPhysicalMetrics(SideTabPhysicalMetrics.ForDpi(dpi));
+                        if (!Object.ReferenceEquals(sameDpiFont, tab.Font)) return false;
                     }
                     if (StickyNoteTabsForm.CalculateDropIndex(row * 2, 3, metrics) != 2 ||
                         StickyNoteTabsForm.PreviewTargetTop(1, -1, 1, metrics) !=

@@ -6,6 +6,36 @@ namespace PennyPet.Tests
     public sealed class SideTabProjectionTests
     {
         [TestMethod]
+        public void SideTabFontPixels_96DpiMatches85PointBaseline()
+        {
+            Assert.AreEqual(8.5F * 96F / 72F,
+                SideTabPhysicalMetrics.ForDpi(96).FontPixels, 0.0001F);
+        }
+
+        [TestMethod]
+        public void SideTabFontPixels_144DpiScalesOnce()
+        {
+            Assert.AreEqual(17F,
+                SideTabPhysicalMetrics.ForDpi(144).FontPixels, 0.0001F);
+        }
+
+        [TestMethod]
+        public void SideTabFontPixels_192DpiScalesOnce()
+        {
+            Assert.AreEqual(8.5F * 96F / 72F * 2F,
+                SideTabPhysicalMetrics.ForDpi(192).FontPixels, 0.0001F);
+        }
+
+        [TestMethod]
+        public void SideTabFontRebuildDoesNotCompoundAcrossRoundTrips()
+        {
+            for (int round = 0; round < 20; round++)
+            foreach (int dpi in new[] { 96, 144, 192, 144, 96 })
+                Assert.AreEqual(8.5F * dpi / 72F,
+                    SideTabPhysicalMetrics.ForDpi(dpi).FontPixels, 0.0001F);
+        }
+
+        [TestMethod]
         [DataRow(120, 183, 43, 3, 18)]
         [DataRow(144, 219, 51, 3, 21)]
         public void FractionalMetrics_RoundFromLogicalReference(

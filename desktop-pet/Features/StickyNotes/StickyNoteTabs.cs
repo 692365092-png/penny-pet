@@ -1042,6 +1042,7 @@ namespace PennyPet
         private static Bitmap[] _typeIconMasks;
 
         private SideTabPhysicalMetrics _metrics;
+        private Font _ownedFont;
         private readonly SideTabSnapshot _snapshot;
         private readonly StickyTabSide _side;
         private readonly Action<string> _openNote;
@@ -1084,8 +1085,7 @@ namespace PennyPet
             _openNote = openNote;
             _deleteNote = deleteNote;
             Cursor = Cursors.Hand;
-            Font = StickyNoteWindow.CreateSafeFont("Microsoft YaHei UI", 8.5F,
-                FontStyle.Bold);
+            RebuildOwnedFont();
             SetStyle(ControlStyles.AllPaintingInWmPaint |
                 ControlStyles.OptimizedDoubleBuffer |
                 ControlStyles.ResizeRedraw |
@@ -1188,12 +1188,28 @@ namespace PennyPet
             if (metrics == null)
                 throw new ArgumentNullException(nameof(metrics));
 
+            bool fontChanged = _metrics == null || _metrics.Dpi != metrics.Dpi;
             _metrics = metrics;
+            if (fontChanged) RebuildOwnedFont();
 
             Invalidate();
 
             if (IsHandleCreated)
                 PerformLayout();
+        }
+
+        private void RebuildOwnedFont()
+        {
+            Font replacement;
+            using (Font reference = StickyNoteWindow.CreateSafeFont(
+                "Microsoft YaHei UI", 8.5F, FontStyle.Bold))
+                replacement = new Font(reference.FontFamily, _metrics.FontPixels,
+                    FontStyle.Bold, GraphicsUnit.Pixel);
+
+            Font previous = _ownedFont;
+            _ownedFont = replacement;
+            Font = replacement;
+            if (previous != null) previous.Dispose();
         }
 
         protected override void OnResize(EventArgs e)
@@ -1712,6 +1728,12 @@ namespace PennyPet
             {
                 _longPressTimer.Dispose();
                 _menu.Dispose();
+                if (_ownedFont != null)
+                {
+                    Font = null;
+                    _ownedFont.Dispose();
+                    _ownedFont = null;
+                }
             }
             base.Dispose(disposing);
         }

@@ -32,6 +32,9 @@ namespace PennyPet
         internal int IconSize { get; private set; }
         internal int IconMargin { get; private set; }
 
+        // 8.5pt logical reference projected directly to physical em pixels.
+        internal float FontPixels { get { return 8.5F * Dpi / 72F; } }
+
         internal int ScaleLength(int logical)
         {
             if (logical == 0) return 0;
