@@ -1735,7 +1735,8 @@ namespace PennyPet.Tests
                     "DisplayTopologySnapshot topology = CurrentTopologySnapshot();") &&
                 coordinator.Contains("CapturePetWindowFacts(topology)") &&
                 coordinator.Contains(
-                    "WindowsWindowFactsReader.Capture(Handle, \"pet\","),
+                    "Handle, PetWindowFactsId,") &&
+                coordinator.Contains("generation, sequence, topology"),
                 "Pet facts must be captured against the same attempt topology.");
             string fallback = Between(coordinator,
                 "private void ApplyLegacySpawnFallback",

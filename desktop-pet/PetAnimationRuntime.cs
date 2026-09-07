@@ -191,7 +191,11 @@ namespace PennyPet
             _dragMoved = false;
             Capture = false;
             if (wasDrag)
-                SaveLocation();
+            {
+                CommitPetUserPlacement();
+                ReconcilePetDisplayPlacement(
+                    CurrentTopologySnapshot(), "PetDragCompleted");
+            }
             else
             {
                 Location = _dragWindowOrigin;

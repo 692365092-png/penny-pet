@@ -114,10 +114,8 @@ namespace PennyPet
             {
                 int centerX = Left + Width / 2;
                 int bottom = Bottom;
-                DisposeRenderedFrameCache();
                 _scalePercent = next;
-                ClientSize = ScaledPetSize(_scalePercent);
-                BuildRenderedFrameCache();
+                ApplyCurrentDisplayScale(ActualPetDpi());
                 Location = new Point(centerX - Width / 2, bottom - Height);
                 KeepFullyVisible();
                 RenderCurrentFrame();

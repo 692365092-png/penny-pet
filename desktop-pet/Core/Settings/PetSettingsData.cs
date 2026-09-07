@@ -10,6 +10,10 @@ namespace PennyPet
         public bool HasLocation;
         public int X;
         public int Y;
+        // DRT-12 durable Pet placement. Raw X/Y remain compatibility-only.
+        public string PetPreferredTargetKey = String.Empty;
+        public int PetPreferredLocalLogicalX;
+        public int PetPreferredLocalLogicalY;
         public bool StartupPreferenceInitialized;
         public bool StartAtLogin;
         public int ScalePercent = 100;
@@ -62,6 +66,14 @@ namespace PennyPet
             HasLocation = source.HasLocation;
             X = source.X;
             Y = source.Y;
+            PetPreferredTargetKey =
+                source.PetPreferredTargetKey ?? String.Empty;
+
+            PetPreferredLocalLogicalX =
+                source.PetPreferredLocalLogicalX;
+
+            PetPreferredLocalLogicalY =
+                source.PetPreferredLocalLogicalY;
             StartupPreferenceInitialized = source.StartupPreferenceInitialized;
             StartAtLogin = source.StartAtLogin;
             ScalePercent = source.ScalePercent;

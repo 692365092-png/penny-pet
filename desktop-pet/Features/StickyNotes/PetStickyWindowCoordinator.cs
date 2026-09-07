@@ -395,12 +395,24 @@ namespace PennyPet
         private WindowFacts CapturePetWindowFacts(
             DisplayTopologySnapshot topology)
         {
-            if (IsDisposed || Disposing || Handle == IntPtr.Zero) return null;
+            if (IsDisposed || Disposing || !IsHandleCreated ||
+                Handle == IntPtr.Zero)
+                return null;
+
             try
             {
                 long generation = topology == null ? 0 : topology.Generation;
-                return WindowsWindowFactsReader.Capture(Handle, "pet",
-                    generation, 0, topology);
+                long sequence = ++_petWindowSequence;
+
+                WindowFacts facts = WindowsWindowFactsReader.Capture(
+                    Handle, PetWindowFactsId,
+                    generation, sequence, topology);
+
+                if (facts != null && topology != null &&
+                    facts.TopologyGeneration == topology.Generation)
+                    _petEffectiveFacts = facts;
+
+                return facts;
             }
             catch
             {

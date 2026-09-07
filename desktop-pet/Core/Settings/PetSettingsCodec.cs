@@ -50,6 +50,23 @@ namespace PennyPet
                     settings.Y = intValue;
                     recognized = true;
                 }
+                else if (key == "PetPreferredTargetKeyBase64")
+                {
+                    settings.PetPreferredTargetKey = DecodeText(value);
+                    recognized = true;
+                }
+                else if (key == "PetPreferredLocalLogicalX" &&
+                    Int32.TryParse(value, out intValue))
+                {
+                    settings.PetPreferredLocalLogicalX = intValue;
+                    recognized = true;
+                }
+                else if (key == "PetPreferredLocalLogicalY" &&
+                    Int32.TryParse(value, out intValue))
+                {
+                    settings.PetPreferredLocalLogicalY = intValue;
+                    recognized = true;
+                }
                 else if (key == "StartupPreferenceInitialized")
                 {
                     settings.StartupPreferenceInitialized = value == "1";
@@ -263,6 +280,14 @@ namespace PennyPet
             lines.Add("HasLocation=" + (settings.HasLocation ? "1" : "0"));
             lines.Add("X=" + settings.X);
             lines.Add("Y=" + settings.Y);
+            lines.Add("PetPreferredTargetKeyBase64=" +
+                EncodeText(settings.PetPreferredTargetKey));
+
+            lines.Add("PetPreferredLocalLogicalX=" +
+                settings.PetPreferredLocalLogicalX);
+
+            lines.Add("PetPreferredLocalLogicalY=" +
+                settings.PetPreferredLocalLogicalY);
             lines.Add("StartupPreferenceInitialized=" +
                 (settings.StartupPreferenceInitialized ? "1" : "0"));
             lines.Add("StartWithWindows=" +

@@ -458,11 +458,15 @@ namespace PennyPet
 
             Shown += delegate
             {
+                InitializePetDisplayPlacement();
+                RefreshNoteTabs();
+
                 RenderCurrentFrame();
                 QueueStartupInteractionPreload();
-                // Notification remains lazy: only users who actually have a
-                // reminder pay the decode cost before the reminder becomes due.
-                if (_reminders.Count > 0) QueueArtPreload(NotificationRow);
+
+                if (_reminders.Count > 0)
+                    QueueArtPreload(NotificationRow);
+
                 BeginDeferredStartupWork();
             };
         }
@@ -480,8 +484,26 @@ namespace PennyPet
         protected override void OnDpiChanged(DpiChangedEventArgs e)
         {
             base.OnDpiChanged(e);
+
             if (e == null || IsDisposed || Disposing) return;
-            ApplyCurrentDisplayScale(e.DeviceDpiNew);
+
+            int actualDpi = ActualPetDpi(e.DeviceDpiNew);
+
+            ApplyCurrentDisplayScale(actualDpi);
+
+            DisplayTopologySnapshot topology = CurrentTopologySnapshot();
+            WindowFacts facts = CapturePetWindowFacts(topology);
+
+            DisplayDiagnostics.Trace("WindowDpiChanged",
+                "window=pet eventDpi=" + e.DeviceDpiNew +
+                " actualDpi=" + actualDpi +
+                " topology=" +
+                (topology == null ? -1 : topology.Generation));
+
+            if (facts != null)
+                _petEffectiveFacts = facts;
+
+            PositionNoteTabs();
         }
 
         private void ApplyCurrentDisplayScale(int dpi)
@@ -551,7 +573,13 @@ namespace PennyPet
                 DisplayDiagnostics.Trace("TopologyChanged",
                     details.ToString());
             _stickyUiHost.SetCurrentTopology(snapshot);
+
+            // Pet is upstream of SideTabs and is also fallback context for Sticky.
+            ReconcilePetDisplayPlacement(snapshot, reason);
+
             HandleStickyTopologyChanged(snapshot);
+
+            PositionNoteTabs();
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
@@ -639,43 +667,33 @@ namespace PennyPet
         private Point RestoreLocation()
         {
             if (_settings.HasLocation)
-            {
-                Point saved = new Point(_settings.X, _settings.Y);
-                if (IsVisible(saved)) return saved;
-            }
-            Rectangle work = Screen.PrimaryScreen.WorkingArea;
-            return new Point(work.Right - Width - 24, work.Bottom - Height - 24);
+                return new Point(_settings.X, _settings.Y);
+
+            // Only a pre-HWND bootstrap. Real DRT-12 placement happens after
+            // the current topology and live Pet HWND are both available.
+            return Point.Empty;
         }
 
         private bool IsVisible(Point location)
         {
-            Rectangle candidate = new Rectangle(location, ClientSize);
-            foreach (Screen screen in Screen.AllScreens)
-            {
-                Rectangle visible = Rectangle.Intersect(screen.WorkingArea, candidate);
-                if (visible.Width >= 48 && visible.Height >= 48) return true;
-            }
-            return false;
+            return IsPetVisibleInTopology(location, ClientSize, CurrentTopologySnapshot());
         }
 
         private void EnsureVisible()
         {
-            if (IsVisible(Location)) return;
-            Rectangle work = Screen.PrimaryScreen.WorkingArea;
-            Location = new Point(work.Right - Width - 24, work.Bottom - Height - 24);
-            SaveLocation();
+            EnsurePetVisibleOnCurrentTopology();
         }
 
         private void KeepFullyVisible()
         {
-            Rectangle work = Screen.FromRectangle(Bounds).WorkingArea;
-            int x = Math.Max(work.Left, Math.Min(Left, work.Right - Width));
-            int y = Math.Max(work.Top, Math.Min(Top, work.Bottom - Height));
-            Location = new Point(x, y);
+            KeepPetFullyVisibleOnCurrentSurface();
         }
 
         private void SaveLocation()
         {
+            // Compatibility-only physical fallback.
+            // Durable PetPreferred* is committed only from actual facts at an
+            // explicit user placement or one-time initial migration/default.
             _settings.HasLocation = true;
             _settings.X = Left;
             _settings.Y = Top;
