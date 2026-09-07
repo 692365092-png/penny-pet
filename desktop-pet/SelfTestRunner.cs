@@ -5677,6 +5677,27 @@ namespace PennyPet
                         targetDividerResized.Snapshot.Height ==
                         sourceDividerResized.Snapshot.Y;
 
+                // Reopen geometry must be screen-independent: the divider
+                // fixture can exceed a small CI virtual work area, so compact
+                // bounds are applied right before hide and the reopen must
+                // preserve exactly those bounds (hide -> reopen == no drift).
+                List<Rectangle> compactLayout =
+                    PetForm.CalculateUnifiedDockLayout(new Size[]
+                    {
+                        new Size(420, 230), new Size(420, 230)
+                    }, 80, 140, 420);
+                PostStickyCommandAndWait(host,
+                    new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                        second.Id, false, null, new StickyUiBounds(
+                            compactLayout[0].X, compactLayout[0].Y,
+                            compactLayout[0].Width,
+                            compactLayout[0].Height)), petContext);
+                PostStickyCommandAndWait(host,
+                    new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                        canonical.Id, false, null, new StickyUiBounds(
+                            compactLayout[1].X, compactLayout[1].Y,
+                            compactLayout[1].Width,
+                            compactLayout[1].Height)), petContext);
                 StickyUiCommandResult targetHidden = PostStickyCommandAndWait(
                     host, new StickyUiCommand(StickyUiCommandKind.Hide,
                         second.Id, false), petContext);
@@ -5694,7 +5715,7 @@ namespace PennyPet
                     !sourceHidden.Snapshot.Visible &&
                     targetShown.Snapshot.Visible && sourceShown.Snapshot.Visible &&
                     targetShown.Snapshot.X == 80 &&
-                    sourceShown.Snapshot.Y == 640;
+                    sourceShown.Snapshot.Y == 370;
 
                 StickyUiCommandResult thirdPositioned =
                     PostStickyCommandAndWait(host,
