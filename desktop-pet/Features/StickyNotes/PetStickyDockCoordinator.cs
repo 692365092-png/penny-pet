@@ -183,6 +183,31 @@ namespace PennyPet
             return true;
         }
 
+        // Preview / split-restore baseline only. Live planning and final commit
+        // continue to require actual, current-generation source WindowFacts.
+        private Dictionary<string, DockWindowFacts> CaptureDockInteractionBaseline(
+            IEnumerable<string> noteIds, DisplayTopologySnapshot topology)
+        {
+            Dictionary<string, DockWindowFacts> result =
+                new Dictionary<string, DockWindowFacts>(StringComparer.OrdinalIgnoreCase);
+            if (noteIds == null) return result;
+            foreach (string noteId in noteIds)
+            {
+                if (String.IsNullOrWhiteSpace(noteId)) continue;
+                StickyNoteData note = _notes.Find(noteId);
+                if (note == null) continue;
+                DockWindowFacts runtimeFacts = null;
+                WindowFacts effective = _placementRuntime.GetEffective(noteId);
+                if (effective != null && topology != null &&
+                    effective.TopologyGeneration == topology.Generation)
+                    runtimeFacts = DockWindowFacts.FromWindowFacts(effective,
+                        note.Visible, note.AlwaysOnTop);
+                if (runtimeFacts == null) runtimeFacts = DockWindowFacts.FromData(note);
+                if (runtimeFacts != null) result[noteId] = runtimeFacts;
+            }
+            return result;
+        }
+
         private void BeginStickyDockDrag(DockWindowFacts facts,
             WindowFacts sourceFacts, DisplayTopologySnapshot topology)
         {
@@ -197,6 +222,7 @@ namespace PennyPet
             ClearDockPreview();
             ClearSplitGuide();
             _activeNoteDragId = facts.NoteId;
+            // Original gesture position/time: written once until reset.
             _activeNoteDragStartFacts = facts;
             _activeNoteDragLastFacts = facts;
             _activeNoteDragStartedUtc = DateTime.UtcNow;
@@ -210,10 +236,15 @@ namespace PennyPet
                 _dockPlanMailbox.FinalPlanSequence = 0;
             }
             SetActiveDockGroup(BuildDockComponent(seed));
+            if (_activeDockGroupIds.Count == 0)
+            {
+                ResetDockDragState(true);
+                return;
+            }
             _activeDockOriginalFacts.Clear();
             _activeDockCurrentFacts.Clear();
             Dictionary<string, DockWindowFacts> groupFacts =
-                CaptureDockFacts(_activeDockGroupIds);
+                CaptureDockInteractionBaseline(_activeDockGroupIds, topology);
             groupFacts[facts.NoteId] = facts;
             foreach (KeyValuePair<string, DockWindowFacts> item in groupFacts)
             {
@@ -228,40 +259,17 @@ namespace PennyPet
                     _activeDockGroupIds.Count);
             if (_activeNoteSplitEligible)
                 ShowSplitGuide(seed, groupFacts);
-            // A display change that happened while the group was idle can
-            // leave the runtime effective facts on the previous topology
-            // generation; every live plan would then be rejected as stale and
-            // the group scatters. Refresh effective facts for the group now,
-            // at drag start, from the actual HWNDs at the current generation.
-            string[] refreshIds = _activeDockGroupIds.ToArray();
-            PostHostedStickyCommand(StickyUiCommand.CaptureDockFacts(
-                refreshIds, topology, epoch), delegate(StickyUiCommandResult result)
-                {
-                    if (!_dockInteraction.Matches(epoch, topology.Generation,
-                        DockInteractionPhase.Preparing)) return;
-                    WindowFacts capturedSource;
-                    if (!TryApplyDockFactsBarrier(result, refreshIds, topology,
-                        epoch, facts.NoteId, true, out capturedSource))
-                    {
-                        DisplayDiagnostics.Trace("DockFactsBarrierRejected",
-                            "phase=Preparing epoch=" + epoch + " generation=" +
-                            topology.Generation + " source=" + facts.NoteId);
-                        ResetDockDragState(true);
-                        return;
-                    }
-                    DockWindowFacts sourceRuntime;
-                    if (!_activeDockCurrentFacts.TryGetValue(facts.NoteId,
-                        out sourceRuntime) || sourceRuntime == null)
-                    {
-                        ResetDockDragState(true);
-                        return;
-                    }
-                    _activeNoteDragStartFacts = sourceRuntime;
-                    _activeNoteDragLastFacts = sourceRuntime;
-                    _activeNoteDragStartedUtc = DateTime.UtcNow;
-                    if (!_dockInteraction.TryEnterDragging(epoch,
-                        topology.Generation)) ResetDockDragState(true);
-                });
+            // Arm the first move in this callback; the source HWND is already
+            // following the user and cannot wait for a follower capture.
+            if (!_dockInteraction.TryEnterDragging(epoch, topology.Generation))
+            {
+                ResetDockDragState(true);
+                return;
+            }
+            DisplayDiagnostics.Trace("DockDragReady",
+                "source=" + facts.NoteId + " epoch=" + epoch +
+                " generation=" + topology.Generation + " members=" +
+                _activeDockGroupIds.Count + " splitEligible=" + _activeNoteSplitEligible);
         }
 
         private void MoveStickyDockDrag(DockWindowFacts facts,
@@ -280,57 +288,49 @@ namespace PennyPet
             int dy = facts.Y - _activeNoteDragLastFacts.Y;
             if (dx == 0 && dy == 0) return;
 
-            TimeSpan held = DateTime.UtcNow - _activeNoteDragStartedUtc;
-            int totalDx = facts.X - _activeNoteDragStartFacts.X;
-            int totalDy = facts.Y - _activeNoteDragStartFacts.Y;
-            if (!_activeNoteDetached && _activeNoteSplitEligible &&
-                StickyDockOperations.CancelsDockSplitHold(
-                    held.TotalMilliseconds,
-                    totalDx, totalDy))
+            if (!_activeNoteDetached && _activeNoteSplitEligible)
             {
-                // A drag that starts moving immediately means "move the
-                // group".  Only a deliberate stationary hold may split it.
-                _activeNoteSplitEligible = false;
-                ClearSplitGuide();
-            }
-
-            if (!_activeNoteDetached && _activeNoteSplitEligible &&
-                held.TotalMilliseconds >=
-                    StickyDockOperations.SplitHoldMilliseconds)
-            {
-                if (!String.IsNullOrEmpty(seed.DockParentId))
+                TimeSpan held = DateTime.UtcNow - _activeNoteDragStartedUtc;
+                int totalDx = facts.X - _activeNoteDragStartFacts.X;
+                int totalDy = facts.Y - _activeNoteDragStartFacts.Y;
+                if (StickyDockOperations.CancelsDockSplitHold(
+                    held.TotalMilliseconds, totalDx, totalDy))
                 {
-                    string connectedNoteId = seed.DockParentId;
-                    List<StickyNoteData> beforeSplit =
-                        BuildDockChainOrderIncludingHidden(seed);
-                    int splitIndex = beforeSplit.FindIndex(
-                        delegate(StickyNoteData note)
-                        {
-                            return String.Equals(note.Id, facts.NoteId,
-                                StringComparison.OrdinalIgnoreCase);
-                        });
-                    if (splitIndex > 0)
-                    {
-                        // A held middle header extracts exactly that note.
-                        // Reconnect the members before and after it into one
-                        // stack instead of detaching every descendant.
-                        StickyDockOperations.ExtractSingleDockMember(
-                            beforeSplit, seed);
-                    }
-                    else StickyDockGroups.ClearMembership(seed);
-                    _splitRemainderNoteId = connectedNoteId;
-                    _activeNoteDetached = true;
-                }
-                if (_activeNoteDetached)
-                {
+                    _activeNoteSplitEligible = false;
                     ClearSplitGuide();
-                    RestoreDockOriginalLocations(_splitRemainderNoteId);
-                    StickyNoteData remainder =
-                        _notes.Find(_splitRemainderNoteId);
-                    if (remainder != null)
-                        NormalizeDockComponent(remainder);
-                    SetActiveDockGroup(BuildDockComponent(seed));
-                    RefreshDockResizeRoles();
+                }
+                else if (held.TotalMilliseconds >=
+                    StickyDockOperations.SplitHoldMilliseconds)
+                {
+                    if (!String.IsNullOrEmpty(seed.DockParentId))
+                    {
+                        string connectedNoteId = seed.DockParentId;
+                        List<StickyNoteData> beforeSplit =
+                            BuildDockChainOrderIncludingHidden(seed);
+                        int splitIndex = beforeSplit.FindIndex(
+                            delegate(StickyNoteData note)
+                            {
+                                return String.Equals(note.Id, facts.NoteId,
+                                    StringComparison.OrdinalIgnoreCase);
+                            });
+                        if (splitIndex > 0)
+                            StickyDockOperations.ExtractSingleDockMember(
+                                beforeSplit, seed);
+                        else StickyDockGroups.ClearMembership(seed);
+                        _splitRemainderNoteId = connectedNoteId;
+                        _activeNoteDetached = true;
+                    }
+                    if (_activeNoteDetached)
+                    {
+                        ClearSplitGuide();
+                        RestoreDockOriginalLocations(_splitRemainderNoteId);
+                        StickyNoteData remainder =
+                            _notes.Find(_splitRemainderNoteId);
+                        if (remainder != null)
+                            NormalizeDockComponent(remainder);
+                        SetActiveDockGroup(BuildDockComponent(seed));
+                        RefreshDockResizeRoles();
+                    }
                 }
             }
 

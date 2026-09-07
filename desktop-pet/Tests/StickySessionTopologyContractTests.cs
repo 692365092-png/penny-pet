@@ -49,12 +49,12 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void DockFactsBarrier_GuardsPreparingRebaseAndFinalizing()
+        public void DockFactsBarrier_GuardsRebaseAndFinalizing()
         {
             string dock = ReadSource("Features/StickyNotes/PetStickyDockCoordinator.cs");
             string rebase = ReadSource("Features/StickyNotes/PetStickyWindowCoordinator.cs");
-            Assert.IsTrue(dock.IndexOf("TryApplyDockFactsBarrier(result, refreshIds",
-                StringComparison.Ordinal) >= 0);
+            Assert.IsFalse(SliceMethod(dock, "private void BeginStickyDockDrag(")
+                .Contains("TryApplyDockFactsBarrier("));
             Assert.IsTrue(dock.IndexOf("TryApplyDockFactsBarrier(capture, expectedIds",
                 StringComparison.Ordinal) >= 0);
             Assert.IsTrue(rebase.IndexOf("TryApplyDockFactsBarrier(result, expectedIds",
@@ -73,7 +73,7 @@ namespace PennyPet.Tests
             Assert.IsTrue(suppress > adopt);
         }
 
-        private static string SliceMethod(string source, string signature)
+        internal static string SliceMethod(string source, string signature)
         {
             int start = source.IndexOf(signature, StringComparison.Ordinal);
             Assert.IsTrue(start >= 0, "Method not found: " + signature);
@@ -90,7 +90,7 @@ namespace PennyPet.Tests
             return String.Empty;
         }
 
-        private static string ReadSource(string relativePath)
+        internal static string ReadSource(string relativePath)
         {
             DirectoryInfo current = new DirectoryInfo(AppContext.BaseDirectory);
             while (current != null)

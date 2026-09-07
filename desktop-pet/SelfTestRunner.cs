@@ -4885,6 +4885,102 @@ namespace PennyPet
             DockPlacementPlan plan = DockPlacementPlanner.PlanReproject(
                 new DockGroupReprojectPlan(7, 11, "surface-hotplug",
                     group, true), surface, 192);
+
+            StickyNoteData reprojA = new StickyNoteData();
+            reprojA.Id = "reproj-a";
+            reprojA.LocalLogicalX = 10;
+            reprojA.LocalLogicalY = 20;
+            reprojA.LocalLogicalWidth = 320;
+            reprojA.LocalLogicalHeight = 300;
+            reprojA.PreferredLocalLogicalX = 900;
+            reprojA.PreferredLocalLogicalY = 800;
+            reprojA.PreferredLocalLogicalWidth = 500;
+            reprojA.PreferredLocalLogicalHeight = 600;
+            StickyNoteData reprojB = new StickyNoteData();
+            reprojB.Id = "reproj-b";
+            reprojB.LocalLogicalX = 10;
+            reprojB.LocalLogicalY = 320;
+            reprojB.LocalLogicalWidth = 320;
+            reprojB.LocalLogicalHeight = 360;
+            reprojB.PreferredLocalLogicalX = 900;
+            reprojB.PreferredLocalLogicalY = 1400;
+            reprojB.PreferredLocalLogicalWidth = 500;
+            reprojB.PreferredLocalLogicalHeight = 700;
+            List<StickyNoteData> reprojGroup =
+                new List<StickyNoteData> { reprojA, reprojB };
+
+            DockGroupLogicalState runtimeState;
+            bool runtimeOk = PetForm.TryBuildDockTopologyLogicalState(
+                reprojGroup, DockTopologyReprojectReason.CurrentRuntimeRepair,
+                out runtimeState) &&
+                runtimeState.RootAnchor.X == 10 &&
+                runtimeState.RootAnchor.Y == 20 &&
+                runtimeState.Members[0].Width == 320 &&
+                runtimeState.Members[0].Height == 300 &&
+                runtimeState.Members[1].Width == 320 &&
+                runtimeState.Members[1].Height == 360;
+
+            DockGroupLogicalState returnState;
+            bool returnOk = PetForm.TryBuildDockTopologyLogicalState(
+                reprojGroup, DockTopologyReprojectReason.PreferredReturn,
+                out returnState) &&
+                returnState.RootAnchor.X == 900 &&
+                returnState.RootAnchor.Y == 800 &&
+                returnState.Members[0].Width == 500 &&
+                returnState.Members[0].Height == 600 &&
+                returnState.Members[1].Width == 500 &&
+                returnState.Members[1].Height == 700;
+
+            DockGroupLogicalState rehomeState;
+            bool rehomeOk = PetForm.TryBuildDockTopologyLogicalState(
+                reprojGroup, DockTopologyReprojectReason.TemporaryRehome,
+                out rehomeState) &&
+                rehomeState.Members[0].Width == 500 &&
+                rehomeState.Members[0].Height == 600 &&
+                rehomeState.Members[1].Width == 500 &&
+                rehomeState.Members[1].Height == 700;
+
+            StickyNoteData badLocalA = new StickyNoteData();
+            badLocalA.Id = "reproj-bad-local-a";
+            badLocalA.LocalLogicalWidth = 0;
+            badLocalA.LocalLogicalHeight = 0;
+            badLocalA.PreferredLocalLogicalWidth = 500;
+            badLocalA.PreferredLocalLogicalHeight = 600;
+            StickyNoteData badLocalB = new StickyNoteData();
+            badLocalB.Id = "reproj-bad-local-b";
+            badLocalB.LocalLogicalWidth = 0;
+            badLocalB.LocalLogicalHeight = 0;
+            badLocalB.PreferredLocalLogicalWidth = 500;
+            badLocalB.PreferredLocalLogicalHeight = 700;
+            DockGroupLogicalState rejectedLocal;
+            bool localRejected =
+                !PetForm.TryBuildDockTopologyLogicalState(
+                    new List<StickyNoteData> { badLocalA, badLocalB },
+                    DockTopologyReprojectReason.CurrentRuntimeRepair,
+                    out rejectedLocal) && rejectedLocal == null;
+
+            StickyNoteData badPrefA = new StickyNoteData();
+            badPrefA.Id = "reproj-bad-pref-a";
+            badPrefA.LocalLogicalWidth = 320;
+            badPrefA.LocalLogicalHeight = 300;
+            badPrefA.PreferredLocalLogicalWidth = 0;
+            badPrefA.PreferredLocalLogicalHeight = 0;
+            StickyNoteData badPrefB = new StickyNoteData();
+            badPrefB.Id = "reproj-bad-pref-b";
+            badPrefB.LocalLogicalWidth = 320;
+            badPrefB.LocalLogicalHeight = 360;
+            badPrefB.PreferredLocalLogicalWidth = 0;
+            badPrefB.PreferredLocalLogicalHeight = 0;
+            DockGroupLogicalState rejectedPreferred;
+            bool preferredRejected =
+                !PetForm.TryBuildDockTopologyLogicalState(
+                    new List<StickyNoteData> { badPrefA, badPrefB },
+                    DockTopologyReprojectReason.PreferredReturn,
+                    out rejectedPreferred) && rejectedPreferred == null;
+
+            bool reasonOwnedGeometry = runtimeOk && returnOk && rehomeOk &&
+                localRejected && preferredRejected;
+
             return plan.TopologyGeneration == 7 &&
                 plan.PlanSequence == 11 &&
                 plan.SourceNoteId == String.Empty &&
@@ -4892,7 +4988,8 @@ namespace PennyPet
                 plan.WindowTargets.Count == 2 &&
                 plan.WindowTargets[0].PhysicalBounds.Width == 640 &&
                 plan.WindowTargets[0].PhysicalBounds.Bottom ==
-                    plan.WindowTargets[1].PhysicalBounds.Top;
+                    plan.WindowTargets[1].PhysicalBounds.Top &&
+                reasonOwnedGeometry;
         }
 
         private static WindowShellCheckResult RunWindowShellChecks(

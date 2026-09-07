@@ -7,6 +7,13 @@ using System.Windows.Forms;
 
 namespace PennyPet
 {
+    internal enum DockTopologyReprojectReason
+    {
+        CurrentRuntimeRepair,
+        PreferredReturn,
+        TemporaryRehome
+    }
+
     // Coordinates sticky-note window lifetime and placement from the pet.
     // Dock relationship algorithms remain in PetStickyDockCoordinator.
     internal sealed partial class PetForm
@@ -506,11 +513,11 @@ namespace PennyPet
                     DockWindowFacts sourceRuntime;
                     if (!_activeDockCurrentFacts.TryGetValue(sourceId,
                         out sourceRuntime) || sourceRuntime == null) return;
-                    _activeNoteDragStartFacts = sourceRuntime;
-                    _activeNoteDragLastFacts = sourceRuntime;
-                    _activeNoteDragStartedUtc = DateTime.UtcNow;
+                    // Rebase cancels this split hold; a fresh mouse-down is
+                    // required. Preserve the original gesture provenance.
                     _activeNoteSplitEligible = false;
                     ClearSplitGuide();
+                    _activeNoteDragLastFacts = sourceRuntime;
                     if (!_dockInteraction.TryEnterDragging(epoch,
                         snapshot.Generation)) return;
                     StickyNoteData seed = _notes.Find(sourceId);
@@ -566,18 +573,18 @@ namespace PennyPet
             });
             if (preferred != null)
             {
-                // A same-surface DPI / work-area change can still scatter the
-                // actual windows: WM_DPICHANGED moves each member independently
-                // even though the preferred surface still exists. Re-project
-                // the whole group back to its preferred local-logical stack
-                // unless a member was explicitly moved during a temporary
-                // rehome (respect that newer user intent).
-                if (group.Exists(delegate(StickyNoteData member)
+                if (temporary)
                 {
-                    return _placementRuntime.UserMovedSinceRehome(member.Id);
-                })) return;
+                    if (group.Exists(delegate(StickyNoteData member)
+                    {
+                        return _placementRuntime.UserMovedSinceRehome(member.Id);
+                    })) return;
+                    PostDockGroupTopologyReproject(group, snapshot, preferred,
+                        DockTopologyReprojectReason.PreferredReturn);
+                    return;
+                }
                 PostDockGroupTopologyReproject(group, snapshot, preferred,
-                    false, false);
+                    DockTopologyReprojectReason.CurrentRuntimeRepair);
                 return;
             }
             if (temporary) return;
@@ -592,7 +599,7 @@ namespace PennyPet
                         petFacts.RuntimeGdiName);
             if (fallback != null)
                 PostDockGroupTopologyReproject(group, snapshot, fallback,
-                    true, true);
+                    DockTopologyReprojectReason.TemporaryRehome);
         }
 
         private static DisplaySurfaceSnapshot FindCommonDockPreferredSurface(
@@ -619,38 +626,72 @@ namespace PennyPet
             return result;
         }
 
-        private void PostDockGroupTopologyReproject(
-            List<StickyNoteData> group, DisplayTopologySnapshot snapshot,
-            DisplaySurfaceSnapshot targetSurface, bool centerInWorkArea,
-            bool temporaryRehome)
+        internal static bool TryBuildDockTopologyLogicalState(
+            IList<StickyNoteData> group, DockTopologyReprojectReason reason,
+            out DockGroupLogicalState state)
         {
+            state = null;
+            if (group == null || group.Count < 2) return false;
             StickyNoteData root = group[0];
-            string groupId = root.DockGroupId;
-            int width = root.PreferredLocalLogicalWidth > 0
-                ? root.PreferredLocalLogicalWidth : root.LocalLogicalWidth;
-            List<DockLogicalMember> members =
-                new List<DockLogicalMember>();
-            List<string> expectedIds = new List<string>();
+            if (root == null) return false;
+            bool usePreferred = reason == DockTopologyReprojectReason.PreferredReturn ||
+                reason == DockTopologyReprojectReason.TemporaryRehome;
+            int rootX = usePreferred ? root.PreferredLocalLogicalX : root.LocalLogicalX;
+            int rootY = usePreferred ? root.PreferredLocalLogicalY : root.LocalLogicalY;
+            int unifiedWidth = usePreferred ? root.PreferredLocalLogicalWidth : root.LocalLogicalWidth;
+            if (unifiedWidth <= 0) return false;
+            List<DockLogicalMember> members = new List<DockLogicalMember>(group.Count);
             foreach (StickyNoteData member in group)
             {
-                int height = member.PreferredLocalLogicalHeight > 0
-                    ? member.PreferredLocalLogicalHeight :
-                    member.LocalLogicalHeight;
-                if (width <= 0 || height <= 0) return;
-                members.Add(new DockLogicalMember(member.Id, width, height));
-                expectedIds.Add(member.Id);
+                if (member == null || String.IsNullOrWhiteSpace(member.Id)) return false;
+                int memberWidth = usePreferred ? member.PreferredLocalLogicalWidth : member.LocalLogicalWidth;
+                int memberHeight = usePreferred ? member.PreferredLocalLogicalHeight : member.LocalLogicalHeight;
+                if (memberWidth <= 0 || memberHeight <= 0) return false;
+                members.Add(new DockLogicalMember(member.Id, unifiedWidth, memberHeight));
             }
-            LogicalPoint rootAnchor = new LogicalPoint
+            try
             {
-                X = root.PreferredLocalLogicalX,
-                Y = root.PreferredLocalLogicalY
-            };
+                state = new DockGroupLogicalState(
+                    new LogicalPoint { X = rootX, Y = rootY }, members);
+                return true;
+            }
+            catch (ArgumentException)
+            {
+                state = null;
+                return false;
+            }
+        }
+
+        private void PostDockGroupTopologyReproject(
+            List<StickyNoteData> group, DisplayTopologySnapshot snapshot,
+            DisplaySurfaceSnapshot targetSurface, DockTopologyReprojectReason reason)
+        {
+            if (group == null || group.Count < 2 || snapshot == null ||
+                targetSurface == null) return;
+            StickyNoteData root = group[0];
+            if (root == null || String.IsNullOrWhiteSpace(root.DockGroupId)) return;
+            string groupId = root.DockGroupId;
+            DockGroupLogicalState logicalState;
+            if (!TryBuildDockTopologyLogicalState(group, reason, out logicalState))
+            {
+                DisplayDiagnostics.Trace("DockTopologyGeometryRejected",
+                    "group=" + groupId + " generation=" + snapshot.Generation +
+                    " reason=" + reason);
+                return;
+            }
+            bool centerInWorkArea = reason == DockTopologyReprojectReason.TemporaryRehome;
             DockGroupReprojectPlan plan = new DockGroupReprojectPlan(
                 snapshot.Generation, _dockPlanMailbox.NextSequence(),
-                targetSurface.RuntimeSurfaceId,
-                new DockGroupLogicalState(rootAnchor, members),
-                centerInWorkArea);
-            _pendingDockTopologyGroups.Add(groupId);
+                targetSurface.RuntimeSurfaceId, logicalState, centerInWorkArea);
+            List<string> expectedIds = new List<string>();
+            foreach (DockLogicalMember member in logicalState.Members)
+                expectedIds.Add(member.NoteId);
+            if (!_pendingDockTopologyGroups.Add(groupId)) return;
+            DisplayDiagnostics.Trace("DockTopologyReprojectPlan",
+                "group=" + groupId + " generation=" + snapshot.Generation +
+                " reason=" + reason + " target=" + targetSurface.RuntimeSurfaceId +
+                " root=(" + logicalState.RootAnchor.X + "," + logicalState.RootAnchor.Y +
+                ") members=" + logicalState.Members.Count);
             PostHostedStickyCommand(StickyUiCommand.ReprojectDockGroup(
                 plan, snapshot), delegate(StickyUiCommandResult result)
                 {
@@ -661,23 +702,35 @@ namespace PennyPet
                         {
                             DisplayDiagnostics.Trace("DockReprojectRejected",
                                 "group=" + groupId + " generation=" +
-                                snapshot.Generation);
+                                snapshot.Generation + " reason=" + reason);
                             return;
                         }
-                        foreach (string noteId in expectedIds)
+                        if (reason == DockTopologyReprojectReason.TemporaryRehome)
                         {
-                            if (temporaryRehome)
+                            foreach (string noteId in expectedIds)
                                 _placementRuntime.MarkTemporaryRehome(noteId,
                                     "dock-preferred-display-missing");
-                            else
+                            DisplayDiagnostics.Trace("TemporaryRehome",
+                                "dockGroup=" + groupId + " members=" + expectedIds.Count +
+                                " target=" + targetSurface.RuntimeSurfaceId);
+                            return;
+                        }
+                        if (reason == DockTopologyReprojectReason.PreferredReturn)
+                        {
+                            foreach (string noteId in expectedIds)
                                 _placementRuntime.MarkReturnedToPreferred(
                                     noteId);
+                            DisplayDiagnostics.Trace("PreferredReturned",
+                                "dockGroup=" + groupId + " members=" + expectedIds.Count +
+                                " target=" + targetSurface.RuntimeSurfaceId);
+                            return;
                         }
-                        DisplayDiagnostics.Trace(temporaryRehome
-                            ? "TemporaryRehome" : "PreferredReturned",
+                        // Runtime repair applies actual facts only; durable
+                        // preference and temporary-rehome state stay intact.
+                        DisplayDiagnostics.Trace("DockRuntimeRepaired",
                             "dockGroup=" + groupId + " members=" +
                             expectedIds.Count + " target=" +
-                            targetSurface.RuntimeSurfaceId);
+                            targetSurface.RuntimeSurfaceId + " generation=" + snapshot.Generation);
                     }
                     finally
                     {
