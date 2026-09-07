@@ -87,6 +87,52 @@ namespace PennyPet
                 requestedUpperHeight));
         }
 
+        // Native physical-pixel horizontal resize target. Inputs are the
+        // WM_SIZING screen RECT edges; the scale -> physical min/max
+        // conversion stays in the Windows adapter. Output is physical
+        // Left/Width, never DIP.
+        internal static DockRect CalculatePhysicalHorizontalResizeTarget(
+            int proposedLeft,
+            int proposedRight,
+            bool fromLeft,
+            int minimumPhysicalWidth,
+            int maximumPhysicalWidth)
+        {
+            int minimum = Math.Max(1, minimumPhysicalWidth);
+            int maximum = Math.Max(minimum, maximumPhysicalWidth);
+            int proposedWidth = Math.Max(1,
+                proposedRight - proposedLeft);
+            int width = Math.Max(minimum, Math.Min(maximum,
+                proposedWidth));
+            int left = fromLeft
+                ? proposedRight - width
+                : proposedLeft;
+            return new DockRect(left, 0, width, 0);
+        }
+
+        // Exact physical divider path: the requested source height is an
+        // already-clamped physical HWND height, so followers move by the
+        // exact physical delta without a second 220..700 logical clamp.
+        internal static List<DockRect> CalculateDockMemberResizeTargetsExact(
+            IList<DockRect> startBounds,
+            int sourceIndex,
+            int sourcePhysicalHeight)
+        {
+            List<DockRect> targets = new List<DockRect>();
+            if (startBounds == null || sourceIndex < 0 ||
+                sourceIndex >= startBounds.Count) return targets;
+            int exactHeight = Math.Max(1, sourcePhysicalHeight);
+            int delta = exactHeight - startBounds[sourceIndex].Height;
+            for (int index = sourceIndex + 1;
+                index < startBounds.Count; index++)
+            {
+                DockRect start = startBounds[index];
+                targets.Add(new DockRect(start.Left, start.Top + delta,
+                    start.Width, start.Height));
+            }
+            return targets;
+        }
+
         internal static List<DockRect> CalculateDockMemberResizeTargets(
             IList<DockRect> startBounds, int sourceIndex,
             int requestedSourceHeight, out int sourceHeight)

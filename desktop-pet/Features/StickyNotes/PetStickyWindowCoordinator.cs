@@ -1782,7 +1782,10 @@ namespace PennyPet
                 StickyNoteData canonical = _notes.Find(value.NoteId);
                 if (canonical == null) return;
                 value.Snapshot.ApplyTo(canonical);
-                canonical.Height = CalculateDockDividerHeight(value.Height);
+                // value.Height is a physical actual/proposed HWND height; the
+                // canonical height must not go through a 220..700 logical
+                // clamp again.
+                canonical.Height = Math.Max(1, value.Height);
                 _hostedRuntime.RecordSequence(value.NoteId, value.Sequence);
                 _notes.SaveAsync();
                 RefreshMenuText();

@@ -113,6 +113,9 @@ namespace PennyPet
         public bool Active { get; private set; }
     }
 
+    // Native Dock resize contract.
+    // Left/Width are physical screen pixels from WM_SIZING.
+    // No WPF DIP value may cross the hosted Sticky -> Pet boundary.
     internal sealed class DockHorizontalResizeEventArgs : EventArgs
     {
         public DockHorizontalResizeEventArgs(int left, int width)
@@ -125,6 +128,8 @@ namespace PennyPet
         public int Width { get; private set; }
     }
 
+    // Native Dock divider resize contract.
+    // Height is a physical HWND height in pixels.
     internal sealed class DockDividerResizeEventArgs : EventArgs
     {
         public DockDividerResizeEventArgs(int height)

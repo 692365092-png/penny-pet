@@ -1177,7 +1177,10 @@ namespace PennyPet
                 IList<DockWindowFacts> startFacts, string sourceNoteId,
                 int requestedSourceHeight, out int sourceHeight)
         {
-            sourceHeight = CalculateDockDividerHeight(requestedSourceHeight);
+            // Hosted divider contract: requestedSourceHeight is an
+            // already-clamped physical HWND height. Followers move by the
+            // exact physical delta with no second 220..700 clamp.
+            sourceHeight = Math.Max(1, requestedSourceHeight);
             List<DockLayoutTarget> targets = new List<DockLayoutTarget>();
             if (startFacts == null) return targets;
             int sourceIndex = -1;
@@ -1192,9 +1195,8 @@ namespace PennyPet
                     StringComparison.OrdinalIgnoreCase)) sourceIndex = index;
             }
             List<DockRect> layout =
-                StickyDockGeometry.CalculateDockMemberResizeTargets(
-                    startBounds, sourceIndex, requestedSourceHeight,
-                    out sourceHeight);
+                StickyDockGeometry.CalculateDockMemberResizeTargetsExact(
+                    startBounds, sourceIndex, sourceHeight);
             for (int index = 0; index < layout.Count; index++)
             {
                 DockWindowFacts facts = startFacts[sourceIndex + index + 1];
@@ -1215,8 +1217,12 @@ namespace PennyPet
             if (seed == null) return;
             List<StickyNoteData> ordered = BuildDockChainOrder(seed);
             if (ordered.Count <= 1) return;
+            // Native WM_SIZING already clamped the width with the real device
+            // scale; the Pet must propagate the same physical width, never a
+            // second 280..900 logical clamp.
+            if (requestedWidth <= 0) return;
             int left = requestedLeft;
-            int width = Math.Max(280, Math.Min(900, requestedWidth));
+            int width = requestedWidth;
             Dictionary<string, DockWindowFacts> facts =
                 CaptureDockFacts(ordered);
             facts[snapshot.NoteId] = snapshot;

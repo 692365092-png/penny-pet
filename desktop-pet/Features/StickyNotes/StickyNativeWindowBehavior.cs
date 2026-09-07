@@ -266,7 +266,8 @@ namespace PennyPet
                 _dockDividerResizeActive = _dockSplitBottom &&
                     _lastResizeHitTest == HtBottom;
                 if (_dockDividerResizeActive)
-                    RaiseDockDividerResize(DockDividerResizeStarted, Height);
+                    RaiseDockDividerResize(DockDividerResizeStarted,
+                        CurrentPhysicalHeight());
                 return IntPtr.Zero;
             }
             if (message == WmExitSizeMove)
@@ -276,7 +277,8 @@ namespace PennyPet
                 _dockDividerResizeActive = false;
                 _lastResizeHitTest = 0;
                 if (dividerResize)
-                    RaiseDockDividerResize(DockDividerResizeCompleted, Height);
+                    RaiseDockDividerResize(DockDividerResizeCompleted,
+                        CurrentPhysicalHeight());
                 else Raise(UserResizeCompleted);
                 return IntPtr.Zero;
             }
@@ -298,7 +300,11 @@ namespace PennyPet
                 sizing.Bottom = sizing.Top + requested;
                 Marshal.StructureToPtr(sizing, lParam, false);
                 RaiseDockDividerResize(DockDividerResizing,
-                    (int)Math.Round(requested / scale));
+                    requested);
+                DisplayDiagnostics.Trace("DockResizePhysical",
+                    "note=" + Data.Id +
+                    " axis=y scale=" + scale.ToString("0.###") +
+                    " height=" + requested);
                 handled = true;
                 return new IntPtr(1);
             }
@@ -314,21 +320,36 @@ namespace PennyPet
                 NativeRect sizing = (NativeRect)Marshal.PtrToStructure(
                     lParam, typeof(NativeRect));
                 double scale = DeviceScaleX();
-                double proposedWidth = Math.Max(MinWidth, Math.Min(MaxWidth,
-                    (sizing.Right - sizing.Left) / scale));
+                int minimumPixels = Math.Max(1, (int)Math.Round(
+                    MinWidth * scale, MidpointRounding.AwayFromZero));
+                int maximumPixels = Math.Max(minimumPixels,
+                    (int)Math.Round(MaxWidth * scale,
+                        MidpointRounding.AwayFromZero));
                 bool fromLeft = _lastResizeHitTest == HtLeft ||
                     _lastResizeHitTest == HtTopLeft ||
                     _lastResizeHitTest == HtBottomLeft;
-                double proposedLeft = fromLeft
-                    ? _resizeStartLeft + _resizeStartWidth - proposedWidth
-                    : _resizeStartLeft;
+                DockRect physical =
+                    StickyDockGeometry
+                        .CalculatePhysicalHorizontalResizeTarget(
+                            sizing.Left, sizing.Right, fromLeft,
+                            minimumPixels, maximumPixels);
+                if (fromLeft)
+                    sizing.Left = physical.Left;
+                else
+                    sizing.Right = physical.Left + physical.Width;
+                Marshal.StructureToPtr(sizing, lParam, false);
                 EventHandler<DockHorizontalResizeEventArgs> resizeHandler =
                     DockHorizontalResizing;
                 if (resizeHandler != null)
                     resizeHandler(this, new DockHorizontalResizeEventArgs(
-                        (int)Math.Round(proposedLeft),
-                        (int)Math.Round(proposedWidth)));
-                return IntPtr.Zero;
+                        physical.Left, physical.Width));
+                DisplayDiagnostics.Trace("DockResizePhysical",
+                    "note=" + Data.Id +
+                    " axis=x scale=" + scale.ToString("0.###") +
+                    " left=" + physical.Left +
+                    " width=" + physical.Width);
+                handled = true;
+                return new IntPtr(1);
             }
             if (message != WmNcHitTest) return IntPtr.Zero;
             int screenX = unchecked((short)(long)lParam);
@@ -382,6 +403,18 @@ namespace PennyPet
             if (source == null || source.CompositionTarget == null) return 1.0;
             double scale = source.CompositionTarget.TransformToDevice.M22;
             return scale > 0.1 && scale < 8.0 ? scale : 1.0;
+        }
+
+        // Physical HWND height authority for divider events. Only falls back
+        // to WPF Height * TransformToDevice when no real HWND rect exists.
+        private int CurrentPhysicalHeight()
+        {
+            Rectangle physical = PhysicalBounds;
+            if (physical != Rectangle.Empty && physical.Height > 0)
+                return physical.Height;
+            double scale = DeviceScaleY();
+            return Math.Max(1, (int)Math.Round(
+                Height * scale, MidpointRounding.AwayFromZero));
         }
 
         private double DeviceScaleX()
