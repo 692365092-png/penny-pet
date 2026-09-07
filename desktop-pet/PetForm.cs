@@ -433,10 +433,15 @@ namespace PennyPet
             MouseLeave += delegate { OnRawMouseLeave(); };
             LocationChanged += delegate
             {
+                if (_petDpiDragHandoffActive) return;
                 PositionNoteTabs();
                 RepositionCurrentBubble();
             };
-            SizeChanged += delegate { PositionNoteTabs(); };
+            SizeChanged += delegate
+            {
+                if (_petDpiDragHandoffActive) return;
+                PositionNoteTabs();
+            };
 
             _keyOverlay = new KeyboardOverlayForm(_settings.KeyOverlayScalePercent);
             _windowLayers.LayerChanged += PetWindowLayerChanged;
@@ -483,27 +488,123 @@ namespace PennyPet
 
         protected override void OnDpiChanged(DpiChangedEventArgs e)
         {
-            base.OnDpiChanged(e);
+            if (e == null || IsDisposed || Disposing)
+            {
+                base.OnDpiChanged(e);
+                return;
+            }
 
-            if (e == null || IsDisposed || Disposing) return;
-
-            int actualDpi = ActualPetDpi(e.DeviceDpiNew);
-
-            ApplyCurrentDisplayScale(actualDpi);
+            bool activeDrag = _dragging && IsHandleCreated &&
+                Handle != IntPtr.Zero;
 
             DisplayTopologySnapshot topology = CurrentTopologySnapshot();
-            WindowFacts facts = CapturePetWindowFacts(topology);
+            PhysicalPoint oldTopLeft = new PhysicalPoint
+            {
+                X = Left,
+                Y = Top
+            };
+            PhysicalPoint oldCursor = new PhysicalPoint();
+            int oldDpi = Math.Max(1, e.DeviceDpiOld);
 
-            DisplayDiagnostics.Trace("WindowDpiChanged",
-                "window=pet eventDpi=" + e.DeviceDpiNew +
-                " actualDpi=" + actualDpi +
-                " topology=" +
-                (topology == null ? -1 : topology.Generation));
+            if (activeDrag)
+            {
+                WindowFacts before = CapturePetWindowFacts(topology);
+                if (before != null)
+                {
+                    oldTopLeft = new PhysicalPoint
+                    {
+                        X = before.PhysicalBounds.Left,
+                        Y = before.PhysicalBounds.Top
+                    };
+                    if (before.Dpi > 0) oldDpi = before.Dpi;
+                }
+                Point cursor = Cursor.Position;
+                oldCursor = new PhysicalPoint
+                {
+                    X = cursor.X,
+                    Y = cursor.Y
+                };
+                _petDpiDragHandoffActive = true;
+            }
 
-            if (facts != null)
-                _petEffectiveFacts = facts;
+            int actualDpi = 0;
+            try
+            {
+                base.OnDpiChanged(e);
+
+                actualDpi = ActualPetDpi(e.DeviceDpiNew);
+                ApplyCurrentDisplayScale(actualDpi);
+
+                if (activeDrag)
+                {
+                    Point cursor = Cursor.Position;
+                    PhysicalPoint newCursor = new PhysicalPoint
+                    {
+                        X = cursor.X,
+                        Y = cursor.Y
+                    };
+                    PhysicalPoint rebased =
+                        PetPlacementPolicy.RebaseActiveDragTopLeft(
+                            oldTopLeft, oldCursor, newCursor,
+                            oldDpi, actualDpi);
+
+                    bool previousProgrammatic =
+                        _petProgrammaticPlacement;
+                    _petProgrammaticPlacement = true;
+                    try
+                    {
+                        TrySetPetTopLeft(rebased.X, rebased.Y);
+                    }
+                    finally
+                    {
+                        _petProgrammaticPlacement =
+                            previousProgrammatic;
+                    }
+
+                    WindowFacts afterRebase =
+                        CapturePetWindowFacts(topology);
+                    Point actualTopLeft = afterRebase != null
+                        ? new Point(afterRebase.PhysicalBounds.Left,
+                            afterRebase.PhysicalBounds.Top)
+                        : new Point(rebased.X, rebased.Y);
+
+                    _dragMouseOrigin = new Point(
+                        newCursor.X, newCursor.Y);
+                    _dragWindowOrigin = actualTopLeft;
+
+                    DisplayDiagnostics.Trace("PetDragDpiHandoff",
+                        "oldDpi=" + oldDpi +
+                        " newDpi=" + actualDpi +
+                        " oldTop=(" + oldTopLeft.X + "," +
+                        oldTopLeft.Y + ")" +
+                        " oldCursor=(" + oldCursor.X + "," +
+                        oldCursor.Y + ")" +
+                        " newCursor=(" + newCursor.X + "," +
+                        newCursor.Y + ")" +
+                        " requested=(" + rebased.X + "," +
+                        rebased.Y + ")" +
+                        " actual=(" + actualTopLeft.X + "," +
+                        actualTopLeft.Y + ")");
+                }
+
+                WindowFacts facts = CapturePetWindowFacts(topology);
+                DisplayDiagnostics.Trace("WindowDpiChanged",
+                    "window=pet eventOldDpi=" + e.DeviceDpiOld +
+                    " eventDpi=" + e.DeviceDpiNew +
+                    " actualDpi=" + actualDpi +
+                    " topology=" +
+                    (topology == null ? -1 : topology.Generation) +
+                    " drag=" + (activeDrag ? "1" : "0"));
+                if (facts != null) _petEffectiveFacts = facts;
+            }
+            finally
+            {
+                if (activeDrag)
+                    _petDpiDragHandoffActive = false;
+            }
 
             PositionNoteTabs();
+            RepositionCurrentBubble();
         }
 
         private void ApplyCurrentDisplayScale(int dpi)

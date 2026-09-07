@@ -6,6 +6,37 @@ namespace PennyPet
     {
         internal const int DefaultMarginLogical = 24;
 
+        // Active Pet drag rebase across a DPI handoff: convert the old
+        // cursor-relative grab offset to the same logical grab point and
+        // project it to the new DPI, so the next MouseMove delta restarts
+        // from zero instead of reapplying the pre-transition displacement.
+        internal static PhysicalPoint RebaseActiveDragTopLeft(
+            PhysicalPoint oldTopLeft,
+            PhysicalPoint oldCursor,
+            PhysicalPoint newCursor,
+            int oldDpi,
+            int newDpi)
+        {
+            int safeOldDpi = Math.Max(1, oldDpi);
+            int safeNewDpi = Math.Max(1, newDpi);
+
+            int oldOffsetX = oldCursor.X - oldTopLeft.X;
+            int oldOffsetY = oldCursor.Y - oldTopLeft.Y;
+
+            int newOffsetX = (int)Math.Round(
+                oldOffsetX * safeNewDpi / (double)safeOldDpi,
+                MidpointRounding.AwayFromZero);
+            int newOffsetY = (int)Math.Round(
+                oldOffsetY * safeNewDpi / (double)safeOldDpi,
+                MidpointRounding.AwayFromZero);
+
+            return new PhysicalPoint
+            {
+                X = newCursor.X - newOffsetX,
+                Y = newCursor.Y - newOffsetY
+            };
+        }
+
         internal static bool TryBuildPreferredPoint(
             WindowFacts facts,
             DisplayTopologySnapshot topology,

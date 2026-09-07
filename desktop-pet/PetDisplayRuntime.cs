@@ -13,6 +13,10 @@ namespace PennyPet
         private bool _petTemporaryRehome;
         private bool _petUserMovedSinceTemporaryRehome;
         private bool _petProgrammaticPlacement;
+        // Synchronous same-STA guard: during a Pet active-drag DPI handoff,
+        // intermediate LocationChanged/SizeChanged must not drive SideTabs /
+        // bubble follower layout. This is not distributed version state.
+        private bool _petDpiDragHandoffActive;
 
         private int ActualPetDpi(int fallbackDpi = 96)
         {

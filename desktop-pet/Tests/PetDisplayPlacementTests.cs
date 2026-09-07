@@ -161,5 +161,82 @@ namespace PennyPet.Tests
             Assert.AreEqual(1488, point.X);
             Assert.AreEqual(576, point.Y);
         }
+
+        [TestMethod]
+        public void ActiveDragRebase_96To144_PreservesGrabPoint()
+        {
+            PhysicalPoint result = PetPlacementPolicy.RebaseActiveDragTopLeft(
+                new PhysicalPoint { X = 100, Y = 200 },
+                new PhysicalPoint { X = 148, Y = 252 },
+                new PhysicalPoint { X = 500, Y = 600 },
+                96, 144);
+
+            Assert.AreEqual(428, result.X);
+            Assert.AreEqual(522, result.Y);
+        }
+
+        [TestMethod]
+        public void ActiveDragRebase_144To96_PreservesGrabPoint()
+        {
+            PhysicalPoint result = PetPlacementPolicy.RebaseActiveDragTopLeft(
+                new PhysicalPoint { X = 100, Y = 200 },
+                new PhysicalPoint { X = 172, Y = 278 },
+                new PhysicalPoint { X = 500, Y = 600 },
+                144, 96);
+
+            Assert.AreEqual(452, result.X);
+            Assert.AreEqual(548, result.Y);
+        }
+
+        [TestMethod]
+        public void ActiveDragRebase_WorksAcrossNegativeOrigin()
+        {
+            PhysicalPoint result = PetPlacementPolicy.RebaseActiveDragTopLeft(
+                new PhysicalPoint { X = -1800, Y = -200 },
+                new PhysicalPoint { X = -1680, Y = -80 },
+                new PhysicalPoint { X = 50, Y = 100 },
+                192, 120);
+
+            Assert.AreEqual(-25, result.X);
+            Assert.AreEqual(25, result.Y);
+        }
+
+        [TestMethod]
+        public void ActiveDragRebase_SameDpi_IsPureTranslation()
+        {
+            PhysicalPoint result = PetPlacementPolicy.RebaseActiveDragTopLeft(
+                new PhysicalPoint { X = 100, Y = 100 },
+                new PhysicalPoint { X = 130, Y = 160 },
+                new PhysicalPoint { X = 500, Y = 700 },
+                144, 144);
+
+            Assert.AreEqual(470, result.X);
+            Assert.AreEqual(640, result.Y);
+        }
+
+        [TestMethod]
+        public void OnDpiChanged_ActiveDragRebasesWithoutCommittingPreference()
+        {
+            // Temporary PC-0.5 runtime contract, eligible for retirement
+            // after the future PetDisplayRuntime object extraction.
+            string form = StickySessionTopologyContractTests.ReadSource(
+                "PetForm.cs");
+            string dpi = StickySessionTopologyContractTests.SliceMethod(
+                form, "protected override void OnDpiChanged");
+
+            Assert.IsTrue(dpi.Contains("ActualPetDpi(e.DeviceDpiNew)"));
+            Assert.IsTrue(dpi.Contains(
+                "RebaseActiveDragTopLeft("));
+            Assert.IsTrue(dpi.Contains(
+                "_dragMouseOrigin ="));
+            Assert.IsTrue(dpi.Contains(
+                "_dragWindowOrigin ="));
+            Assert.IsTrue(dpi.Contains(
+                "_petDpiDragHandoffActive"));
+            Assert.IsFalse(dpi.Contains(
+                "CommitPetPreferredFromFacts("));
+            Assert.IsFalse(dpi.Contains(
+                "_settings.PetPreferredTargetKey ="));
+        }
     }
 }
