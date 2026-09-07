@@ -1,0 +1,13 @@
+branch=codex/display-scale-v2
+source_commit=9caad7794e1df25dccd442a3645e3173805639ac
+baseline=474636e7edc9af56e65132827f99eddc462f2bfa
+checkpoint=DRT-13
+purpose=Dynamic N-display stress / release closure manual candidate
+Release=PASS
+Core_Architecture=295
+DynamicNDisplaySeeds=1000
+modular_SelfTests=PASS
+single_file_SelfTests=PASS
+Windows_PR_CI=34114844187/PASS
+Manual=PENDING
+AUD=NOT STARTED
