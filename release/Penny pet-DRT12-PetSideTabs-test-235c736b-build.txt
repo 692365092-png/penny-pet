@@ -1,0 +1,16 @@
+branch=codex/display-scale-v2
+source_commit=235c736b08ab65aee69b6554d7ddaa4e3aee55a7
+baseline=92e057070e76a48c33b2f805d3a742813aa69fc6
+checkpoint=DRT-12 typography correction only
+purpose=SideTab owned pixel font projected once from actual metrics DPI
+platform=x64
+logical_tab_size=146x34 (unchanged)
+font_reference=8.5pt
+font_physical_em_pixels=8.5 * dpi / 72
+Release=PASS (0 warnings, 0 errors)
+Core_Architecture=PASS (286 tests)
+modular_SelfTests=PASS (ok=true)
+single_file_package_SelfTests=PASS (exit=0, ok=true, 292 *_ok checks)
+git_diff_check=PASS
+Manual=PENDING
+DRT-13=NOT STARTED
