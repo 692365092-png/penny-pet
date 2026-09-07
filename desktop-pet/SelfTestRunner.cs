@@ -6865,6 +6865,20 @@ namespace PennyPet
                 string parent = Path.GetDirectoryName(Path.GetFullPath(outputPath));
                 if (!String.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
                 File.WriteAllText(outputPath, json, new UTF8Encoding(false));
+                if (!ok)
+                {
+                    // Diagnostic-only CI evidence: surface the exact failing
+                    // modular fields on the runner console. No test semantics
+                    // change; this only makes CI failures diagnosable.
+                    List<string> falseFields = new List<string>();
+                    foreach (System.Text.RegularExpressions.Match match in
+                        System.Text.RegularExpressions.Regex.Matches(json,
+                            "\"(\\w+)\":\\s*false"))
+                        falseFields.Add(match.Groups[1].Value);
+                    Console.Error.WriteLine(
+                        "MODULAR FALSE FIELDS: " +
+                        String.Join(", ", falseFields));
+                }
             }
             catch (Exception ex)
             {
@@ -6873,6 +6887,7 @@ namespace PennyPet
                 File.WriteAllText(outputPath,
                     "{\"ok\":false,\"error\":\"" + message + "\"}",
                     new UTF8Encoding(false));
+                Console.Error.WriteLine("MODULAR ERROR: " + message);
             }
         }
 
