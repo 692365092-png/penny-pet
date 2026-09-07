@@ -1,0 +1,17 @@
+checkpoint=PC-0.5
+baseline=ac2c934cdee11ef3859023bb235bbe368f5bac8c
+source_commit=414f66975dade4b0b1b584b8edadc7f81d51ab8e
+
+BUG-A=Dock resize physical unit contract
+BUG-B=Pet drag DPI handoff rebase
+
+Release=PASS
+Tests=306
+DynamicNDisplay=PASS
+modular=PASS
+single-file=PASS
+WindowsCI=34122222158/PASS
+ManualOwnerMachine=PENDING
+ManualFriendMixedDpi=PENDING
+
+PC-1=BLOCKED
