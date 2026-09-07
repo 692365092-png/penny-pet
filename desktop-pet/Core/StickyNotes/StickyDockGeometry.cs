@@ -254,17 +254,34 @@ namespace PennyPet
             return result;
         }
 
-        internal static DockPoint CalculateSideTabLocation(DockRect pet,
-            DockRect work, DockSize strip, bool onLeft, int overlap,
-            int horizontalOffset)
+        internal static DockPoint CalculateSideTabLocation(
+            DockRect pet, DockRect work, DockSize strip,
+            bool onLeft, int overlap, int horizontalOffset)
         {
-            int x = onLeft ? pet.Left - strip.Width + overlap :
-                pet.Right - overlap - Math.Max(0, horizontalOffset);
-            x = Math.Max(work.Left + 2,
-                Math.Min(x, work.Right - strip.Width - 2));
+            return CalculateSideTabLocation(
+                pet, work, strip, onLeft, overlap, horizontalOffset, 2, 4);
+        }
+
+        internal static DockPoint CalculateSideTabLocation(
+            DockRect pet, DockRect work, DockSize strip,
+            bool onLeft, int overlap, int horizontalOffset,
+            int marginX, int marginY)
+        {
+            int safeMarginX = Math.Max(0, marginX);
+            int safeMarginY = Math.Max(0, marginY);
+
+            int x = onLeft
+                ? pet.Left - strip.Width + overlap
+                : pet.Right - overlap - Math.Max(0, horizontalOffset);
+
+            x = Math.Max(work.Left + safeMarginX,
+                Math.Min(x, work.Right - strip.Width - safeMarginX));
+
             int y = pet.Top + (pet.Height - strip.Height) / 2;
-            y = Math.Max(work.Top + 4,
-                Math.Min(y, work.Bottom - strip.Height - 4));
+
+            y = Math.Max(work.Top + safeMarginY,
+                Math.Min(y, work.Bottom - strip.Height - safeMarginY));
+
             return new DockPoint { X = x, Y = y };
         }
 

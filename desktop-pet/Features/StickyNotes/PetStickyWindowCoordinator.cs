@@ -2153,6 +2153,46 @@ namespace PennyPet
             RefreshMenuText();
         }
 
+        private bool TryGetPetDerivedDisplayContext(
+            out WindowFacts petFacts,
+            out DisplaySurfaceSnapshot surface,
+            out Rectangle workArea,
+            out SideTabPhysicalMetrics metrics)
+        {
+            petFacts = null;
+            surface = null;
+            workArea = Rectangle.Empty;
+            metrics = null;
+
+            DisplayTopologySnapshot topology = CurrentTopologySnapshot();
+
+            if (topology == null || !IsHandleCreated ||
+                Handle == IntPtr.Zero)
+                return false;
+
+            petFacts = CapturePetWindowFacts(topology);
+
+            if (petFacts == null ||
+                petFacts.TopologyGeneration != topology.Generation ||
+                petFacts.Dpi <= 0)
+                return false;
+
+            surface = topology.FindByRuntimeGdiName(
+                petFacts.RuntimeGdiName);
+
+            if (surface == null) return false;
+
+            workArea = new Rectangle(
+                surface.WorkArea.Left,
+                surface.WorkArea.Top,
+                surface.WorkArea.Width,
+                surface.WorkArea.Height);
+
+            metrics = SideTabPhysicalMetrics.ForDpi(petFacts.Dpi);
+
+            return true;
+        }
+
         private void RefreshNoteTabs()
         {
             ApplicationDiagnostics.WriteWindowLayerEvent("RefreshNoteTabs",
@@ -2165,6 +2205,21 @@ namespace PennyPet
             List<SideTabSnapshot> hidden = new List<SideTabSnapshot>();
             foreach (StickyNoteData note in hiddenData)
                 hidden.Add(SideTabSnapshot.FromData(note));
+            WindowFacts petFacts;
+            DisplaySurfaceSnapshot petSurface;
+            Rectangle workArea;
+            SideTabPhysicalMetrics metrics;
+
+            if (!TryGetPetDerivedDisplayContext(
+                out petFacts,
+                out petSurface,
+                out workArea,
+                out metrics))
+                return;
+
+            _leftNoteTabs.ApplyPhysicalMetrics(metrics);
+            _rightNoteTabs.ApplyPhysicalMetrics(metrics);
+
             StringBuilder signatureBuilder = new StringBuilder();
             foreach (SideTabSnapshot note in hidden)
             {
@@ -2172,6 +2227,9 @@ namespace PennyPet
                     .Append(note.DisplayTitle).Append('|')
                     .Append(note.ColorArgb).Append('\n');
             }
+            signatureBuilder.Append("dpi=")
+                .Append(metrics.Dpi)
+                .Append('\n');
             string signature = signatureBuilder.ToString();
             if (String.Equals(signature, _noteTabsSignature,
                 StringComparison.Ordinal))
@@ -2181,8 +2239,26 @@ namespace PennyPet
                 return;
             }
             _noteTabsSignature = signature;
-            int leftCount = StickyNoteTabsForm.CalculateLeftCount(
-                hidden.Count);
+            int leftCount =
+                SideTabLayoutPolicy.CalculateBalancedLeftCount(
+                    hidden.Count);
+
+            int logicalWorkHeight =
+                SideTabLayoutPolicy.PhysicalWorkHeightToLogical(
+                    workArea.Height, metrics.Dpi);
+
+            int logicalCapacity =
+                SideTabLayoutPolicy.LogicalScreenCapacity(
+                    logicalWorkHeight);
+
+            DisplayDiagnostics.Trace("SideTabsLayout",
+                "topology=" + petFacts.TopologyGeneration +
+                " dpi=" + metrics.Dpi +
+                " total=" + hidden.Count +
+                " left=" + leftCount +
+                " right=" + (hidden.Count - leftCount) +
+                " logicalCapacity=" + logicalCapacity +
+                " surface=" + petSurface.RuntimeSurfaceId);
             List<SideTabSnapshot> left = hidden.GetRange(0, leftCount);
             List<SideTabSnapshot> right = hidden.GetRange(leftCount,
                 hidden.Count - leftCount);
@@ -2238,38 +2314,50 @@ namespace PennyPet
 
         private void PositionNoteTabs()
         {
-            if (_leftNoteTabs == null || _rightNoteTabs == null ||
-                !IsHandleCreated || IsDisposed || _positioningNoteTabs) return;
-            Rectangle work = Screen.FromRectangle(Bounds).WorkingArea;
+            if (_leftNoteTabs == null ||
+                _rightNoteTabs == null ||
+                !IsHandleCreated ||
+                IsDisposed ||
+                _positioningNoteTabs)
+                return;
+
+            WindowFacts petFacts;
+            DisplaySurfaceSnapshot surface;
+            Rectangle work;
+            SideTabPhysicalMetrics metrics;
+
+            if (!TryGetPetDerivedDisplayContext(
+                out petFacts,
+                out surface,
+                out work,
+                out metrics))
+                return;
+
             if (!StickyNoteTabsForm.IsLayoutSplitCurrent(
-                _leftNoteTabs.Controls.Count, _rightNoteTabs.Controls.Count))
+                _leftNoteTabs.Controls.Count,
+                _rightNoteTabs.Controls.Count))
             {
                 _noteTabsSignature = String.Empty;
                 RefreshNoteTabs();
                 return;
             }
+
             _positioningNoteTabs = true;
+
             try
             {
-                int reserveLeft = _leftNoteTabs.Controls.Count > 0
-                    ? StickyNoteTabsForm.TabWidth -
-                        StickyNoteTabsForm.PetOverlapForWidth(Width) + 2 : 0;
-                int reserveRight = _rightNoteTabs.Controls.Count > 0
-                    ? StickyNoteTabsForm.TabWidth -
-                        StickyNoteTabsForm.PetOverlapForWidth(Width) + 2 : 0;
-                int minimumLeft = work.Left + reserveLeft;
-                int maximumLeft = work.Right - reserveRight - Width;
-                if (maximumLeft >= minimumLeft)
-                {
-                    int adjustedX = Math.Max(minimumLeft,
-                        Math.Min(Left, maximumLeft));
-                    int adjustedY = Math.Max(work.Top,
-                        Math.Min(Top, work.Bottom - Height));
-                    if (adjustedX != Left || adjustedY != Top)
-                        Location = new Point(adjustedX, adjustedY);
-                }
-                _leftNoteTabs.ShowNear(Bounds, work);
-                _rightNoteTabs.ShowNear(Bounds, work);
+                _leftNoteTabs.ApplyPhysicalMetrics(metrics);
+                _rightNoteTabs.ApplyPhysicalMetrics(metrics);
+
+                Rectangle petBounds = new Rectangle(
+                    petFacts.PhysicalBounds.Left,
+                    petFacts.PhysicalBounds.Top,
+                    petFacts.PhysicalBounds.Width,
+                    petFacts.PhysicalBounds.Height);
+
+                _leftNoteTabs.ShowNear(petBounds, work);
+                _rightNoteTabs.ShowNear(petBounds, work);
+
                 ApplyNoteTabZOrder();
             }
             finally

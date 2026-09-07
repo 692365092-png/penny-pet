@@ -128,7 +128,8 @@ namespace PennyPet.Tests
             Assert.IsTrue(position.Contains("IsLayoutSplitCurrent") &&
                 position.Contains("_noteTabsSignature = String.Empty") &&
                 position.Contains("RefreshNoteTabs();") &&
-                position.Contains("ShowNear(Bounds, work)"),
+                position.Contains("ShowNear(petBounds, work)") &&
+                position.Contains("petFacts.PhysicalBounds"),
                 "Positioning must rebuild only an invalid split and otherwise reposition.");
             Assert.IsTrue(form.Contains("WmSettingChange") &&
                 form.Contains("WmDisplayChange") &&

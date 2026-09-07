@@ -17,6 +17,7 @@ namespace PennyPet
 
     internal sealed class StickyNoteTabsForm : Form
     {
+        // Logical 96-DPI references; instance layout uses physical metrics.
         internal const int TabWidth = 146;
         internal const int TabHeight = 34;
         internal const int TabGap = 2;
@@ -35,6 +36,7 @@ namespace PennyPet
         private static readonly List<StickyNoteTabsForm> LiveForms =
             new List<StickyNoteTabsForm>();
 
+        private SideTabPhysicalMetrics _metrics = SideTabPhysicalMetrics.ForDpi(96);
         private readonly StickyTabSide _side;
         private readonly Action<string> _openNote;
         private readonly Action<string> _deleteNote;
@@ -73,10 +75,10 @@ namespace PennyPet
             ShowInTaskbar = false;
             TopMost = true;
             StartPosition = FormStartPosition.Manual;
-            AutoScaleMode = AutoScaleMode.Dpi;
+            AutoScaleMode = AutoScaleMode.None;
             BackColor = Color.Fuchsia;
             TransparencyKey = Color.Fuchsia;
-            ClientSize = new Size(TabWidth, 1);
+            ClientSize = new Size(_metrics.Width, 1);
             AllowDrop = true;
             DragEnter += TabsDragEnter;
             DragOver += TabsDragOver;
@@ -106,6 +108,60 @@ namespace PennyPet
             }
         }
 
+        internal void ApplyPhysicalMetrics(
+            SideTabPhysicalMetrics metrics)
+        {
+            if (metrics == null)
+                throw new ArgumentNullException(nameof(metrics));
+
+            bool changed = _metrics == null ||
+                _metrics.Dpi != metrics.Dpi;
+
+            _metrics = metrics;
+
+            if (!changed) return;
+
+            _layoutAnimationTimer.Stop();
+            _dropIndex = -1;
+            _previewDraggedNoteId = null;
+            _restoringLayout = false;
+
+            ClearCrossSideBoundaryPreview();
+            RestoreSourceHorizontalOffset();
+
+            int count = Controls.Count;
+
+            _normalHeight = Math.Max(1,
+                count * (_metrics.Height + _metrics.Gap) -
+                (count > 0 ? _metrics.Gap : 0));
+
+            foreach (Control control in Controls)
+            {
+                StickyNoteTabControl tab =
+                    control as StickyNoteTabControl;
+
+                if (tab == null) continue;
+
+                tab.ApplyPhysicalMetrics(_metrics);
+
+                if (tab.ListIndex >= 0)
+                {
+                    tab.Bounds = new Rectangle(
+                        0,
+                        tab.ListIndex *
+                            (_metrics.Height + _metrics.Gap),
+                        _metrics.Width,
+                        _metrics.Height);
+                }
+            }
+
+            ClientSize = new Size(
+                CurrentCanvasWidth,
+                _normalHeight);
+
+            Invalidate();
+        }
+
         public void SetNotes(IList<SideTabSnapshot> notes)
         {
             SetNotes(notes, 0);
@@ -129,16 +185,16 @@ namespace PennyPet
             }
             int count = notes == null ? 0 : notes.Count;
             _normalHeight = Math.Max(1,
-                count * (TabHeight + TabGap) - TabGap);
-            ClientSize = new Size(TabWidth, _normalHeight);
+                count * (_metrics.Height + _metrics.Gap) - _metrics.Gap);
+            ClientSize = new Size(_metrics.Width, _normalHeight);
             for (int i = 0; i < count; i++)
             {
                 SideTabSnapshot note = notes[i];
                 StickyNoteTabControl tab = new StickyNoteTabControl(note, _side,
-                    _openNote, _deleteNote);
+                    _openNote, _deleteNote, _metrics);
                 tab.ListIndex = i;
-                tab.Bounds = new Rectangle(0, i * (TabHeight + TabGap),
-                    TabWidth, TabHeight);
+                tab.Bounds = new Rectangle(0, i * (_metrics.Height + _metrics.Gap),
+                    _metrics.Width, _metrics.Height);
                 tab.AllowDrop = true;
                 tab.DragEnter += TabsDragEnter;
                 tab.DragOver += TabsDragOver;
@@ -156,22 +212,55 @@ namespace PennyPet
             if (!Visible) Show();
         }
 
-        public void ShowNear(Rectangle petBounds, Rectangle workArea)
+        public void ShowNear(
+            Rectangle petBounds,
+            Rectangle workArea)
         {
             if (Controls.Count == 0) return;
-            DockPoint location = StickyDockGeometry.CalculateSideTabLocation(
-                new DockRect(petBounds.Left, petBounds.Top, petBounds.Width,
-                    petBounds.Height),
-                new DockRect(workArea.Left, workArea.Top, workArea.Width,
-                    workArea.Height), new DockSize(Width, Height),
-                _side == StickyTabSide.Left,
-                PetOverlapForWidth(petBounds.Width),
-                _sourceHorizontallyOffset && _side == StickyTabSide.Right
-                    ? DragSourceVisualOffset : 0);
+
+            int transparentMargin =
+                (int)Math.Round(
+                    Math.Max(0, petBounds.Width) * 44.0 / 192.0,
+                    MidpointRounding.AwayFromZero);
+
+            int logicalGapPhysical =
+                _metrics.ScaleLength(20);
+
+            int overlap =
+                (logicalGapPhysical + transparentMargin) / 2;
+
+            DockPoint location =
+                StickyDockGeometry.CalculateSideTabLocation(
+                    new DockRect(
+                        petBounds.Left,
+                        petBounds.Top,
+                        petBounds.Width,
+                        petBounds.Height),
+                    new DockRect(
+                        workArea.Left,
+                        workArea.Top,
+                        workArea.Width,
+                        workArea.Height),
+                    new DockSize(Width, Height),
+                    _side == StickyTabSide.Left,
+                    overlap,
+                    _sourceHorizontallyOffset &&
+                        _side == StickyTabSide.Right
+                        ? _metrics.DragSourceVisualOffset
+                        : 0,
+                    _metrics.WindowMarginX,
+                    _metrics.WindowMarginY);
+
             Location = new Point(location.X, location.Y);
+
             if (_sourceHorizontallyOffset)
-                _sourceNormalLeft = _side == StickyTabSide.Right
-                    ? location.X + DragSourceVisualOffset : location.X;
+            {
+                _sourceNormalLeft =
+                    _side == StickyTabSide.Right
+                        ? location.X + _metrics.DragSourceVisualOffset
+                        : location.X;
+            }
+
             if (!Visible) Show();
         }
 
@@ -234,15 +323,15 @@ namespace PennyPet
                 ClearRolloverPreviewTab();
             Point point = PointToClient(new Point(e.X, e.Y));
             _dragPointerY = point.Y;
-            int next = CalculateDropIndex(point.Y, Controls.Count);
+            int next = CalculateDropIndex(point.Y, Controls.Count, _metrics);
             if (next == _dropIndex && IsSameNote(_previewDraggedNoteId,
                 movedId)) return;
             _dropIndex = next;
             _previewDraggedNoteId = movedId;
             _restoringLayout = false;
-            if (ClientSize.Height != _normalHeight + PreviewInsertionGap)
+            if (ClientSize.Height != _normalHeight + _metrics.PreviewInsertionGap)
                 ClientSize = new Size(CurrentCanvasWidth,
-                    _normalHeight + PreviewInsertionGap);
+                    _normalHeight + _metrics.PreviewInsertionGap);
             // A cross-side target must show its existing tabs continuously.
             // Snapping that short preview avoids the WinForms transparent-
             // child repaint hole that made the first target tab disappear.
@@ -313,9 +402,9 @@ namespace PennyPet
                 int compactIndex = tab.ListIndex;
                 if (boundary != null && _side == StickyTabSide.Right)
                     compactIndex--;
-                tab.Top = compactIndex * (TabHeight + TabGap);
+                tab.Top = compactIndex * (_metrics.Height + _metrics.Gap);
                 if (compactIndex >= visualInsertion)
-                    tab.Top += PreviewInsertionGap;
+                    tab.Top += _metrics.PreviewInsertionGap;
                 tab.Visible = true;
                 tab.IsDragSource = false;
                 tab.Invalidate();
@@ -430,25 +519,62 @@ namespace PennyPet
 
         internal static int CalculateDropIndex(int pointerY, int count)
         {
+            return CalculateDropIndex(pointerY, count,
+                SideTabPhysicalMetrics.ForDpi(96));
+        }
+
+        internal static int CalculateDropIndex(
+            int pointerY,
+            int count,
+            SideTabPhysicalMetrics metrics)
+        {
+            if (metrics == null)
+                throw new ArgumentNullException(nameof(metrics));
+
+            int row = metrics.Height + metrics.Gap;
+
             return Math.Max(0, Math.Min(count,
-                (pointerY + (TabHeight + TabGap) / 2) /
-                    (TabHeight + TabGap)));
+                (pointerY + row / 2) / row));
         }
 
         internal static int PreviewTargetTop(int listIndex, int sourceIndex,
             int dropIndex)
         {
+            return PreviewTargetTop(listIndex, sourceIndex, dropIndex,
+                SideTabPhysicalMetrics.ForDpi(96));
+        }
+
+        internal static int PreviewTargetTop(
+            int listIndex,
+            int sourceIndex,
+            int dropIndex,
+            SideTabPhysicalMetrics metrics)
+        {
+            if (metrics == null)
+                throw new ArgumentNullException(nameof(metrics));
+
+            int row = metrics.Height + metrics.Gap;
+
             if (listIndex == sourceIndex)
-                return listIndex * (TabHeight + TabGap);
-            // sourceIndex == -1 means the source belongs to the opposite
-            // strip. Nothing in this target strip may be compacted away.
-            int compactIndex = sourceIndex >= 0 && listIndex > sourceIndex
-                ? listIndex - 1 : listIndex;
+                return listIndex * row;
+
+            int compactIndex =
+                sourceIndex >= 0 && listIndex > sourceIndex
+                    ? listIndex - 1
+                    : listIndex;
+
             int insertion = dropIndex;
-            if (sourceIndex >= 0 && sourceIndex < insertion) insertion--;
+
+            if (sourceIndex >= 0 && sourceIndex < insertion)
+                insertion--;
+
             insertion = Math.Max(0, insertion);
-            int top = compactIndex * (TabHeight + TabGap);
-            if (compactIndex >= insertion) top += PreviewInsertionGap;
+
+            int top = compactIndex * row;
+
+            if (compactIndex >= insertion)
+                top += metrics.PreviewInsertionGap;
+
             return top;
         }
 
@@ -483,17 +609,16 @@ namespace PennyPet
                 bool isSource = sourceIndex >= 0 &&
                     tab.ListIndex == sourceIndex;
                 if (_restoringLayout || _dropIndex < 0)
-                    target = tab.ListIndex * (TabHeight + TabGap);
+                    target = tab.ListIndex * (_metrics.Height + _metrics.Gap);
                 else if (isSource)
                 {
                     // Keep the source visible in its original strip. A small
                     // horizontal pull marks it as the item being dragged;
                     // its row never collapses into a neighbouring tab.
-                    target = tab.ListIndex * (TabHeight + TabGap);
+                    target = tab.ListIndex * (_metrics.Height + _metrics.Gap);
                 }
                 else
-                    target = PreviewTargetTop(tab.ListIndex, sourceIndex,
-                        _dropIndex);
+                    target = PreviewTargetTop(tab.ListIndex, sourceIndex, _dropIndex, _metrics);
                 int next = AnimateCoordinate(tab.Top, target);
                 if (next != target) settled = false;
                 if (tab.Top != next) tab.Top = next;
@@ -514,7 +639,7 @@ namespace PennyPet
                 bool dragStillActive = !String.IsNullOrEmpty(
                     DragSession.ActiveNoteId);
                 ClientSize = new Size(CurrentCanvasWidth, _normalHeight +
-                    (dragStillActive ? PreviewInsertionGap : 0));
+                    (dragStillActive ? _metrics.PreviewInsertionGap : 0));
                 foreach (Control control in Controls)
                 {
                     StickyNoteTabControl tab = control as StickyNoteTabControl;
@@ -551,11 +676,11 @@ namespace PennyPet
                 {
                     StickyNoteTabControl tab = control as StickyNoteTabControl;
                     if (tab == null) continue;
-                    tab.Top = tab.ListIndex * (TabHeight + TabGap);
+                    tab.Top = tab.ListIndex * (_metrics.Height + _metrics.Gap);
                     tab.Left = 0;
                     tab.IsDragSource = false;
                 }
-                ClientSize = new Size(TabWidth, _normalHeight);
+                ClientSize = new Size(_metrics.Width, _normalHeight);
                 return;
             }
             _restoringLayout = true;
@@ -592,7 +717,7 @@ namespace PennyPet
                 if (tab == null) continue;
                 bool isSource = Object.ReferenceEquals(tab, source);
                 if (!preserveRollover)
-                    tab.Top = tab.ListIndex * (TabHeight + TabGap);
+                    tab.Top = tab.ListIndex * (_metrics.Height + _metrics.Gap);
                 tab.IsDragSource = isSource;
             }
             if (source != null) source.BringToFront();
@@ -602,7 +727,7 @@ namespace PennyPet
             bool dragActive = !String.IsNullOrEmpty(DragSession.ActiveNoteId);
             if (!preserveRollover)
                 ClientSize = new Size(CurrentCanvasWidth, _normalHeight +
-                    (dragActive ? PreviewInsertionGap : 0));
+                    (dragActive ? _metrics.PreviewInsertionGap : 0));
             Invalidate();
             if (IsHandleCreated) Update();
         }
@@ -611,8 +736,8 @@ namespace PennyPet
         {
             get
             {
-                return TabWidth + (_sourceHorizontallyOffset
-                    ? DragSourceVisualOffset : 0);
+                return _metrics.Width + (_sourceHorizontallyOffset
+                    ? _metrics.DragSourceVisualOffset : 0);
             }
         }
 
@@ -623,7 +748,7 @@ namespace PennyPet
                 _sourceNormalLeft = Left;
                 _sourceHorizontallyOffset = true;
                 if (_side == StickyTabSide.Right)
-                    Left -= DragSourceVisualOffset;
+                    Left -= _metrics.DragSourceVisualOffset;
             }
             foreach (Control control in Controls)
             {
@@ -631,8 +756,8 @@ namespace PennyPet
                 if (tab == null) continue;
                 bool isSource = Object.ReferenceEquals(tab, source);
                 tab.Left = _side == StickyTabSide.Left
-                    ? (isSource ? DragSourceVisualOffset : 0)
-                    : (isSource ? 0 : DragSourceVisualOffset);
+                    ? (isSource ? _metrics.DragSourceVisualOffset : 0)
+                    : (isSource ? 0 : _metrics.DragSourceVisualOffset);
             }
         }
 
@@ -658,20 +783,20 @@ namespace PennyPet
             {
                 ClearRolloverPreviewTab();
                 _rolloverPreviewTab = new StickyNoteTabControl(note, _side,
-                    _openNote, _deleteNote);
+                    _openNote, _deleteNote, _metrics);
                 _rolloverPreviewTab.ListIndex = -1;
                 _rolloverPreviewTab.AllowDrop = true;
                 _rolloverPreviewTab.DragEnter += TabsDragEnter;
                 _rolloverPreviewTab.DragOver += TabsDragOver;
                 _rolloverPreviewTab.DragLeave += TabsDragLeave;
                 _rolloverPreviewTab.DragDrop += TabsDragDrop;
-                _rolloverPreviewTab.Size = new Size(TabWidth, TabHeight);
+                _rolloverPreviewTab.Size = new Size(_metrics.Width, _metrics.Height);
                 _toolTip.SetToolTip(_rolloverPreviewTab,
                     note.DisplayTitle + "\n单击展开便利贴");
                 Controls.Add(_rolloverPreviewTab);
             }
             int normalLeft = _side == StickyTabSide.Right &&
-                _sourceHorizontallyOffset ? DragSourceVisualOffset : 0;
+                _sourceHorizontallyOffset ? _metrics.DragSourceVisualOffset : 0;
             _rolloverPreviewTab.Left = normalLeft;
             _rolloverPreviewTab.IsDragSource = false;
             foreach (Control control in Controls)
@@ -680,10 +805,10 @@ namespace PennyPet
                 if (tab == null || Object.ReferenceEquals(tab,
                     _rolloverPreviewTab)) continue;
                 tab.Top = (tab.ListIndex + (atTop ? 1 : 0)) *
-                    (TabHeight + TabGap);
+                    (_metrics.Height + _metrics.Gap);
             }
             _rolloverPreviewTab.Top = atTop ? 0 :
-                Math.Max(0, Controls.Count - 1) * (TabHeight + TabGap);
+                Math.Max(0, Controls.Count - 1) * (_metrics.Height + _metrics.Gap);
             StickyNoteTabControl activeSource = null;
             foreach (Control control in Controls)
             {
@@ -694,7 +819,7 @@ namespace PennyPet
             }
             if (activeSource != null) activeSource.BringToFront();
             ClientSize = new Size(CurrentCanvasWidth, _normalHeight +
-                TabHeight + TabGap + PreviewInsertionGap);
+                _metrics.Height + _metrics.Gap + _metrics.PreviewInsertionGap);
             Invalidate();
             if (IsHandleCreated) Update();
         }
@@ -718,11 +843,11 @@ namespace PennyPet
             {
                 StickyNoteTabControl tab = control as StickyNoteTabControl;
                 if (tab != null)
-                    tab.Top = tab.ListIndex * (TabHeight + TabGap);
+                    tab.Top = tab.ListIndex * (_metrics.Height + _metrics.Gap);
             }
             bool dragActive = !String.IsNullOrEmpty(DragSession.ActiveNoteId);
             ClientSize = new Size(CurrentCanvasWidth, _normalHeight +
-                (dragActive ? PreviewInsertionGap : 0));
+                (dragActive ? _metrics.PreviewInsertionGap : 0));
         }
 
         private void ClearCrossSideBoundaryPreview()
@@ -742,9 +867,9 @@ namespace PennyPet
             ActivateExclusiveDropTarget(this, noteId);
             _previewDraggedNoteId = noteId;
             _dropIndex = Math.Max(0, Math.Min(Controls.Count, dropIndex));
-            _dragPointerY = _dropIndex * (TabHeight + TabGap);
+            _dragPointerY = _dropIndex * (_metrics.Height + _metrics.Gap);
             ClientSize = new Size(CurrentCanvasWidth,
-                _normalHeight + PreviewInsertionGap);
+                _normalHeight + _metrics.PreviewInsertionGap);
             if (!String.IsNullOrEmpty(DragSession.ActiveNoteId) &&
                 !DragSession.IsSource(this))
             {
@@ -768,8 +893,8 @@ namespace PennyPet
                 if (tab == null) continue;
                 tab.IsDragSource = tab.ListIndex == sourceIndex;
                 tab.Top = tab.ListIndex == sourceIndex
-                    ? tab.ListIndex * (TabHeight + TabGap)
-                    : PreviewTargetTop(tab.ListIndex, sourceIndex, _dropIndex);
+                    ? tab.ListIndex * (_metrics.Height + _metrics.Gap)
+                    : PreviewTargetTop(tab.ListIndex, sourceIndex, _dropIndex, _metrics);
             }
             Invalidate();
         }
@@ -787,11 +912,11 @@ namespace PennyPet
                 if (tab == null || !IsSameNote(tab.Snapshot.NoteId, noteId))
                     continue;
                 int expectedLeft = _side == StickyTabSide.Left
-                    ? DragSourceVisualOffset : 0;
+                    ? _metrics.DragSourceVisualOffset : 0;
                 return tab.IsDragSource &&
                     _sourceHorizontallyOffset &&
                     tab.Left == expectedLeft &&
-                    tab.Top == tab.ListIndex * (TabHeight + TabGap) &&
+                    tab.Top == tab.ListIndex * (_metrics.Height + _metrics.Gap) &&
                     Controls.GetChildIndex(tab) == 0;
             }
             return false;
@@ -815,7 +940,7 @@ namespace PennyPet
                 !IsSameNote(_rolloverPreviewTab.Snapshot.NoteId, noteId))
                 return false;
             int expectedTop = atTop ? 0 :
-                Math.Max(0, Controls.Count - 1) * (TabHeight + TabGap);
+                Math.Max(0, Controls.Count - 1) * (_metrics.Height + _metrics.Gap);
             return _rolloverPreviewTab.Top == expectedTop;
         }
 
@@ -838,12 +963,12 @@ namespace PennyPet
             get
             {
                 int rolloverHeight = _rolloverPreviewTab == null ? 0 :
-                    TabHeight + TabGap;
+                    _metrics.Height + _metrics.Gap;
                 return String.IsNullOrEmpty(DragSession.ActiveNoteId)
                     ? ClientSize.Height == _normalHeight &&
-                        ClientSize.Width == TabWidth
+                        ClientSize.Width == _metrics.Width
                     : ClientSize.Height == _normalHeight +
-                        PreviewInsertionGap + rolloverHeight &&
+                        _metrics.PreviewInsertionGap + rolloverHeight &&
                         ClientSize.Width == CurrentCanvasWidth;
             }
         }
@@ -865,17 +990,33 @@ namespace PennyPet
             int insertion = _crossSideVisualDropIndex >= 0
                 ? _crossSideVisualDropIndex : _dropIndex;
             if (sourceIndex >= 0 && sourceIndex < insertion) insertion--;
-            int y = Math.Max(1, insertion * (TabHeight + TabGap) + 2);
-            Rectangle slot = new Rectangle(5, y, Width - 10,
-                PreviewInsertionGap - 4);
-            using (SolidBrush glow = new SolidBrush(Color.FromArgb(125, 70, 150, 245)))
-            using (Pen pen = new Pen(Color.FromArgb(225, 40, 105, 220), 2F))
+            int row = _metrics.Height + _metrics.Gap;
+
+            int y = Math.Max(1,
+                insertion * row +
+                _metrics.ScaleLength(2));
+
+            int inset = _metrics.ScaleLength(5);
+            int verticalInset = _metrics.ScaleLength(4);
+
+            Rectangle slot = new Rectangle(
+                inset,
+                y,
+                Math.Max(1, Width - inset * 2),
+                Math.Max(1,
+                    _metrics.PreviewInsertionGap - verticalInset));
+
+            using (SolidBrush glow =
+                new SolidBrush(Color.FromArgb(125, 70, 150, 245)))
+            using (Pen pen =
+                new Pen(Color.FromArgb(225, 40, 105, 220),
+                    _metrics.ScaleStroke(2F)))
             {
                 e.Graphics.FillRectangle(glow, slot);
-                e.Graphics.DrawLine(pen, slot.Left, slot.Top,
-                    slot.Right, slot.Top);
-                e.Graphics.DrawLine(pen, slot.Left, slot.Bottom,
-                    slot.Right, slot.Bottom);
+                e.Graphics.DrawLine(pen,
+                    slot.Left, slot.Top, slot.Right, slot.Top);
+                e.Graphics.DrawLine(pen,
+                    slot.Left, slot.Bottom, slot.Right, slot.Bottom);
             }
         }
 
@@ -900,6 +1041,7 @@ namespace PennyPet
         private static readonly object TypeIconMaskSync = new object();
         private static Bitmap[] _typeIconMasks;
 
+        private SideTabPhysicalMetrics _metrics;
         private readonly SideTabSnapshot _snapshot;
         private readonly StickyTabSide _side;
         private readonly Action<string> _openNote;
@@ -931,9 +1073,12 @@ namespace PennyPet
         public StickyNoteTabControl(SideTabSnapshot snapshot,
             StickyTabSide side,
             Action<string> openNote,
-            Action<string> deleteNote)
+            Action<string> deleteNote,
+            SideTabPhysicalMetrics metrics)
         {
             if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
+            _metrics = metrics ??
+                SideTabPhysicalMetrics.ForDpi(96);
             _snapshot = snapshot;
             _side = side;
             _openNote = openNote;
@@ -1037,11 +1182,25 @@ namespace PennyPet
             }
         }
 
+        internal void ApplyPhysicalMetrics(
+            SideTabPhysicalMetrics metrics)
+        {
+            if (metrics == null)
+                throw new ArgumentNullException(nameof(metrics));
+
+            _metrics = metrics;
+
+            Invalidate();
+
+            if (IsHandleCreated)
+                PerformLayout();
+        }
+
         protected override void OnResize(EventArgs e)
         {
             base.OnResize(e);
             Region old = Region;
-            using (GraphicsPath path = CreateShape(ClientRectangle, _side))
+            using (GraphicsPath path = CreateShape(ClientRectangle, _side, _metrics))
                 Region = new Region(path);
             if (old != null) old.Dispose();
         }
@@ -1067,15 +1226,15 @@ namespace PennyPet
             if (_hover) paper = ControlPaint.Light(paper, 0.12F);
             if (_isDragSource) paper = ControlPaint.Light(paper, 0.35F);
             Color border = ControlPaint.Dark(paper, 0.20F);
-            using (GraphicsPath path = CreateShape(ClientRectangle, _side))
+            using (GraphicsPath path = CreateShape(ClientRectangle, _side, _metrics))
             using (SolidBrush fill = new SolidBrush(paper))
-            using (Pen outline = new Pen(border, 1F))
+            using (Pen outline = new Pen(border, _metrics.ScaleStroke(1F)))
             {
                 e.Graphics.FillPath(fill, path);
                 e.Graphics.DrawPath(outline, path);
                 if (_isDragSource)
                 {
-                    using (Pen dragOutline = new Pen(Color.FromArgb(60, 110, 220), 2F))
+                    using (Pen dragOutline = new Pen(Color.FromArgb(60, 110, 220), _metrics.ScaleStroke(2F)))
                     {
                         dragOutline.DashStyle = DashStyle.Dash;
                         e.Graphics.DrawPath(dragOutline, path);
@@ -1083,11 +1242,27 @@ namespace PennyPet
                 }
             }
             Rectangle iconArea = TypeIconBounds();
+            int textGap = _metrics.ScaleLength(7);
+            int textTop = _metrics.ScaleLength(2);
+            int textBottomInset = _metrics.ScaleLength(4);
+            int minimumTextWidth = _metrics.ScaleLength(10);
+            int leftTextInset = _metrics.ScaleLength(18);
+            int rightPadding = _metrics.ScaleLength(25);
+            int rightSideIconPadding = _metrics.ScaleLength(24);
+
             Rectangle textArea = _side == StickyTabSide.Left
-                ? new Rectangle(iconArea.Right + 7, 2, Math.Max(10,
-                    Width - iconArea.Right - 25), Height - 4)
-                : new Rectangle(18, 2, Math.Max(10,
-                    iconArea.Left - 24), Height - 4);
+                ? new Rectangle(
+                    iconArea.Right + textGap,
+                    textTop,
+                    Math.Max(minimumTextWidth,
+                        Width - iconArea.Right - rightPadding),
+                    Math.Max(1, Height - textBottomInset))
+                : new Rectangle(
+                    leftTextInset,
+                    textTop,
+                    Math.Max(minimumTextWidth,
+                        iconArea.Left - rightSideIconPadding),
+                    Math.Max(1, Height - textBottomInset));
             Color textColor = paper.GetBrightness() > 0.52F
                 ? Color.FromArgb(58, 52, 48) : Color.White;
             TextRenderer.DrawText(e.Graphics, _snapshot.DisplayTitle, Font,
@@ -1106,13 +1281,18 @@ namespace PennyPet
 
         private Rectangle TypeIconBounds()
         {
-            // Keep the 24 px reference geometry: shrinking the supplied
-            // pencil mask changed its proportions and made it look unlike
-            // the approved artwork.
-            const int size = 24;
+            int size = _metrics.IconSize;
+            int margin = _metrics.IconMargin;
+
             int x = _side == StickyTabSide.Left
-                ? 10 : Width - size - 10;
-            return new Rectangle(x, (Height - size) / 2, size, size);
+                ? margin
+                : Width - size - margin;
+
+            return new Rectangle(
+                x,
+                (Height - size) / 2,
+                size,
+                size);
         }
 
         private void DrawTypeIcon(Graphics graphics, Rectangle bounds,
@@ -1137,14 +1317,36 @@ namespace PennyPet
                     return;
                 }
             }
-            using (Pen pen = new Pen(color, 2.4F))
+            GraphicsState state = graphics.Save();
+
+            try
             {
-                pen.StartCap = LineCap.Round;
-                pen.EndCap = LineCap.Round;
-                pen.LineJoin = LineJoin.Round;
-                if (isTodoList) DrawTodoIcon(graphics, pen, bounds);
-                else if (isSchedule) DrawScheduleIcon(graphics, pen, bounds);
-                else DrawOrdinaryIcon(graphics, pen, bounds, paper);
+                float scaleX = bounds.Width / 24F;
+                float scaleY = bounds.Height / 24F;
+
+                graphics.TranslateTransform(bounds.Left, bounds.Top);
+                graphics.ScaleTransform(scaleX, scaleY);
+
+                Rectangle logicalBounds =
+                    new Rectangle(0, 0, 24, 24);
+
+                using (Pen pen = new Pen(color, 2.4F))
+                {
+                    pen.StartCap = LineCap.Round;
+                    pen.EndCap = LineCap.Round;
+                    pen.LineJoin = LineJoin.Round;
+
+                    if (isTodoList)
+                        DrawTodoIcon(graphics, pen, logicalBounds);
+                    else if (isSchedule)
+                        DrawScheduleIcon(graphics, pen, logicalBounds);
+                    else
+                        DrawOrdinaryIcon(graphics, pen, logicalBounds, paper);
+                }
+            }
+            finally
+            {
+                graphics.Restore(state);
             }
         }
 
@@ -1474,12 +1676,19 @@ namespace PennyPet
             return path;
         }
 
-        private static GraphicsPath CreateShape(Rectangle bounds,
-            StickyTabSide side)
+        private static GraphicsPath CreateShape(
+            Rectangle bounds,
+            StickyTabSide side,
+            SideTabPhysicalMetrics metrics)
         {
             int right = Math.Max(1, bounds.Width - 1);
             int bottom = Math.Max(1, bounds.Height - 1);
-            int arrow = Math.Min(10, Math.Max(4, bounds.Width / 6));
+
+            int minimumArrow = metrics.ScaleLength(4);
+            int maximumArrow = metrics.ScaleLength(10);
+
+            int arrow = Math.Min(maximumArrow,
+                Math.Max(minimumArrow, bounds.Width / 6));
             Point[] points = side == StickyTabSide.Left
                 ? new Point[] {
                     new Point(0, 0), new Point(right - arrow, 0),

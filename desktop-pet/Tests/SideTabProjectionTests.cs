@@ -1,0 +1,124 @@
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+namespace PennyPet.Tests
+{
+    [TestClass]
+    public sealed class SideTabProjectionTests
+    {
+        [TestMethod]
+        [DataRow(120, 183, 43, 3, 18)]
+        [DataRow(144, 219, 51, 3, 21)]
+        public void FractionalMetrics_RoundFromLogicalReference(
+            int dpi, int width, int height, int gap, int previewGap)
+        {
+            SideTabPhysicalMetrics metrics = SideTabPhysicalMetrics.ForDpi(dpi);
+            Assert.AreEqual(width, metrics.Width);
+            Assert.AreEqual(height, metrics.Height);
+            Assert.AreEqual(gap, metrics.Gap);
+            Assert.AreEqual(previewGap, metrics.PreviewInsertionGap);
+        }
+
+        [TestMethod]
+        public void DerivedPlacementContract_DoesNotMovePetOrUseAnotherDpiOwner()
+        {
+            string coordinator = StickySessionTopologyContractTests.ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string context = StickySessionTopologyContractTests.SliceMethod(
+                coordinator, "private bool TryGetPetDerivedDisplayContext");
+            Assert.IsTrue(context.Contains("CapturePetWindowFacts(topology)"));
+            Assert.IsTrue(context.Contains("FindByRuntimeGdiName("));
+            Assert.IsTrue(context.Contains("SideTabPhysicalMetrics.ForDpi(petFacts.Dpi)"));
+            string position = StickySessionTopologyContractTests.SliceMethod(
+                coordinator, "private void PositionNoteTabs()");
+            Assert.IsTrue(position.Contains("TryGetPetDerivedDisplayContext("));
+            Assert.IsTrue(position.Contains("ApplyPhysicalMetrics(metrics)"));
+            Assert.IsFalse(position.Contains("Location ="));
+            Assert.IsFalse(position.Contains("Screen."));
+            string tabs = StickySessionTopologyContractTests.ReadSource(
+                "Features/StickyNotes/StickyNoteTabs.cs");
+            Assert.IsTrue(tabs.Contains("AutoScaleMode = AutoScaleMode.None"));
+            Assert.IsFalse(tabs.Contains("AutoScaleMode = AutoScaleMode.Dpi"));
+            foreach (string method in new[] { "private void TabsDragOver",
+                "private void LayoutAnimationTick", "private void ShowBoundaryRollover",
+                "private void ApplySourceHorizontalOffset" })
+            {
+                string body = StickySessionTopologyContractTests.SliceMethod(tabs, method);
+                Assert.IsTrue(body.Contains("_metrics"), method);
+                Assert.IsFalse(body.Contains("(TabHeight + TabGap)"), method);
+            }
+        }
+
+        [TestMethod]
+        public void Metrics_96DpiMatchReference()
+        {
+            SideTabPhysicalMetrics m =
+                SideTabPhysicalMetrics.ForDpi(96);
+
+            Assert.AreEqual(146, m.Width);
+            Assert.AreEqual(34, m.Height);
+            Assert.AreEqual(2, m.Gap);
+            Assert.AreEqual(14, m.PreviewInsertionGap);
+            Assert.AreEqual(10, m.DragSourceVisualOffset);
+            Assert.AreEqual(24, m.IconSize);
+        }
+
+        [TestMethod]
+        public void Metrics_192DpiProjectExactlyOnce()
+        {
+            SideTabPhysicalMetrics m =
+                SideTabPhysicalMetrics.ForDpi(192);
+
+            Assert.AreEqual(292, m.Width);
+            Assert.AreEqual(68, m.Height);
+            Assert.AreEqual(4, m.Gap);
+            Assert.AreEqual(28, m.PreviewInsertionGap);
+            Assert.AreEqual(20, m.DragSourceVisualOffset);
+            Assert.AreEqual(48, m.IconSize);
+        }
+
+        [TestMethod]
+        public void SameLogicalWorkHeightHasSameCapacity()
+        {
+            int a = SideTabLayoutPolicy.PhysicalWorkHeightToLogical(
+                1040, 96);
+
+            int b = SideTabLayoutPolicy.PhysicalWorkHeightToLogical(
+                2080, 192);
+
+            Assert.AreEqual(a, b);
+
+            Assert.AreEqual(
+                SideTabLayoutPolicy.LogicalScreenCapacity(a),
+                SideTabLayoutPolicy.LogicalScreenCapacity(b));
+        }
+
+        [TestMethod]
+        public void BalancedSplitIsDpiIndependent()
+        {
+            int left =
+                SideTabLayoutPolicy.CalculateBalancedLeftCount(11);
+
+            Assert.AreEqual(6, left);
+            Assert.AreEqual(5, 11 - left);
+        }
+
+        [TestMethod]
+        public void LocationSupportsNegativeOrigin()
+        {
+            SideTabPhysicalMetrics m =
+                SideTabPhysicalMetrics.ForDpi(192);
+
+            DockPoint p =
+                StickyDockGeometry.CalculateSideTabLocation(
+                    new DockRect(-1800, 100, 384, 416),
+                    new DockRect(-1920, 0, 1920, 2080),
+                    new DockSize(m.Width,
+                        m.Height * 3 + m.Gap * 2),
+                    true, 80, 0,
+                    m.WindowMarginX, m.WindowMarginY);
+
+            Assert.IsTrue(
+                p.X >= -1920 + m.WindowMarginX);
+        }
+    }
+}

@@ -2207,7 +2207,7 @@ namespace PennyPet
             using (StickyNoteTabControl tab = new StickyNoteTabControl(
                 SideTabSnapshot.FromData(restoredNote), StickyTabSide.Left,
                 delegate(string noteId) { },
-                delegate(string noteId) { }))
+                delegate(string noteId) { }, SideTabPhysicalMetrics.ForDpi(96)))
                 result.DeleteCommandOk = tab.HasDeleteCommand;
             result.ZOrderPolicyOk =
                 StickyNoteWindowRules.ShouldKeepSideTabsTopMost(false) &&
@@ -2226,7 +2226,55 @@ namespace PennyPet
                     null, new Type[] { typeof(int) }, null) != null &&
                 typeof(StickyNoteTabsForm).GetMethod(
                     "PreferredLeftCapacity") == null;
+            result.LayoutInvalidationOk &= RunSideTabPhysicalProjectionChecks();
             return result;
+        }
+
+        private static bool RunSideTabPhysicalProjectionChecks()
+        {
+            List<SideTabSnapshot> notes = new List<SideTabSnapshot>();
+            for (int index = 0; index < 3; index++)
+                notes.Add(SideTabSnapshot.FromData(new StickyNoteData()));
+            using (StickyNoteTabsForm tabs = new StickyNoteTabsForm(
+                StickyTabSide.Left, delegate(string id) { }))
+            {
+                tabs.Location = new Point(-32000, -32000);
+                tabs.Opacity = 0;
+                tabs.SetNotes(notes);
+                tabs.Hide();
+                Control first = tabs.Controls[0];
+                // Exercise repeated live control projection, not just constants.
+                for (int round = 0; round < 20; round++)
+                foreach (int dpi in new[] { 96, 120, 144, 192, 96 })
+                {
+                    SideTabPhysicalMetrics metrics = SideTabPhysicalMetrics.ForDpi(dpi);
+                    tabs.ApplyPhysicalMetrics(metrics);
+                    int row = metrics.Height + metrics.Gap;
+                    if (tabs.AutoScaleMode != AutoScaleMode.None ||
+                        tabs.ClientSize != new Size(metrics.Width,
+                            3 * row - metrics.Gap) ||
+                        !Object.ReferenceEquals(first, tabs.Controls[0])) return false;
+                    foreach (Control control in tabs.Controls)
+                    {
+                        StickyNoteTabControl tab = control as StickyNoteTabControl;
+                        if (tab == null || tab.Bounds != new Rectangle(
+                            0, tab.ListIndex * row, metrics.Width, metrics.Height))
+                            return false;
+                    }
+                    if (StickyNoteTabsForm.CalculateDropIndex(row * 2, 3, metrics) != 2 ||
+                        StickyNoteTabsForm.PreviewTargetTop(1, -1, 1, metrics) !=
+                            row + metrics.PreviewInsertionGap) return false;
+                    tabs.ShowDropPreviewForTest(notes[0].NoteId, 2);
+                    if (!tabs.HasDropPreviewForTest) return false;
+                    SideTabPhysicalMetrics next = SideTabPhysicalMetrics.ForDpi(
+                        dpi == 192 ? 96 : 192);
+                    tabs.ApplyPhysicalMetrics(next);
+                    if (tabs.HasDropPreviewForTest || tabs.Controls.Count != 3 ||
+                        tabs.ClientSize != new Size(next.Width,
+                            3 * (next.Height + next.Gap) - next.Gap)) return false;
+                }
+            }
+            return true;
         }
 
         private sealed class StickyWindowPolicyCheckResult
