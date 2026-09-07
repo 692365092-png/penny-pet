@@ -1,0 +1,6 @@
+branch=codex/display-scale-v2
+source_commit=f9a170f6cb6b894bf7390b46ca534d7c0162cee7
+baseline=503cec99ec81263e201921b7139569baceeecd02
+production_baseline=b0faa7447940b999835381d6bf7aa5bbf4dc440f
+purpose=DRT-10/11 hosted Dock group Z-order band manual test
+DRT-12=NOT STARTED
