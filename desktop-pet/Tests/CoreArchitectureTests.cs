@@ -22,7 +22,15 @@ namespace PennyPet.Tests
             "System.Windows.Automation.",
             "System.Net.Http",
             "HttpClient",
-            "https://"
+            "https://",
+
+            // DRT-13 final Core platform-boundary guards.
+            "using System.Runtime.InteropServices",
+            "System.Runtime.InteropServices.",
+            "DllImport(",
+            "user32.dll",
+            "shcore.dll",
+            "QueryDisplayConfig("
         };
 
         [TestMethod]
