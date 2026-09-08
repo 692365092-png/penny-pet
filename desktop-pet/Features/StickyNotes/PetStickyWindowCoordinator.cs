@@ -1845,20 +1845,22 @@ namespace PennyPet
                 ClearHostedDockResizeSession();
                 return;
             }
+            DisplayTopologySnapshot topology = CurrentTopologySnapshot();
+            // The source is Windows-live authoritative. Persist its final
+            // geometry and durable preference SYNCHRONOUSLY here, so a
+            // collapse/reopen that races the async follower batch can never
+            // save or restore a stale pre-gesture height.
+            CommitDividerSourceFinal(value, sourceCanonical, finalHeight,
+                topology);
             if (finalTargets.Count == 0)
             {
-                CommitDividerFinal(value, sourceCanonical, finalTop,
-                    finalHeight, null);
                 ClearHostedDockResizeSession();
                 return;
             }
-            DisplayTopologySnapshot topology = CurrentTopologySnapshot();
             DockDividerFollowerMailbox mailbox =
                 _activeHostedDockDividerMailbox;
             if (topology == null || mailbox == null)
             {
-                CommitDividerFinal(value, sourceCanonical, finalTop,
-                    finalHeight, null);
                 ClearHostedDockResizeSession();
                 return;
             }
@@ -1924,16 +1926,13 @@ namespace PennyPet
             StickyUiCommandResult result)
         {
             // A newer gesture owns a different mailbox instance; a late
-            // callback from the previous gesture must never commit stale
-            // geometry or clear the new transient session.
-            if (!ReferenceEquals(_activeHostedDockDividerMailbox, mailbox))
-                return;
-            StickyNoteData sourceCanonical = _notes.Find(value.NoteId);
-            if (sourceCanonical == null)
-            {
-                ClearHostedDockResizeSession();
-                return;
-            }
+            // callback must never clear the new transient session. If the
+            // field was cleared by an unrelated path, the captured facts are
+            // still the last-known authoritative geometry and must land.
+            DockDividerFollowerMailbox current =
+                _activeHostedDockDividerMailbox;
+            bool ownsSession = ReferenceEquals(current, mailbox);
+            if (current != null && !ownsSession) return;
             DockBatchResult batch = result != null &&
                 result.Status == StickyUiCommandStatus.Handled
                     ? result.DockBatchResult : null;
@@ -1945,9 +1944,7 @@ namespace PennyPet
                     "note=" + value.NoteId +
                     " status=" + (result == null ? "null" :
                         result.Status.ToString()));
-                CommitDividerFinal(value, sourceCanonical, finalTop,
-                    finalHeight, null);
-                ClearHostedDockResizeSession();
+                if (ownsSession) ClearHostedDockResizeSession();
                 return;
             }
             List<PhysicalRect> followerRects = new List<PhysicalRect>();
@@ -1982,9 +1979,8 @@ namespace PennyPet
                 DisplayDiagnostics.Trace("DockDividerSeamVerifyFailed",
                     "note=" + value.NoteId +
                     " attempt=" + correctionAttempt);
-            CommitDividerFinal(value, sourceCanonical, finalTop,
-                finalHeight, batch);
-            ClearHostedDockResizeSession();
+            ApplyDividerBatchCanonical(batch, true);
+            if (ownsSession) ClearHostedDockResizeSession();
         }
 
         // Re-anchor the correction to the actual captured rects (top/width/
@@ -2021,9 +2017,9 @@ namespace PennyPet
             return true;
         }
 
-        private void CommitDividerFinal(StickyUiEvent value,
-            StickyNoteData sourceCanonical, int finalTop, int finalHeight,
-            DockBatchResult batch)
+        private void CommitDividerSourceFinal(StickyUiEvent value,
+            StickyNoteData sourceCanonical, int finalHeight,
+            DisplayTopologySnapshot topology)
         {
             if (sourceCanonical == null) return;
             _synchronizingDockLayout = true;
@@ -2033,13 +2029,31 @@ namespace PennyPet
                 // value.Height is the physical final HWND height; canonical
                 // must not pass through a second 220..700 logical clamp.
                 sourceCanonical.Height = Math.Max(1, finalHeight);
-                if (batch != null)
-                    ApplyDividerBatchCanonical(batch, false);
+                CommitDividerPreferred(sourceCanonical, topology);
                 _hostedRuntime.RecordSequence(value.NoteId, value.Sequence);
                 _notes.SaveAsync();
             }
             finally { _synchronizingDockLayout = false; }
             RefreshMenuText();
+        }
+
+        // A divider resize is explicit user intent: advance the durable v11
+        // preference for the resized member so a collapse/reopen restores the
+        // new height/position instead of the stale pre-gesture preference.
+        private void CommitDividerPreferred(StickyNoteData canonical,
+            DisplayTopologySnapshot topology)
+        {
+            if (canonical == null || topology == null) return;
+            DisplaySurfaceSnapshot surface =
+                topology.FindByRuntimeGdiName(canonical.DisplayId);
+            if (surface == null) return;
+            string targetKey = DisplayTopologyRules.SelectPreferredTargetKey(
+                surface, canonical.PreferredDisplayTargetKey);
+            if (String.IsNullOrWhiteSpace(targetKey)) return;
+            CommitHostedStickyPreferred(canonical, targetKey,
+                canonical.LocalLogicalX, canonical.LocalLogicalY,
+                canonical.LocalLogicalWidth, canonical.LocalLogicalHeight,
+                PlacementReason.UserResizeCommit);
         }
 
         internal static bool ShouldApplyHostedSequence(long sequence,

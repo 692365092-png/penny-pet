@@ -1177,6 +1177,14 @@ namespace PennyPet.Tests
                 windowCoordinator.Contains("ClearHostedDockResizeSession()") &&
                 windowCoordinator.Contains("_notes.SaveAsync();"),
                 "Completion must post one re-anchored final batch, verify the seam, save once, and clear the session only after it resolves.");
+            int sourceCommit = windowCoordinator.IndexOf(
+                "CommitDividerSourceFinal", StringComparison.Ordinal);
+            int finalBatch = windowCoordinator.IndexOf(
+                "PostFinalDividerBatch", StringComparison.Ordinal);
+            Assert.IsTrue(sourceCommit >= 0 && finalBatch > sourceCommit &&
+                windowCoordinator.Contains(
+                    "PlacementReason.UserResizeCommit"),
+                "The resized source must persist its final geometry and durable preferred height synchronously before the async follower batch is posted.");
         }
 
         [TestMethod]
