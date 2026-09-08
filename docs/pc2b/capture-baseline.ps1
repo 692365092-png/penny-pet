@@ -1,6 +1,28 @@
 param([Parameter(Mandatory=$true)][string]$ReportDirectory)
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+
+# Initial baseline capture only. This script intentionally does not support
+# checkpoint comparison. Use frozen artifacts for all later PC-2B checkpoints.
+$expectedHead = 'c34e057f7c8ef0c7133e1be7409be5952cd4bfbb'
+$headOutput = @(& git -C $repo rev-parse HEAD)
+if ($LASTEXITCODE -ne 0 -or $headOutput.Count -ne 1) {
+    throw 'Cannot verify the baseline checkout HEAD.'
+}
+$currentHead = $headOutput[0].Trim()
+if ($currentHead -ne $expectedHead) {
+    throw ('PC-2B baseline is frozen at ' + $expectedHead +
+        '; current HEAD is ' + $currentHead +
+        '. Do not regenerate baseline artifacts.')
+}
+$status = @(& git -C $repo status --porcelain --untracked-files=all)
+if ($LASTEXITCODE -ne 0) {
+    throw 'Cannot verify the baseline checkout status.'
+}
+if ($status.Count -ne 0) {
+    throw 'Baseline capture requires the exact clean baseline checkout.'
+}
+
 $prior = @{}
 Import-Csv (Join-Path $repo 'docs\pc1\test-classification.csv') | ForEach-Object { $prior[$_.Test] = $_.Classification }
 
