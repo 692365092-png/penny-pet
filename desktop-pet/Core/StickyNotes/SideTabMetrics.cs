@@ -9,15 +9,19 @@ namespace PennyPet
             Dpi = Math.Max(96, dpi);
             Scale = Dpi / 96.0;
 
-            Width = ScaleLength(146);
-            Height = ScaleLength(34);
-            Gap = ScaleLength(2);
-            PreviewInsertionGap = ScaleLength(14);
-            DragSourceVisualOffset = ScaleLength(10);
-            WindowMarginX = ScaleLength(2);
-            WindowMarginY = ScaleLength(4);
-            IconSize = ScaleLength(24);
-            IconMargin = ScaleLength(10);
+            Width = ScaleLength(SideTabLayoutPolicy.LogicalTabWidth);
+            Height = ScaleLength(SideTabLayoutPolicy.LogicalTabHeight);
+            Gap = ScaleLength(SideTabLayoutPolicy.LogicalTabGap);
+            PreviewInsertionGap = ScaleLength(
+                SideTabLayoutPolicy.LogicalPreviewInsertionGap);
+            DragSourceVisualOffset = ScaleLength(
+                SideTabLayoutPolicy.LogicalDragSourceVisualOffset);
+            WindowMarginX = ScaleLength(
+                SideTabLayoutPolicy.LogicalWindowMarginX);
+            WindowMarginY = ScaleLength(
+                SideTabLayoutPolicy.LogicalWindowMarginY);
+            IconSize = ScaleLength(SideTabLayoutPolicy.LogicalIconSize);
+            IconMargin = ScaleLength(SideTabLayoutPolicy.LogicalIconMargin);
         }
 
         internal int Dpi { get; private set; }
@@ -33,7 +37,14 @@ namespace PennyPet
         internal int IconMargin { get; private set; }
 
         // 8.5pt logical reference projected directly to physical em pixels.
-        internal float FontPixels { get { return 8.5F * Dpi / 72F; } }
+        internal float FontPixels
+        {
+            get
+            {
+                return SideTabLayoutPolicy.LogicalFontPoints *
+                    Dpi / 72F;
+            }
+        }
 
         internal int ScaleLength(int logical)
         {
@@ -61,11 +72,27 @@ namespace PennyPet
 
     internal static class SideTabLayoutPolicy
     {
-        internal const int LogicalTabWidth = 146;
-        internal const int LogicalTabHeight = 34;
+        internal const int LogicalTabWidth = 128;
+        internal const int LogicalTabHeight = 30;
         internal const int LogicalTabGap = 2;
-        internal const int LogicalPreviewInsertionGap = 14;
-        internal const int LogicalDragSourceVisualOffset = 10;
+        internal const int LogicalPreviewInsertionGap = 10;
+        internal const int LogicalDragSourceVisualOffset = 8;
+
+        internal const int LogicalWindowMarginX = 2;
+        internal const int LogicalWindowMarginY = 4;
+
+        internal const int LogicalIconSize = 20;
+        internal const int LogicalIconMargin = 7;
+
+        internal const float LogicalFontPoints = 8.5F;
+
+        internal const int LogicalTextGap = 5;
+        internal const int LogicalTextTop = 1;
+        internal const int LogicalTextBottomInset = 3;
+        internal const int LogicalMinimumTextWidth = 10;
+        internal const int LogicalLeftTextInset = 14;
+        internal const int LogicalRightPadding = 20;
+        internal const int LogicalRightSideIconPadding = 20;
 
         internal static int CalculateBalancedLeftCount(int totalCount)
         {

@@ -2076,7 +2076,7 @@ namespace PennyPet
                 9 - leftCount == 4 &&
                 StickyNoteTabsForm.ScreenCapacity(workArea) >= 9 - leftCount;
             result.DragPreviewOk =
-                StickyNoteTabsForm.PreviewInsertionGap >= 12 &&
+                StickyNoteTabsForm.PreviewInsertionGap >= 10 &&
                 StickyNoteTabsForm.DragSourceVisualOffset >= 6 &&
                 StickyNoteTabsForm.DragSourceVisualOffset <= 12 &&
                 StickyNoteTabsForm.PetGap == -20 &&

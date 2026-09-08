@@ -18,17 +18,22 @@ namespace PennyPet
     internal sealed class StickyNoteTabsForm : Form
     {
         // Logical 96-DPI references; instance layout uses physical metrics.
-        internal const int TabWidth = 146;
-        internal const int TabHeight = 34;
-        internal const int TabGap = 2;
+        internal const int TabWidth =
+            SideTabLayoutPolicy.LogicalTabWidth;
+        internal const int TabHeight =
+            SideTabLayoutPolicy.LogicalTabHeight;
+        internal const int TabGap =
+            SideTabLayoutPolicy.LogicalTabGap;
         // The sprite canvas contains roughly 40 px of transparent padding on
         // each side.  A small negative window gap moves tabs into that empty
         // canvas and halves the visible distance to the character silhouette.
         internal const int PetGap = -20;
-        internal const int PreviewInsertionGap = 14;
+        internal const int PreviewInsertionGap =
+            SideTabLayoutPolicy.LogicalPreviewInsertionGap;
         // Pull the source tab toward the pet/target strip while retaining its
         // original row. This is a horizontal cue, not a vertical list move.
-        internal const int DragSourceVisualOffset = 10;
+        internal const int DragSourceVisualOffset =
+            SideTabLayoutPolicy.LogicalDragSourceVisualOffset;
         internal const string DragDataFormat = "PennyPet.StickyNoteTabId";
 
         private static readonly StickyTabDropSession DragSession =
@@ -1196,7 +1201,9 @@ namespace PennyPet
         {
             Font replacement;
             using (Font reference = StickyNoteWindow.CreateSafeFont(
-                "Microsoft YaHei UI", 8.5F, FontStyle.Bold))
+                "Microsoft YaHei UI",
+                SideTabLayoutPolicy.LogicalFontPoints,
+                FontStyle.Bold))
                 replacement = new Font(reference.FontFamily, _metrics.FontPixels,
                     FontStyle.Bold, GraphicsUnit.Pixel);
 
@@ -1252,13 +1259,20 @@ namespace PennyPet
                 }
             }
             Rectangle iconArea = TypeIconBounds();
-            int textGap = _metrics.ScaleLength(7);
-            int textTop = _metrics.ScaleLength(2);
-            int textBottomInset = _metrics.ScaleLength(4);
-            int minimumTextWidth = _metrics.ScaleLength(10);
-            int leftTextInset = _metrics.ScaleLength(18);
-            int rightPadding = _metrics.ScaleLength(25);
-            int rightSideIconPadding = _metrics.ScaleLength(24);
+            int textGap = _metrics.ScaleLength(
+                SideTabLayoutPolicy.LogicalTextGap);
+            int textTop = _metrics.ScaleLength(
+                SideTabLayoutPolicy.LogicalTextTop);
+            int textBottomInset = _metrics.ScaleLength(
+                SideTabLayoutPolicy.LogicalTextBottomInset);
+            int minimumTextWidth = _metrics.ScaleLength(
+                SideTabLayoutPolicy.LogicalMinimumTextWidth);
+            int leftTextInset = _metrics.ScaleLength(
+                SideTabLayoutPolicy.LogicalLeftTextInset);
+            int rightPadding = _metrics.ScaleLength(
+                SideTabLayoutPolicy.LogicalRightPadding);
+            int rightSideIconPadding = _metrics.ScaleLength(
+                SideTabLayoutPolicy.LogicalRightSideIconPadding);
 
             Rectangle textArea = _side == StickyTabSide.Left
                 ? new Rectangle(

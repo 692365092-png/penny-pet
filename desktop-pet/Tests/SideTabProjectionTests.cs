@@ -36,8 +36,8 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        [DataRow(120, 183, 43, 3, 18)]
-        [DataRow(144, 219, 51, 3, 21)]
+        [DataRow(120, 160, 38, 3, 13)]
+        [DataRow(144, 192, 45, 3, 15)]
         public void FractionalMetrics_RoundFromLogicalReference(
             int dpi, int width, int height, int gap, int previewGap)
         {
@@ -84,12 +84,12 @@ namespace PennyPet.Tests
             SideTabPhysicalMetrics m =
                 SideTabPhysicalMetrics.ForDpi(96);
 
-            Assert.AreEqual(146, m.Width);
-            Assert.AreEqual(34, m.Height);
+            Assert.AreEqual(128, m.Width);
+            Assert.AreEqual(30, m.Height);
             Assert.AreEqual(2, m.Gap);
-            Assert.AreEqual(14, m.PreviewInsertionGap);
-            Assert.AreEqual(10, m.DragSourceVisualOffset);
-            Assert.AreEqual(24, m.IconSize);
+            Assert.AreEqual(10, m.PreviewInsertionGap);
+            Assert.AreEqual(8, m.DragSourceVisualOffset);
+            Assert.AreEqual(20, m.IconSize);
         }
 
         [TestMethod]
@@ -98,12 +98,12 @@ namespace PennyPet.Tests
             SideTabPhysicalMetrics m =
                 SideTabPhysicalMetrics.ForDpi(192);
 
-            Assert.AreEqual(292, m.Width);
-            Assert.AreEqual(68, m.Height);
+            Assert.AreEqual(256, m.Width);
+            Assert.AreEqual(60, m.Height);
             Assert.AreEqual(4, m.Gap);
-            Assert.AreEqual(28, m.PreviewInsertionGap);
-            Assert.AreEqual(20, m.DragSourceVisualOffset);
-            Assert.AreEqual(48, m.IconSize);
+            Assert.AreEqual(20, m.PreviewInsertionGap);
+            Assert.AreEqual(16, m.DragSourceVisualOffset);
+            Assert.AreEqual(40, m.IconSize);
         }
 
         [TestMethod]
