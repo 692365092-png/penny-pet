@@ -1,0 +1,24 @@
+branch=codex/display-scale-v2
+source_commit=078ffb06d90591d4567968054e067be66548f00f
+baseline=b548091845655c3276841385806514cfabea9718
+checkpoint=PC-0.5 Dock restore corrective closeout
+platform=x64
+Release=PASS (0 warnings, 0 errors)
+MSTest=PASS (326 tests; 13 new behavioral, 7 new source-boundary)
+modular_SelfTests=PASS (exit=0, ok=true)
+single_file_package_SelfTests=PASS (exit=0, ok=true, 292 *_ok checks)
+git_diff_check=PASS
+Windows_CI=check PR run after push; not a local test result
+Human=PENDING (mixed-DPI HWND restore still requires manual acceptance)
+PC-1=BLOCKED
+
+Manual matrix after CI/static acceptance:
+C: 3-note Dock collapse/reopen; 30 rounds; rapid duplicate clicks;
+   partial hidden component; 100% <-> 150/200% reopen.
+D: Pet center/left/right with 4, 5, 11 hidden notes.
+E: Manager delete visible, hidden, mixed three notes, and Delete key.
+F: Pet menu "平铺全部便利贴到当前屏幕".
+
+No D/E/F product algorithm changes. No schema/codec/Pet placement/
+Dock drag/resize/interaction epoch changes.
+Source guards are not proof of runtime HWND behavior.
