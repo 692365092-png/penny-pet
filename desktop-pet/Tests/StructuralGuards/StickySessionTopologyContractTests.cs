@@ -75,32 +75,12 @@ namespace PennyPet.Tests
 
         internal static string SliceMethod(string source, string signature)
         {
-            int start = source.IndexOf(signature, StringComparison.Ordinal);
-            Assert.IsTrue(start >= 0, "Method not found: " + signature);
-            int open = source.IndexOf('{', start);
-            Assert.IsTrue(open >= 0);
-            int depth = 0;
-            for (int index = open; index < source.Length; index++)
-            {
-                if (source[index] == '{') depth++;
-                else if (source[index] == '}' && --depth == 0)
-                    return source.Substring(start, index - start + 1);
-            }
-            Assert.Fail("Unclosed method: " + signature);
-            return String.Empty;
+            return SourceGuardText.RawSource.SliceMethod(source, signature);
         }
 
         internal static string ReadSource(string relativePath)
         {
-            DirectoryInfo current = new DirectoryInfo(AppContext.BaseDirectory);
-            while (current != null)
-            {
-                string project = Path.Combine(current.FullName, "desktop-pet",
-                    relativePath);
-                if (File.Exists(project)) return File.ReadAllText(project);
-                current = current.Parent;
-            }
-            throw new FileNotFoundException("Could not locate " + relativePath);
+            return SourceGuardText.RawSource.ReadSource(relativePath);
         }
     }
 }
