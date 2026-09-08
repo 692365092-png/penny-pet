@@ -1,0 +1,17 @@
+branch=codex/project-system-experiment
+checkpoint=PC-2A.5-divider-narrow-fix
+defect_characterization=b9a6e79a31cfb5f8af8794e4bb3ec23985d67516
+source_commit=2575998
+platform=x64
+latest_wins_divider_mailbox=ON
+final_reanchor_to_actual_source_rect=ON
+final_seam_verify_tolerance=2px
+bounded_correction=one-retry
+session_clear_after_final_resolves=ON
+Release=PASS (0 warnings, 0 errors)
+MSTest=PASS (343 tests; 6 new: 4 settlement geometry, 2 mailbox)
+modular_SelfTests=PASS (exit=0, ok=true, 306 *_ok keys)
+single_file_package_SelfTests=PASS (exit=0, ok=true)
+git_diff_check=PASS
+Human=PENDING (144/150% DPI divider: overlap/off-stack/repeated fast drag, final seam)
+PC-2B=BLOCKED
