@@ -239,11 +239,12 @@ namespace PennyPet
 
         internal static StickyUiCommand ReprojectDockGroup(
             DockGroupReprojectPlan plan,
-            DisplayTopologySnapshot topology)
+            DisplayTopologySnapshot topology,
+            bool showAfterPlacement = false)
         {
             if (plan == null) throw new ArgumentNullException(nameof(plan));
             return new StickyUiCommand(
-                StickyUiCommandKind.ReprojectDockGroup, String.Empty, false,
+                StickyUiCommandKind.ReprojectDockGroup, String.Empty, showAfterPlacement,
                 null, null, null, null, topology, null, null, plan);
         }
 

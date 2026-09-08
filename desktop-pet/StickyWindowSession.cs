@@ -598,8 +598,26 @@ namespace PennyPet
             finally { _applyingBounds = previousApplying; }
         }
 
+        internal bool TryShowCurrentPlacement()
+        {
+            if (!IsAvailable || PlacementHwnd == IntPtr.Zero) return false;
+            try
+            {
+                _placementExecutor.Show();
+                return true;
+            }
+            catch { return false; }
+        }
+
+        internal void CommitRestoredVisibleState()
+        {
+            if (!IsAvailable) return;
+            _window.Data.Visible = true;
+            _lastSnapshot = CaptureContentSnapshotForNativeResult();
+        }
+
         internal void CompleteDockTargetDpi(DockDpiTransition transition,
-            bool placementApplied)
+            bool placementApplied, bool forceVisibleAfterPlacement = false)
         {
             if (transition == null) return;
             bool previousApplying = _applyingBounds;
@@ -609,6 +627,12 @@ namespace PennyPet
                 if (!placementApplied)
                     RollbackReproject(transition.WasVisible,
                         transition.PreviousBounds);
+                else if (forceVisibleAfterPlacement)
+                {
+                    // Every HWND was already shown successfully before commit.
+                    // Do not hide it or repeat a fallible Show in finalization.
+                    return;
+                }
                 else if (transition.WasMoved && transition.WasVisible)
                     _placementExecutor.Show();
                 else if (transition.WasMoved)
@@ -631,6 +655,8 @@ namespace PennyPet
                         previousBounds.Width, previousBounds.Height));
                 if (wasVisible) _placementExecutor.Show();
                 else _window.Hide();
+                _window.Data.Visible = wasVisible;
+                _lastSnapshot = CaptureContentSnapshotForNativeResult();
             }
             catch
             {

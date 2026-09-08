@@ -821,6 +821,20 @@ namespace PennyPet
                 if (current == null ||
                     current.Generation != request.TopologyGeneration)
                     return StickyUiCommandResult.NotHandled();
+                if (command.Flag)
+                {
+                    foreach (StickyWindowSession session in sessions)
+                    {
+                        if (!session.TryShowCurrentPlacement())
+                        {
+                            DisplayDiagnostics.Trace("DockRestoreGroupRejected",
+                                "stage=show-current-placement note=" + session.NoteId);
+                            return StickyUiCommandResult.NotHandled();
+                        }
+                    }
+                    foreach (StickyWindowSession session in sessions)
+                        session.CommitRestoredVisibleState();
+                }
                 placementApplied = true;
                 return StickyUiCommandResult.Handled(new DockBatchResult(
                     request.PlanSequence, request.TopologyGeneration,
@@ -831,7 +845,7 @@ namespace PennyPet
                 for (int index = transitions.Count - 1;
                     index >= 0; index--)
                     sessions[index].CompleteDockTargetDpi(
-                        transitions[index], placementApplied);
+                        transitions[index], placementApplied, command.Flag);
                 foreach (StickyWindowSession session in sessions)
                     session.SetEventsSuppressed(false);
             }
