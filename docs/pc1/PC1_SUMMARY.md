@@ -3,7 +3,7 @@
 Baseline: `codex/project-system-experiment @ ab10b45705195bc7564db74c2d1f03dc996917ba`.
 Evidence/package reference: `ef9411019d1cf76c995e513884818b785b4b646c`.
 
-**Inventory status: PASS for audit delivery; review pending. Production changes: NONE. PC-2 Gate: BLOCKED. Human runtime test: NOT REQUIRED.**
+**PC-1 reviewed and CLOSED. Production changes: NONE. PC-2A GO after docs amendment; PC-2B BLOCKED pending PC-2A PASS and review. Human runtime test: NOT REQUIRED for the inventory.**
 
 ## Ten questions answered
 
@@ -78,3 +78,9 @@ SelfTest output paths: `%TEMP%/Penny-PC1-baseline-gate/modular.json` and `single
 PASS-01 exact SHA; PASS-02 all partials; PASS-03 geometry fields/authority; PASS-04 version dimensions; PASS-05 protocol graphs/counts; PASS-06 session methods; PASS-07 runtime overlaps; PASS-08 test classifications; PASS-09 hot path; PASS-10 retirement register; PASS-11 prerequisites; PASS-12 zero production diff.
 
 Recommended next **after approval only**: PC-2 characterization and test-domain decomposition in the order specified in 12. PC-3 onward remains blocked. Local docs-only commit: `Document PC-1 architecture inventory`. No push, no main merge, no behavior change. **STOP for review.**
+
+## Reviewed execution order and ownership correction
+
+PC-2A characterization FIRST (A1–A6 production state-after-rejection), then STOP for review. PC-2B harness/domain decomposition only AFTER PC-2A PASS and approval. A reachable partial canonical/effective mutation is a correctness STOP, not a reason to move tests first.
+
+Pending restore and topology gates are feature/reconcile lifecycles, not drag ownership. Only live/final drag mailbox belongs to the proposed interaction owner; PlanSequence allocation shared by topology and restore remains an independent PC-6 audit boundary. See amended state-owner.csv, 05/07/11/12. This amendment supersedes the original unreviewed next-phase recommendation above.

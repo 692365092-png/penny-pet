@@ -27,3 +27,7 @@ References: Features/StickyNotes/StickyHostedRuntime.cs:27–89; StickyPlacement
 5. Failure policy is distributed: live logs, rebase stays suspended, final resets, restore hides and retains canonical data. No generic rollback manager is warranted by this inventory; transaction-specific policy must be explicit before ownership moves.
 
 No confirmed correctness regression is claimed. Current automated gate and supplied human golden remain PASS. These are bounded next-stage test questions, not authorization to patch PC-0.5 or alter protocol in PC-1.
+
+## PC-1 review amendment
+
+Restore and topology reconciliation are not drag lifecycle. Pending restore gate belongs to a StickyFeatureController / DockRestore lifecycle candidate; standalone topology gate to DisplayRuntime + Sticky feature reconcile boundary; group topology gate to Display/Sticky topology reconcile boundary. _dockPlanMailbox live/final ownership is separable from its cross-lifecycle PlanSequence allocation used by topology reproject and Dock restore (WindowCoordinator.cs:686,2318). Keep that shared allocation boundary unresolved until PC-6; do not make hidden restore depend on current drag runtime.

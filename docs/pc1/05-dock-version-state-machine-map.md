@@ -119,3 +119,7 @@ EnsureSession can acknowledge an already-present session or create a new one. Sy
 ## H-DOCK-1
 
 Supported: the thread boundary is necessary, but one gesture's state is split across PetForm fields, DockInteractionSession, mailbox and Host current-token mirrors. PC-6 should centralize Pet lifecycle ownership after PC-2 characterization and PC-3/5 authority work, preserving independent producer/consumer validity checks.
+
+## PC-1 review amendment
+
+Restore and topology reconciliation are not drag lifecycle. Pending restore gate belongs to a StickyFeatureController / DockRestore lifecycle candidate; standalone topology gate to DisplayRuntime + Sticky feature reconcile boundary; group topology gate to Display/Sticky topology reconcile boundary. _dockPlanMailbox live/final ownership is separable from its cross-lifecycle PlanSequence allocation used by topology reproject and Dock restore (WindowCoordinator.cs:686,2318). Keep that shared allocation boundary unresolved until PC-6; do not make hidden restore depend on current drag runtime.

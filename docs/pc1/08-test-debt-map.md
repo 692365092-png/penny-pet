@@ -29,9 +29,9 @@ Full per-Run method index: [selftest-clusters.csv](selftest-clusters.csv). Prima
 
 ## Debt and characterization order
 
-1. Separate reporting/orchestration from probe domains without changing `_ok` keys, command routes or resource logical names. Preserve modular + single-file gates.
+1. **PC-2A FIRST:** characterize A1–A6 state-after-rejection through actual production logic; STOP for review and for any confirmed reachable correctness defect. **Only after PC-2A PASS + review, PC-2B:** separate reporting/orchestration from probe domains without changing `_ok` keys, command routes or resource logical names. Preserve modular + single-file gates.
 2. Isolate source guards into a named structural suite; keep until equivalent behavior characterization exists. Do not delete tests just because refactoring breaks a literal name.
-3. Characterize barrier rejection **state after failure**, new-session lease vs existing effective geometry, and final commit whole-set validation. Source guards named like behavior tests currently overstate evidence.
+3. Required PC-2A safety net (before steps 1–2 decomposition): characterize barrier rejection **state after failure**, new-session lease vs existing effective geometry, and final commit whole-set validation. Source guards named like behavior tests currently overstate evidence.
 4. Preserve fixture v1..v11 and future-primary+older-backup incident matrix; old readers must not recover an older backup then overwrite future primary.
 5. DUPLICATE COVERAGE candidates: Core pure divider/placement arithmetic repeated in SelfTests; consolidate later only if Windows integration and embedded packaging checks remain.
 6. OBSOLETE CONTRACT CANDIDATE: source tests that require current partial filenames/helper placement or v10 live-mirror strings. Not obsolete product safety; retire only after new owner invariant tests pass (PC-2/10).
