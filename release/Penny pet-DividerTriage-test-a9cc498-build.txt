@@ -1,0 +1,15 @@
+branch=codex/project-system-experiment
+checkpoint=PC-2A.5-divider-triage
+source_commit=a9cc498
+baseline=ee3083bdd7e65168f8305a5b685f7c5ecf64ddd7
+platform=x64
+purpose=diagnostics-only (trace-only additions, no behavior change)
+divider_gesture_trace=ON
+divider_event_trace=ON
+setbounds_requested_vs_actual=ON
+dock_target_posted_completed=ON
+MSTest=PASS (337 tests)
+modular_SelfTests=PASS (exit=0, ok=true)
+single_file_package_SelfTests=PASS (exit=0, ok=true)
+Human=PENDING (144/150% DPI divider A/B reproduction)
+Repro-steps=3-note vertical Dock on high-DPI display; repeatedly drag the divider up/down; check overlap/off-stack; then read %LOCALAPPDATA%\PennyPet\diagnostics.log for DockDivider*/DockTarget*/DockSetBoundsApplied traces
