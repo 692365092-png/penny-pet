@@ -1,0 +1,14 @@
+branch=codex/project-system-experiment
+checkpoint=PC-2A.5-divider-preference-persistence
+source_commit=baf05a5
+platform=x64
+divider_final_source_commit=synchronous
+divider_final_preferred_commit=UserResizeCommit (height + position)
+late_callback_guard=relaxed (field cleared still commits facts, never clears newer session)
+Release=PASS (0 warnings, 0 errors)
+MSTest=PASS (343 tests)
+modular_SelfTests=PASS (exit=0, ok=true)
+single_file_package_SelfTests=PASS (exit=0, ok=true)
+git_diff_check=PASS
+Human=PENDING (divider resize -> collapse -> reopen keeps new height; repeated cycles)
+PC-2B=BLOCKED
