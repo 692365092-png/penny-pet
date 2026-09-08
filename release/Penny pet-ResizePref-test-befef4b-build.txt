@@ -1,0 +1,13 @@
+branch=codex/project-system-experiment
+checkpoint=PC-2A.5-divider-and-group-resize-preference
+source_commit=befef4b
+platform=x64
+divider_preferred_commit=height-only (keeps established position/width)
+group_horizontal_resize_preferred=propagates left/width to all visible members
+Release=PASS (0 warnings, 0 errors)
+MSTest=PASS (344 tests)
+modular_SelfTests=PASS (exit=0, ok=true)
+single_file_package_SelfTests=PASS (exit=0, ok=true)
+git_diff_check=PASS
+Human=PENDING (horizontal group resize -> collapse -> reopen keeps width; divider resize -> reopen keeps height and stays near pet)
+PC-2B=BLOCKED
