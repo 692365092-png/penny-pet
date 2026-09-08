@@ -16,7 +16,8 @@ namespace PennyPet
         private Exception _failure;
         private bool _disposed;
 
-        internal void Start(PetSettings settings)
+        internal void Start(
+            StartupPetPlacementSnapshot placement)
         {
             if (_disposed) throw new ObjectDisposedException(GetType().Name);
             if (_thread != null)
@@ -24,7 +25,7 @@ namespace PennyPet
                     "Startup loading thread has already started.");
             _thread = new Thread(new ThreadStart(delegate
             {
-                Run(settings);
+                Run(placement);
             }));
             _thread.Name = "Penny startup loading";
             _thread.IsBackground = true;
@@ -48,12 +49,12 @@ namespace PennyPet
             Post(delegate(StartupLoadingForm form) { form.BringToFront(); });
         }
 
-        private void Run(PetSettings settings)
+        private void Run(StartupPetPlacementSnapshot placement)
         {
             try
             {
-                using (StartupLoadingForm form = new StartupLoadingForm(
-                    settings))
+                using (StartupLoadingForm form =
+                    new StartupLoadingForm(placement))
                 {
                     lock (_sync) _form = form;
                     form.Shown += delegate

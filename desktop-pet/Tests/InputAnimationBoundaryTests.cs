@@ -22,25 +22,38 @@ namespace PennyPet.Tests
 
             Assert.IsTrue(loading.Contains("PennyPet.Startup.Loading") &&
                 loading.Contains("GetManifestResourceStream(ResourceName)") &&
-                loading.Contains("PetSettingRules.NormalizePetScalePercent") &&
+                loading.Contains("StartupPetPlacementSnapshot") &&
                 loading.Contains("CalculateImageBounds(source.Size, size)") &&
                 loading.Contains("canvas.Height - height") &&
                 loading.Contains("graphics.Clear(Color.Transparent)"),
-                "Loading must use its embedded asset on a bottom-aligned proportional Pet canvas.");
+                "Loading must use its embedded asset on a bottom-aligned proportional canvas sized by the startup placement snapshot.");
             Assert.IsFalse(loading.Contains("PetArtPackage") ||
                 loading.Contains("StickyUiHost") ||
                 loading.Contains("StickyUiThreadHost") ||
                 loading.Contains("StickyNoteRepository") ||
                 loading.Contains("StickyHostedRuntime") ||
                 loading.Contains("WpfApplicationHost") ||
-                loading.Contains("PetForm."),
-                "Bootstrap loading must not depend on runtime art or sticky state.");
-            int showLoading = host.IndexOf("loading.Start(preloadedSettings);",
+                loading.Contains("PetForm.") ||
+                loading.Contains("PetSettings") ||
+                loading.Contains("Screen.") ||
+                loading.Contains("ResolveLocation") ||
+                loading.Contains("HasLocation"),
+                "Bootstrap loading must only project the immutable placement snapshot and never read settings, screens or sticky state.");
+            int showLoading = host.IndexOf("loading.Start(startupPlacement);",
                 StringComparison.Ordinal);
             int constructPet = host.IndexOf("new PetForm(preloadedSettings)",
                 StringComparison.Ordinal);
             Assert.IsTrue(showLoading >= 0 && constructPet > showLoading,
                 "The loading form must be shown before PetForm construction.");
+            int captureTopology = host.IndexOf(
+                "new WindowsDisplayTopologyProvider().Capture()",
+                StringComparison.Ordinal);
+            int resolvePlacement = host.IndexOf(
+                "ResolveStartupPetPlacement(preloadedSettings",
+                StringComparison.Ordinal);
+            Assert.IsTrue(captureTopology >= 0 &&
+                resolvePlacement > captureTopology && showLoading > resolvePlacement,
+                "The startup placement snapshot must be resolved from one captured topology before the loading thread starts.");
             Assert.IsTrue(loadingThread.Contains("new Thread(") &&
                 loadingThread.Contains(
                     "SetApartmentState(ApartmentState.STA)") &&
@@ -52,8 +65,9 @@ namespace PennyPet.Tests
             Assert.IsFalse(loadingThread.Contains("new PetForm") ||
                 loadingThread.Contains("PetArtPackage") ||
                 loadingThread.Contains("StickyUiHost") ||
-                loadingThread.Contains("StickyNoteRepository"),
-                "The loading thread must own only bootstrap presentation.");
+                loadingThread.Contains("StickyNoteRepository") ||
+                loadingThread.Contains("PetSettings"),
+                "The loading thread must own only bootstrap presentation and never read settings.");
             string closeLoading = Between(loadingThread,
                 "internal void Close()", "internal void BringToFront()");
             string postLoading = Between(loadingThread,

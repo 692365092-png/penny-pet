@@ -145,5 +145,91 @@ namespace PennyPet
                 logical * safeDpi / 96.0,
                 MidpointRounding.AwayFromZero));
         }
+
+        internal static int PredictSurfaceDpi(DisplaySurfaceSnapshot surface)
+        {
+            if (surface == null) return 96;
+            int dpi = (int)Math.Round(surface.Scale * 96.0,
+                MidpointRounding.AwayFromZero);
+            return Math.Max(96, dpi);
+        }
+
+        internal static PhysicalRect PredictPetPhysicalSize(
+            int logicalWidth, int logicalHeight, int targetDpi)
+        {
+            int safeDpi = Math.Max(96, targetDpi);
+            // Same integer projection the formal Pet uses after
+            // ApplyCurrentDisplayScale, so the loading canvas lands on the
+            // identical physical footprint within native rounding.
+            return new PhysicalRect(0, 0,
+                Math.Max(1, Math.Max(1, logicalWidth) * safeDpi / 96),
+                Math.Max(1, Math.Max(1, logicalHeight) * safeDpi / 96));
+        }
+
+        // Bootstrap prediction of the formal Pet's first placement. It
+        // mirrors the real startup order exactly - preferred target, then the
+        // legacy compatibility X/Y, then the primary bottom-right default -
+        // using only immutable settings facts plus the captured topology.
+        // It is not a second placement authority.
+        internal static StartupPetPlacementSnapshot ResolveStartupPetPlacement(
+            string preferredTargetKey,
+            LogicalPoint preferredLocal,
+            bool hasLegacyLocation,
+            int legacyX,
+            int legacyY,
+            int petLogicalWidth,
+            int petLogicalHeight,
+            DisplayTopologySnapshot topology)
+        {
+            if (topology == null || topology.Surfaces.Count == 0)
+                return null;
+
+            DisplaySurfaceSnapshot preferred =
+                topology.FindByTargetKey(preferredTargetKey);
+            if (preferred != null)
+            {
+                int dpi = PredictSurfaceDpi(preferred);
+                PhysicalRect size = PredictPetPhysicalSize(
+                    petLogicalWidth, petLogicalHeight, dpi);
+                PhysicalPoint requested = ProjectLocalPoint(
+                    preferredLocal, preferred, dpi);
+                PhysicalPoint clamped = ClampTopLeft(requested,
+                    preferred.WorkArea, size.Width, size.Height);
+                return new StartupPetPlacementSnapshot(
+                    new PhysicalRect(clamped.X, clamped.Y,
+                        size.Width, size.Height), dpi);
+            }
+
+            if (String.IsNullOrWhiteSpace(preferredTargetKey) &&
+                hasLegacyLocation)
+            {
+                foreach (DisplaySurfaceSnapshot surface in topology.Surfaces)
+                {
+                    if (!ContainsLegacyPoint(surface, legacyX, legacyY))
+                        continue;
+                    int dpi = PredictSurfaceDpi(surface);
+                    PhysicalRect size = PredictPetPhysicalSize(
+                        petLogicalWidth, petLogicalHeight, dpi);
+                    PhysicalPoint clamped = ClampTopLeft(
+                        new PhysicalPoint { X = legacyX, Y = legacyY },
+                        surface.WorkArea, size.Width, size.Height);
+                    return new StartupPetPlacementSnapshot(
+                        new PhysicalRect(clamped.X, clamped.Y,
+                            size.Width, size.Height), dpi);
+                }
+            }
+
+            DisplaySurfaceSnapshot fallback = topology.PrimaryOrFirst();
+            if (fallback == null) return null;
+            int fallbackDpi = PredictSurfaceDpi(fallback);
+            PhysicalRect fallbackSize = PredictPetPhysicalSize(
+                petLogicalWidth, petLogicalHeight, fallbackDpi);
+            PhysicalPoint fallbackTopLeft = DefaultBottomRight(
+                fallback.WorkArea, fallbackSize.Width,
+                fallbackSize.Height, fallbackDpi);
+            return new StartupPetPlacementSnapshot(
+                new PhysicalRect(fallbackTopLeft.X, fallbackTopLeft.Y,
+                    fallbackSize.Width, fallbackSize.Height), fallbackDpi);
+        }
     }
 }

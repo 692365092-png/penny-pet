@@ -103,48 +103,42 @@ namespace PennyPet
             }
             result.StartupFrameEmbeddedOk = StartupLoadingForm.HasEmbeddedFrame;
             using (StartupLoadingForm loadingFrameForm =
-                new StartupLoadingForm(new PetSettings()))
+                new StartupLoadingForm(new StartupPetPlacementSnapshot(
+                    new PhysicalRect(0, 0, 192, 208), 96)))
                 result.StartupFrameUsesEmbeddedLoadingOk =
                     loadingFrameForm.UsesEmbeddedLoadingFrameForTest();
             result.StartupUsesSavedScaleOk = true;
             int[] startupScales = { 50, 100, 150, 200 };
             foreach (int scale in startupScales)
             {
+                Size logical = PetForm.ScaledPetSize(scale);
+                StartupPetPlacementSnapshot placement =
+                    new StartupPetPlacementSnapshot(
+                        new PhysicalRect(0, 0, logical.Width,
+                            logical.Height), 96);
                 using (StartupLoadingForm loadingScaleForm =
-                    new StartupLoadingForm(new PetSettings
-                    {
-                        ScalePercent = scale
-                    }))
+                    new StartupLoadingForm(placement))
                     result.StartupUsesSavedScaleOk =
                         result.StartupUsesSavedScaleOk &&
-                        loadingScaleForm.UsesPetScaleForTest(scale) &&
+                        loadingScaleForm.UsesPlacementForTest(placement) &&
                         loadingScaleForm.UsesEmbeddedLoadingFrameForTest();
             }
-            Rectangle startupWork = Screen.PrimaryScreen.WorkingArea;
-            Point savedLoadingLocation = new Point(startupWork.Left + 24,
-                startupWork.Top + 24);
+            StartupPetPlacementSnapshot savedPlacement =
+                new StartupPetPlacementSnapshot(
+                    new PhysicalRect(240, 160, 192, 208), 96);
             using (StartupLoadingForm savedLoadingForm =
-                new StartupLoadingForm(new PetSettings
-                {
-                    HasLocation = true,
-                    X = savedLoadingLocation.X,
-                    Y = savedLoadingLocation.Y
-                }))
-            using (StartupLoadingForm fallbackLoadingForm =
-                new StartupLoadingForm(new PetSettings()))
+                new StartupLoadingForm(savedPlacement))
             {
-                Point expectedFallback = new Point(startupWork.Right -
-                    fallbackLoadingForm.ClientSize.Width - 24,
-                    startupWork.Bottom - fallbackLoadingForm.ClientSize.Height -
-                    24);
                 result.StartupLocationOk =
-                    savedLoadingForm.Location == savedLoadingLocation &&
-                    fallbackLoadingForm.Location == expectedFallback;
+                    savedLoadingForm.Location == new Point(240, 160) &&
+                    savedLoadingForm.ClientSize == new Size(192, 208) &&
+                    savedLoadingForm.UsesPlacementForTest(savedPlacement);
             }
             using (StartupLoadingThreadHost loadingHost =
                 new StartupLoadingThreadHost())
             {
-                loadingHost.Start(new PetSettings());
+                loadingHost.Start(new StartupPetPlacementSnapshot(
+                    new PhysicalRect(0, 0, 192, 208), 96));
                 loadingHost.BringToFront();
                 result.StartupLoadingThreadHostOk = true;
                 loadingHost.Close();
