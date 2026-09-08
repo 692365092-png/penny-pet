@@ -1295,6 +1295,8 @@ namespace PennyPet
                         local.X, local.Y, local.Width, local.Height,
                         PlacementReason.UserResizeCommit))
                 {
+                    CommitDockGroupResizePreferred(canonical, targetKey,
+                        local);
                     _placementRuntime.MarkUserPlacementCommit(
                         value.NoteId);
                     _notes.SaveAsync();
@@ -2037,9 +2039,10 @@ namespace PennyPet
             RefreshMenuText();
         }
 
-        // A divider resize is explicit user intent: advance the durable v11
-        // preference for the resized member so a collapse/reopen restores the
-        // new height/position instead of the stale pre-gesture preference.
+        // A vertical divider changes only the resized member's HEIGHT. Advance
+        // just that durable dimension while keeping the established preferred
+        // position and width, so a collapse/reopen restores the new height at
+        // the place the user left the group (never a drifted gesture-time top).
         private void CommitDividerPreferred(StickyNoteData canonical,
             DisplayTopologySnapshot topology)
         {
@@ -2050,10 +2053,59 @@ namespace PennyPet
             string targetKey = DisplayTopologyRules.SelectPreferredTargetKey(
                 surface, canonical.PreferredDisplayTargetKey);
             if (String.IsNullOrWhiteSpace(targetKey)) return;
+            bool hasPreferred =
+                !String.IsNullOrWhiteSpace(
+                    canonical.PreferredDisplayTargetKey) &&
+                canonical.PreferredLocalLogicalWidth > 0 &&
+                canonical.PreferredLocalLogicalHeight > 0;
+            int localX = hasPreferred
+                ? canonical.PreferredLocalLogicalX
+                : canonical.LocalLogicalX;
+            int localY = hasPreferred
+                ? canonical.PreferredLocalLogicalY
+                : canonical.LocalLogicalY;
+            int localWidth = hasPreferred
+                ? canonical.PreferredLocalLogicalWidth
+                : canonical.LocalLogicalWidth;
             CommitHostedStickyPreferred(canonical, targetKey,
-                canonical.LocalLogicalX, canonical.LocalLogicalY,
-                canonical.LocalLogicalWidth, canonical.LocalLogicalHeight,
+                localX, localY, localWidth,
+                canonical.LocalLogicalHeight,
                 PlacementReason.UserResizeCommit);
+        }
+
+        // A group horizontal resize shares one left/width across the whole
+        // band, but the completed event only carries the grabbed member's
+        // facts. Propagate the new left/width to every visible member's
+        // durable preference (the root's preferred width is the restore
+        // authority), so a collapse/reopen cannot revert to the stale
+        // pre-gesture width.
+        private void CommitDockGroupResizePreferred(StickyNoteData source,
+            string targetKey, LogicalRect sourceLocal)
+        {
+            if (source == null ||
+                String.IsNullOrWhiteSpace(source.DockGroupId)) return;
+            foreach (StickyNoteData member in
+                BuildDockChainOrderIncludingHidden(source))
+            {
+                if (member == null || !member.Visible) continue;
+                bool hasPreferred =
+                    !String.IsNullOrWhiteSpace(
+                        member.PreferredDisplayTargetKey) &&
+                    member.PreferredLocalLogicalWidth > 0 &&
+                    member.PreferredLocalLogicalHeight > 0;
+                int localY = hasPreferred
+                    ? member.PreferredLocalLogicalY
+                    : member.LocalLogicalY;
+                int localHeight = hasPreferred
+                    ? member.PreferredLocalLogicalHeight
+                    : member.LocalLogicalHeight;
+                if (localHeight <= 0)
+                    localHeight = member.LocalLogicalHeight;
+                if (localHeight <= 0) continue;
+                CommitHostedStickyPreferred(member, targetKey,
+                    sourceLocal.X, localY, sourceLocal.Width,
+                    localHeight, PlacementReason.UserResizeCommit);
+            }
         }
 
         internal static bool ShouldApplyHostedSequence(long sequence,

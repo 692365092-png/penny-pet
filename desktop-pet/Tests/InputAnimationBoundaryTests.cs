@@ -1188,6 +1188,28 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void DockResizeCompletionsCommitDurablePreferenceWithoutDrift()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string divider = Between(coordinator,
+                "private void CommitDividerPreferred",
+                "private void CommitDockGroupResizePreferred");
+            Assert.IsTrue(divider.Contains("hasPreferred") &&
+                divider.Contains("PreferredLocalLogicalHeight") &&
+                divider.Contains("canonical.LocalLogicalHeight"),
+                "A vertical divider must advance only the durable height and keep the established preferred position and width.");
+            string groupResize = Between(coordinator,
+                "private void CommitDockGroupResizePreferred",
+                "internal static bool ShouldApplyHostedSequence");
+            Assert.IsTrue(groupResize.Contains(
+                    "BuildDockChainOrderIncludingHidden") &&
+                groupResize.Contains("sourceLocal.Width") &&
+                groupResize.Contains("PlacementReason.UserResizeCommit"),
+                "A group horizontal resize must propagate the new left/width to every visible member's durable preference.");
+        }
+
+        [TestMethod]
         public void HostedDock_ReusesNeutralSessionAndTypedEffectBoundary()
         {
             string windowCoordinator = ReadSource(
