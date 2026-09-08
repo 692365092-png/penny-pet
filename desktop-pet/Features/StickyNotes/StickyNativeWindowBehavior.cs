@@ -266,8 +266,17 @@ namespace PennyPet
                 _dockDividerResizeActive = _dockSplitBottom &&
                     _lastResizeHitTest == HtBottom;
                 if (_dockDividerResizeActive)
+                {
+                    Rectangle startPhysical = PhysicalBounds;
+                    DisplayDiagnostics.Trace("DockDividerGesture",
+                        "note=" + Data.Id + " event=Started" +
+                        " physical=(" + startPhysical.Left + "," +
+                        startPhysical.Top + "," + startPhysical.Width +
+                        "," + startPhysical.Height + ")" +
+                        " scale=" + DeviceScaleY().ToString("0.###"));
                     RaiseDockDividerResize(DockDividerResizeStarted,
                         CurrentPhysicalHeight());
+                }
                 return IntPtr.Zero;
             }
             if (message == WmExitSizeMove)
@@ -277,8 +286,17 @@ namespace PennyPet
                 _dockDividerResizeActive = false;
                 _lastResizeHitTest = 0;
                 if (dividerResize)
+                {
+                    Rectangle finalPhysical = PhysicalBounds;
+                    DisplayDiagnostics.Trace("DockDividerGesture",
+                        "note=" + Data.Id + " event=Completed" +
+                        " physical=(" + finalPhysical.Left + "," +
+                        finalPhysical.Top + "," + finalPhysical.Width +
+                        "," + finalPhysical.Height + ")" +
+                        " scale=" + DeviceScaleY().ToString("0.###"));
                     RaiseDockDividerResize(DockDividerResizeCompleted,
                         CurrentPhysicalHeight());
+                }
                 else Raise(UserResizeCompleted);
                 return IntPtr.Zero;
             }
@@ -304,7 +322,7 @@ namespace PennyPet
                 DisplayDiagnostics.Trace("DockResizePhysical",
                     "note=" + Data.Id +
                     " axis=y scale=" + scale.ToString("0.###") +
-                    " height=" + requested);
+                    " top=" + sizing.Top + " height=" + requested);
                 handled = true;
                 return new IntPtr(1);
             }

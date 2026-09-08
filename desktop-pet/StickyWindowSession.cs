@@ -357,6 +357,23 @@ namespace PennyPet
                     StickyUiEventKind.BoundsChanged, _lastSnapshot,
                     _sequence, facts, _topology));
             }
+            WindowFacts appliedFacts = CaptureWindowFacts(_sequence);
+            DisplayDiagnostics.Trace("DockSetBoundsApplied",
+                "note=" + _noteId +
+                " requested=(" + bounds.X + "," + bounds.Y + "," +
+                bounds.Width + "," + bounds.Height + ")" +
+                " actual=" + (appliedFacts == null ? "-" :
+                    "(" + appliedFacts.PhysicalBounds.Left + "," +
+                    appliedFacts.PhysicalBounds.Top + "," +
+                    appliedFacts.PhysicalBounds.Width + "," +
+                    appliedFacts.PhysicalBounds.Height + ")") +
+                " dpi=" + (appliedFacts == null ? "-" :
+                    appliedFacts.Dpi.ToString()) +
+                " gdi=" + (appliedFacts == null ? "-" :
+                    appliedFacts.RuntimeGdiName) +
+                " gen=" + (appliedFacts == null ? "-" :
+                    appliedFacts.TopologyGeneration.ToString()) +
+                " seq=" + _sequence);
             return StickyUiCommandResult.Handled(_lastSnapshot, _sequence);
         }
 
@@ -946,8 +963,12 @@ namespace PennyPet
             StickyNoteUiSnapshot snapshot = CaptureSnapshot();
             _lastSnapshot = snapshot;
             _sequence++;
+            int height = e == null ? snapshot.Height : e.Height;
+            DisplayDiagnostics.Trace("DockDividerEvent",
+                "note=" + _noteId + " kind=" + kind +
+                " seq=" + _sequence + " height=" + height);
             Raise(StickyUiEvent.DividerResize(kind, snapshot, _sequence,
-                e == null ? snapshot.Height : e.Height));
+                height));
         }
 
         private void CancelReminderRequested(object sender, EventArgs e)

@@ -980,15 +980,29 @@ namespace PennyPet
             if (target == null) return;
             StickyNoteData note = _notes.Find(target.NoteId);
             if (note == null) return;
+            bool dividerSession = _activeHostedDockResizeSourceId != null;
             ApplyDockCanonicalFromPhysical(note, target);
             if (String.Equals(target.NoteId, alreadyAppliedNoteId,
                 StringComparison.OrdinalIgnoreCase)) return;
             if (!IsHostedSticky(note)) return;
+            if (dividerSession)
+                DisplayDiagnostics.Trace("DockTargetPosted",
+                    "note=" + target.NoteId +
+                    " rect=(" + target.X + "," + target.Y + "," +
+                    target.Width + "," + target.Height + ")");
             PostHostedStickyCommand(StickyUiCommand.SetBounds(
                 target.NoteId, new StickyUiBounds(target.X, target.Y,
                     target.Width, target.Height)),
                 delegate(StickyUiCommandResult result)
                 {
+                    if (dividerSession || result == null ||
+                        result.Status != StickyUiCommandStatus.Handled)
+                        DisplayDiagnostics.Trace("DockTargetCompleted",
+                            "note=" + target.NoteId +
+                            " status=" + (result == null ? "null" :
+                                result.Status.ToString()) +
+                            " seq=" + (result == null ? "-" :
+                                result.Sequence.ToString()));
                     if (result != null && result.Status ==
                         StickyUiCommandStatus.Handled)
                         ApplyHostedStickySnapshot(result.Snapshot,
@@ -1181,6 +1195,10 @@ namespace PennyPet
                     note.AlwaysOnTop != target.TopMost)
                     changed.Add(target);
             }
+            DisplayDiagnostics.Trace("DockDividerFrame",
+                "note=" + sourceNoteId +
+                " height=" + sourceHeight +
+                " changed=" + changed.Count);
             _synchronizingDockLayout = true;
             try
             {

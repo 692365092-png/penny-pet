@@ -1812,8 +1812,14 @@ namespace PennyPet
                 if (value == null || value.Snapshot == null ||
                     !_hostedRuntime.CanApplySequence(value.NoteId,
                         value.Sequence)) return;
-                if (!ResizeHostedStickyDockDivider(value.NoteId,
-                    value.Height))
+                bool accepted = ResizeHostedStickyDockDivider(value.NoteId,
+                    value.Height);
+                DisplayDiagnostics.Trace("DockDividerCompleted",
+                    "note=" + value.NoteId +
+                    " height=" + value.Height +
+                    " accepted=" + accepted +
+                    " seq=" + value.Sequence);
+                if (!accepted)
                 {
                     ApplyHostedStickySnapshot(value.Snapshot,
                         value.Sequence);
