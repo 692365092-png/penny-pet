@@ -1,0 +1,14 @@
+branch=codex/project-system-experiment
+checkpoint=Startup-Loading-Placement-Parity
+source_commit=8286c56
+platform=x64
+startup_snapshot=StartupPetPlacementSnapshot (physical rect + target dpi, immutable)
+resolver=PetPlacementPolicy.ResolveStartupPetPlacement (preferred -> legacy -> fallback, mirrors formal first placement)
+loading=only projects the snapshot rect; native SetWindowPos top-left; no settings/Screen/authority
+Release=PASS (0 warnings, 0 errors)
+MSTest=PASS (350 tests; 6 new startup placement matrix)
+modular_SelfTests=PASS (exit=0, ok=true)
+single_file_package_SelfTests=PASS (exit=0, ok=true)
+git_diff_check=PASS
+Human=PENDING (100/150/200%, dual mixed DPI, secondary preferred, missing preferred, first launch, startup mid-change correction)
+PC-2B=BLOCKED
