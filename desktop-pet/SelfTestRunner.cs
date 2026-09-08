@@ -6820,6 +6820,9 @@ namespace PennyPet
         {
             try
             {
+                // PC-2A: execute production rejection paths before any harness
+                // decomposition. Characterization success is not defect absence.
+                RunPc2CharacterizationChecks(outputPath);
                 RunDisplayResolverConsistencyCheck();
                 ArtResourceCheckResult artChecks = RunArtResourceChecks();
                 SettingsPersistenceCheckResult settingsChecks =
@@ -6855,6 +6858,7 @@ namespace PennyPet
                 // detailed report when a new check is added.
                 BeginCheckCollection();
                 string reportBody =
+                    BuildPc2CharacterizationReportFields() +
                     BuildArtAndSettingsReportFields(artChecks, settingsChecks) +
                     BuildPersistenceReportFields(settingsChecks,
                         reminderCoordinatorChecks, stickyChecks, shellChecks,

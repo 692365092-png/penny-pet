@@ -13,6 +13,404 @@ namespace PennyPet
 {
     internal static partial class SelfTest
     {
+        // Test-only construction skips PetForm's product startup (real user
+        // files, hooks, art, tray). We invoke the unchanged production methods
+        // on isolated collaborators, not a copied acceptance implementation.
+        private sealed class Pc2Scene : IDisposable
+        {
+            internal readonly PetForm Pet;
+            internal readonly StickyNoteRepository Repository;
+            internal readonly StickyHostedRuntime Hosted = new StickyHostedRuntime();
+            internal readonly StickyPlacementRuntime Placement = new StickyPlacementRuntime();
+            internal readonly DockInteractionSession Interaction = new DockInteractionSession();
+            internal readonly StickyUiHost Host = new StickyUiHost();
+            internal readonly Pc2Context Context = new Pc2Context();
+            internal readonly DisplayTopologyRuntime Display;
+            internal readonly List<StickyNoteData> Notes = new List<StickyNoteData>();
+            internal readonly Dictionary<string, DockWindowFacts> Active =
+                new Dictionary<string, DockWindowFacts>(StringComparer.OrdinalIgnoreCase);
+            internal readonly Dictionary<string, DockWindowFacts> Original =
+                new Dictionary<string, DockWindowFacts>(StringComparer.OrdinalIgnoreCase);
+            internal readonly string PathName;
+            private readonly PetContextMenu menu;
+            private readonly PetBubbleCoordinator bubble;
+            private bool started;
+
+            internal Pc2Scene(string root, string name, bool native = false)
+            {
+                string directory = Path.Combine(root, name);
+                Directory.CreateDirectory(directory);
+                PathName = Path.Combine(directory, "sticky-notes.dat");
+                Repository = (StickyNoteRepository)Activator.CreateInstance(
+                    typeof(StickyNoteRepository), BindingFlags.Instance |
+                    BindingFlags.NonPublic, null, new object[] { PathName }, null);
+                Pet = (PetForm)System.Runtime.Serialization.FormatterServices
+                    .GetUninitializedObject(typeof(PetForm));
+                GC.SuppressFinalize(Pet); // no native Pet resource was created
+                DisplayTopologySnapshot supplied = native
+                    ? new WindowsDisplayTopologyProvider().Capture()
+                    : new DisplayTopologySnapshot(0, new[] {
+                        new DisplaySurfaceSnapshot("pc2-surface", "pc2-display",
+                            new PhysicalRect(0, 0, 1920, 1080),
+                            new PhysicalRect(0, 0, 1920, 1040), true, 0,
+                            new[] { new DisplayTargetIdentity("mdp:pc2", true,
+                                "pc2-path", "pc2", 0, 0, 0) }) });
+                Display = new DisplayTopologyRuntime(delegate { return supplied; });
+                Display.CaptureInitial();
+                Pc2Assert(Display.Current != null, "topology available");
+                menu = new PetContextMenu("PC2 test", false, false, true,
+                    new PetContextMenuCommands());
+                // Feedback is queued rather than displayed; only test UI sink
+                // behavior is selected. Rejection decisions are not mocked.
+                bubble = new PetBubbleCoordinator(Pet, () => true, () => false,
+                    null, null);
+                Pc2Set(Pet, "_notes", Repository);
+                Pc2Set(Pet, "_hostedRuntime", Hosted);
+                Pc2Set(Pet, "_placementRuntime", Placement);
+                Pc2Set(Pet, "_displayTopologyRuntime", Display);
+                Pc2Set(Pet, "_dockInteraction", Interaction);
+                Pc2Set(Pet, "_dockPlanMailbox", new DockPlanMailbox());
+                Pc2Set(Pet, "_lastAppliedDockPlanSequence", -1L);
+                Pc2Set(Pet, "_stickyUiHost", Host);
+                Pc2Set(Pet, "_petUiContext", Context);
+                Pc2Set(Pet, "_activeDockCurrentFacts", Active);
+                Pc2Set(Pet, "_activeDockOriginalFacts", Original);
+                Pc2Set(Pet, "_settings", new PetSettings());
+                Pc2Set(Pet, "_reminders", new ReminderSchedule());
+                Pc2Set(Pet, "_petContextMenu", menu);
+                Pc2Set(Pet, "_bubbleCoordinator", bubble);
+                Pc2Set(Pet, "_pendingHostedDockRestoreGroups", new HashSet<string>());
+                Pc2Set(Pet, "_expectedFirstRenderNoteIds", new HashSet<string>());
+                Pc2Set(Pet, "_renderedFirstRenderNoteIds", new HashSet<string>());
+                for (int i = 0; i < 3; i++)
+                {
+                    StickyNoteData note = Repository.CreateDraft("before-" + i,
+                        new Point(100, 100 + 230 * i));
+                    note.Id = "pc2-" + i;
+                    note.Width = 300; note.Height = 230;
+                    note.DisplayId = Surface.RuntimeGdiName;
+                    note.LocalLogicalX = 100; note.LocalLogicalY = 100 + 230 * i;
+                    note.LocalLogicalWidth = 300; note.LocalLogicalHeight = 230;
+                    note.PreferredDisplayTargetKey = DisplayTopologyRules
+                        .SelectPreferredTargetKey(Surface, null);
+                    note.PreferredLocalLogicalX = 100;
+                    note.PreferredLocalLogicalY = 100 + 230 * i;
+                    note.PreferredLocalLogicalWidth = 300;
+                    note.PreferredLocalLogicalHeight = 230;
+                    note.AlwaysOnTop = false; note.Visible = true;
+                    Notes.Add(note); Hosted.AddNote(note.Id);
+                    Hosted.RecordSequence(note.Id, 1);
+                    Placement.TryUpdateEffective(note.Id, Facts(i, 1, 100));
+                    Active[note.Id] = DockWindowFacts.FromData(note);
+                    Original[note.Id] = DockWindowFacts.FromData(note);
+                }
+                StickyDockGroups.ApplyOrderedGroup(Notes);
+                Pc2Set(Pet, "_activeDockGroupIds", new List<string>(Ids));
+                Pc2Set(Pet, "_activeNoteDragId", Notes[0].Id);
+                Interaction.BeginPreparing(Notes[0].Id, Topology.Generation);
+                Interaction.TryEnterDragging(Interaction.Epoch, Topology.Generation);
+                Host.SetCurrentTopology(Topology);
+                Host.SetCurrentDockInteractionEpoch(Interaction.Epoch);
+                Pc2Assert(Repository.Save().Succeeded, "isolated baseline saved");
+            }
+
+            internal DisplayTopologySnapshot Topology { get { return Display.Current; } }
+            internal DisplaySurfaceSnapshot Surface { get { return Topology.PrimaryOrFirst(); } }
+            internal string[] Ids { get { return Notes.ConvertAll(n => n.Id).ToArray(); } }
+            internal long Saves { get { return (long)Pc2Get(Repository, "_requestedGeneration"); } }
+            internal long Sequence(int i)
+            { return ((Dictionary<string, long>)Pc2Get(Hosted, "_appliedSequences"))[Notes[i].Id]; }
+            internal WindowFacts Facts(int i, long sequence, int x)
+            {
+                return new WindowFacts(Notes[i].Id,
+                    DisplayTopologyRules.SelectPreferredTargetKey(Surface, null),
+                    Surface.RuntimeGdiName, new PhysicalRect(x, 100 + i * 230, 300, 230),
+                    96, Topology.Generation, sequence);
+            }
+            internal DockBatchMemberResult Member(int i, long seq = 2, bool nullFacts = false)
+            {
+                StickyNoteData copy = StickyNoteUiSnapshot.FromData(Notes[i]).CreateWorkingCopy();
+                copy.Text = "after-" + i;
+                return new DockBatchMemberResult(copy.Id, seq,
+                    nullFacts ? null : Facts(i, seq, 400), StickyNoteUiSnapshot.FromData(copy));
+            }
+            internal StickyUiCommandResult Batch(long plan, params DockBatchMemberResult[] members)
+            { return StickyUiCommandResult.Handled(new DockBatchResult(plan,
+                Topology.Generation, Surface.RuntimeSurfaceId, 96, members, Interaction.Epoch)); }
+            internal void Start(Func<StickyUiCommand, StickyUiCommandResult> handler = null)
+            {
+                if (started) return;
+                started = true;
+                Host.Configure(delegate { }, Context);
+                if (handler != null) Host.SetCommandHandler(handler);
+                Host.Start();
+            }
+            internal StickyUiCommandResult Send(StickyUiCommand command)
+            {
+                StickyUiCommandResult result = null;
+                Host.PostCommand(command, r => result = r, Context);
+                Context.PumpUntil(() => result != null);
+                return result;
+            }
+            public void Dispose()
+            {
+                Pc2Assert(Repository.WaitForPendingSaves().Succeeded, "isolated IO flush");
+                Host.BeginShutdown();
+                if (started)
+                {
+                    object threadHost = Pc2Get(Host, "_threadHost");
+                    System.Threading.Thread thread = (System.Threading.Thread)Pc2Get(threadHost, "_thread");
+                    Context.PumpUntil(() => thread == null || !thread.IsAlive);
+                }
+                Display.Dispose(); bubble.Dispose(); menu.Dispose();
+            }
+        }
+
+        private sealed class Pc2Context : System.Threading.SynchronizationContext
+        {
+            private readonly Queue<Action> queue = new Queue<Action>();
+            internal int Executed;
+            public override void Post(System.Threading.SendOrPostCallback callback, object state)
+            { lock (queue) queue.Enqueue(() => callback(state)); }
+            internal void PumpUntil(Func<bool> done)
+            {
+                Stopwatch deadline = Stopwatch.StartNew();
+                while (!done())
+                {
+                    Action next = null;
+                    lock (queue) if (queue.Count > 0) next = queue.Dequeue();
+                    if (next != null) { next(); Executed++; }
+                    Application.DoEvents(); // test-driver pump, never product startup
+                    if (deadline.ElapsedMilliseconds > 15000)
+                        throw new InvalidOperationException("PC2 callback timeout");
+                    System.Threading.Thread.Sleep(1);
+                }
+            }
+        }
+
+        private static void Pc2Set(object owner, string name, object value)
+        { owner.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic).SetValue(owner, value); }
+        private static object Pc2Get(object owner, string name)
+        { return owner.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic).GetValue(owner); }
+        private static object Pc2Call(object owner, string method, params object[] args)
+        {
+            try { return owner.GetType().GetMethod(method,
+                BindingFlags.Instance | BindingFlags.NonPublic).Invoke(owner, args); }
+            catch (TargetInvocationException error) { throw error.InnerException ?? error; }
+        }
+        private static void Pc2Assert(bool value, string message)
+        { if (!value) throw new InvalidOperationException("PC2 characterization: " + message); }
+
+        private static void RunPc2CharacterizationChecks(string outputPath)
+        {
+            string root = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outputPath)), "pc2a");
+            List<string> evidence = new List<string>();
+            // A1: whole structure preflights, second member's effective watermark rejects.
+            using (Pc2Scene s = new Pc2Scene(root, "A1"))
+            {
+                WindowFacts old = s.Facts(1, 100, 100);
+                s.Placement.TryUpdateEffective(s.Notes[1].Id, old);
+                long saves = s.Saves;
+                object[] args = { s.Batch(0, s.Member(0), s.Member(1), s.Member(2)),
+                    s.Ids, s.Topology, s.Interaction.Epoch, s.Notes[0].Id, true, null };
+                bool accepted = (bool)Pc2Call(s.Pet, "TryApplyDockFactsBarrier", args);
+                Pc2Assert(!accepted && s.Notes[0].X == 400 && s.Notes[1].X == 400 &&
+                    s.Notes[2].X == 100, "A1 canonical prefix incl rejected member");
+                Pc2Assert(ReferenceEquals(s.Placement.GetEffective(s.Notes[1].Id), old) &&
+                    s.Sequence(0) == 2 && s.Sequence(1) == 1 && s.Sequence(2) == 1,
+                    "A1 effective/lease prefix");
+                Pc2Assert(s.Active.Count == 1 && s.Original.Count == 1 &&
+                    s.Active.ContainsKey(s.Notes[0].Id) && s.Saves == saves && args[6] != null,
+                    "A1 reset maps contain only accepted prefix; no save; source out assigned");
+                evidence.Add("A1: false; canonical A/B changed, C untouched; effective B old; lease/maps only A advanced; Save unchanged.");
+            }
+            // A3: the live consumer ignores a rejected effective update and continues.
+            using (Pc2Scene s = new Pc2Scene(root, "A3"))
+            {
+                WindowFacts old = s.Facts(1, 100, 100);
+                s.Placement.TryUpdateEffective(s.Notes[1].Id, old);
+                long saves = s.Saves;
+                Pc2Call(s.Pet, "ApplyDockBatchResult", s.Batch(10,
+                    s.Member(0), s.Member(1), s.Member(2)).DockBatchResult);
+                Pc2Assert(s.Notes.TrueForAll(n => n.X == 400) && s.Sequence(1) == 2 &&
+                    ReferenceEquals(s.Placement.GetEffective(s.Notes[1].Id), old) &&
+                    s.Placement.GetEffective(s.Notes[2].Id).PhysicalBounds.Left == 400 &&
+                    s.Active[s.Notes[0].Id].X == 100 && s.Saves == saves,
+                    "A3 all canonical/leases advance, middle effective rejected, active cache unchanged");
+                evidence.Add("A3: void; all canonical/leases changed; only B effective stale; last plan=10; no Save.");
+            }
+            using (Pc2Scene s = new Pc2Scene(root, "A4"))
+            {
+                WindowFacts old = s.Facts(0, 100, 100);
+                s.Placement.TryUpdateEffective(s.Notes[0].Id, old);
+                s.Placement.MarkTemporaryRehome(s.Notes[0].Id, "test-rehome");
+                long saves = s.Saves;
+                DockBatchMemberResult m = s.Member(0);
+                bool accepted = (bool)Pc2Call(s.Pet, "ApplyReprojectResult",
+                    StickyUiCommandResult.Handled(m.Snapshot, m.WindowSequence, m.Facts, s.Topology),
+                    m.NoteId, s.Topology);
+                s.Repository.WaitForPendingSaves();
+                Pc2Assert(accepted && s.Notes[0].X == 400 && s.Sequence(0) == 2 &&
+                    ReferenceEquals(s.Placement.GetEffective(m.NoteId), old) &&
+                    s.Notes[0].PreferredLocalLogicalX == 100 &&
+                    s.Placement.IsTemporaryRehome(m.NoteId) && s.Saves == saves + 1 &&
+                    StickyNoteRepository.LoadFromFile(s.PathName).Find(m.NoteId).X == 400,
+                    "A4 rejected effective still returns true and saves canonical, preferred/temp unchanged");
+                evidence.Add("A4: true; physical/v10 and hosted lease changed and saved; preferred/temp unchanged; effective old.");
+            }
+            // A5: structural/hosted rejection differs from effective-only rejection.
+            for (int scenario = 0; scenario < 3; scenario++)
+            using (Pc2Scene s = new Pc2Scene(root, "A5-" + scenario))
+            {
+                long saves = s.Saves;
+                string before = String.Join("\n", s.Notes.ConvertAll(StickyNoteCodec.SerializeLine));
+                WindowFacts old = s.Facts(2, 100, 100);
+                if (scenario == 2) s.Placement.TryUpdateEffective(s.Notes[2].Id, old);
+                Pc2Call(s.Pet, "CompleteDockDurableCommit",
+                    s.Batch(10, s.Member(0), s.Member(1),
+                        s.Member(2, scenario == 1 ? 1 : 2, scenario == 0)),
+                    s.Topology, s.Interaction.Epoch, s.Notes[0], null, s.Ids, 10L);
+                if (scenario < 2)
+                    Pc2Assert(before == String.Join("\n", s.Notes.ConvertAll(StickyNoteCodec.SerializeLine)) &&
+                        s.Saves == saves && s.Sequence(0) == 1 &&
+                        s.Placement.GetEffective(s.Notes[0].Id).WindowSequence == 1,
+                        "A5 invalid last member prevents whole commit including save/group/mirrors");
+                else
+                    Pc2Assert(s.Notes.TrueForAll(n => n.X == 400 && n.PreferredLocalLogicalX == 400) &&
+                        s.Sequence(2) == 2 && ReferenceEquals(s.Placement.GetEffective(s.Notes[2].Id), old) &&
+                        s.Saves == saves + 1 && StickyNoteRepository.LoadFromFile(s.PathName)
+                            .Find(s.Notes[2].Id).PreferredLocalLogicalX == 400,
+                        "A5 effective-only rejection not part of whole-set preflight, durable write proceeds");
+                evidence.Add("A5-" + scenario + ": " + (scenario < 2
+                    ? "invalid final member: zero canonical/preferred/lease/effective/order/Save mutation."
+                    : "effective-only reject: all durable prefs/mirrors/leases saved; last effective old."));
+            }
+            RunPc2FailurePolicies(root, evidence);
+            // Last: establish a real session recreation path, not just seeded counters.
+            RunPc2Recreation(root, evidence);
+            Directory.CreateDirectory(root);
+            File.WriteAllText(Path.Combine(root, "characterization.json"),
+                new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(new {
+                    sourceGolden = "ab10b45705195bc7564db74c2d1f03dc996917ba",
+                    characterizationPassed = true,
+                    confirmedLatentCorrectnessDefect = true,
+                    pc2b = "BLOCKED", observations = evidence.ToArray()
+                }), new UTF8Encoding(false));
+        }
+
+        private static void RunPc2FailurePolicies(string root, List<string> evidence)
+        {
+            using (Pc2Scene s = new Pc2Scene(root, "A6-rebase"))
+            {
+                s.Start(c => StickyUiCommandResult.NotHandled());
+                s.Interaction.BeginRebase(s.Topology.Generation);
+                int before = s.Context.Executed;
+                Pc2Call(s.Pet, "ResumeDockDragAfterTopologyChange", s.Topology);
+                s.Context.PumpUntil(() => s.Context.Executed > before);
+                Pc2Assert(s.Interaction.Phase == DockInteractionPhase.Rebasing && s.Active.Count == 3,
+                    "A6 rebase rejection stays Rebasing");
+            }
+            using (Pc2Scene s = new Pc2Scene(root, "A6-live"))
+            {
+                s.Start(); // real ApplyDockPlan rejects missing native sessions
+                int before = s.Context.Executed;
+                DockPlacementPlan plan = new DockPlacementPlan(s.Topology.Generation, 10,
+                    s.Notes[0].Id, s.Surface.RuntimeSurfaceId, 96,
+                    s.Notes.ConvertAll(n => new DockWindowTarget(n.Id, new PhysicalRect(400, 100, 300, 230))),
+                    s.Interaction.Epoch);
+                Pc2Call(s.Pet, "ApplyLiveDockPlan", plan);
+                s.Context.PumpUntil(() => s.Context.Executed > before);
+                Pc2Assert(s.Interaction.Phase == DockInteractionPhase.Dragging &&
+                    s.Notes[0].X == 100, "A6 live failure keeps drag/canonical");
+            }
+            using (Pc2Scene s = new Pc2Scene(root, "A6-final"))
+            {
+                s.Start(c => StickyUiCommandResult.NotHandled());
+                int before = s.Context.Executed;
+                Pc2Call(s.Pet, "StartDockFinalization", s.Notes[0], null);
+                s.Context.PumpUntil(() => s.Context.Executed > before);
+                Pc2Assert(s.Interaction.Phase == DockInteractionPhase.Idle && s.Active.Count == 0 &&
+                    Pc2Get(s.Pet, "_activeNoteDragId") == null, "A6 final failure resets");
+            }
+            using (Pc2Scene s = new Pc2Scene(root, "A6-restore"))
+            {
+                s.Start(c => StickyUiCommandResult.Handled());
+                HashSet<string> gates = (HashSet<string>)Pc2Get(s.Pet, "_pendingHostedDockRestoreGroups");
+                gates.Add("test-group");
+                Type stateType = typeof(PetForm).GetNestedType("HostedDockRestorePreparation", BindingFlags.NonPublic);
+                object state = Activator.CreateInstance(stateType, BindingFlags.Instance | BindingFlags.NonPublic,
+                    null, new object[] { s.Notes, s.Notes[0], false, true, "test-group" }, null);
+                long saves = s.Saves;
+                Pc2Call(s.Pet, "FailHostedDockRestore", state, "test-rejection", StickyUiCommandResult.NotHandled());
+                Pc2Assert(gates.Count == 0 && s.Hosted.NoteCount == 0 &&
+                    s.Notes.TrueForAll(n => !n.Visible) && s.Repository.Count == 3 && s.Saves == saves + 1,
+                    "A6 restore keeps data, hides canonical, removes membership, saves, releases gate");
+            }
+            evidence.Add("A6: rebase remains Rebasing; live failure remains Dragging; final rejection resets Idle/maps; restore hides/retains/saves data and releases gate.");
+        }
+
+        private static void RunPc2Recreation(string root, List<string> evidence)
+        {
+            using (Pc2Scene s = new Pc2Scene(root, "A2-recreation", true))
+            {
+                s.Start();
+                StickyNoteData note = s.Notes[0];
+                StickyUiCommandResult ensured = s.Send(StickyUiCommand.EnsureSession(
+                    StickyNoteUiSnapshot.FromData(note), null, s.Topology));
+                Pc2Assert(ensured.Status == StickyUiCommandStatus.Handled, "real EnsureSession");
+                s.Hosted.SynchronizeSessionLease(note.Id, ensured.Sequence);
+                Pc2Assert(s.Send(StickyUiCommand.Show(note.Id, false, s.Topology)).Status ==
+                    StickyUiCommandStatus.Handled, "old native window show");
+                StickyUiCommandResult old = null;
+                for (int i = 0; i < 30; i++)
+                    old = s.Send(StickyUiCommand.CaptureWindowFacts(note.Id, s.Topology));
+                Pc2Assert(old.Facts != null, "old actual HWND facts");
+                s.Hosted.RecordSequence(note.Id, old.Sequence);
+                s.Placement.TryUpdateEffective(note.Id, old.Facts);
+                StickyUiCommandResult closed = null;
+                Pc2Call(s.Pet, "CloseHostedStickyRuntimeForReload",
+                    (Action<StickyUiCommandResult>)(r => closed = r));
+                s.Context.PumpUntil(() => closed != null);
+                Pc2Assert(closed.Status == StickyUiCommandStatus.Handled &&
+                    !s.Hosted.ContainsNote(note.Id) && ReferenceEquals(s.Placement.GetEffective(note.Id), old.Facts),
+                    "actual reload close retains effective but removes hosted lease");
+                ensured = s.Send(StickyUiCommand.EnsureSession(
+                    StickyNoteUiSnapshot.FromData(note), null, s.Topology));
+                Pc2Assert(ensured.Status == StickyUiCommandStatus.Handled && ensured.Sequence < old.Sequence,
+                    "real recreated session has lower sequence");
+                s.Hosted.SynchronizeSessionLease(note.Id, ensured.Sequence);
+                StickyUiCommandResult moved = s.Send(StickyUiCommand.Reproject(note.Id,
+                    new StickyUiReprojectTarget(s.Surface.RuntimeGdiName, 180, 140, 300, 230, false, true),
+                    s.Topology));
+                Pc2Assert(moved.Status == StickyUiCommandStatus.Handled && moved.Facts != null &&
+                    moved.Sequence < old.Sequence && s.Hosted.CanApplySequence(note.Id, moved.Sequence),
+                    "new actual facts pass hosted lease despite old effective watermark");
+                long saves = s.Saves;
+                Pc2Assert((bool)Pc2Call(s.Pet, "ApplyReprojectResult", moved, note.Id, s.Topology),
+                    "real new-session reproject reports accepted");
+                s.Repository.WaitForPendingSaves();
+                Pc2Assert(ReferenceEquals(s.Placement.GetEffective(note.Id), old.Facts) &&
+                    note.X == moved.Facts.PhysicalBounds.Left && note.Y == moved.Facts.PhysicalBounds.Top &&
+                    (old.Facts.PhysicalBounds.Left != note.X || old.Facts.PhysicalBounds.Top != note.Y) &&
+                    s.Sequence(0) == moved.Sequence && s.Saves == saves + 1 &&
+                    StickyNoteRepository.LoadFromFile(s.PathName).Find(note.Id).X == note.X,
+                    "reachable recreated HWND: accepted/saved canonical diverges from retained effective");
+                evidence.Add("A2 real EnsureSession/CloseAll/recreation/Reproject: old HWND sequence=" + old.Sequence +
+                    "; recreated lease=" + ensured.Sequence + "; new HWND sequence=" + moved.Sequence +
+                    "; canonical saved at new HWND rect while effective still old HWND rect. STOP: correctness closure required.");
+            }
+        }
+
+        private static string BuildPc2CharacterizationReportFields()
+        {
+            return "  \"pc2a_facts_barrier_rejection_characterized_ok\": " + Bool(true) + ",\n" +
+                "  \"pc2a_session_recreation_characterized_ok\": " + Bool(true) + ",\n" +
+                "  \"pc2a_live_batch_rejection_characterized_ok\": " + Bool(true) + ",\n" +
+                "  \"pc2a_reproject_rejection_characterized_ok\": " + Bool(true) + ",\n" +
+                "  \"pc2a_durable_commit_rejection_characterized_ok\": " + Bool(true) + ",\n" +
+                "  \"pc2a_failure_policies_characterized_ok\": " + Bool(true) + ",\n";
+        }
+
         public static void RunWeatherApiProbe(string outputPath)
         {
             Stopwatch timer = Stopwatch.StartNew();
