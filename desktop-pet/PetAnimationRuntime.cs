@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace PennyPet
@@ -38,16 +39,19 @@ namespace PennyPet
             }
             if (_typingSession && now > _typingUntilUtc)
                 _typingSession = false;
-            if (_manualAnimationActive && !(_dragging && _dragMoved))
+            if (_animation.InteractionAnimationKind !=
+                PetInteractionAnimationKind.None &&
+                !(_dragging && _dragMoved))
             {
-                if (!_art.IsRowLoaded(_manualAnimationRow))
+                int interactionRow = _animation.InteractionAnimationRow;
+                if (!_art.IsRowLoaded(interactionRow))
                 {
-                    QueueArtPreload(_manualAnimationRow);
+                    QueueArtPreload(interactionRow);
                     return;
                 }
-                if (_row != _manualAnimationRow)
+                if (_row != interactionRow)
                 {
-                    _row = _manualAnimationRow;
+                    _row = interactionRow;
                     _frame = 0;
                     ScheduleNextFrame(now);
                     RenderCurrentFrame();
@@ -56,7 +60,7 @@ namespace PennyPet
                 if (now < _nextFrameUtc) return;
                 if (_frame >= RuntimeFrameCount(_row) - 1)
                 {
-                    _manualAnimationActive = false;
+                    _animation.CompleteInteractionAnimation();
                     _row = ChooseRow();
                     _frame = 0;
                 }
@@ -132,8 +136,10 @@ namespace PennyPet
 
         private int ChooseRow()
         {
+            bool effectiveHover = _stableMouseInside &&
+                !_hoverSuppressedUntilStableLeave;
             return _animation.ChooseRow(_exiting, _dragging && _dragMoved,
-                _mouseInside, _menu.Visible, _art.IsRowLoaded);
+                effectiveHover, _menu.Visible, _art.IsRowLoaded);
         }
 
         internal static float DueReminderBubbleFontSizePoints(
@@ -149,7 +155,10 @@ namespace PennyPet
             _dragging = true;
             _dragMoved = false;
             QueueArtPreload(FailedRow);
-            CloseCurrentBubbleWithoutRestoringHover();
+            // The current hover session ends here. No Hover request may return
+            // until a stable leave (then a fresh stable enter) occurs.
+            _hoverSuppressedUntilStableLeave = true;
+            HideHoverBubble();
             _keyOverlay.HideImmediately();
             _typingSession = false;
             _dragMouseOrigin = Cursor.Position;
@@ -168,7 +177,7 @@ namespace PennyPet
             if (!_dragMoved)
             {
                 _dragMoved = true;
-                _manualAnimationActive = false;
+                _animation.CancelInteractionAnimation();
             }
             Location = new Point(_dragWindowOrigin.X + dx, _dragWindowOrigin.Y + dy);
             _keyOverlay.UpdatePosition(this);
@@ -182,33 +191,177 @@ namespace PennyPet
             _dragMoved = false;
             Capture = false;
             if (wasDrag)
-                SaveLocation();
+            {
+                CommitPetUserPlacement();
+                ReconcilePetDisplayPlacement(
+                    CurrentTopologySnapshot(), "PetDragCompleted");
+            }
             else
             {
                 Location = _dragWindowOrigin;
-                AdvanceManualAnimation();
+                HandlePetPoked();
             }
             ShowNextPendingBubble();
         }
 
-        private void AdvanceManualAnimation()
+        private async void HandlePetPoked()
         {
-            DateTime now = DateTime.UtcNow;
-            if (!PetAnimationController.ManualAnimationClickReady(now,
-                _manualAnimationCooldownUntilUtc)) return;
-            _manualAnimationCooldownUntilUtc = now.AddMilliseconds(
-                PetAnimationController.ManualAnimationCooldownMilliseconds);
-            int current = _manualAnimationActive ? _manualAnimationRow : _row;
-            _manualAnimationRow =
-                PetAnimationController.PickRandomManualAnimationRow(
-                    _random, current);
-            _manualAnimationActive = true;
+            try
+            {
+                await HandlePetPokedAsync();
+            }
+            catch (Exception error)
+            {
+                ApplicationDiagnostics.ReportNonFatal("pet-poke", error);
+            }
+        }
+
+        private async Task HandlePetPokedAsync()
+        {
+            DateTime nowUtc = DateTime.UtcNow;
+            if (_pokeBurstTracker.RegisterPoke(nowUtc))
+            {
+                StartPokeEasterEgg(nowUtc);
+                return;
+            }
+            DateTimeOffset localNow = DateTimeOffset.Now;
+
+            // Daily Opening: the first successful daypart of the day keeps the
+            // full briefing path and uses the notification talk animation.
+            if (_dailyContentCoordinator.IsOpeningEligible(localNow))
+            {
+                StartNotificationPokeAnimation(nowUtc);
+                bool dailyHandled = await _dailyContentCoordinator
+                    .HandlePetPokedAsync(localNow);
+                if (dailyHandled)
+                {
+                    _dailyLedger.TryConsumeDaypart(
+                        PetDaypartRule.Resolve(localNow));
+                    PersistDailyLedger();
+                    return;
+                }
+                if (_exiting || IsDisposed || Disposing) return;
+            }
+
+            // Light per-daypart check-in for a not-yet-consumed slot.
+            if (_daypartCheckInCoordinator.HandlePetPoked(localNow))
+            {
+                StartNotificationPokeAnimation(nowUtc);
+                PersistDailyLedger();
+                return;
+            }
+
+            // Live SmallTalk under the new rhythm window.
+            if (_smallTalkCoordinator.HandlePetPoked(nowUtc))
+            {
+                if (_smallTalkCoordinator.LastSpokenAnimationKind ==
+                    PetPersonaAnimationKind.Guitar)
+                    StartGuitarPokeAnimation(nowUtc);
+                else if (_smallTalkCoordinator.LastSpokenAnimationKind ==
+                    PetPersonaAnimationKind.Hover)
+                    StartHoverPokeAnimation(nowUtc);
+                else if (_smallTalkCoordinator.LastSpokenRepeatClass ==
+                    PetPersonaRepeatClass.Meaningful)
+                    StartNotificationPokeAnimation(nowUtc);
+                else
+                    StartOrdinaryPokeAnimation(nowUtc);
+                PersistDailyLedger();
+                return;
+            }
+
+            // No talk: a random interaction animation is the whole response.
+            StartOrdinaryPokeAnimation(nowUtc);
+        }
+
+        private void StartGuitarPokeAnimation(DateTime nowUtc)
+        {
+            if (_bubbleCoordinator.CurrentKind.HasValue &&
+                PetMessagePolicy.IsProtectedForegroundMessage(
+                    _bubbleCoordinator.CurrentKind.Value)) return;
+            // Lyric-reference SmallTalk uses the guitar "waiting" clip.
+            StartProtectedSmallTalkAnimation(
+                PetAnimationController.WaitingRow, nowUtc);
+        }
+
+        private void StartHoverPokeAnimation(DateTime nowUtc)
+        {
+            if (_bubbleCoordinator.CurrentKind.HasValue &&
+                PetMessagePolicy.IsProtectedForegroundMessage(
+                    _bubbleCoordinator.CurrentKind.Value)) return;
+            // Loopable SmallTalk reflections use the hover/drag clip.
+            StartProtectedSmallTalkAnimation(
+                PetAnimationController.HoverRow, nowUtc);
+        }
+
+        private void StartProtectedSmallTalkAnimation(int row,
+            DateTime nowUtc)
+        {
+            if (!_animation.TryStartOrdinaryPoke(row, true)) return;
             _typingSession = false;
-            QueueArtPreload(_manualAnimationRow);
-            if (!_art.IsRowLoaded(_manualAnimationRow)) return;
-            _row = _manualAnimationRow;
+            QueueArtPreload(row);
+            if (!_art.IsRowLoaded(row)) return;
+            _row = row;
             _frame = 0;
-            ScheduleNextFrame(now);
+            ScheduleNextFrame(nowUtc);
+            RenderCurrentFrame();
+        }
+
+        private void StartNotificationPokeAnimation(DateTime nowUtc)
+        {
+            if (_bubbleCoordinator.CurrentKind.HasValue &&
+                PetMessagePolicy.IsProtectedForegroundMessage(
+                    _bubbleCoordinator.CurrentKind.Value)) return;
+            if (!_animation.TryStartNotification()) return;
+            _typingSession = false;
+            QueueArtPreload(NotificationRow);
+            if (!_art.IsRowLoaded(NotificationRow)) return;
+            _row = NotificationRow;
+            _frame = 0;
+            ScheduleNextFrame(nowUtc);
+            RenderCurrentFrame();
+        }
+
+        private void StartOrdinaryPokeAnimation(DateTime nowUtc)
+        {
+            if (_bubbleCoordinator.CurrentKind.HasValue &&
+                PetMessagePolicy.IsProtectedForegroundMessage(
+                    _bubbleCoordinator.CurrentKind.Value)) return;
+            int row = PetAnimationController.PickRandomManualAnimationRow(
+                _random, _row);
+            if (!_animation.TryStartOrdinaryPoke(row)) return;
+            _typingSession = false;
+            QueueArtPreload(row);
+            if (!_art.IsRowLoaded(row)) return;
+            _row = row;
+            _frame = 0;
+            ScheduleNextFrame(nowUtc);
+            RenderCurrentFrame();
+        }
+
+        private void StartPokeEasterEgg(DateTime nowUtc)
+        {
+            if (_bubbleCoordinator.CurrentKind.HasValue &&
+                PetMessagePolicy.IsProtectedForegroundMessage(
+                    _bubbleCoordinator.CurrentKind.Value)) return;
+            if (!_animation.TryStartEasterEgg(FailedRow)) return;
+            bool shown = _bubbleCoordinator.Show(PetBubbleRequest.EasterEgg(
+                KeyboardOverlayForm.TextFontFamilyName,
+                KeyboardOverlayForm.TextFontSizePoints(
+                    _settings.KeyOverlayScalePercent)));
+            if (!shown)
+            {
+                _animation.CancelInteractionAnimation();
+                return;
+            }
+            // The easter egg shares the reminder notification chime, but keeps
+            // its own dedicated animation and never changes bubble priority.
+            System.Media.SystemSounds.Asterisk.Play();
+            _typingSession = false;
+            QueueArtPreload(FailedRow);
+            if (!_art.IsRowLoaded(FailedRow)) return;
+            _row = FailedRow;
+            _frame = 0;
+            ScheduleNextFrame(nowUtc);
             RenderCurrentFrame();
         }
 
@@ -352,10 +505,12 @@ namespace PennyPet
             if (frame != null) LayeredSpriteRenderer.Show(this, frame);
         }
 
-        private void BuildRenderedFrameCache()
+        private void BuildRenderedFrameCache(Size? targetSize = null)
         {
+            _renderedTargetSize = targetSize ?? ScaledPetSize(_scalePercent);
             _renderedFrames = new Bitmap[PetArtPackage.RuntimeStateNames.Length][];
-            _renderedFramesOwnBitmaps = _scalePercent != 100;
+            _renderedFramesOwnBitmaps =
+                _renderedTargetSize != ScaledPetSize(100);
             EnsureRenderedRow(_row);
         }
 
@@ -371,7 +526,8 @@ namespace PennyPet
             for (int frame = 0; frame < count; frame++)
             {
                 Bitmap source = _art.GetFrame(row, frame);
-                if (_scalePercent == 100)
+                if (source.Width == _renderedTargetSize.Width &&
+                    source.Height == _renderedTargetSize.Height)
                 {
                     rendered[frame] = source;
                 }
@@ -380,8 +536,7 @@ namespace PennyPet
                     Bitmap resized;
                     if (!scaled.TryGetValue(source, out resized))
                     {
-                        resized = ResizeFrame(source,
-                            ScaledPetSize(_scalePercent));
+                        resized = ResizeFrame(source, _renderedTargetSize);
                         scaled[source] = resized;
                     }
                     rendered[frame] = resized;

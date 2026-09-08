@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Reflection;
 using System.Text;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -30,7 +32,7 @@ namespace PennyPet.Tests
         {
             Assert.IsTrue(
                 StickyNoteWindowRules.ShouldKeepSideTabsTopMost(false));
-            Assert.IsTrue(
+            Assert.IsFalse(
                 StickyNoteWindowRules.ShouldKeepSideTabsTopMost(true));
         }
 
@@ -67,6 +69,310 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyImportMergePlanner_AddsNewNotesByStableId()
+        {
+            List<StickyNoteData> backup = new List<StickyNoteData>
+            {
+                new StickyNoteData { Id = "A", Text = "a" },
+                new StickyNoteData { Id = "B", Text = "b" },
+                new StickyNoteData { Id = "C", Text = "c" }
+            };
+
+            StickyImportMergeResult result =
+                StickyImportMergePlanner.Calculate(null, backup);
+
+            Assert.AreEqual(3, result.AddedCount);
+            Assert.AreEqual(0, result.SkippedIdenticalCount);
+            Assert.AreEqual(3, result.MergedSnapshot.Count);
+            CollectionAssert.AreEqual(new[] { "A", "B", "C" },
+                result.MergedSnapshot.Select(note => note.Id).ToArray());
+            Assert.AreNotSame(backup[0], result.MergedSnapshot[0]);
+            Assert.IsFalse(result.MergedSnapshot[0].Visible);
+        }
+
+        [TestMethod]
+        public void StickyImportMergePlanner_SkipsCanonicalIdenticalNote()
+        {
+            StickyNoteData current = new StickyNoteData
+            {
+                Id = "same",
+                Text = "body",
+                X = 44,
+                Height = 310
+            };
+            StickyNoteData backup = current.CloneForPersistence();
+
+            StickyImportMergeResult result =
+                StickyImportMergePlanner.Calculate(
+                    new[] { current }, new[] { backup });
+
+            Assert.AreEqual(0, result.AddedCount);
+            Assert.AreEqual(1, result.SkippedIdenticalCount);
+            Assert.AreEqual(1, result.MergedSnapshot.Count);
+            Assert.AreEqual(44, current.X);
+            Assert.AreEqual(310, current.Height);
+        }
+
+        [TestMethod]
+        public void StickyImportMergePlanner_PreservesCurrentVisibilityOnSameContent()
+        {
+            StickyNoteData current = new StickyNoteData
+            {
+                Id = "visibility",
+                Text = "same",
+                Visible = true
+            };
+            StickyNoteData backup = current.CloneForPersistence();
+            backup.Visible = false;
+
+            StickyImportMergeResult result =
+                StickyImportMergePlanner.Calculate(
+                    new[] { current }, new[] { backup });
+
+            Assert.AreEqual(0, result.AddedCount);
+            Assert.AreEqual(1, result.SkippedIdenticalCount);
+            Assert.IsTrue(result.MergedSnapshot[0].Visible);
+        }
+
+        [TestMethod]
+        public void StickyImportMergePlanner_SeparatesSpatialChangesAndAppendsTabs()
+        {
+            StickyNoteData currentA = new StickyNoteData
+            {
+                Id = "current-a", Text = "same", X = 900, Y = 500,
+                TabOrder = 0, ReminderUtcTicks = 123
+            };
+            StickyNoteData currentB = new StickyNoteData
+            {
+                Id = "current-b", Text = "keep", TabOrder = 1
+            };
+            StickyNoteData backupA = currentA.CloneForPersistence();
+            backupA.X = 10;
+            backupA.Y = 20;
+            backupA.TabOrder = 0;
+            StickyNoteData backupX = new StickyNoteData
+            {
+                Id = "import-x", Text = "x", TabOrder = 0,
+                CreatedUtcTicks = 20, ReminderUtcTicks = 999
+            };
+            StickyNoteData backupY = new StickyNoteData
+            {
+                Id = "import-y", Text = "y", TabOrder = 1,
+                CreatedUtcTicks = 10, ReminderUtcTicks = 999
+            };
+
+            StickyImportMergeResult result =
+                StickyImportMergePlanner.Calculate(
+                    new[] { currentA, currentB },
+                    new[] { backupA, backupX, backupY });
+
+            Assert.AreEqual(2, result.AddedCount);
+            Assert.AreEqual(1, result.SkippedIdenticalCount);
+            Assert.AreEqual(0, result.ConflictCount);
+            Assert.AreEqual(900, Find(result.MergedSnapshot, "current-a").X);
+            Assert.AreEqual(500, Find(result.MergedSnapshot, "current-a").Y);
+            Assert.AreEqual(0, Find(result.MergedSnapshot, "current-a").TabOrder);
+            Assert.AreEqual(1, Find(result.MergedSnapshot, "current-b").TabOrder);
+            Assert.AreEqual(2, Find(result.MergedSnapshot, "import-x").TabOrder);
+            Assert.AreEqual(3, Find(result.MergedSnapshot, "import-y").TabOrder);
+            Assert.AreEqual(0, Find(result.MergedSnapshot, "import-x").ReminderUtcTicks);
+            Assert.AreEqual(0, Find(result.MergedSnapshot, "import-y").ReminderUtcTicks);
+        }
+
+        [TestMethod]
+        public void StickyImportMergePlanner_DetectsLogicalDivergenceOnly()
+        {
+            StickyNoteData current = new StickyNoteData
+            {
+                Id = "logical", Text = "current", X = 900, Y = 500
+            };
+            StickyNoteData backup = current.CloneForPersistence();
+            backup.Text = "imported";
+            backup.X = 10;
+            backup.Y = 20;
+
+            StickyImportMergeResult result =
+                StickyImportMergePlanner.Calculate(new[] { current },
+                    new[] { backup });
+
+            Assert.AreEqual(1, result.ConflictCount);
+            Assert.AreEqual("current", Find(result.MergedSnapshot,
+                "logical").Text);
+            StickyNoteData copy = result.MergedSnapshot.Single(
+                note => !String.Equals(note.Id, "logical",
+                    StringComparison.OrdinalIgnoreCase));
+            Assert.AreEqual("imported", copy.Text);
+            Assert.AreEqual(0, copy.ReminderUtcTicks);
+        }
+
+        [TestMethod]
+        public void StickyImportMergePlanner_PreservesDivergentVersionAndIsIdempotent()
+        {
+            StickyNoteData current = new StickyNoteData
+            {
+                Id = "same",
+                Text = "current",
+                X = 101
+            };
+            StickyNoteData backup = new StickyNoteData
+            {
+                Id = "same",
+                Text = "imported",
+                X = 202
+            };
+            List<StickyNoteData> currentSnapshot = new List<StickyNoteData>
+            {
+                current
+            };
+
+            StickyImportMergeResult first =
+                StickyImportMergePlanner.Calculate(currentSnapshot,
+                    new[] { backup });
+            Assert.AreEqual(1, first.AddedCount);
+            Assert.AreEqual(1, first.ConflictCount);
+            Assert.AreEqual(2, first.MergedSnapshot.Count);
+            Assert.AreEqual("current", Find(first.MergedSnapshot, "same").Text);
+            StickyNoteData firstCopy = first.MergedSnapshot.Single(
+                note => !String.Equals(note.Id, "same",
+                    StringComparison.OrdinalIgnoreCase));
+            Assert.AreEqual("imported", firstCopy.Text);
+            Assert.IsFalse(firstCopy.Visible);
+
+            StickyImportMergeResult second =
+                StickyImportMergePlanner.Calculate(first.MergedSnapshot,
+                    new[] { backup });
+            StickyImportMergeResult third =
+                StickyImportMergePlanner.Calculate(second.MergedSnapshot,
+                    new[] { backup });
+            Assert.AreEqual(2, second.MergedSnapshot.Count);
+            Assert.AreEqual(2, third.MergedSnapshot.Count);
+            Assert.IsFalse(second.Actions[0].Added);
+            Assert.IsFalse(third.Actions[0].Added);
+            Assert.AreEqual(firstCopy.Id,
+                second.MergedSnapshot.Single(note => note.Text == "imported").Id);
+            Assert.AreEqual("current", current.Text);
+        }
+
+        [TestMethod]
+        public void StickyImportMergePlanner_RetainsCompleteMixedDockGroup()
+        {
+            StickyNoteData ordinary = new StickyNoteData
+            {
+                Id = "ordinary", X = 10, Y = 20, Width = 420, Height = 230
+            };
+            StickyNoteData todo = new StickyNoteData
+            {
+                Id = "todo", IsTodoList = true, X = 10, Y = 250,
+                Width = 420, Height = 280
+            };
+            StickyNoteData schedule = new StickyNoteData
+            {
+                Id = "schedule", IsSchedule = true, X = 10, Y = 530,
+                Width = 420, Height = 360
+            };
+            List<StickyNoteData> backup = new List<StickyNoteData>
+            {
+                ordinary, todo, schedule
+            };
+            StickyDockGroups.ApplyOrderedGroup(backup);
+
+            StickyImportMergeResult result =
+                StickyImportMergePlanner.Calculate(null, backup);
+
+            Assert.AreEqual(3, result.AddedCount);
+            List<StickyNoteData> ordered = result.MergedSnapshot.OrderBy(
+                note => note.DockGroupOrder).ToList();
+            Assert.AreEqual(ordinary.Id, ordered[0].DockGroupId);
+            Assert.AreEqual(ordinary.Id, ordered[1].DockGroupId);
+            Assert.AreEqual(ordinary.Id, ordered[2].DockGroupId);
+            Assert.AreEqual(0, ordered[0].DockGroupOrder);
+            Assert.AreEqual(1, ordered[1].DockGroupOrder);
+            Assert.AreEqual(2, ordered[2].DockGroupOrder);
+            Assert.AreEqual(420, ordered[1].Width);
+            Assert.AreEqual(280, ordered[1].Height);
+            Assert.IsTrue(ordered[1].IsTodoList);
+            Assert.IsTrue(ordered[2].IsSchedule);
+        }
+
+        [TestMethod]
+        public void StickyImportMergePlanner_DetachesPartialGroupWithoutMovingCurrent()
+        {
+            StickyNoteData currentA = new StickyNoteData
+            {
+                Id = "A", X = 900, Y = 700, Height = 410,
+                DockGroupId = "current-group", DockGroupOrder = 0
+            };
+            StickyNoteData backupA = new StickyNoteData
+            {
+                Id = "A", X = 10, Y = 20, Height = 230
+            };
+            StickyNoteData backupB = new StickyNoteData
+            {
+                Id = "B", X = 10, Y = 250, Height = 250
+            };
+            StickyNoteData backupC = new StickyNoteData
+            {
+                Id = "C", X = 10, Y = 500, Height = 300
+            };
+            List<StickyNoteData> backup = new List<StickyNoteData>
+            {
+                backupA, backupB, backupC
+            };
+            StickyDockGroups.ApplyOrderedGroup(backup);
+
+            StickyImportMergeResult result =
+                StickyImportMergePlanner.Calculate(
+                    new[] { currentA }, backup);
+
+            StickyNoteData resultA = Find(result.MergedSnapshot, "A");
+            StickyNoteData resultB = Find(result.MergedSnapshot, "B");
+            StickyNoteData resultC = Find(result.MergedSnapshot, "C");
+            Assert.AreEqual(900, resultA.X);
+            Assert.AreEqual(700, resultA.Y);
+            Assert.AreEqual(410, resultA.Height);
+            Assert.AreEqual("current-group", resultA.DockGroupId);
+            Assert.AreEqual(String.Empty, resultB.DockGroupId);
+            Assert.AreEqual(String.Empty, resultB.DockParentId);
+            Assert.AreEqual(String.Empty, resultC.DockGroupId);
+            Assert.AreEqual(String.Empty, resultC.DockParentId);
+
+            StickyImportMergeResult repeated =
+                StickyImportMergePlanner.Calculate(result.MergedSnapshot,
+                    backup);
+            Assert.AreEqual(result.MergedSnapshot.Count,
+                repeated.MergedSnapshot.Count);
+        }
+
+        [TestMethod]
+        public void StickyImportMergePlanner_CurrentVisibilityWinsOnConflict()
+        {
+            StickyNoteData current = new StickyNoteData
+            {
+                Id = "visible", Visible = true, Text = "current"
+            };
+            StickyNoteData backup = current.CloneForPersistence();
+            backup.Visible = false;
+            backup.Text = "old";
+
+            StickyImportMergeResult result =
+                StickyImportMergePlanner.Calculate(
+                    new[] { current }, new[] { backup });
+
+            Assert.IsTrue(Find(result.MergedSnapshot, "visible").Visible);
+            Assert.AreEqual(2, result.MergedSnapshot.Count);
+            Assert.IsFalse(result.MergedSnapshot.Single(
+                note => !String.Equals(note.Id, "visible",
+                    StringComparison.OrdinalIgnoreCase)).Visible);
+        }
+
+        private static StickyNoteData Find(IList<StickyNoteData> notes,
+            string id)
+        {
+            return notes.Single(note => String.Equals(note.Id, id,
+                StringComparison.OrdinalIgnoreCase));
+        }
+
+        [TestMethod]
         public void PetStartupRules_ReleaseLoadingOnlyWhenReady()
         {
             Assert.IsFalse(PetStartupRules.CanReleaseStartupLoading(false, false));
@@ -76,48 +382,271 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void DailyNoteFeature_ProgressesDaysAndDetectsMissedDay()
+        public void PetBirthdayRule_ResolvesExclusiveBirthdayKinds()
         {
-            DailyNoteEntry entry = new DailyNoteEntry("day", "body");
-            DateTime firstDate = new DateTime(2026, 8, 28);
-            DailyNoteProgress progress = new DailyNoteProgress();
-
-            DailyNoteAction first = DailyNoteFeature.Decide(firstDate,
-                progress, entry);
-            Assert.AreEqual(DailyNoteActionKind.Create, first.Kind);
-            Assert.AreEqual(1, first.DayNumber);
-
-            DailyNoteProgress issued = DailyNoteFeature.MarkIssued(
-                progress, firstDate, first.DayNumber);
-            DailyNoteAction sameDay = DailyNoteFeature.Decide(firstDate,
-                issued, entry);
-            Assert.AreEqual(DailyNoteActionKind.AlreadyIssued, sameDay.Kind);
-
-            DailyNoteAction next = DailyNoteFeature.Decide(
-                firstDate.AddDays(1), issued, entry);
-            Assert.AreEqual(DailyNoteActionKind.Create, next.Kind);
-            Assert.AreEqual(2, next.DayNumber);
-
-            DailyNoteAction missed = DailyNoteFeature.Decide(
-                firstDate.AddDays(3), issued, entry);
-            Assert.AreEqual(DailyNoteActionKind.MissedDay, missed.Kind);
-            Assert.AreEqual(2, missed.DayNumber);
+            Assert.AreEqual(PetBirthdayKind.Penny,
+                PetBirthdayRule.Resolve(4, 22, 0, 0));
+            Assert.AreEqual(PetBirthdayKind.User,
+                PetBirthdayRule.Resolve(9, 10, 9, 10));
+            Assert.AreEqual(PetBirthdayKind.Shared,
+                PetBirthdayRule.Resolve(4, 22, 4, 22));
+            Assert.AreEqual(PetBirthdayKind.None,
+                PetBirthdayRule.Resolve(5, 5, 9, 10));
         }
 
         [TestMethod]
-        public void DailyNoteFeature_CompletesAfterThirtyDays()
+        public void PetBirthdayRule_ValidatesAndDerivesZodiac()
         {
-            DailyNoteProgress progress = new DailyNoteProgress
-            {
-                IssuedDay = 30,
-                LastIssuedLocalDate = new DateTime(2026, 9, 26),
-                Completed = true
-            };
-            DailyNoteAction action = DailyNoteFeature.Decide(
-                new DateTime(2026, 9, 27), progress, null);
+            Assert.IsFalse(PetBirthdayRule.IsValidBirthday(0, 0));
+            Assert.IsFalse(PetBirthdayRule.IsValidBirthday(13, 1));
+            Assert.IsTrue(PetBirthdayRule.IsValidBirthday(2, 29));
 
-            Assert.AreEqual(DailyNoteActionKind.ProgramComplete, action.Kind);
-            Assert.AreEqual(30, action.DayNumber);
+            ZodiacSign sign;
+            Assert.IsTrue(PetBirthdayRule.TryDeriveZodiac(4, 22,
+                out sign));
+            Assert.AreEqual(ZodiacSign.Taurus, sign);
+            Assert.IsTrue(PetBirthdayRule.TryDeriveZodiac(12, 22,
+                out sign));
+            Assert.AreEqual(ZodiacSign.Capricorn, sign);
+            Assert.IsFalse(PetBirthdayRule.TryDeriveZodiac(2, 30,
+                out sign));
+        }
+
+        [TestMethod]
+        public void DisplayGeometry_ConvertsAcrossMixedMonitorOrigins()
+        {
+            LogicalPoint localA = DisplayGeometry.PhysicalToLocal(
+                100, 50, 0, 0, 1.0);
+            Assert.AreEqual(100, localA.X);
+            Assert.AreEqual(50, localA.Y);
+
+            LogicalPoint localB = DisplayGeometry.PhysicalToLocal(
+                2020, 100, 1920, 0, 2.0);
+            Assert.AreEqual(50, localB.X);
+            Assert.AreEqual(50, localB.Y);
+
+            PhysicalPoint physicalNegative =
+                DisplayGeometry.LocalToPhysical(-30, 40, -1920, 0, 2.0);
+            Assert.AreEqual(-1980, physicalNegative.X);
+            Assert.AreEqual(80, physicalNegative.Y);
+        }
+
+        [TestMethod]
+        public void StickyPlacementMath_RoundTrip_100Percent()
+        {
+            StickyCanonicalPlacement placement =
+                StickyPlacementMath.FromPhysicalRect(
+                    "\\\\.\\DISPLAY1", 0, 0, 1.0,
+                    100, 50, 320, 300);
+            Assert.AreEqual("\\\\.\\DISPLAY1", placement.DisplayId);
+            Assert.AreEqual(100, placement.LocalX);
+            Assert.AreEqual(50, placement.LocalY);
+            Assert.AreEqual(320, placement.LocalWidth);
+            Assert.AreEqual(300, placement.LocalHeight);
+            Assert.AreEqual(100, placement.PhysicalLeft);
+            Assert.AreEqual(50, placement.PhysicalTop);
+
+            LogicalPoint local = DisplayGeometry.PhysicalToLocal(
+                100, 50, 0, 0, 1.0);
+            PhysicalPoint round = DisplayGeometry.LocalToPhysical(
+                local.X, local.Y, 0, 0, 1.0);
+            Assert.AreEqual(100, round.X);
+            Assert.AreEqual(50, round.Y);
+        }
+
+        [TestMethod]
+        public void StickyPlacementMath_RoundTrip_200PercentNonZeroOrigin()
+        {
+            StickyCanonicalPlacement placement =
+                StickyPlacementMath.FromPhysicalRect(
+                    "\\\\.\\DISPLAY2", 1920, 0, 2.0,
+                    2020, 100, 640, 600);
+            Assert.AreEqual("\\\\.\\DISPLAY2", placement.DisplayId);
+            Assert.AreEqual(50, placement.LocalX);
+            Assert.AreEqual(50, placement.LocalY);
+            Assert.AreEqual(320, placement.LocalWidth);
+            Assert.AreEqual(300, placement.LocalHeight);
+            Assert.AreEqual(2020, placement.PhysicalLeft);
+            Assert.AreEqual(100, placement.PhysicalTop);
+
+            LogicalPoint local = DisplayGeometry.PhysicalToLocal(
+                2020, 100, 1920, 0, 2.0);
+            PhysicalPoint round = DisplayGeometry.LocalToPhysical(
+                local.X, local.Y, 1920, 0, 2.0);
+            Assert.AreEqual(2020, round.X);
+            Assert.AreEqual(100, round.Y);
+        }
+
+        [TestMethod]
+        public void StickyPlacementMath_RoundTrip_NegativeOrigin()
+        {
+            StickyCanonicalPlacement placement =
+                StickyPlacementMath.FromPhysicalRect(
+                    "\\\\.\\DISPLAY3", -1920, 0, 2.0,
+                    -2010, 80, 640, 600);
+            Assert.AreEqual(-45, placement.LocalX);
+            Assert.AreEqual(40, placement.LocalY);
+            Assert.AreEqual(320, placement.LocalWidth);
+            Assert.AreEqual(300, placement.LocalHeight);
+            Assert.AreEqual(-2010, placement.PhysicalLeft);
+            Assert.AreEqual(80, placement.PhysicalTop);
+
+            LogicalPoint local = DisplayGeometry.PhysicalToLocal(
+                -2010, 80, -1920, 0, 2.0);
+            PhysicalPoint round = DisplayGeometry.LocalToPhysical(
+                local.X, local.Y, -1920, 0, 2.0);
+            Assert.AreEqual(-2010, round.X);
+            Assert.AreEqual(80, round.Y);
+        }
+
+        [TestMethod]
+        public void StickyPlacementMath_SpawnMatchesCanonicalSavedPlacement()
+        {
+            StickyCanonicalPlacement placement =
+                StickyPlacementMath.FromSpawn(
+                    "\\\\.\\DISPLAY1", 0, 0, 1.0,
+                    new DockRect(400, 200, 192, 208),
+                    new DockRect(0, 0, 1000, 800),
+                    new DockSize(320, 300), 12);
+            Assert.AreEqual(68, placement.LocalX);
+            Assert.AreEqual(154, placement.LocalY);
+            Assert.AreEqual(320, placement.LocalWidth);
+            Assert.AreEqual(300, placement.LocalHeight);
+            Assert.AreEqual(68, placement.PhysicalLeft);
+            Assert.AreEqual(154, placement.PhysicalTop);
+
+            StickyNoteData note = new StickyNoteData();
+            placement.ApplyTo(note);
+            Assert.AreEqual(placement.DisplayId, note.DisplayId);
+            Assert.AreEqual(placement.LocalX, note.LocalLogicalX);
+            Assert.AreEqual(placement.LocalY, note.LocalLogicalY);
+            Assert.AreEqual(placement.LocalWidth, note.LocalLogicalWidth);
+            Assert.AreEqual(placement.LocalHeight, note.LocalLogicalHeight);
+            Assert.AreEqual(placement.PhysicalLeft, note.X);
+            Assert.AreEqual(placement.PhysicalTop, note.Y);
+            Assert.AreEqual(placement.PhysicalWidth, note.Width);
+            Assert.AreEqual(placement.PhysicalHeight, note.Height);
+
+            StickyCanonicalPlacement restored =
+                StickyCanonicalPlacement.FromData(note);
+            Assert.AreEqual(placement.DisplayId, restored.DisplayId);
+            Assert.AreEqual(placement.LocalX, restored.LocalX);
+            Assert.AreEqual(placement.LocalY, restored.LocalY);
+            Assert.AreEqual(placement.LocalWidth, restored.LocalWidth);
+            Assert.AreEqual(placement.LocalHeight, restored.LocalHeight);
+            Assert.AreEqual(placement.PhysicalLeft, restored.PhysicalLeft);
+            Assert.AreEqual(placement.PhysicalTop, restored.PhysicalTop);
+            Assert.AreEqual(placement.PhysicalWidth, restored.PhysicalWidth);
+            Assert.AreEqual(placement.PhysicalHeight, restored.PhysicalHeight);
+        }
+
+        [TestMethod]
+        public void StickyPlacementMath_MoveAcrossDisplayChangesCanonical()
+        {
+            StickyCanonicalPlacement before =
+                StickyPlacementMath.FromPhysicalRect(
+                    "\\\\.\\DISPLAY1", 0, 0, 1.0,
+                    100, 50, 320, 300);
+
+            StickyCanonicalPlacement after =
+                StickyPlacementMath.FromPhysicalRect(
+                    "\\\\.\\DISPLAY2", 1920, 0, 2.0,
+                    2020, 100, 640, 600);
+
+            Assert.AreNotEqual(before.DisplayId, after.DisplayId);
+            Assert.AreEqual("\\\\.\\DISPLAY2", after.DisplayId);
+            Assert.AreEqual(50, after.LocalX);
+            Assert.AreEqual(50, after.LocalY);
+        }
+
+        [TestMethod]
+        public void StickyPlacementMath_SpawnStaysOnPetScreenAcrossDisplays()
+        {
+            // The pet lives on a 200% monitor at non-zero origin. The newly
+            // created sticky must fall inside that same monitor's work area,
+            // never on the primary monitor.
+            StickyCanonicalPlacement placement =
+                StickyPlacementMath.FromSpawn(
+                    "\\\\.\\DISPLAY2", 1920, 0, 2.0,
+                    new DockRect(2000, 50, 192, 208),
+                    new DockRect(1920, 0, 1280, 720),
+                    new DockSize(320, 300), 12);
+
+            Assert.AreEqual("\\\\.\\DISPLAY2", placement.DisplayId);
+            // B work area in local units is 0..640 x 0..360; the spawn must be
+            // fully inside it (local width 320, height 300).
+            Assert.IsTrue(placement.LocalX >= 0,
+                "spawn X must not leak before the pet screen");
+            Assert.IsTrue(placement.LocalX + placement.LocalWidth <= 640,
+                "spawn X must stay within the pet screen");
+            Assert.IsTrue(placement.LocalY >= 0,
+                "spawn Y must not leak above the pet screen");
+            Assert.IsTrue(placement.LocalY + placement.LocalHeight <= 360,
+                "spawn Y must stay within the pet screen");
+            // Compat physical position is on monitor B, to the right of B origin.
+            Assert.IsTrue(placement.PhysicalLeft >= 1920,
+                "compat physical position must remain on the pet screen");
+        }
+
+        [TestMethod]
+        public void StickyPlacementMath_NoGlobalLogicalShortcutInCoreGeometry()
+        {
+            string root = ResolveRepositoryRoot();
+            string[] candidates = new string[]
+            {
+                "Core/Display/DisplayGeometry.cs",
+                "Core/Display/StickyPlacementMath.cs",
+                "Core/StickyNotes/StickyDockGeometry.cs",
+                "Core/StickyNotes/StickyNoteModels.cs",
+                "Core/StickyNotes/StickyNoteCodec.cs"
+            };
+            foreach (string relative in candidates)
+            {
+                string path = Path.Combine(root, relative);
+                if (!File.Exists(path)) continue;
+                string text = File.ReadAllText(path);
+                Assert.IsFalse(text.Contains("globalPhysicalX"),
+                    relative + " reintroduced a global physical shortcut.");
+                Assert.IsFalse(text.Contains("globalLogical"),
+                    relative + " reintroduced a global logical shortcut.");
+                Assert.IsFalse(text.Contains("displayScale"),
+                    relative + " reintroduced a displayScale shortcut.");
+            }
+        }
+
+        private static string ResolveRepositoryRoot()
+        {
+            DirectoryInfo directory =
+                new DirectoryInfo(AppContext.BaseDirectory);
+            for (int depth = 0; depth < 6 && directory != null; depth++)
+            {
+                if (File.Exists(Path.Combine(
+                    directory.FullName, "PennyPet.sln")))
+                    return directory.FullName;
+                directory = directory.Parent;
+            }
+            return AppContext.BaseDirectory;
+        }
+
+        [TestMethod]
+        public void StickyDockGeometry_PetSideSpawnPrefersLeftThenClamps()
+        {
+            DockRect left = StickyDockGeometry.CalculatePetSideSpawnLocal(
+                new DockRect { Left = 400, Top = 200, Width = 192,
+                    Height = 208 },
+                new DockRect { Left = 0, Top = 0, Width = 1000,
+                    Height = 800 },
+                new DockSize { Width = 320, Height = 300 }, 12);
+            Assert.AreEqual(68, left.Left);
+            Assert.AreEqual(200, left.Top);
+
+            DockRect right = StickyDockGeometry.CalculatePetSideSpawnLocal(
+                new DockRect { Left = 20, Top = 200, Width = 192,
+                    Height = 208 },
+                new DockRect { Left = 0, Top = 0, Width = 600,
+                    Height = 800 },
+                new DockSize { Width = 320, Height = 300 }, 12);
+            Assert.AreEqual(224, right.Left);
         }
 
         [TestMethod]
@@ -213,6 +742,61 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyDockGeometry_LiveMemberResizeUsesStableStartBounds()
+        {
+            List<DockRect> start = new List<DockRect>
+            {
+                new DockRect(100, 100, 420, 300),
+                new DockRect(100, 400, 420, 300),
+                new DockRect(100, 700, 420, 300),
+                new DockRect(100, 1000, 420, 300)
+            };
+            int sourceHeight;
+            List<DockRect> firstGrow = StickyDockGeometry
+                .CalculateDockMemberResizeTargets(start, 0, 350,
+                    out sourceHeight);
+            Assert.AreEqual(350, sourceHeight);
+            Assert.AreEqual(3, firstGrow.Count);
+            Assert.AreEqual(450, firstGrow[0].Top);
+            Assert.AreEqual(750, firstGrow[1].Top);
+            Assert.AreEqual(1050, firstGrow[2].Top);
+            Assert.IsTrue(firstGrow.All(bounds => bounds.Height == 300));
+
+            List<DockRect> middleGrow = StickyDockGeometry
+                .CalculateDockMemberResizeTargets(start, 1, 380,
+                    out sourceHeight);
+            Assert.AreEqual(380, sourceHeight);
+            Assert.AreEqual(2, middleGrow.Count);
+            Assert.AreEqual(780, middleGrow[0].Top);
+            Assert.AreEqual(1080, middleGrow[1].Top);
+            Assert.IsTrue(middleGrow.All(bounds => bounds.Height == 300));
+
+            List<DockRect> middleShrink = StickyDockGeometry
+                .CalculateDockMemberResizeTargets(start, 1, 240,
+                    out sourceHeight);
+            Assert.AreEqual(240, sourceHeight);
+            Assert.AreEqual(640, middleShrink[0].Top);
+            Assert.AreEqual(940, middleShrink[1].Top);
+            StickyDockGeometry.CalculateDockMemberResizeTargets(start, 1, 50,
+                out sourceHeight);
+            Assert.AreEqual(220, sourceHeight);
+            StickyDockGeometry.CalculateDockMemberResizeTargets(start, 1, 900,
+                out sourceHeight);
+            Assert.AreEqual(700, sourceHeight);
+
+            List<DockRect> final = null;
+            int[] cycle = { 450, 250, 600, 300 };
+            for (int repeat = 0; repeat < 50; repeat++)
+                foreach (int requested in cycle)
+                    final = StickyDockGeometry.CalculateDockMemberResizeTargets(
+                        start, 1, requested, out sourceHeight);
+            Assert.AreEqual(300, sourceHeight);
+            Assert.AreEqual(700, final[0].Top);
+            Assert.AreEqual(1000, final[1].Top);
+            Assert.IsTrue(final.All(bounds => bounds.Height == 300));
+        }
+
+        [TestMethod]
         public void StickyDockGeometry_HeaderTranslationMatchesWindowsResults()
         {
             DockPoint delta = StickyDockGeometry
@@ -234,6 +818,53 @@ namespace PennyPet.Tests
 
             Assert.AreEqual(0, delta.X);
             Assert.AreEqual(200, delta.Y);
+        }
+
+        [TestMethod]
+        public void SideTabs_BalancedSplitPolicySingleSourceOfTruth()
+        {
+            int[] totals = new int[] { 0, 1, 2, 3, 4, 5, 11, 20, 101 };
+            foreach (int total in totals)
+            {
+                int left =
+                    StickyDockGeometry.CalculateBalancedLeftSideTabCount(total);
+                int right = total - left;
+                Assert.AreEqual(total, left + right);
+                Assert.IsTrue(Math.Abs(left - right) <= 1);
+                Assert.AreEqual((total + 1) / 2, left);
+                Assert.AreEqual(
+                    StickyDockGeometry.CalculateBalancedLeftSideTabCount(total),
+                    StickyDockGeometry.CalculateBalancedLeftSideTabCount(total));
+            }
+            Assert.IsNotNull(
+                typeof(StickyDockGeometry).GetMethod(
+                    "CalculateBalancedLeftSideTabCount",
+                    BindingFlags.Static | BindingFlags.NonPublic,
+                    null, new Type[] { typeof(int) }, null));
+            Assert.IsNull(
+                typeof(StickyDockGeometry).GetMethod(
+                    "CalculateLeftSideTabCount"));
+            Assert.IsNull(
+                typeof(StickyDockGeometry).GetMethod(
+                    "CalculatePreferredSideTabCount"));
+            Assert.IsTrue(StickyDockGeometry.IsBalancedSideTabSplit(6, 5));
+            Assert.IsFalse(StickyDockGeometry.IsBalancedSideTabSplit(4, 7));
+        }
+
+        [TestMethod]
+        public void WindowFacts_ScaleUsesWindowDpiAndStaysImmutable()
+        {
+            WindowFacts facts = new WindowFacts("w", "mdp:x",
+                "\\\\.\\DISPLAY1", new PhysicalRect(2020, 100, 640, 600),
+                192, 7, 318);
+            Assert.AreEqual(2.0, facts.Scale, 0.0001);
+            WindowFacts baseFacts = new WindowFacts("w", String.Empty,
+                String.Empty, new PhysicalRect(0, 0, 320, 300), 96, 0, 0);
+            Assert.AreEqual(1.0, baseFacts.Scale, 0.0001);
+            foreach (PropertyInfo property in
+                typeof(WindowFacts).GetProperties())
+                Assert.IsFalse(property.CanWrite,
+                    property.Name + " must stay read-only.");
         }
 
         [TestMethod]
@@ -327,6 +958,25 @@ namespace PennyPet.Tests
             Assert.AreSame(replacement, schedule.Next);
             Assert.AreEqual("note-a", replacement.SourceNoteId);
             Assert.IsNull(schedule.NextPreAlert);
+        }
+
+        [TestMethod]
+        public void ReminderSchedule_RemovesOnlyOrphanedLinkedNotes()
+        {
+            DateTime baseline = DateTime.UtcNow.AddHours(1);
+            ReminderSchedule schedule = new ReminderSchedule();
+            schedule.Add(baseline, "linked", "note-a");
+            schedule.Add(baseline.AddMinutes(1), "standalone");
+            schedule.Add(baseline.AddMinutes(2), "orphan", "note-missing");
+
+            int removed = schedule.RemoveLinkedNotesNotIn(
+                new HashSet<string>(new[] { "note-a" },
+                    StringComparer.OrdinalIgnoreCase));
+
+            Assert.AreEqual(1, removed);
+            Assert.IsNotNull(schedule.FindBySourceNoteId("note-a"));
+            Assert.IsNull(schedule.FindBySourceNoteId("note-missing"));
+            Assert.AreEqual(2, schedule.Count);
         }
 
         [TestMethod]
@@ -486,26 +1136,54 @@ namespace PennyPet.Tests
         public void StickyTabDropSession_DefersCommitAndUsesOpaqueSourceIdentity()
         {
             StickyTabDropSession session = new StickyTabDropSession();
-            StickyNoteData note = new StickyNoteData { Id = "drag-note" };
             object source = new object();
             int commits = 0;
 
-            session.Begin(note, source);
-            Assert.AreSame(note, session.ActiveNote("DRAG-NOTE"));
+            session.Begin("drag-note", source);
+            Assert.IsTrue(session.IsActiveNote("DRAG-NOTE"));
+            Assert.AreEqual("drag-note", session.ActiveNoteId);
             Assert.IsTrue(session.IsSource(source));
             Assert.IsFalse(session.IsSource(new object()));
-            Assert.IsTrue(session.QueueCommit(note,
+            Assert.IsFalse(session.QueueCommit("other-note",
+                delegate { commits++; }));
+            Assert.IsTrue(session.QueueCommit("DRAG-NOTE",
                 delegate { commits++; }));
             Assert.AreEqual(0, commits);
-            Assert.IsTrue(session.Complete(note));
+            Assert.IsFalse(session.Complete("other-note"));
+            Assert.IsTrue(session.Complete("DRAG-NOTE"));
             Assert.AreEqual(1, commits);
-            Assert.IsNull(session.CurrentNote);
+            Assert.IsTrue(String.IsNullOrEmpty(session.ActiveNoteId));
             Assert.IsNull(session.Source);
-            Assert.IsFalse(session.Complete(note));
+            Assert.IsFalse(session.Complete("DRAG-NOTE"));
         }
 
         [TestMethod]
-        public void StickyNoteCodec_RoundTripsVersionNineWithoutWindowsTypes()
+        public void SideTabSnapshot_DetachesDisplayFactsFromCanonicalNote()
+        {
+            StickyNoteData note = new StickyNoteData
+            {
+                Id = "side-note",
+                Title = "初始标题",
+                ColorArgb = unchecked((int)0xFF112233),
+                IsTodoList = true,
+                Visible = false
+            };
+
+            SideTabSnapshot snapshot = SideTabSnapshot.FromData(note);
+            note.Title = "后续标题";
+            note.ColorArgb = unchecked((int)0xFF445566);
+            note.IsTodoList = false;
+            note.Visible = true;
+
+            Assert.AreEqual("side-note", snapshot.NoteId);
+            Assert.AreEqual("初始标题", snapshot.DisplayTitle);
+            Assert.AreEqual(unchecked((int)0xFF112233), snapshot.ColorArgb);
+            Assert.IsTrue(snapshot.IsTodoList);
+            Assert.IsFalse(snapshot.Visible);
+        }
+
+        [TestMethod]
+        public void StickyNoteCodec_RoundTripsCurrentVersionWithoutWindowsTypes()
         {
             StickyNoteData source = new StickyNoteData
             {
@@ -565,6 +1243,209 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyNoteCodec_V11RoundTripsPreferredPlacement()
+        {
+            StickyNoteData source = new StickyNoteData
+            {
+                Id = "v11-preferred",
+                DisplayId = "\\\\.\\DISPLAY2",
+                LocalLogicalX = -150,
+                LocalLogicalY = 40,
+                LocalLogicalWidth = 320,
+                LocalLogicalHeight = 300,
+                PreferredDisplayTargetKey = "mdp:home",
+                PreferredLocalLogicalX = -150,
+                PreferredLocalLogicalY = 40,
+                PreferredLocalLogicalWidth = 320,
+                PreferredLocalLogicalHeight = 300
+            };
+            string line = StickyNoteCodec.SerializeLine(source);
+            Assert.IsTrue(line.StartsWith("11|", StringComparison.Ordinal));
+            Assert.AreEqual(StickyNoteCodec.CurrentFieldCount,
+                line.Split('|').Length);
+
+            StickyNoteData restored = StickyNoteCodec.ParseLine(line);
+            Assert.AreEqual("mdp:home",
+                restored.PreferredDisplayTargetKey);
+            Assert.AreEqual(-150, restored.PreferredLocalLogicalX);
+            Assert.AreEqual(40, restored.PreferredLocalLogicalY);
+            Assert.AreEqual(320, restored.PreferredLocalLogicalWidth);
+            Assert.AreEqual(300, restored.PreferredLocalLogicalHeight);
+        }
+
+        [TestMethod]
+        public void StickyNoteCodec_V11InvalidPreferredKeyClearsLocalRect()
+        {
+            StickyNoteData note = new StickyNoteData
+            {
+                Id = "v11-invalid-key",
+                PreferredDisplayTargetKey = String.Empty,
+                PreferredLocalLogicalX = 10,
+                PreferredLocalLogicalY = 20,
+                PreferredLocalLogicalWidth = 320,
+                PreferredLocalLogicalHeight = 300
+            };
+            StickyNoteData restored = StickyNoteCodec.ParseLine(
+                StickyNoteCodec.SerializeLine(note));
+            Assert.AreEqual(String.Empty,
+                restored.PreferredDisplayTargetKey);
+            Assert.AreEqual(0, restored.PreferredLocalLogicalX);
+            Assert.AreEqual(0, restored.PreferredLocalLogicalY);
+            Assert.AreEqual(0, restored.PreferredLocalLogicalWidth);
+            Assert.AreEqual(0, restored.PreferredLocalLogicalHeight);
+        }
+
+        [TestMethod]
+        public void StickyNoteCodec_V11HugePreferredSizeIsClamped()
+        {
+            StickyNoteData note = new StickyNoteData
+            {
+                Id = "v11-huge",
+                PreferredDisplayTargetKey = "mdp:huge",
+                PreferredLocalLogicalWidth = 123456789,
+                PreferredLocalLogicalHeight = 300
+            };
+            StickyNoteData restored = StickyNoteCodec.ParseLine(
+                StickyNoteCodec.SerializeLine(note));
+            Assert.AreEqual(StickyNoteCodec.MaximumLocalLogicalValue,
+                restored.PreferredLocalLogicalWidth);
+            Assert.AreEqual(300, restored.PreferredLocalLogicalHeight);
+        }
+
+        [TestMethod]
+        public void StickyNoteCodec_V11KeyWithNonPositiveSizeDegradesToUnset()
+        {
+            StickyNoteData note = new StickyNoteData
+            {
+                Id = "v11-negative",
+                PreferredDisplayTargetKey = "mdp:negative",
+                PreferredLocalLogicalX = 5,
+                PreferredLocalLogicalY = 6,
+                PreferredLocalLogicalWidth = 320,
+                PreferredLocalLogicalHeight = -987654321
+            };
+            StickyNoteData restored = StickyNoteCodec.ParseLine(
+                StickyNoteCodec.SerializeLine(note));
+            Assert.AreEqual(String.Empty,
+                restored.PreferredDisplayTargetKey);
+            Assert.AreEqual(0, restored.PreferredLocalLogicalX);
+            Assert.AreEqual(0, restored.PreferredLocalLogicalY);
+            Assert.AreEqual(0, restored.PreferredLocalLogicalWidth);
+            Assert.AreEqual(0, restored.PreferredLocalLogicalHeight);
+        }
+
+        [TestMethod]
+        public void StickyPlacementRules_MigratesV10WhenDisplayResolves()
+        {
+            StickyNoteData note = new StickyNoteData
+            {
+                Id = "migrate",
+                DisplayId = "\\\\.\\DISPLAY2",
+                LocalLogicalX = -150,
+                LocalLogicalY = 40,
+                LocalLogicalWidth = 320,
+                LocalLogicalHeight = 300
+            };
+            DisplayTopologySnapshot topology = new DisplayTopologySnapshot(0,
+                new[]
+                {
+                    new DisplaySurfaceSnapshot("surface-2",
+                        "\\\\.\\DISPLAY2",
+                        new PhysicalRect(1920, 0, 1920, 1080),
+                        new PhysicalRect(1920, 0, 1920, 1040), false, 0,
+                        new[]
+                        {
+                            new DisplayTargetIdentity("mdp:screen-b", true,
+                                String.Empty, String.Empty, 0, 0, 0)
+                        })
+                });
+
+            Assert.IsTrue(
+                StickyPlacementRules.MigrateV10Preferred(note, topology));
+            Assert.AreEqual("mdp:screen-b",
+                note.PreferredDisplayTargetKey);
+            Assert.AreEqual(-150, note.PreferredLocalLogicalX);
+            Assert.AreEqual(40, note.PreferredLocalLogicalY);
+            Assert.AreEqual(320, note.PreferredLocalLogicalWidth);
+            Assert.AreEqual(300, note.PreferredLocalLogicalHeight);
+        }
+
+        [TestMethod]
+        public void StickyPlacementRules_DoesNotMigrateMissingDisplayOrExistingPreference()
+        {
+            DisplayTopologySnapshot topology = new DisplayTopologySnapshot(0,
+                new[]
+                {
+                    new DisplaySurfaceSnapshot("surface-1",
+                        "\\\\.\\DISPLAY1",
+                        new PhysicalRect(0, 0, 1920, 1080),
+                        new PhysicalRect(0, 0, 1920, 1040), true, 0,
+                        new[]
+                        {
+                            new DisplayTargetIdentity("mdp:a", true,
+                                String.Empty, String.Empty, 0, 0, 0)
+                        })
+                });
+
+            StickyNoteData missing = new StickyNoteData
+            {
+                Id = "missing",
+                DisplayId = "\\\\.\\DISPLAY9",
+                LocalLogicalX = 5,
+                LocalLogicalY = 6,
+                LocalLogicalWidth = 320,
+                LocalLogicalHeight = 300
+            };
+            Assert.IsFalse(
+                StickyPlacementRules.MigrateV10Preferred(missing, topology));
+            Assert.AreEqual(String.Empty,
+                missing.PreferredDisplayTargetKey);
+
+            StickyNoteData existing = new StickyNoteData
+            {
+                Id = "existing",
+                DisplayId = "\\\\.\\DISPLAY1",
+                LocalLogicalX = 5,
+                LocalLogicalY = 6,
+                LocalLogicalWidth = 320,
+                LocalLogicalHeight = 300,
+                PreferredDisplayTargetKey = "mdp:keep",
+                PreferredLocalLogicalWidth = 280,
+                PreferredLocalLogicalHeight = 260
+            };
+            Assert.IsFalse(
+                StickyPlacementRules.MigrateV10Preferred(existing, topology));
+            Assert.AreEqual("mdp:keep",
+                existing.PreferredDisplayTargetKey);
+            Assert.AreEqual(280, existing.PreferredLocalLogicalWidth);
+        }
+
+        [TestMethod]
+        public void StickyPlacementRules_OnlyUserReasonsCommitPreferred()
+        {
+            Assert.IsTrue(StickyPlacementRules.CanCommitPreferred(
+                PlacementReason.UserMoveCommit));
+            Assert.IsTrue(StickyPlacementRules.CanCommitPreferred(
+                PlacementReason.UserResizeCommit));
+            Assert.IsTrue(StickyPlacementRules.CanCommitPreferred(
+                PlacementReason.Spawn));
+            Assert.IsTrue(StickyPlacementRules.CanCommitPreferred(
+                PlacementReason.DockCommit));
+            Assert.IsTrue(StickyPlacementRules.CanCommitPreferred(
+                PlacementReason.ExpandAndTile));
+            Assert.IsFalse(StickyPlacementRules.CanCommitPreferred(
+                PlacementReason.Restore));
+            Assert.IsFalse(StickyPlacementRules.CanCommitPreferred(
+                PlacementReason.TemporaryRehome));
+            Assert.IsFalse(StickyPlacementRules.CanCommitPreferred(
+                PlacementReason.PreferredDisplayReturned));
+            Assert.IsFalse(StickyPlacementRules.CanCommitPreferred(
+                PlacementReason.DockLiveFollower));
+            Assert.IsFalse(StickyPlacementRules.CanCommitPreferred(
+                PlacementReason.Recovery));
+        }
+
+        [TestMethod]
         [DataRow(1)]
         [DataRow(2)]
         [DataRow(3)]
@@ -574,6 +1455,8 @@ namespace PennyPet.Tests
         [DataRow(7)]
         [DataRow(8)]
         [DataRow(9)]
+        [DataRow(10)]
+        [DataRow(11)]
         public void StickyNoteCodec_LoadsEveryHistoricalGoldenFixture(
             int version)
         {
@@ -604,7 +1487,7 @@ namespace PennyPet.Tests
                 Assert.AreEqual("group-root", restored.DockGroupId);
                 Assert.AreEqual(3, restored.DockGroupOrder);
             }
-            if (version == 9)
+            if (version >= 9)
             {
                 Assert.IsTrue(restored.IsSchedule);
                 Assert.IsFalse(restored.IsTodoList);
@@ -612,6 +1495,249 @@ namespace PennyPet.Tests
                 Assert.AreEqual("2030 schedule",
                     restored.ScheduleItems[0].Text);
             }
+            if (version >= 10)
+            {
+                Assert.AreEqual("\\\\.\\DISPLAY1", restored.DisplayId);
+                Assert.AreEqual(10, restored.LocalLogicalX);
+                Assert.AreEqual(20, restored.LocalLogicalY);
+                Assert.AreEqual(300, restored.LocalLogicalWidth);
+                Assert.AreEqual(240, restored.LocalLogicalHeight);
+            }
+            if (version >= 11)
+            {
+                Assert.AreEqual("mdp:legacy-1",
+                    restored.PreferredDisplayTargetKey);
+                Assert.AreEqual(10, restored.PreferredLocalLogicalX);
+                Assert.AreEqual(20, restored.PreferredLocalLogicalY);
+                Assert.AreEqual(300, restored.PreferredLocalLogicalWidth);
+                Assert.AreEqual(240, restored.PreferredLocalLogicalHeight);
+            }
+        }
+
+        [TestMethod]
+        public void FutureStickyFixture_UsesTheNextVersionAndOpaquePayload()
+        {
+            string fixture = Path.Combine(AppContext.BaseDirectory,
+                "Tests", "Fixtures", "sticky-vFuture.txt");
+            int futureVersion = StickyNoteCodec.CurrentVersion + 1;
+            string line = File.ReadAllText(fixture, Encoding.UTF8).Trim()
+                .Replace("{VERSION}", futureVersion.ToString());
+
+            Assert.AreEqual(futureVersion.ToString(),
+                line.Substring(0, line.IndexOf('|')));
+            Assert.IsNull(StickyNoteCodec.ParseLine(line),
+                "The current codec must not interpret a future payload.");
+        }
+
+        [TestMethod]
+        public void StickyImportBackupValidator_AcceptsHistoricalCodecFixtures()
+        {
+            for (int version = 1; version <= StickyNoteCodec.CurrentVersion;
+                version++)
+            {
+                string fixture = Path.Combine(AppContext.BaseDirectory,
+                    "Tests", "Fixtures", "sticky-v" + version + ".txt");
+                StickyImportValidationResult result =
+                    StickyImportBackupValidator.Validate(new[]
+                    {
+                        File.ReadAllText(fixture, Encoding.UTF8).Trim()
+                    });
+                Assert.IsTrue(result.Succeeded,
+                    "Fixture v" + version + " should validate: " +
+                    result.ErrorMessage);
+                Assert.AreEqual(1, result.Notes.Count);
+            }
+        }
+
+        [TestMethod]
+        public void CurrentCodecOutput_IsAcceptedByImportValidator()
+        {
+            StickyNoteData note = new StickyNoteData { Id = "current-codec" };
+            string line = StickyNoteCodec.SerializeLine(note);
+
+            StickyImportValidationResult result =
+                StickyImportBackupValidator.Validate(new[] { line });
+
+            Assert.IsTrue(result.Succeeded, result.ErrorMessage);
+            Assert.AreEqual(StickyNoteCodec.CurrentFieldCount,
+                line.Split('|').Length);
+            Assert.AreEqual(1, result.Notes.Count);
+        }
+
+        [TestMethod]
+        public void V10Fixture_IsAccepted()
+        {
+            string fixture = Path.Combine(AppContext.BaseDirectory,
+                "Tests", "Fixtures", "sticky-v10.txt");
+
+            StickyImportValidationResult result =
+                StickyImportBackupValidator.Validate(new[]
+                {
+                    File.ReadAllText(fixture, Encoding.UTF8).Trim()
+                });
+
+            Assert.IsTrue(result.Succeeded, result.ErrorMessage);
+            Assert.AreEqual(1, result.Notes.Count);
+            Assert.AreEqual("legacy-v10", result.Notes[0].Id);
+        }
+
+        [TestMethod]
+        public void V10CanonicalPlacement_RoundTripsThroughStrictBackupValidator()
+        {
+            StickyNoteData note = new StickyNoteData
+            {
+                Id = "v10-canonical",
+                DisplayId = "\\\\.\\DISPLAY3",
+                LocalLogicalX = -150,
+                LocalLogicalY = 40,
+                LocalLogicalWidth = 320,
+                LocalLogicalHeight = 300
+            };
+
+            StickyImportValidationResult result =
+                StickyImportBackupValidator.Validate(new[]
+                {
+                    StickyNoteCodec.SerializeLine(note)
+                });
+
+            Assert.IsTrue(result.Succeeded, result.ErrorMessage);
+            StickyNoteData restored = result.Notes.Single();
+            Assert.AreEqual(note.DisplayId, restored.DisplayId);
+            Assert.AreEqual(note.LocalLogicalX, restored.LocalLogicalX);
+            Assert.AreEqual(note.LocalLogicalY, restored.LocalLogicalY);
+            Assert.AreEqual(note.LocalLogicalWidth,
+                restored.LocalLogicalWidth);
+            Assert.AreEqual(note.LocalLogicalHeight,
+                restored.LocalLogicalHeight);
+        }
+
+        [TestMethod]
+        public void V10MalformedCanonicalFields_AreRejected()
+        {
+            StickyNoteData note = new StickyNoteData
+            {
+                Id = "v10-malformed",
+                DisplayId = "\\\\.\\DISPLAY1",
+                LocalLogicalX = 10,
+                LocalLogicalY = 20,
+                LocalLogicalWidth = 320,
+                LocalLogicalHeight = 300
+            };
+            string[] valid = StickyNoteCodec.SerializeLine(note).Split('|');
+            List<string[]> malformed = new List<string[]>();
+
+            string[] badDisplayEncoding = (string[])valid.Clone();
+            badDisplayEncoding[27] = "%%%";
+            malformed.Add(badDisplayEncoding);
+
+            string[] oversizedDisplayId = (string[])valid.Clone();
+            oversizedDisplayId[27] = Convert.ToBase64String(
+                Encoding.UTF8.GetBytes(new String('D',
+                    StickyNoteCodec.MaximumDisplayIdCharacters + 1)));
+            malformed.Add(oversizedDisplayId);
+
+            string[] incompleteLegacy = (string[])valid.Clone();
+            incompleteLegacy[27] = String.Empty;
+            malformed.Add(incompleteLegacy);
+
+            string[] whitespaceDisplayId = (string[])valid.Clone();
+            whitespaceDisplayId[27] = Convert.ToBase64String(
+                Encoding.UTF8.GetBytes(" "));
+            malformed.Add(whitespaceDisplayId);
+
+            string[] zeroWidth = (string[])valid.Clone();
+            zeroWidth[30] = "0";
+            malformed.Add(zeroWidth);
+
+            string[] oversizedHeight = (string[])valid.Clone();
+            oversizedHeight[31] = (StickyNoteCodec.MaximumLocalLogicalValue + 1)
+                .ToString(System.Globalization.CultureInfo.InvariantCulture);
+            malformed.Add(oversizedHeight);
+
+            string[] nonNumericX = (string[])valid.Clone();
+            nonNumericX[28] = "not-a-number";
+            malformed.Add(nonNumericX);
+
+            string[] outOfRangeY = (string[])valid.Clone();
+            outOfRangeY[29] = (StickyNoteCodec.MaximumLocalLogicalValue + 1)
+                .ToString(System.Globalization.CultureInfo.InvariantCulture);
+            malformed.Add(outOfRangeY);
+
+            foreach (string[] fields in malformed)
+            {
+                StickyImportValidationResult result =
+                    StickyImportBackupValidator.Validate(new[]
+                    {
+                        String.Join("|", fields)
+                    });
+                Assert.IsFalse(result.Succeeded,
+                    "Malformed v10 canonical fields must fail strict validation.");
+                Assert.AreEqual(0, result.Notes.Count);
+            }
+        }
+
+        [TestMethod]
+        public void StickyImportBackupValidator_RejectsMalformedAndDuplicateBackup()
+        {
+            StickyNoteData note = new StickyNoteData { Id = "backup-note" };
+            string valid = StickyNoteCodec.SerializeLine(note);
+            string[] fields = valid.Split('|');
+
+            string missingId = String.Join("|", fields.Select(
+                (value, index) => index == 1 ? String.Empty : value));
+            StickyImportValidationResult missing =
+                StickyImportBackupValidator.Validate(new[] { missingId });
+            Assert.IsFalse(missing.Succeeded);
+            Assert.AreEqual(0, missing.Notes.Count);
+
+            string badNumber = String.Join("|", fields.Select(
+                (value, index) => index == 7 ? "not-a-number" : value));
+            StickyImportValidationResult malformed =
+                StickyImportBackupValidator.Validate(new[] { badNumber });
+            Assert.IsFalse(malformed.Succeeded);
+            Assert.AreEqual(0, malformed.Notes.Count);
+
+            StickyImportValidationResult duplicate =
+                StickyImportBackupValidator.Validate(new[] { valid, valid });
+            Assert.IsFalse(duplicate.Succeeded);
+            Assert.AreEqual(0, duplicate.Notes.Count);
+
+            string[] unsupportedFields = (string[])fields.Clone();
+            unsupportedFields[0] = "42";
+            StickyImportValidationResult unsupported =
+                StickyImportBackupValidator.Validate(new[]
+                {
+                    String.Join("|", unsupportedFields)
+                });
+            Assert.IsFalse(unsupported.Succeeded);
+
+            string[] encodedFields = (string[])fields.Clone();
+            encodedFields[26] = "%%%";
+            StickyImportValidationResult badEncoding =
+                StickyImportBackupValidator.Validate(new[]
+                {
+                    String.Join("|", encodedFields)
+                });
+            Assert.IsFalse(badEncoding.Succeeded);
+        }
+
+        [TestMethod]
+        public void StickyImportBackupValidator_RejectsCorruptedV1Body()
+        {
+            string prefix = "1|v1-body|1|1|-1122868|10|20|300|240|" +
+                "637000000000000000|637000000000000001|0|";
+            StickyImportValidationResult validEmpty =
+                StickyImportBackupValidator.Validate(new[] { prefix });
+            Assert.IsTrue(validEmpty.Succeeded);
+
+            StickyImportValidationResult malformed =
+                StickyImportBackupValidator.Validate(new[] { prefix + "%%%" });
+            Assert.IsFalse(malformed.Succeeded);
+
+            string missingBody = prefix.Substring(0, prefix.Length - 1);
+            StickyImportValidationResult missing =
+                StickyImportBackupValidator.Validate(new[] { missingBody });
+            Assert.IsFalse(missing.Succeeded);
         }
 
         [TestMethod]
@@ -629,8 +1755,56 @@ namespace PennyPet.Tests
             controller.TypingRow = PetAnimationController.ThinkingRow;
             Assert.AreEqual(PetAnimationController.ThinkingRow,
                 controller.ChooseRow(false, false, true, false, allRowsLoaded));
+
+            Assert.IsTrue(controller.TryStartOrdinaryPoke(
+                PetAnimationController.HoverRow));
+            Assert.IsFalse(controller.TryStartOrdinaryPoke(
+                PetAnimationController.WaitingRow));
+            Assert.AreEqual(PetAnimationController.HoverRow,
+                controller.ChooseRow(false, false, true, false, allRowsLoaded));
+            Assert.IsTrue(controller.TryStartEasterEgg(
+                PetAnimationController.FailedRow));
+            Assert.AreEqual(PetInteractionAnimationKind.EasterEgg,
+                controller.InteractionAnimationKind);
+            Assert.AreEqual(PetAnimationController.FailedRow,
+                controller.ChooseRow(false, false, true, false, allRowsLoaded));
+
+            controller.ReminderAttentionActive = true;
+            Assert.AreEqual(PetAnimationController.NotificationRow,
+                controller.ChooseRow(false, true, true, false, allRowsLoaded));
+            controller.CancelInteractionAnimation();
+            Assert.IsFalse(controller.TryStartOrdinaryPoke(
+                PetAnimationController.HoverRow));
+            controller.ReminderAttentionActive = false;
+            Assert.IsTrue(controller.TryStartOrdinaryPoke(
+                PetAnimationController.HoverRow));
+            controller.CompleteInteractionAnimation();
+            Assert.IsTrue(controller.TryStartOrdinaryPoke(
+                PetAnimationController.WaitingRow));
             Assert.IsFalse(PetAnimationController.MovementStartsDrag(4, 4));
             Assert.IsTrue(PetAnimationController.MovementStartsDrag(6, 0));
+        }
+
+        [TestMethod]
+        public void PokeBurstTracker_TriggersOnlyAtFiftyUntilAPause()
+        {
+            DateTime start = new DateTime(2035, 1, 1, 0, 0, 0,
+                DateTimeKind.Utc);
+            PetPokeBurstTracker tracker = new PetPokeBurstTracker();
+            for (int poke = 1; poke < PetPokeBurstTracker.TargetCount; poke++)
+                Assert.IsFalse(tracker.RegisterPoke(
+                    start.AddMilliseconds((poke - 1) * 100)));
+            Assert.IsTrue(tracker.RegisterPoke(start.AddMilliseconds(4900)));
+            Assert.IsFalse(tracker.RegisterPoke(start.AddMilliseconds(5000)));
+            Assert.IsFalse(tracker.RegisterPoke(start.AddMilliseconds(5100)));
+
+            PetPokeBurstTracker reset = new PetPokeBurstTracker();
+            for (int poke = 1; poke < PetPokeBurstTracker.TargetCount; poke++)
+                Assert.IsFalse(reset.RegisterPoke(
+                    start.AddMilliseconds((poke - 1) * 100)));
+            Assert.IsFalse(reset.RegisterPoke(start.AddMilliseconds(
+                (PetPokeBurstTracker.TargetCount - 2) * 100 +
+                PetPokeBurstTracker.MaxGapMilliseconds + 1)));
         }
 
         [TestMethod]
@@ -706,6 +1880,987 @@ namespace PennyPet.Tests
             Assert.IsFalse(
                 PetKeyboardPrivacyPolicy.ShouldSuppressCapturedInput(
                     false, true));
+            Assert.IsFalse(
+                PetKeyboardPrivacyPolicy.ShouldSuppressOwnApplicationInput(
+                    false, false));
+            Assert.IsFalse(
+                PetKeyboardPrivacyPolicy.ShouldSuppressOwnApplicationInput(
+                    true, true));
+            Assert.IsTrue(
+                PetKeyboardPrivacyPolicy.ShouldSuppressOwnApplicationInput(
+                    true, false));
+        }
+
+        [TestMethod]
+        public void PetMessagePolicy_PreservesReminderPriorityAndSilentMode()
+        {
+            Assert.IsTrue(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.Hover, PetMessageKind.Feedback, false));
+            Assert.IsFalse(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.ReminderPreAlert,
+                PetMessageKind.Feedback, false));
+            Assert.IsTrue(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.ReminderPreAlert,
+                PetMessageKind.ReminderDue, false));
+            Assert.IsFalse(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.ReminderDue,
+                PetMessageKind.Feedback, false));
+            Assert.IsFalse(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.ReminderDue,
+                PetMessageKind.DailyGreeting, false));
+            Assert.IsFalse(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.ReminderDue,
+                PetMessageKind.Discovery, false));
+            Assert.IsFalse(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.ReminderDue,
+                PetMessageKind.Hover, false));
+            Assert.IsFalse(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.ReminderDue,
+                PetMessageKind.EasterEgg, false));
+            Assert.IsFalse(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.ReminderPreAlert,
+                PetMessageKind.EasterEgg, false));
+            Assert.IsFalse(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.EasterEgg,
+                PetMessageKind.DailyGreeting, false));
+            Assert.IsFalse(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.EasterEgg,
+                PetMessageKind.Feedback, false));
+            Assert.IsTrue(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.EasterEgg,
+                PetMessageKind.ReminderPreAlert, false));
+            Assert.IsTrue(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.DailyGreeting,
+                PetMessageKind.EasterEgg, false));
+            Assert.IsTrue(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.EasterEgg,
+                PetMessageKind.ReminderDue, false));
+            Assert.IsTrue(PetMessagePolicy.ShouldSuppress(
+                PetMessageKind.DailyGreeting, true));
+            Assert.IsFalse(PetMessagePolicy.ShouldSuppress(
+                PetMessageKind.Feedback, true));
+            Assert.IsTrue(PetMessagePolicy.ShouldSuppress(
+                PetMessageKind.SmallTalk, true));
+            Assert.IsTrue(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.SmallTalk, PetMessageKind.Feedback, false));
+            Assert.IsFalse(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.SmallTalk, PetMessageKind.Hover, false));
+            Assert.IsFalse(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.SmallTalk, PetMessageKind.Discovery, false));
+            Assert.IsTrue(PetMessagePolicy.ShouldReplace(
+                PetMessageKind.SmallTalk, PetMessageKind.ReminderDue, false));
+        }
+
+        [TestMethod]
+        public void PetSmallTalkPolicy_WindowQuotaGapAndSpeakChance()
+        {
+            DateTime start = new DateTime(2035, 1, 1, 0, 0, 0,
+                DateTimeKind.Utc);
+            Assert.IsTrue(PetSmallTalkPolicy.IsWindowExpired(
+                default(DateTime), start));
+            Assert.IsFalse(PetSmallTalkPolicy.IsWindowExpired(start,
+                start.AddMilliseconds(
+                    PetSmallTalkPolicy.WindowMilliseconds - 1)));
+            Assert.IsTrue(PetSmallTalkPolicy.IsWindowExpired(start,
+                start.AddMilliseconds(
+                    PetSmallTalkPolicy.WindowMilliseconds)));
+            Assert.IsTrue(PetSmallTalkPolicy.HasSuccessfulGapElapsed(
+                default(DateTime), start));
+            Assert.IsFalse(PetSmallTalkPolicy.HasSuccessfulGapElapsed(start,
+                start.AddMilliseconds(
+                    PetSmallTalkPolicy.SuccessfulGapMilliseconds - 1)));
+            Assert.IsTrue(PetSmallTalkPolicy.HasSuccessfulGapElapsed(start,
+                start.AddMilliseconds(
+                    PetSmallTalkPolicy.SuccessfulGapMilliseconds)));
+            Assert.IsTrue(PetSmallTalkPolicy.ShouldSpeak(0));
+            Assert.IsTrue(PetSmallTalkPolicy.ShouldSpeak(
+                PetSmallTalkPolicy.SpeakChancePercent - 1));
+            Assert.IsFalse(PetSmallTalkPolicy.ShouldSpeak(
+                PetSmallTalkPolicy.SpeakChancePercent));
+        }
+
+        [TestMethod]
+        public void PetHoverStabilityRules_HysteresisAndSuppression()
+        {
+            DateTime start = new DateTime(2035, 1, 1, 0, 0, 0,
+                DateTimeKind.Utc);
+            Assert.IsFalse(PetHoverStabilityRules.ShouldCommitEnter(start,
+                start.AddMilliseconds(
+                    PetHoverStabilityRules.EnterDwellMilliseconds - 1)));
+            Assert.IsTrue(PetHoverStabilityRules.ShouldCommitEnter(start,
+                start.AddMilliseconds(
+                    PetHoverStabilityRules.EnterDwellMilliseconds)));
+            Assert.IsFalse(PetHoverStabilityRules.ShouldCommitLeave(start,
+                start.AddMilliseconds(
+                    PetHoverStabilityRules.LeaveGraceMilliseconds - 1)));
+            Assert.IsTrue(PetHoverStabilityRules.ShouldCommitLeave(start,
+                start.AddMilliseconds(
+                    PetHoverStabilityRules.LeaveGraceMilliseconds)));
+
+            Assert.IsTrue(PetHoverStabilityRules.ShouldSuppressHover(
+                false, false, false, false, false));
+            Assert.IsTrue(PetHoverStabilityRules.ShouldSuppressHover(
+                true, true, false, false, false));
+            Assert.IsTrue(PetHoverStabilityRules.ShouldSuppressHover(
+                true, false, true, false, false));
+            Assert.IsTrue(PetHoverStabilityRules.ShouldSuppressHover(
+                true, false, false, true, false));
+            Assert.IsTrue(PetHoverStabilityRules.ShouldSuppressHover(
+                true, false, false, false, true));
+            Assert.IsFalse(PetHoverStabilityRules.ShouldSuppressHover(
+                true, false, false, false, false));
+        }
+
+        [TestMethod]
+        public void PetDaypartRule_ResolvesOneUnifiedHourBoundary()
+        {
+            Assert.AreEqual(DayPart.LateNight,
+                PetDaypartRule.Resolve(new DateTimeOffset(
+                    2035, 1, 1, 4, 59, 0, TimeSpan.FromHours(8))));
+            Assert.AreEqual(DayPart.Morning,
+                PetDaypartRule.Resolve(new DateTimeOffset(
+                    2035, 1, 1, 5, 0, 0, TimeSpan.FromHours(8))));
+            Assert.AreEqual(DayPart.Midday,
+                PetDaypartRule.Resolve(new DateTimeOffset(
+                    2035, 1, 1, 11, 0, 0, TimeSpan.FromHours(8))));
+            Assert.AreEqual(DayPart.Afternoon,
+                PetDaypartRule.Resolve(new DateTimeOffset(
+                    2035, 1, 1, 14, 0, 0, TimeSpan.FromHours(8))));
+            Assert.AreEqual(DayPart.Evening,
+                PetDaypartRule.Resolve(new DateTimeOffset(
+                    2035, 1, 1, 18, 0, 0, TimeSpan.FromHours(8))));
+            Assert.IsFalse(PetDaypartRule.SupportsLightCheckIn(
+                DayPart.LateNight));
+            Assert.IsTrue(PetDaypartRule.SupportsLightCheckIn(
+                DayPart.Morning));
+        }
+
+        [TestMethod]
+        public void PetDailyInteractionLedger_ResetsPerLocalDateAndTracksSlots()
+        {
+            PetDailyInteractionLedger ledger = new PetDailyInteractionLedger(
+                "20350101", true,
+                PetDaypartRule.ConsumedMask(DayPart.Morning),
+                new[] { "MEANINGFUL-EYES" });
+            Assert.IsTrue(ledger.IsCurrentDate("20350101"));
+            Assert.IsTrue(ledger.DailyOpeningConsumed);
+            Assert.IsTrue(ledger.HasConsumedDaypart(DayPart.Morning));
+            Assert.IsFalse(ledger.HasConsumedDaypart(DayPart.Midday));
+            Assert.IsTrue(ledger.WasMeaningfulUsed("MEANINGFUL-EYES"));
+            Assert.IsFalse(ledger.WasMeaningfulUsed("MEANINGFUL-WATER"));
+            Assert.IsFalse(ledger.TryConsumeDaypart(DayPart.Morning));
+            Assert.IsTrue(ledger.TryConsumeDaypart(DayPart.Midday));
+            Assert.IsTrue(ledger.TryUseMeaningful("MEANINGFUL-WATER"));
+            Assert.IsFalse(ledger.TryUseMeaningful("MEANINGFUL-WATER"));
+
+            ledger.EnsureDate("20350102");
+            Assert.IsFalse(ledger.DailyOpeningConsumed);
+            Assert.AreEqual(0, ledger.ConsumedDaypartsMask);
+            Assert.IsFalse(ledger.WasMeaningfulUsed("MEANINGFUL-EYES"));
+
+            string encoded = PetDailyInteractionLedger.EncodeUsedIds(
+                new[] { "B", "A", "A", String.Empty });
+            string[] decoded =
+                PetDailyInteractionLedger.DecodeUsedIds(encoded);
+            CollectionAssert.AreEqual(new[] { "A", "B" }, decoded);
+        }
+
+        [TestMethod]
+        public void BubbleReadingDurationRules_AreStableAndCapped()
+        {
+            string shortText = "我在呢～";
+            string mediumText = "需要我帮什么忙吗？";
+            string longText = new String('字', 80);
+
+            Assert.AreEqual(
+                BubbleReadingDurationRules.MinimumReadableMilliseconds(
+                    shortText),
+                BubbleReadingDurationRules.MinimumReadableMilliseconds(
+                    shortText));
+            Assert.IsTrue(BubbleReadingDurationRules.AutoCloseMilliseconds(
+                shortText) < 3000);
+            Assert.IsTrue(BubbleReadingDurationRules.AutoCloseMilliseconds(
+                mediumText) >= 2400);
+            Assert.IsTrue(BubbleReadingDurationRules.AutoCloseMilliseconds(
+                longText) <= 7000);
+            Assert.IsTrue(BubbleReadingDurationRules.AutoCloseMilliseconds(
+                longText) >
+                BubbleReadingDurationRules.MinimumReadableMilliseconds(
+                    longText));
+        }
+
+        [TestMethod]
+        public void DailyContentRules_ShowOncePerLocalDate()
+        {
+            DateTime today = new DateTime(2035, 9, 8, 14, 30, 0,
+                DateTimeKind.Local);
+            Assert.IsTrue(DailyContentRules.ShouldShow(String.Empty, today));
+            Assert.IsFalse(DailyContentRules.ShouldShow("20350908", today));
+            Assert.IsTrue(DailyContentRules.ShouldShow("20350907", today));
+            Assert.IsTrue(DailyContentRules.ShouldShow("invalid", today));
+            Assert.AreEqual("20350908", DailyContentRules.DateKey(today));
+        }
+
+        [TestMethod]
+        public void DailyContentRules_ResolveEveryDayPartBoundary()
+        {
+            Assert.AreEqual(DayPart.LateNight, DailyContentRules.ResolveDayPart(
+                new DateTime(2035, 1, 1, 4, 59, 0)));
+            Assert.AreEqual(DayPart.Morning, DailyContentRules.ResolveDayPart(
+                new DateTime(2035, 1, 1, 5, 0, 0)));
+            Assert.AreEqual(DayPart.Morning, DailyContentRules.ResolveDayPart(
+                new DateTime(2035, 1, 1, 10, 59, 0)));
+            Assert.AreEqual(DayPart.Midday, DailyContentRules.ResolveDayPart(
+                new DateTime(2035, 1, 1, 11, 0, 0)));
+            Assert.AreEqual(DayPart.Midday, DailyContentRules.ResolveDayPart(
+                new DateTime(2035, 1, 1, 13, 59, 0)));
+            Assert.AreEqual(DayPart.Afternoon,
+                DailyContentRules.ResolveDayPart(
+                    new DateTime(2035, 1, 1, 14, 0, 0)));
+            Assert.AreEqual(DayPart.Afternoon,
+                DailyContentRules.ResolveDayPart(
+                    new DateTime(2035, 1, 1, 17, 59, 0)));
+            Assert.AreEqual(DayPart.Evening, DailyContentRules.ResolveDayPart(
+                new DateTime(2035, 1, 1, 18, 0, 0)));
+            Assert.AreEqual(DayPart.Evening, DailyContentRules.ResolveDayPart(
+                new DateTime(2035, 1, 1, 23, 59, 0)));
+            Assert.AreEqual("下午好，今天过得怎么样",
+                DailyContentRules.GreetingBodyFor(DayPart.Afternoon));
+            Assert.AreEqual(PetSentenceIntent.Question,
+                DailyContentRules.GreetingIntentFor(DayPart.Afternoon));
+        }
+
+        [TestMethod]
+        public void SolarTermCalculator_Year2000To2100_Produces24UniqueSortedTerms()
+        {
+            int[] expectedLongitudes = Enumerable.Range(0, 24)
+                .Select(step => step * 15).ToArray();
+            for (int year = SolarTermCalculator.MinSupportedYear;
+                year <= SolarTermCalculator.MaxSupportedYear; year++)
+            {
+                SolarTermInfo[] terms = SolarTermCalculator.CalculateYear(year);
+                Assert.AreEqual(24, terms.Length, "term count " + year);
+                Assert.AreEqual(24, terms.Select(t => t.Term).Distinct().Count(),
+                    "unique terms " + year);
+
+                int[] longitudes = terms.Select(t => t.LongitudeDegrees)
+                    .OrderBy(l => ((l % 360) + 360) % 360).ToArray();
+                CollectionAssert.AreEqual(expectedLongitudes, longitudes,
+                    "longitude set " + year);
+
+                for (int i = 1; i < terms.Length; i++)
+                    Assert.IsTrue(terms[i - 1].InstantUtc < terms[i].InstantUtc,
+                        "chronological order " + year);
+                Assert.AreEqual(SolarTerm.MinorCold, terms[0].Term,
+                    "first term " + year);
+                Assert.AreEqual(SolarTerm.WinterSolstice, terms[23].Term,
+                    "last term " + year);
+
+                for (int i = 0; i < terms.Length; i++)
+                    for (int j = i + 1; j < terms.Length; j++)
+                        Assert.AreNotEqual(terms[i].InstantUtc,
+                            terms[j].InstantUtc, "duplicate instant " + year);
+            }
+        }
+
+        [TestMethod]
+        public void SolarTermCalculator_MatchesHongKongObservatoryOracleDates()
+        {
+            TimeSpan hkt = TimeSpan.FromHours(8);
+            AssertOracleTerm(2016, 2, 4, SolarTerm.StartOfSpring, 315, hkt);
+            AssertOracleTerm(2016, 3, 20, SolarTerm.VernalEquinox, 0, hkt);
+            AssertOracleTerm(2016, 6, 21, SolarTerm.SummerSolstice, 90, hkt);
+            AssertOracleTerm(2016, 9, 7, SolarTerm.WhiteDew, 165, hkt);
+            AssertOracleTerm(2016, 12, 21, SolarTerm.WinterSolstice, 270, hkt);
+            AssertOracleTerm(2026, 2, 4, SolarTerm.StartOfSpring, 315, hkt);
+            AssertOracleTerm(2026, 2, 18, SolarTerm.RainWater, 330, hkt);
+            AssertOracleTerm(2026, 9, 7, SolarTerm.WhiteDew, 165, hkt);
+            AssertOracleTerm(2026, 9, 23, SolarTerm.AutumnalEquinox, 180, hkt);
+            AssertOracleTerm(2026, 12, 7, SolarTerm.MajorSnow, 255, hkt);
+            AssertOracleTerm(2026, 12, 22, SolarTerm.WinterSolstice, 270, hkt);
+        }
+
+        [TestMethod]
+        public void SolarTermCalculator_LocalDateSemanticsAndOutOfRange()
+        {
+            TimeSpan hkt = TimeSpan.FromHours(8);
+            Assert.IsNull(SolarTermCalculator.FindForLocalDate(
+                new DateTimeOffset(2026, 9, 6, 12, 0, 0, hkt)));
+            Assert.IsNull(SolarTermCalculator.FindForLocalDate(
+                new DateTimeOffset(2026, 9, 8, 12, 0, 0, hkt)));
+
+            SolarTermInfo? whiteDew = SolarTermCalculator.FindForLocalDate(
+                new DateTimeOffset(2026, 9, 7, 0, 1, 0, hkt));
+            Assert.IsTrue(whiteDew.HasValue);
+            Assert.AreEqual(SolarTerm.WhiteDew, whiteDew.Value.Term);
+            Assert.AreEqual(SolarTerm.WhiteDew,
+                SolarTermCalculator.FindForLocalDate(
+                    new DateTimeOffset(2026, 9, 7, 23, 59, 0, hkt)).Value.Term);
+
+            SolarTermInfo whiteDew2016 = SolarTermCalculator.CalculateYear(2016)
+                .Single(t => t.Term == SolarTerm.WhiteDew);
+            Assert.AreEqual(new DateTime(2016, 9, 7),
+                whiteDew2016.InstantUtc.ToOffset(hkt).Date);
+            Assert.AreEqual(new DateTime(2016, 9, 6),
+                whiteDew2016.InstantUtc.ToOffset(TimeSpan.FromHours(-8)).Date);
+            Assert.AreEqual(SolarTerm.WhiteDew,
+                SolarTermCalculator.FindForLocalDate(
+                    new DateTimeOffset(2016, 9, 6, 20, 0, 0,
+                        TimeSpan.FromHours(-8))).Value.Term);
+            Assert.IsNull(SolarTermCalculator.FindForLocalDate(
+                new DateTimeOffset(2016, 9, 7, 8, 0, 0,
+                    TimeSpan.FromHours(-8))));
+
+            Assert.IsNull(SolarTermCalculator.FindForLocalDate(
+                new DateTimeOffset(1999, 6, 21, 12, 0, 0, hkt)));
+            Assert.IsNull(SolarTermCalculator.FindForLocalDate(
+                new DateTimeOffset(2101, 6, 21, 12, 0, 0, hkt)));
+        }
+
+        [TestMethod]
+        public void CuratedDailyLineCatalog_HasCompleteUniqueBundledCopy()
+        {
+            DailyLineEntry[] entries = CuratedDailyLineCatalog.GetEntries();
+            Assert.AreEqual(96, entries.Length);
+            Assert.AreEqual(96, entries.Select(entry => entry.Id)
+                .Distinct().Count());
+            Assert.AreEqual(96, entries.Select(entry => entry.Text)
+                .Distinct().Count());
+            Assert.IsTrue(entries.All(entry =>
+                !String.IsNullOrWhiteSpace(entry.Id) &&
+                !String.IsNullOrWhiteSpace(entry.Text)));
+        }
+
+        [TestMethod]
+        public void ZodiacDailyCatalog_RetainsStableSignSpecificEntries()
+        {
+            Assert.AreEqual(0,
+                ZodiacDailyCatalog.GetEntries(ZodiacSign.None).Length);
+            HashSet<string> allIds = new HashSet<string>();
+            for (int value = (int)ZodiacSign.Aries;
+                value <= (int)ZodiacSign.Pisces; value++)
+            {
+                ZodiacSign sign = (ZodiacSign)value;
+                DailyLineEntry[] entries = ZodiacDailyCatalog.GetEntries(sign);
+                Assert.AreEqual(6, entries.Length, sign.ToString());
+                Assert.IsTrue(entries.All(entry =>
+                    !String.IsNullOrWhiteSpace(entry.Id) &&
+                    !String.IsNullOrWhiteSpace(entry.Text) &&
+                    allIds.Add(entry.Id)), sign.ToString());
+                Assert.AreEqual(entries.Length, entries.Select(entry =>
+                    entry.Text).Distinct().Count(),
+                    sign.ToString());
+            }
+            Assert.AreEqual(72, allIds.Count);
+        }
+
+        [TestMethod]
+        public void DailyLineSelectors_AreDeterministicAndBounded()
+        {
+            DateTimeOffset localNow = new DateTimeOffset(2026, 9, 3,
+                12, 0, 0, TimeSpan.FromHours(8));
+            DailyLineEntry curated = CuratedDailyLineSelector.Select(localNow);
+            Assert.IsNotNull(curated);
+            Assert.AreEqual(curated.Id,
+                CuratedDailyLineSelector.Select(localNow).Id);
+            Assert.IsNull(ZodiacDailySelector.Select(ZodiacSign.None,
+                localNow));
+            Assert.IsNull(ZodiacDailySelector.Select((ZodiacSign)999,
+                localNow));
+
+            DailyLineEntry scorpio = ZodiacDailySelector.Select(
+                ZodiacSign.Scorpio,
+                localNow);
+            Assert.IsNotNull(scorpio);
+            for (int i = 0; i < 10; i++)
+                Assert.AreEqual(scorpio.Id, ZodiacDailySelector.Select(
+                    ZodiacSign.Scorpio, localNow).Id);
+            Assert.IsTrue(ZodiacDailyCatalog.GetEntries(ZodiacSign.Scorpio)
+                .Any(entry => entry.Id == scorpio.Id));
+
+            DateTimeOffset start = new DateTimeOffset(2026, 1, 1,
+                12, 0, 0, TimeSpan.FromHours(8));
+            for (int value = (int)ZodiacSign.Aries;
+                value <= (int)ZodiacSign.Pisces; value++)
+            {
+                ZodiacSign sign = (ZodiacSign)value;
+                int eligibleDays = 0;
+                for (int day = 0; day < 3650; day++)
+                    if (ZodiacDailySelector.Select(sign,
+                        start.AddDays(day)) != null) eligibleDays++;
+                double percent = eligibleDays * 100D / 3650D;
+                Assert.IsTrue(percent >= 10D && percent <= 20D,
+                    sign + ": " + percent);
+            }
+        }
+
+        [TestMethod]
+        public void DailyLineSelectors_UseLocalCivilDateAcrossOffsets()
+        {
+            DateTimeOffset sameInstant = new DateTimeOffset(2026, 9, 1,
+                16, 30, 0, TimeSpan.Zero);
+            DateTimeOffset hongKong = sameInstant.ToOffset(
+                TimeSpan.FromHours(8));
+            DateTimeOffset pacific = sameInstant.ToOffset(
+                TimeSpan.FromHours(-8));
+            Assert.AreEqual(2, hongKong.Day);
+            Assert.AreEqual(1, pacific.Day);
+            Assert.AreNotEqual(CuratedDailyLineSelector.Select(hongKong).Id,
+                CuratedDailyLineSelector.Select(pacific).Id);
+            Assert.AreEqual(CuratedDailyLineSelector.Select(
+                    new DateTimeOffset(2026, 9, 1, 1, 0, 0,
+                        TimeSpan.FromHours(8))).Id,
+                CuratedDailyLineSelector.Select(
+                    new DateTimeOffset(2026, 9, 1, 23, 0, 0,
+                        TimeSpan.FromHours(-5))).Id);
+        }
+
+        [TestMethod]
+        public void AlmanacCalculator_UsesDetachedLocalCivilDayYiJi()
+        {
+            DateTimeOffset sameInstant = new DateTimeOffset(2026, 9, 1,
+                16, 30, 0, TimeSpan.Zero);
+            AlmanacDayInfo hongKong = AlmanacCalculator.Calculate(
+                sameInstant.ToOffset(TimeSpan.FromHours(8)));
+            AlmanacDayInfo pacific = AlmanacCalculator.Calculate(
+                sameInstant.ToOffset(TimeSpan.FromHours(-8)));
+            Assert.IsNotNull(hongKong);
+            Assert.IsNotNull(pacific);
+            Assert.AreEqual(2, hongKong.Day);
+            Assert.AreEqual(1, pacific.Day);
+            Assert.IsNotNull(hongKong.Yi);
+            Assert.IsNotNull(hongKong.Ji);
+            Assert.IsTrue(hongKong.Yi.Count > 0);
+            Assert.IsTrue(hongKong.Ji.Count > 0);
+        }
+
+        [TestMethod]
+        public void AlmanacSemanticCatalog_MapsOnlyConservativeWhitelist()
+        {
+            AssertAlmanacMapping("扫舍", AlmanacTopic.Tidy);
+            AssertAlmanacMapping("会友", AlmanacTopic.Social);
+            AssertAlmanacMapping("会亲友", AlmanacTopic.Social);
+            AssertAlmanacMapping("入学", AlmanacTopic.Learning);
+            AssertAlmanacMapping("习艺", AlmanacTopic.Learning);
+            AssertAlmanacMapping("栽种", AlmanacTopic.Plants);
+            AssertAlmanacMapping("理发", AlmanacTopic.Haircut);
+            AssertAlmanacMapping("剃头", AlmanacTopic.Haircut);
+            AssertAlmanacMapping("整手足甲", AlmanacTopic.NailCare);
+            AssertAlmanacMapping("沐浴", AlmanacTopic.Bath);
+            AssertAlmanacMapping("出行", AlmanacTopic.Outing);
+            AssertAlmanacMapping("裁衣", AlmanacTopic.ClothingCraft);
+            foreach (string term in new[] { "求医", "治病", "针灸",
+                "纳财", "求财", "置产", "词讼", "立券", "交易",
+                "安葬", "入殓", "祭祀", "祈福", "动土", "修造" })
+            {
+                AlmanacTopic ignored;
+                Assert.IsFalse(AlmanacSemanticCatalog.TryMap(term,
+                    out ignored), term);
+            }
+        }
+
+        [TestMethod]
+        public void AlmanacSelector_DeduplicatesConflictsAndUsesTiers()
+        {
+            DateTimeOffset date = new DateTimeOffset(2026, 9, 3,
+                12, 0, 0, TimeSpan.FromHours(8));
+            AlmanacDailySelection social = AlmanacDailySelector.Select(
+                new AlmanacDayInfo(2026, 9, 3,
+                    new[] { "会友", "会亲友" }, new string[0]), date);
+            Assert.IsNotNull(social);
+            Assert.AreEqual(AlmanacTopic.Social, social.Topic);
+            AlmanacDailySelection orderedA = AlmanacDailySelector.Select(
+                new AlmanacDayInfo(2026, 9, 3,
+                    new[] { "扫舍", "会友" }, new string[0]), date);
+            AlmanacDailySelection orderedB = AlmanacDailySelector.Select(
+                new AlmanacDayInfo(2026, 9, 3,
+                    new[] { "会友", "扫舍" }, new string[0]), date);
+            Assert.AreEqual(orderedA.Topic, orderedB.Topic);
+            Assert.AreEqual(orderedA.SourceTerm, orderedB.SourceTerm);
+            Assert.AreEqual(orderedA.VariantId, orderedB.VariantId);
+
+            Assert.IsNull(AlmanacDailySelector.Select(new AlmanacDayInfo(
+                2026, 9, 3, new[] { "出行" }, new[] { "出行" }), date));
+            Assert.IsNull(AlmanacDailySelector.Select(new AlmanacDayInfo(
+                2026, 9, 3, new[] { "求医", "纳财", "祭祀" },
+                new string[0]), date));
+
+            AlmanacDailySelection everyday = AlmanacDailySelector.Select(
+                new AlmanacDayInfo(2026, 9, 3,
+                    new[] { "扫舍", "嫁娶" }, new string[0]), date);
+            Assert.AreEqual(AlmanacTopic.Tidy, everyday.Topic);
+            AlmanacDailySelection cultural = AlmanacDailySelector.Select(
+                new AlmanacDayInfo(2026, 9, 3, new[] { "嫁娶" },
+                    new string[0]), date);
+            Assert.AreEqual(AlmanacTopic.RelationshipCelebration,
+                cultural.Topic);
+            AlmanacDailySelection outingJi = AlmanacDailySelector.Select(
+                new AlmanacDayInfo(2026, 9, 3, new string[0],
+                    new[] { "出行" }), date);
+            Assert.AreEqual(AlmanacTopic.Outing, outingJi.Topic);
+            Assert.IsFalse(outingJi.IsYi);
+            Assert.IsTrue(outingJi.Text.Contains("天气") ||
+                outingJi.Text.Contains("现实"));
+            AlmanacDailySelection conservative =
+                AlmanacDailySelector.Select(new AlmanacDayInfo(2026, 9, 3,
+                    new string[0], new[] { "诸事不宜" }), date);
+            Assert.AreEqual(AlmanacTopic.ConservativeDay,
+                conservative.Topic);
+            Assert.IsFalse(conservative.Text.Contains("今天一定") ||
+                conservative.Text.Contains("千万") ||
+                conservative.Text.Contains("不能出门"));
+        }
+
+        [TestMethod]
+        public void AlmanacWording_IsDeterministicVariedAndSafe()
+        {
+            var cases = new[]
+            {
+                new { Topic = AlmanacTopic.Tidy, Term = "扫舍", Yi = true,
+                    Minimum = 5 },
+                new { Topic = AlmanacTopic.Social, Term = "会友", Yi = true,
+                    Minimum = 5 },
+                new { Topic = AlmanacTopic.Learning, Term = "入学", Yi = true,
+                    Minimum = 5 },
+                new { Topic = AlmanacTopic.Plants, Term = "栽种", Yi = true,
+                    Minimum = 5 },
+                new { Topic = AlmanacTopic.Haircut, Term = "理发", Yi = true,
+                    Minimum = 5 },
+                new { Topic = AlmanacTopic.NailCare, Term = "整手足甲", Yi = true,
+                    Minimum = 5 },
+                new { Topic = AlmanacTopic.Bath, Term = "沐浴", Yi = true,
+                    Minimum = 5 },
+                new { Topic = AlmanacTopic.Outing, Term = "出行", Yi = true,
+                    Minimum = 5 },
+                new { Topic = AlmanacTopic.ClothingCraft, Term = "裁衣", Yi = true,
+                    Minimum = 5 },
+                new { Topic = AlmanacTopic.RelationshipCelebration,
+                    Term = "嫁娶", Yi = true, Minimum = 3 },
+                new { Topic = AlmanacTopic.MovingHome, Term = "入宅",
+                    Yi = true, Minimum = 3 },
+                new { Topic = AlmanacTopic.ConservativeDay, Term = "诸事不宜",
+                    Yi = false, Minimum = 3 }
+            };
+            Dictionary<string, int> prefixes = new Dictionary<string, int>();
+            int textCount = 0;
+            int todayPrefix = 0;
+            int yiJiTermCount = 0;
+            bool sawTraditionalCalendar = false;
+            bool sawFolkWording = false;
+            bool sawLifeFirst = false;
+            bool sawSourceLate = false;
+            foreach (var item in cases)
+            {
+                HashSet<string> variants = new HashSet<string>();
+                for (int day = 0; day < 730; day++)
+                {
+                    DateTimeOffset date = new DateTimeOffset(2026, 1, 1,
+                        12, 0, 0, TimeSpan.FromHours(8)).AddDays(day);
+                    AlmanacDayInfo info = new AlmanacDayInfo(date.Year,
+                        date.Month, date.Day,
+                        item.Yi ? new[] { item.Term } : new string[0],
+                        item.Yi ? new string[0] : new[] { item.Term });
+                    AlmanacDailySelection selected =
+                        AlmanacDailySelector.Select(info, date);
+                    AlmanacDailySelection retry =
+                        AlmanacDailySelector.Select(info, date);
+                    Assert.IsNotNull(selected);
+                    Assert.AreEqual(item.Topic, selected.Topic);
+                    Assert.AreEqual(selected.VariantId, retry.VariantId);
+                    Assert.AreEqual(selected.FramingId, retry.FramingId);
+                    Assert.AreEqual(selected.WordingId, retry.WordingId);
+                    Assert.AreEqual(selected.Text, retry.Text);
+                    Assert.IsFalse(selected.Text.Contains("今天一定") ||
+                        selected.Text.Contains("必须") ||
+                        selected.Text.Contains("千万不要") ||
+                        selected.Text.Contains("绝对不能"));
+                    Assert.IsFalse(selected.Text.Contains("老黄历"));
+                    Assert.IsFalse(selected.Text.Contains("\n") ||
+                        selected.Text.Contains("。") ||
+                        selected.Text.Contains("！") ||
+                        selected.Text.Contains("？"), selected.Text);
+                    Assert.IsTrue(selected.Text.Length <= 36,
+                        selected.Text);
+                    if (selected.Text.Contains("宜忌")) yiJiTermCount++;
+                    sawTraditionalCalendar |= selected.Text.Contains(
+                        "传统日历");
+                    sawFolkWording |= selected.Text.Contains("民俗");
+                    sawLifeFirst |= selected.FramingId == "F06-LIFE-FIRST";
+                    sawSourceLate |= selected.FramingId == "F07-SOURCE-LATE";
+                    variants.Add(selected.VariantId);
+                    string compact = selected.Text.Replace("\n", "");
+                    if (compact.StartsWith("今天",
+                        StringComparison.Ordinal)) todayPrefix++;
+                    string prefix = compact.Substring(0,
+                        Math.Min(6, compact.Length));
+                    int count;
+                    prefixes.TryGetValue(prefix, out count);
+                    prefixes[prefix] = count + 1;
+                    textCount++;
+                }
+                Assert.IsTrue(variants.Count >= item.Minimum,
+                    item.Topic + ": " + variants.Count);
+            }
+            Assert.IsTrue(prefixes.Values.Max() * 100D / textCount < 25D);
+            Assert.IsTrue(todayPrefix * 100D / textCount < 25D);
+            Assert.IsTrue(yiJiTermCount * 100D / textCount < 35D);
+            Assert.IsTrue(sawTraditionalCalendar);
+            Assert.IsTrue(sawFolkWording);
+            Assert.IsTrue(sawLifeFirst);
+            Assert.IsTrue(sawSourceLate);
+        }
+
+        [TestMethod]
+        public void WeatherMeaningRules_UseExplicitPriorityAndMundaneFallback()
+        {
+            WeatherDaySummary yesterday = WeatherDay(15, 30, 15, 30,
+                0, 0, 0, null, 15, false);
+            Assert.AreEqual(WeatherMeaning.Snow, SelectWeather(yesterday,
+                WeatherDay(-4, 1, -8, 0, 5, 90, 8, 15, 60, true)));
+            Assert.AreEqual(WeatherMeaning.RainAndWind, SelectWeather(
+                yesterday, WeatherDay(18, 22, 17, 21, 5, 80, 3, 9, 55,
+                    false)));
+            Assert.AreEqual(WeatherMeaning.RainAndCooling, SelectWeather(
+                yesterday, WeatherDay(16, 23, 15, 22, 5, 80, 3, 9, 20,
+                    false)));
+            Assert.AreEqual(WeatherMeaning.HeavyRain, SelectWeather(
+                WeatherDay(15, 25, 15, 25, 0, 0, 0, null, 10, false),
+                WeatherDay(17, 24, 17, 24, 16, 80, 3, 8, 20, false)));
+            Assert.AreEqual(WeatherMeaning.PersistentRain, SelectWeather(
+                yesterday, WeatherDay(18, 28, 18, 28, 5, 80, 6, 7, 20,
+                    false)));
+            Assert.AreEqual(WeatherMeaning.Windy, SelectWeather(yesterday,
+                WeatherDay(18, 28, 18, 28, 0, 10, 0, null, 55, false)));
+            Assert.AreEqual(WeatherMeaning.Cooling, SelectWeather(yesterday,
+                WeatherDay(15, 23, 15, 23, 0, 10, 0, null, 20, false)));
+            Assert.AreEqual(WeatherMeaning.Warming, SelectWeather(
+                WeatherDay(10, 20, 10, 20, 0, 0, 0, null, 10, false),
+                WeatherDay(15, 27, 15, 27, 0, 10, 0, null, 20, false)));
+            Assert.AreEqual(WeatherMeaning.RainLater, SelectWeather(
+                yesterday, WeatherDay(18, 28, 18, 28, 2, 80, 1, 15, 20,
+                    false)));
+            Assert.AreEqual(WeatherMeaning.Hot, SelectWeather(yesterday,
+                WeatherDay(25, 33, 26, 36, 0, 10, 0, null, 20, false)));
+            Assert.AreEqual(WeatherMeaning.Cold, SelectWeather(
+                WeatherDay(1, 8, 1, 8, 0, 0, 0, null, 10, false),
+                WeatherDay(1, 8, -1, 7, 0, 10, 0, null, 20, false)));
+            Assert.AreEqual(WeatherMeaning.LargeTemperatureRange,
+                SelectWeather(WeatherDay(10, 22, 10, 22, 0, 0, 0, null,
+                    10, false), WeatherDay(10, 22, 5, 25, 0, 10, 0, null,
+                    20, false)));
+            Assert.IsNull(SelectWeather(WeatherDay(18, 26, 18, 27, 0, 0,
+                0, null, 10, false), WeatherDay(18, 26, 18, 27, 0, 20, 0,
+                null, 20, false)));
+        }
+
+        [TestMethod]
+        public void WeatherMeaningRules_HeavyRainRequiresPrecipitationNotProbability()
+        {
+            WeatherDaySummary yesterday = WeatherDay(15, 25, 15, 25,
+                0, 0, 0, null, 10, false);
+            Assert.AreNotEqual(WeatherMeaning.HeavyRain, SelectWeather(
+                yesterday, WeatherDay(17, 24, 17, 24, 3, 95, 2, 8, 20,
+                    false)));
+            Assert.AreEqual(WeatherMeaning.HeavyRain, SelectWeather(
+                yesterday, WeatherDay(17, 24, 17, 24, 16, 80, 3, 8, 20,
+                    false)));
+        }
+
+        [TestMethod]
+        public void WeatherWording_IsDeterministicVariedAndCautious()
+        {
+            DateTime start = new DateTime(2026, 1, 1);
+            Dictionary<string, int> prefixes =
+                new Dictionary<string, int>();
+            int todayPrefixes = 0;
+            int textCount = 0;
+            foreach (WeatherMeaning meaning in Enum.GetValues(
+                typeof(WeatherMeaning)))
+            {
+                string[] catalog = WeatherWordingCatalog.GetVariantsForTest(
+                    meaning);
+                int required = meaning == WeatherMeaning.RainLater ||
+                    meaning == WeatherMeaning.Cooling ||
+                    meaning == WeatherMeaning.Windy ||
+                    meaning == WeatherMeaning.Hot ? 5 : 3;
+                Assert.IsTrue(catalog.Length >= required, meaning.ToString());
+                HashSet<string> selected = new HashSet<string>();
+                for (int day = 0; day < 365; day++)
+                {
+                    DateTime date = start.AddDays(day);
+                    WeatherDailySelection first = WeatherWordingCatalog.Select(
+                        meaning, date, "30.5928,114.3055|Asia/Shanghai");
+                    WeatherDailySelection retry = WeatherWordingCatalog.Select(
+                        meaning, date, "30.5928,114.3055|Asia/Shanghai");
+                    Assert.AreEqual(first.Text, retry.Text);
+                    Assert.AreEqual(meaning, first.Meaning);
+                    Assert.IsTrue(first.Text.Length >= 8 &&
+                        first.Text.Length <= 28, first.Text);
+                    Assert.IsFalse(first.Text.Contains("\n") ||
+                        first.Text.EndsWith("。", StringComparison.Ordinal) ||
+                        first.Text.EndsWith("！", StringComparison.Ordinal) ||
+                        first.Text.EndsWith("？", StringComparison.Ordinal),
+                        first.Text);
+                    Assert.IsTrue(first.Text.Count(character =>
+                        character == '，') <= 1, first.Text);
+                    Assert.IsFalse(first.Text.Contains("预警"));
+                    Assert.IsFalse(first.Text.Contains("一定"));
+                    Assert.IsFalse(first.Text.Contains("保证"));
+                    Assert.IsFalse(first.Text.Contains("空气今天跑得挺快") ||
+                        first.Text.Contains("风会比较有存在感"), first.Text);
+                    selected.Add(first.Text);
+                    string compact = first.Text.Replace("\n", "");
+                    if (compact.StartsWith("今天",
+                        StringComparison.Ordinal)) todayPrefixes++;
+                    string prefix = compact.Substring(0,
+                        Math.Min(6, compact.Length));
+                    int count;
+                    prefixes.TryGetValue(prefix, out count);
+                    prefixes[prefix] = count + 1;
+                    textCount++;
+                }
+                Assert.IsTrue(selected.Count >= required,
+                    meaning + ": " + selected.Count);
+            }
+            Assert.IsTrue(todayPrefixes * 100D / textCount <= 25D);
+            Assert.IsTrue(prefixes.Values.Max() * 100D / textCount < 25D);
+            CollectionAssert.Contains(
+                WeatherWordingCatalog.GetVariantsForTest(
+                    WeatherMeaning.Windy),
+                "今天风比较大，出门注意一下");
+            CollectionAssert.Contains(
+                WeatherWordingCatalog.GetVariantsForTest(
+                    WeatherMeaning.HeavyRain),
+                "今天雨可能不小，低洼路段尽量绕开");
+        }
+
+        [TestMethod]
+        public void SentenceEndingPolicy_IsRoleAwareDeterministicAndSafe()
+        {
+            DateTime date = new DateTime(2026, 9, 3);
+            string middle = PetSentenceEndingPolicy.Apply(
+                "忙完早点洗个澡，剩下的明天再管",
+                new PetSentenceEndingContext(PetSentenceRole.Middle,
+                    PetSentenceIntent.Gentle,
+                    PetSentenceContentKind.Almanac, "BATH-MIDDLE", date));
+            Assert.AreEqual("忙完早点洗个澡，剩下的明天再管。", middle);
+            string closing = PetSentenceEndingPolicy.Apply(
+                "传统日历今天也说到沐浴",
+                new PetSentenceEndingContext(PetSentenceRole.Closing,
+                    PetSentenceIntent.Gentle,
+                    PetSentenceContentKind.Almanac,
+                    "ALMANAC-BATH-03", date));
+            Assert.AreEqual("传统日历今天也说到沐浴啦～", closing);
+            string question = PetSentenceEndingPolicy.Apply(
+                "今天过得怎么样",
+                new PetSentenceEndingContext(PetSentenceRole.Single,
+                    PetSentenceIntent.Question,
+                    PetSentenceContentKind.SmallTalk, "QUESTION", date));
+            Assert.IsTrue(question.EndsWith("？", StringComparison.Ordinal));
+            string cheerful = PetSentenceEndingPolicy.Apply(
+                "终于做完了",
+                new PetSentenceEndingContext(PetSentenceRole.Closing,
+                    PetSentenceIntent.Cheerful,
+                    PetSentenceContentKind.Curated, "CHEERFUL", date));
+            Assert.IsFalse(cheerful.EndsWith("喔～",
+                StringComparison.Ordinal));
+            string seriousWeather = PetSentenceEndingPolicy.Apply(
+                "低洼路段尽量绕开",
+                new PetSentenceEndingContext(PetSentenceRole.Closing,
+                    PetSentenceIntent.Serious,
+                    PetSentenceContentKind.Weather, "HEAVY-RAIN", date));
+            Assert.IsFalse(seriousWeather.EndsWith("耶～",
+                StringComparison.Ordinal) || seriousWeather.EndsWith("呀～",
+                StringComparison.Ordinal));
+            for (int i = 0; i < 100; i++)
+                Assert.AreEqual(closing, PetSentenceEndingPolicy.Apply(
+                    "传统日历今天也说到沐浴",
+                    new PetSentenceEndingContext(PetSentenceRole.Closing,
+                        PetSentenceIntent.Gentle,
+                        PetSentenceContentKind.Almanac,
+                        "ALMANAC-BATH-03", date)));
+            Assert.AreEqual("今天辛苦啦～",
+                PetSentenceEndingPolicy.ApplyEnding("今天辛苦了", "啦～"));
+        }
+
+        [TestMethod]
+        public void DailyBriefingComposer_EnforcesSemanticSentenceBudget()
+        {
+            DateTime date = new DateTime(2026, 9, 7);
+            DailyLineEntry curated = new DailyLineEntry("C-TEST", "精选。 ");
+            DailyLineEntry zodiac = new DailyLineEntry("Z-TEST", "星座。 ");
+            SolarTermInfo? whiteDew = new SolarTermInfo(SolarTerm.WhiteDew,
+                "白露", 165, new DateTimeOffset(2026, 9, 7, 12, 0, 0,
+                    TimeSpan.FromHours(8)));
+            WeatherDailySelection weather = new WeatherDailySelection(
+                WeatherMeaning.Windy, "WEATHER-WINDY-TEST",
+                "今天风比较大，出门注意一下");
+            AlmanacDailySelection almanac = new AlmanacDailySelection(
+                AlmanacTopic.MovingHome, "入宅", true, "MOVING-TEST",
+                "F-TEST", "W-TEST",
+                "传统日历今天提到搬家，没计划的话看看就好");
+            DailyBriefingContent solarWeatherAlmanac =
+                new DailyBriefingContent(whiteDew, weather, almanac,
+                    curated, zodiac);
+            DailyBriefingContent solarWeather = new DailyBriefingContent(
+                whiteDew, weather, null, curated, zodiac);
+            DailyBriefingContent solarAlmanac = new DailyBriefingContent(
+                whiteDew, null, almanac, curated, zodiac);
+            DailyBriefingContent solarOnly = new DailyBriefingContent(
+                whiteDew, null, null, curated, zodiac);
+            DailyBriefingContent weatherAlmanac = new DailyBriefingContent(
+                null, weather, almanac, curated, zodiac);
+            DailyBriefingContent weatherOnly = new DailyBriefingContent(
+                null, weather, null, curated, zodiac);
+            DailyBriefingContent almanacOnly = new DailyBriefingContent(
+                null, null, almanac, curated, zodiac);
+            DailyBriefingContent fallback = new DailyBriefingContent(null,
+                null, null, curated, zodiac);
+            CollectionAssert.AreEqual(new[]
+            {
+                PetSentenceContentKind.Greeting,
+                PetSentenceContentKind.Solar,
+                PetSentenceContentKind.Weather
+            }, DailyBriefingComposer.SelectSentences(DayPart.Afternoon,
+                solarWeatherAlmanac).Select(sentence => sentence.Kind)
+                .ToArray());
+            CollectionAssert.AreEqual(new[]
+            {
+                PetSentenceContentKind.Greeting,
+                PetSentenceContentKind.Weather
+            }, DailyBriefingComposer.SelectSentences(DayPart.Afternoon,
+                weatherOnly).Select(sentence => sentence.Kind).ToArray());
+            CollectionAssert.AreEqual(new[]
+            {
+                PetSentenceContentKind.Greeting,
+                PetSentenceContentKind.Almanac
+            }, DailyBriefingComposer.SelectSentences(DayPart.Afternoon,
+                almanacOnly).Select(sentence => sentence.Kind).ToArray());
+
+            DailyLineEntry birthday = new DailyLineEntry(
+                "BIRTHDAY-TEST", "生日快乐。 ");
+            DailyBriefingContent birthdaySolarWeather =
+                new DailyBriefingContent(whiteDew, weather, null,
+                    curated, zodiac, birthday, PetBirthdayKind.User);
+            CollectionAssert.AreEqual(new[]
+            {
+                PetSentenceContentKind.Greeting,
+                PetSentenceContentKind.Birthday,
+                PetSentenceContentKind.Solar
+            }, DailyBriefingComposer.SelectSentences(DayPart.Afternoon,
+                birthdaySolarWeather).Select(sentence => sentence.Kind)
+                .ToArray());
+            CollectionAssert.AreEqual(new[]
+            {
+                PetSentenceContentKind.Greeting,
+                PetSentenceContentKind.Curated,
+                PetSentenceContentKind.Zodiac
+            }, DailyBriefingComposer.SelectSentences(DayPart.Afternoon,
+                fallback).Select(sentence => sentence.Kind).ToArray());
+            string[] cases =
+            {
+                DailyBriefingComposer.Compose(DayPart.Afternoon, date,
+                    solarWeatherAlmanac),
+                DailyBriefingComposer.Compose(DayPart.Afternoon, date,
+                    solarWeather),
+                DailyBriefingComposer.Compose(DayPart.Afternoon, date,
+                    solarAlmanac),
+                DailyBriefingComposer.Compose(DayPart.Afternoon, date,
+                    solarOnly),
+                DailyBriefingComposer.Compose(DayPart.Afternoon, date,
+                    weatherAlmanac),
+                DailyBriefingComposer.Compose(DayPart.Afternoon, date,
+                    weatherOnly),
+                DailyBriefingComposer.Compose(DayPart.Afternoon, date,
+                    almanacOnly),
+                DailyBriefingComposer.Compose(DayPart.Afternoon, date,
+                    fallback)
+            };
+            Assert.IsTrue(cases.All(text => text.Split('\n').Length <= 3));
+            Assert.IsTrue(new[] { solarWeatherAlmanac, solarWeather,
+                solarAlmanac, solarOnly, weatherAlmanac, weatherOnly,
+                almanacOnly, fallback }.All(
+                content =>
+                DailyBriefingComposer.SelectSupplementary(content).Length <=
+                    2));
+            string single = DailyBriefingComposer.ComposeSentences(date,
+                new[]
+                {
+                    new DailyBriefingSentence("今天是白露",
+                        PetSentenceContentKind.Solar,
+                        PetSentenceIntent.Gentle, "SOLAR-WHITE-DEW")
+                });
+            Assert.IsFalse(single.Contains("\n"));
+            string two = DailyBriefingComposer.ComposeSentences(date,
+                new[]
+                {
+                    new DailyBriefingSentence("早上好",
+                        PetSentenceContentKind.Greeting,
+                        PetSentenceIntent.Gentle, "GREETING"),
+                    new DailyBriefingSentence("今天风比较大",
+                        PetSentenceContentKind.Weather,
+                        PetSentenceIntent.Gentle, "WEATHER")
+                });
+            Assert.AreEqual(2, two.Split('\n').Length);
+            string three = DailyBriefingComposer.ComposeSentences(date,
+                new[]
+                {
+                    new DailyBriefingSentence("晚上好",
+                        PetSentenceContentKind.Greeting,
+                        PetSentenceIntent.Gentle, "GREETING"),
+                    new DailyBriefingSentence("忙完早点洗个澡",
+                        PetSentenceContentKind.Almanac,
+                        PetSentenceIntent.Gentle, "BATH-1"),
+                    new DailyBriefingSentence("传统日历今天也说到沐浴",
+                        PetSentenceContentKind.Almanac,
+                        PetSentenceIntent.Gentle, "BATH-2")
+                });
+            Assert.IsTrue(three.Split('\n')[1].EndsWith("。",
+                StringComparison.Ordinal));
+        }
+
+        private static WeatherMeaning? SelectWeather(
+            WeatherDaySummary yesterday, WeatherDaySummary today)
+        {
+            return WeatherMeaningRules.Select(new WeatherForecastWindow(
+                yesterday, today, null, 0));
+        }
+
+        private static WeatherDaySummary WeatherDay(double minimumTemperature,
+            double maximumTemperature, double minimumApparent,
+            double maximumApparent, double precipitation,
+            double precipitationProbability, int likelyHours,
+            int? firstLikelyHour, double maximumWindGust, bool hasSnow)
+        {
+            return new WeatherDaySummary(new DateTime(2026, 9, 1),
+                minimumTemperature, maximumTemperature, minimumApparent,
+                maximumApparent, precipitationProbability, precipitation,
+                hasSnow ? 1D : 0D, Math.Min(30D, maximumWindGust),
+                maximumWindGust, firstLikelyHour, firstLikelyHour,
+                likelyHours, hasSnow);
+        }
+
+        private static void AssertAlmanacMapping(string raw,
+            AlmanacTopic expected)
+        {
+            AlmanacTopic actual;
+            Assert.IsTrue(AlmanacSemanticCatalog.TryMap(raw, out actual), raw);
+            Assert.AreEqual(expected, actual, raw);
+        }
+
+        private static void AssertOracleTerm(int year, int month, int day,
+            SolarTerm term, int longitude, TimeSpan offset)
+        {
+            SolarTermInfo? info = SolarTermCalculator.FindForLocalDate(
+                new DateTimeOffset(year, month, day, 12, 0, 0, offset));
+            Assert.IsTrue(info.HasValue,
+                year + "-" + month + "-" + day);
+            Assert.AreEqual(term, info.Value.Term);
+            Assert.AreEqual(longitude, info.Value.LongitudeDegrees);
+            DateTimeOffset localInstant = info.Value.InstantUtc.ToOffset(offset);
+            Assert.AreEqual(year, localInstant.Year);
+            Assert.AreEqual(month, localInstant.Month);
+            Assert.AreEqual(day, localInstant.Day);
         }
 
         [TestMethod]
@@ -743,14 +2898,34 @@ namespace PennyPet.Tests
                 ShowKeyOverlay = true,
                 KeyboardPrivacyNoticeAccepted = true,
                 KeyOverlayScalePercent = 150,
-                SilentMode = true
+                SilentMode = true,
+                DailyContentEnabled = false,
+                SolarTermEnabled = false,
+                WeatherEnabled = true,
+                WeatherLocationName = "武汉",
+                WeatherLocationAdmin1 = "湖北",
+                WeatherLocationCountry = "中国",
+                WeatherLatitude = 30.5928,
+                WeatherLongitude = 114.3055,
+                WeatherTimezone = "Asia/Shanghai",
+                ZodiacSign = ZodiacSign.Scorpio,
+                LastDailyBriefingDate = "20350405"
             };
             source.Reminders.Add(new ReminderItem(
                 new DateTime(2035, 4, 5, 6, 7, 8, DateTimeKind.Utc),
                 "喝水", "note-42", 24F, true));
 
-            PetSettingsData restored = PetSettingsCodec.Parse(
-                PetSettingsCodec.Serialize(source));
+            List<string> serialized = PetSettingsCodec.Serialize(source);
+            PetSettingsData restored = PetSettingsCodec.Parse(serialized);
+            int dailyDateLines = 0;
+            int zodiacLines = 0;
+            foreach (string line in serialized)
+            {
+                if (line.StartsWith("LastDailyBriefingDate=",
+                    StringComparison.Ordinal)) dailyDateLines++;
+                if (line.StartsWith("ZodiacSign=",
+                    StringComparison.Ordinal)) zodiacLines++;
+            }
 
             Assert.IsTrue(restored.HasLocation);
             Assert.AreEqual(-120, restored.X);
@@ -761,6 +2936,19 @@ namespace PennyPet.Tests
             Assert.IsTrue(restored.KeyboardPrivacyNoticeAccepted);
             Assert.AreEqual(150, restored.KeyOverlayScalePercent);
             Assert.IsTrue(restored.SilentMode);
+            Assert.IsFalse(restored.DailyContentEnabled);
+            Assert.IsFalse(restored.SolarTermEnabled);
+            Assert.IsTrue(restored.WeatherEnabled);
+            Assert.AreEqual("武汉", restored.WeatherLocationName);
+            Assert.AreEqual("湖北", restored.WeatherLocationAdmin1);
+            Assert.AreEqual("中国", restored.WeatherLocationCountry);
+            Assert.AreEqual(30.5928, restored.WeatherLatitude, 0.000001);
+            Assert.AreEqual(114.3055, restored.WeatherLongitude, 0.000001);
+            Assert.AreEqual("Asia/Shanghai", restored.WeatherTimezone);
+            Assert.AreEqual(ZodiacSign.Scorpio, restored.ZodiacSign);
+            Assert.AreEqual("20350405", restored.LastDailyBriefingDate);
+            Assert.AreEqual(1, dailyDateLines);
+            Assert.AreEqual(1, zodiacLines);
             Assert.AreEqual(1, restored.Reminders.Count);
             Assert.AreEqual("喝水", restored.Reminders[0].Text);
             Assert.AreEqual("note-42", restored.Reminders[0].SourceNoteId);
@@ -788,6 +2976,10 @@ namespace PennyPet.Tests
             Assert.IsFalse(restored.StartAtLogin);
             Assert.AreEqual(50, restored.ScalePercent);
             Assert.AreEqual(150, restored.KeyOverlayScalePercent);
+            Assert.IsTrue(restored.DailyContentEnabled);
+            Assert.IsTrue(restored.SolarTermEnabled);
+            Assert.IsFalse(restored.WeatherEnabled);
+            Assert.AreEqual(ZodiacSign.None, restored.ZodiacSign);
             Assert.AreEqual(1, restored.Reminders.Count);
             Assert.AreEqual("旧提醒", restored.Reminders[0].Text);
             Assert.AreEqual(deadline, restored.Reminders[0].DeadlineUtc);
@@ -807,6 +2999,187 @@ namespace PennyPet.Tests
             }
             Assert.IsTrue(rejected);
             Assert.IsFalse(new PetSettingsData().StartAtLogin);
+            Assert.IsTrue(new PetSettingsData().DailyContentEnabled);
+            Assert.IsTrue(new PetSettingsData().SolarTermEnabled);
+            Assert.IsFalse(new PetSettingsData().WeatherEnabled);
+            Assert.AreEqual(ZodiacSign.None,
+                new PetSettingsData().ZodiacSign);
+        }
+
+        [TestMethod]
+        public void SettingsData_CopyFromPreservesDailyContentPreferences()
+        {
+            PetSettingsData source = new PetSettingsData
+            {
+                DailyContentEnabled = false,
+                SolarTermEnabled = false,
+                WeatherEnabled = true,
+                WeatherLocationName = "香港",
+                WeatherLocationAdmin1 = "香港",
+                WeatherLocationCountry = "中国",
+                WeatherLatitude = 22.3193,
+                WeatherLongitude = 114.1694,
+                WeatherTimezone = "Asia/Hong_Kong",
+                ZodiacSign = ZodiacSign.Taurus,
+                LastDailyBriefingDate = "20350908"
+            };
+            PetSettingsData target = new PetSettingsData();
+
+            target.CopyFrom(source);
+
+            Assert.IsFalse(target.DailyContentEnabled);
+            Assert.IsFalse(target.SolarTermEnabled);
+            Assert.IsTrue(target.WeatherEnabled);
+            Assert.AreEqual("香港", target.WeatherLocationName);
+            Assert.AreEqual(22.3193, target.WeatherLatitude, 0.000001);
+            Assert.AreEqual("Asia/Hong_Kong", target.WeatherTimezone);
+            Assert.AreEqual(ZodiacSign.Taurus, target.ZodiacSign);
+            Assert.AreEqual("20350908", target.LastDailyBriefingDate);
+        }
+
+        [TestMethod]
+        public void SettingsCodec_AlmanacDefaultsTrueAndRoundTripsFalse()
+        {
+            Assert.IsTrue(new PetSettingsData().AlmanacEnabled);
+            Assert.IsTrue(PetSettingsCodec.Parse(new[] { "DailyContentEnabled=1" })
+                .AlmanacEnabled);
+
+            PetSettingsData disabled = new PetSettingsData
+            {
+                AlmanacEnabled = false
+            };
+            Assert.IsFalse(PetSettingsCodec.Parse(
+                PetSettingsCodec.Serialize(disabled)).AlmanacEnabled);
+
+            PetSettingsData target = new PetSettingsData();
+            target.CopyFrom(disabled);
+            Assert.IsFalse(target.AlmanacEnabled);
+        }
+
+        [TestMethod]
+        public void StickyNoteCodec_RoundTripsDisplayLocalRect()
+        {
+            StickyNoteData note = new StickyNoteData
+            {
+                DisplayId = "\\\\.\\DISPLAY1",
+                LocalLogicalX = 120,
+                LocalLogicalY = 80,
+                LocalLogicalWidth = 320,
+                LocalLogicalHeight = 300
+            };
+            StickyNoteData restored = StickyNoteCodec.ParseLine(
+                StickyNoteCodec.SerializeLine(note));
+
+            Assert.AreEqual("\\\\.\\DISPLAY1", restored.DisplayId);
+            Assert.AreEqual(120, restored.LocalLogicalX);
+            Assert.AreEqual(80, restored.LocalLogicalY);
+            Assert.AreEqual(320, restored.LocalLogicalWidth);
+            Assert.AreEqual(300, restored.LocalLogicalHeight);
+            Assert.IsTrue(StickyNoteCodec.SerializeLine(restored)
+                .StartsWith(
+                    StickyNoteCodec.CurrentVersion.ToString(
+                        System.Globalization.CultureInfo.InvariantCulture) +
+                    "|", StringComparison.Ordinal));
+        }
+
+        [TestMethod]
+        public void StickyNoteCodec_ValidatesV10CanonicalContract()
+        {
+            // A valid placement round-trips and stays canonical.
+            StickyNoteData valid = new StickyNoteData
+            {
+                DisplayId = "\\\\.\\DISPLAY1",
+                LocalLogicalX = 10,
+                LocalLogicalY = 20,
+                LocalLogicalWidth = 320,
+                LocalLogicalHeight = 300
+            };
+            StickyNoteData restoredValid = StickyNoteCodec.ParseLine(
+                StickyNoteCodec.SerializeLine(valid));
+            Assert.AreEqual("\\\\.\\DISPLAY1", restoredValid.DisplayId);
+            Assert.AreEqual(10, restoredValid.LocalLogicalX);
+            Assert.AreEqual(320, restoredValid.LocalLogicalWidth);
+
+            // A missing DisplayId drops an incomplete placement to legacy.
+            StickyNoteData orphan = new StickyNoteData
+            {
+                DisplayId = String.Empty,
+                LocalLogicalX = 5,
+                LocalLogicalY = 6,
+                LocalLogicalWidth = 320,
+                LocalLogicalHeight = 300
+            };
+            StickyNoteData repaired = StickyNoteCodec.ParseLine(
+                StickyNoteCodec.SerializeLine(orphan));
+            Assert.IsTrue(String.IsNullOrWhiteSpace(repaired.DisplayId));
+            Assert.AreEqual(0, repaired.LocalLogicalWidth);
+            Assert.AreEqual(0, repaired.LocalLogicalHeight);
+
+            // A corrupt oversized local rect is clamped to the safety limit.
+            StickyNoteData corrupt = new StickyNoteData
+            {
+                DisplayId = "\\\\.\\DISPLAY1",
+                LocalLogicalWidth = int.MaxValue,
+                LocalLogicalHeight = int.MaxValue
+            };
+            StickyNoteData repairedCorrupt = StickyNoteCodec.ParseLine(
+                StickyNoteCodec.SerializeLine(corrupt));
+            Assert.IsTrue(repairedCorrupt.LocalLogicalWidth <= 20000);
+            Assert.IsTrue(repairedCorrupt.LocalLogicalHeight <= 20000);
+        }
+
+        [TestMethod]
+        public void SettingsCodec_NormalizesInvalidAndRoundTripsPisces()
+        {
+            PetSettingsData pisces = new PetSettingsData
+            {
+                ZodiacSign = ZodiacSign.Pisces
+            };
+            Assert.AreEqual(ZodiacSign.Pisces, PetSettingsCodec.Parse(
+                PetSettingsCodec.Serialize(pisces)).ZodiacSign);
+            Assert.AreEqual(ZodiacSign.None, PetSettingsCodec.Parse(
+                new string[] { "ZodiacSign=999" }).ZodiacSign);
+            Assert.AreEqual(ZodiacSign.None, PetSettingsCodec.Parse(
+                new string[] { "ZodiacSign=Scorpio" }).ZodiacSign);
+            Assert.AreEqual(ZodiacSign.None,
+                PetSettingRules.NormalizeZodiacSign((ZodiacSign)(-1)));
+        }
+
+        [TestMethod]
+        public void WeatherLocation_ValidatesCoordinatesAndBuildsStableDisplay()
+        {
+            WeatherLocation location;
+            Assert.IsTrue(WeatherLocation.TryCreate("武汉", "湖北", "中国",
+                30.5928, 114.3055, "Asia/Shanghai", out location));
+            Assert.AreEqual("武汉 · 湖北 · 中国", location.DisplayName);
+            Assert.IsTrue(location.StableKey.Contains("Asia/Shanghai"));
+
+            WeatherLocation invalid;
+            Assert.IsFalse(WeatherLocation.TryCreate("武汉", "湖北", "中国",
+                91D, 114D, "Asia/Shanghai", out invalid));
+            Assert.IsFalse(WeatherLocation.TryCreate("武汉", "湖北", "中国",
+                30D, -181D, "Asia/Shanghai", out invalid));
+            Assert.IsFalse(WeatherLocation.TryCreate("武汉", "湖北", "中国",
+                30D, 114D, "", out invalid));
+        }
+
+        [TestMethod]
+        public void SettingsCodec_InvalidWeatherLocationFailsClosed()
+        {
+            string encodedName = Convert.ToBase64String(
+                Encoding.UTF8.GetBytes("武汉"));
+            string encodedTimezone = Convert.ToBase64String(
+                Encoding.UTF8.GetBytes("Asia/Shanghai"));
+            PetSettingsData restored = PetSettingsCodec.Parse(new[]
+            {
+                "WeatherEnabled=1",
+                "WeatherLocationNameBase64=" + encodedName,
+                "WeatherLatitude=200",
+                "WeatherLongitude=114.3055",
+                "WeatherTimezoneBase64=" + encodedTimezone
+            });
+
+            Assert.IsFalse(restored.WeatherEnabled);
         }
     }
 }

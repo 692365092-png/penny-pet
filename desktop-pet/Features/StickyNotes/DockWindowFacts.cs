@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace PennyPet
 {
@@ -53,6 +54,15 @@ namespace PennyPet
             return new DockWindowFacts(target.NoteId, target.X, target.Y,
                 target.Width, target.Height, target.Visible, target.TopMost);
         }
+
+        internal static DockWindowFacts FromWindowFacts(WindowFacts facts,
+            bool visible, bool topMost)
+        {
+            if (facts == null) return null;
+            PhysicalRect rect = facts.PhysicalBounds;
+            return new DockWindowFacts(facts.WindowId, rect.Left, rect.Top,
+                rect.Width, rect.Height, visible, topMost);
+        }
     }
 
     internal sealed class DockLayoutTarget
@@ -76,5 +86,70 @@ namespace PennyPet
         internal int Height { get; private set; }
         internal bool Visible { get; private set; }
         internal bool TopMost { get; private set; }
+    }
+
+    // Latest-wins mailbox for a live dock drag frame. The Pet UI thread
+    // replaces the immutable plan on every mouse move; the Sticky STA takes
+    // only the newest plan and applies it in one deferred native batch.
+    internal sealed class DockPlanMailbox
+    {
+        internal readonly object Gate = new object();
+        private long _nextSequence;
+        internal DockPlacementPlan Current;
+        internal bool ApplyQueued;
+        internal long FinalPlanSequence;
+
+        internal long NextSequence()
+        {
+            return ++_nextSequence;
+        }
+
+        internal DockPlacementPlan TakeLatest()
+        {
+            lock (Gate)
+            {
+                if (Current != null &&
+                    Current.PlanSequence == FinalPlanSequence)
+                {
+                    return null;
+                }
+                DockPlacementPlan plan = Current;
+                Current = null;
+                ApplyQueued = false;
+                return plan;
+            }
+        }
+
+        internal void ReplaceWithFinal(DockPlacementPlan plan)
+        {
+            if (plan == null) throw new ArgumentNullException(nameof(plan));
+            lock (Gate)
+            {
+                Current = plan;
+                FinalPlanSequence = plan.PlanSequence;
+                ApplyQueued = true;
+            }
+        }
+
+        internal DockPlacementPlan TakeFinal(long planSequence)
+        {
+            lock (Gate)
+            {
+                return Current != null && FinalPlanSequence == planSequence &&
+                    Current.PlanSequence == planSequence ? Current : null;
+            }
+        }
+
+        internal void CompleteFinal(long planSequence)
+        {
+            lock (Gate)
+            {
+                if (Current != null && Current.PlanSequence == planSequence)
+                    Current = null;
+                if (FinalPlanSequence == planSequence)
+                    FinalPlanSequence = 0;
+                ApplyQueued = false;
+            }
+        }
     }
 }

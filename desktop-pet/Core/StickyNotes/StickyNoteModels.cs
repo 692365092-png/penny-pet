@@ -26,13 +26,18 @@ namespace PennyPet
             ShortItemText.MaximumInputCharacters;
         public const int MaximumTitleCharacters = 50;
         public const long MaximumDataFileBytes = 32L * 1024L * 1024L;
+        public const int MinimumWindowWidth = 280;
+        public const int MaximumWindowWidth = 900;
+        public const int MinimumWindowHeight = 220;
+        public const int MaximumWindowHeight = 700;
     }
 
     internal static class StickyNoteWindowRules
     {
-        internal static bool ShouldKeepSideTabsTopMost(bool hasVisibleNotes)
+        internal static bool ShouldKeepSideTabsTopMost(
+            bool overlapsVisibleSticky)
         {
-            return true;
+            return !overlapsVisibleSticky;
         }
     }
 
@@ -152,6 +157,20 @@ namespace PennyPet
         public int Y;
         public int Width = 280;
         public int Height = 230;
+        public string DisplayId = String.Empty;
+        public int LocalLogicalX;
+        public int LocalLogicalY;
+        public int LocalLogicalWidth;
+        public int LocalLogicalHeight;
+        // v11 durable placement preference: a target identity plus its
+        // display-local logical rect. DisplayId/LocalLogical* remain v10
+        // migration/legacy fields and X/Y/Width/Height are the last known
+        // physical fallback, never the durable authority.
+        public string PreferredDisplayTargetKey = String.Empty;
+        public int PreferredLocalLogicalX;
+        public int PreferredLocalLogicalY;
+        public int PreferredLocalLogicalWidth;
+        public int PreferredLocalLogicalHeight;
         // Optional parent relationship for vertically docked notes.  Keeping
         // this in the data model (rather than merging windows) lets every note
         // retain its own editor, reminder state and transparency settings.
@@ -205,6 +224,16 @@ namespace PennyPet
             copy.Y = Y;
             copy.Width = Width;
             copy.Height = Height;
+            copy.DisplayId = DisplayId;
+            copy.LocalLogicalX = LocalLogicalX;
+            copy.LocalLogicalY = LocalLogicalY;
+            copy.LocalLogicalWidth = LocalLogicalWidth;
+            copy.LocalLogicalHeight = LocalLogicalHeight;
+            copy.PreferredDisplayTargetKey = PreferredDisplayTargetKey;
+            copy.PreferredLocalLogicalX = PreferredLocalLogicalX;
+            copy.PreferredLocalLogicalY = PreferredLocalLogicalY;
+            copy.PreferredLocalLogicalWidth = PreferredLocalLogicalWidth;
+            copy.PreferredLocalLogicalHeight = PreferredLocalLogicalHeight;
             copy.DockParentId = DockParentId;
             copy.DockGroupId = DockGroupId;
             copy.DockGroupOrder = DockGroupOrder;

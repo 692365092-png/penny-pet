@@ -60,8 +60,12 @@ namespace PennyPet.Tests
                 "private void Post(", "public void Dispose()");
             Assert.IsTrue(closeLoading.Contains("Post(") &&
                 postLoading.Contains("form.BeginInvoke(") &&
-                loadingThread.Contains("_exited.WaitOne()"),
-                "Close must marshal to loading STA and disposal must await exit.");
+                loadingThread.Contains(
+                    "_ready.WaitOne(ReadyTimeoutMilliseconds)") &&
+                loadingThread.Contains(
+                    "_exited.WaitOne(ExitTimeoutMilliseconds)") &&
+                !loadingThread.Contains("_exited.WaitOne()"),
+                "Close must marshal to loading STA and both waits must be bounded.");
             Assert.IsTrue(host.Contains("pet.StartupReady += delegate") &&
                 host.Contains("loading.Close();") &&
                 host.Contains("loading.BringToFront();") &&
@@ -82,15 +86,21 @@ namespace PennyPet.Tests
         public void Autosave_DoesNotRefreshSideTabs()
         {
             string source = ReadSource("Features/StickyNotes/PetStickyWindowCoordinator.cs");
-            string handler = Between(source, "form.NoteChanged += delegate",
-                "form.HeaderDragStarted");
+            string handler = Between(source,
+                "if (value.Kind == StickyUiEventKind.SnapshotChanged)",
+                "if (value.Kind == StickyUiEventKind.Closed)");
+            string apply = Between(source,
+                "private bool ApplyHostedStickyEvent",
+                "private void ClearHostedDockResizeSession");
 
-            Assert.IsTrue(handler.Contains("_notes.SaveAsync();"),
+            Assert.IsTrue(handler.Contains("ApplyHostedStickyEvent(") &&
+                apply.Contains("if (persist) _notes.SaveAsync();"),
                 "NoteChanged must persist note data.");
-            Assert.IsTrue(handler.Contains("RefreshMenuText();"),
+            Assert.IsTrue(apply.Contains("RefreshMenuText();"),
                 "NoteChanged must refresh menu text.");
-            Assert.IsFalse(handler.Contains("RefreshNoteTabs();"),
-                "Content autosave must not refresh side tabs.");
+            Assert.IsTrue(apply.Contains("if (visibilityChanged ||") &&
+                apply.Contains("RefreshNoteTabs();"),
+                "Content autosave must refresh tabs only for visibility or hidden-title changes.");
         }
 
         [TestMethod]
@@ -115,14 +125,18 @@ namespace PennyPet.Tests
             Assert.IsTrue(tabs.Contains("ShowWithoutActivation") &&
                 tabs.Contains("WS_EX_NOACTIVATE"),
                 "Stable TopMost tabs must remain non-activating.");
-            Assert.IsTrue(position.Contains("IsLayoutSplitCurrent") &&
+            Assert.IsTrue(position.Contains("CalculateEdgeAwareLeftCount") &&
                 position.Contains("_noteTabsSignature = String.Empty") &&
                 position.Contains("RefreshNoteTabs();") &&
-                position.Contains("ShowNear(Bounds, work)"),
+                position.Contains("ShowNear(petBounds, work)") &&
+                position.Contains("petFacts.PhysicalBounds"),
                 "Positioning must rebuild only an invalid split and otherwise reposition.");
             Assert.IsTrue(form.Contains("WmSettingChange") &&
                 form.Contains("WmDisplayChange") &&
-                form.Contains("BeginInvoke(new Action(PositionNoteTabs))") &&
+                form.Contains("WmDeviceChange") &&
+                form.Contains("NotifyPotentialChange") &&
+                form.Contains("DisplayTopologyRuntime") &&
+                !form.Contains("BeginInvoke(new Action(PositionNoteTabs))") &&
                 tabs.Contains("TopMost = true") &&
                 tabs.Contains("BringToFront()") &&
                 !tabs.Contains("Activate()"),
@@ -133,8 +147,9 @@ namespace PennyPet.Tests
         public void OwnNoteTyping_StillTriggersAnimation()
         {
             string source = ReadSource("Features/StickyNotes/PetStickyWindowCoordinator.cs");
-            string handler = Between(source, "form.TypingActivity += delegate",
-                "form.CancelReminderRequested");
+            string handler = Between(source,
+                "if (value.Kind == StickyUiEventKind.TypingActivity)",
+                "if (value.Kind == StickyUiEventKind.InputFocusChanged)");
 
             Assert.IsTrue(handler.Contains("TriggerTypingAnimation();"),
                 "Own-note typing should restore the typing animation.");
@@ -222,6 +237,91 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyPersistence_FutureSchemaFailsClosedBeforeRecovery()
+        {
+            string repository = ReadSource(
+                "Features/StickyNotes/StickyNoteRepository.cs");
+            string exception = ReadSource(
+                "Features/StickyNotes/UnsupportedStickySchemaException.cs");
+            string host = ReadSource("PennyApplicationHost.cs");
+            string pet = ReadSource("PetForm.cs");
+            string load = Between(repository,
+                "internal static StickyNoteRepository LoadFromFile(string filePath)",
+                "private static bool TryPopulateFromFile");
+            string populate = Between(repository,
+                "private static bool TryPopulateFromFile",
+                "private static void AddParsedLine");
+            string save = Between(repository,
+                "internal PersistenceResult SaveToFile",
+                "internal PersistenceResult ExportSnapshot");
+
+            Assert.IsTrue(exception.Contains("DetectedVersion") &&
+                exception.Contains("MaximumSupportedVersion") &&
+                exception.Contains("SourcePath"),
+                "Future schema must have an explicit failure classification.");
+            int primaryBlock = load.IndexOf(
+                "primaryError as UnsupportedStickySchemaException",
+                StringComparison.Ordinal);
+            int backupProbe = load.IndexOf(
+                "string backupPath = filePath + \".bak\"",
+                StringComparison.Ordinal);
+            Assert.IsTrue(primaryBlock >= 0 && backupProbe > primaryBlock,
+                "A future primary must block before any backup fallback.");
+            int preflight = populate.IndexOf(
+                "InspectSchemaVersions(lines, filePath)",
+                StringComparison.Ordinal);
+            int parse = populate.IndexOf("AddParsedLine(repository, line)",
+                StringComparison.Ordinal);
+            Assert.IsTrue(preflight >= 0 && parse > preflight,
+                "Every file must be version-preflighted before payload parsing.");
+            Assert.IsTrue(save.IndexOf("if (!_loadSucceeded)",
+                    StringComparison.Ordinal) <
+                save.IndexOf("generation = ++_requestedGeneration",
+                    StringComparison.Ordinal),
+                "A blocked repository must reject save before snapshot generation.");
+            Assert.IsTrue(pet.Contains("if (_notes.IsFutureSchemaBlocked)") &&
+                pet.Contains("throw _notes.FutureSchemaError;") &&
+                host.Contains("catch (UnsupportedStickySchemaException error)") &&
+                host.Contains("BuildFutureSchemaBlockedMessage(error)"),
+                "Startup must show the dedicated message and exit before Pet UI continues.");
+        }
+
+        [TestMethod]
+        public void StickyPersistence_BarriersAreBoundedAndExitResolvesBothFailures()
+        {
+            string repository = ReadSource(
+                "Features/StickyNotes/StickyNoteRepository.cs");
+            string wait = Between(repository,
+                "internal PersistenceResult WaitForPendingSaves(TimeSpan timeout)",
+                "private void AsyncWriterLoop");
+            string commit = Between(repository,
+                "private PersistenceResult CommitPreparedSnapshot",
+                "internal PersistenceResult CommitImportedMerge");
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetPersistenceCoordinator.cs");
+            string exit = Between(coordinator,
+                "private bool FlushPersistenceBeforeExit()",
+                "private bool ExportUnsavedStickyNotes()");
+
+            Assert.IsTrue(wait.Contains("Monitor.Wait(_saveGate, remaining)") &&
+                wait.Contains("TimeoutException") &&
+                wait.Contains("PersistenceResult.Failure(error)"),
+                "Pending-save barriers must return a bounded failure.");
+            Assert.IsTrue(commit.Contains("WaitForPendingSaves()") &&
+                commit.Contains("if (!pendingSaves.Succeeded) return pendingSaves;"),
+                "Import and full restore must stop when pending saves time out.");
+            int emergencyExport = exit.IndexOf(
+                "if (!ExportUnsavedStickyNotes()) return false;",
+                StringComparison.Ordinal);
+            int settingsResolution = exit.IndexOf(
+                "if (!settingsResult.Succeeded)", StringComparison.Ordinal);
+            Assert.IsTrue(emergencyExport >= 0 &&
+                settingsResolution > emergencyExport &&
+                !exit.Contains("return ExportUnsavedStickyNotes();"),
+                "Emergency Sticky export must not silently resolve a Settings failure.");
+        }
+
+        [TestMethod]
         public void StickyUiHost_CommandBoundaryIsAsynchronous()
         {
             string host = ReadSource("StickyUiHost.cs");
@@ -240,7 +340,7 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void StickyUiCanary_UsesDetachedTypedOwnershipBoundary()
+        public void StickyUiHosted_UsesDetachedTypedOwnershipBoundary()
         {
             string commands = ReadSource(
                 "Features/StickyNotes/StickyUiCommand.cs");
@@ -264,14 +364,14 @@ namespace PennyPet.Tests
                 "Only sticky STA sessions may own hosted WPF windows.");
             Assert.IsTrue(coordinator.Contains(
                 "StickyNoteUiSnapshot.FromData(note)") &&
-                coordinator.Contains("snapshot.ApplyTo(canonical)") &&
+                coordinator.Contains("ApplyHostedStickyFactsGeometry") &&
                 pet.Contains("StickyHostedRuntime _hostedRuntime") &&
                 runtime.Contains("Dictionary<string, long> _appliedSequences"),
                 "Pet must apply each note using an independent sequence.");
         }
 
         [TestMethod]
-        public void StickyUiCanary_DoesNotSynchronouslyWaitAcrossUiThreads()
+        public void StickyUiHosted_DoesNotSynchronouslyWaitAcrossUiThreads()
         {
             string threadHost = ReadSource("StickyUiThreadHost.cs");
             string posted = Between(threadHost, "internal void Post(",
@@ -286,11 +386,11 @@ namespace PennyPet.Tests
                 coordinator.Contains("Dispatcher.Invoke") ||
                 coordinator.Contains("Task.Wait") ||
                 coordinator.Contains("Task.Result"),
-                "Pet-side Canary coordination must stay fully asynchronous.");
+                "Pet-side hosted coordination must stay fully asynchronous.");
         }
 
         [TestMethod]
-        public void StickyUiCanary_ReportsInputFocusForOverlayPrivacy()
+        public void StickyUiHosted_ReportsInputFocusForOverlayPrivacy()
         {
             string commands = ReadSource(
                 "Features/StickyNotes/StickyUiCommand.cs");
@@ -299,6 +399,8 @@ namespace PennyPet.Tests
                 "Features/StickyNotes/PetStickyWindowCoordinator.cs");
             string overlay = ReadSource(
                 "Features/KeyboardOverlay/PetKeyboardOverlayCoordinator.cs");
+            string hook = ReadSource(
+                "Features/KeyboardOverlay/GlobalKeyboardActivity.cs");
 
             Assert.IsTrue(commands.Contains("InputFocusChanged") &&
                 session.Contains("_window.HasFocusedTextInput") &&
@@ -306,13 +408,398 @@ namespace PennyPet.Tests
                     "_hostedRuntime.SetInputFocus(value.NoteId, value.Flag)"),
                 "Sticky STA must asynchronously report a plain focus flag.");
             Assert.IsTrue(overlay.Contains(
-                "HasFocusedOwnNoteTextInput() ||") &&
-                overlay.Contains("IsOwnApplicationInputFocused() || sensitive"),
-                "Both keyboard-overlay privacy checks must suppress own input.");
+                    "ShouldSuppressOwnApplicationInput(focusSnapshot)") &&
+                overlay.Contains("HasFocusedOwnNoteTextInput() ||") &&
+                overlay.Contains("_windowLayers.HasActiveModal") &&
+                overlay.Contains("focusSnapshot.ProcessId ==") &&
+                overlay.Contains(
+                    "PetKeyboardPrivacyPolicy.ShouldSuppressOwnApplicationInput"),
+                "Only Sticky text input and an active owned modal may allow own-process overlay input.");
+            Assert.IsTrue(hook.Contains("ShouldPublishKey(injected)") &&
+                !hook.Contains("ownProcessId") &&
+                !hook.Contains("foregroundProcessId"),
+                "The hook must capture physical own-process keys for policy evaluation.");
         }
 
         [TestMethod]
-        public void StickyUiCanary_ExternalCloseUsesAsyncFinalSnapshotProtocol()
+        public void DailyContent_OnlyRunsForNonDragPetMouseUp()
+        {
+            string animation = ReadSource("PetAnimationRuntime.cs");
+            string startup = ReadSource("PetStartupCoordinator.cs");
+            int mouseUp = animation.IndexOf("private void PetMouseUp",
+                StringComparison.Ordinal);
+            int nextMethod = animation.IndexOf(
+                "private async void HandlePetPoked", mouseUp,
+                StringComparison.Ordinal);
+            string body = animation.Substring(mouseUp, nextMethod - mouseUp);
+            int poke = body.IndexOf("HandlePetPoked()",
+                StringComparison.Ordinal);
+
+            Assert.IsTrue(body.Contains("if (wasDrag)") &&
+                body.Contains("else") && poke >= 0,
+                "A valid non-drag mouse-up must enter one poke boundary.");
+            Assert.IsFalse(body.Contains("_dailyContentCoordinator") ||
+                body.Contains("StartOrdinaryPokeAnimation"),
+                "PetMouseUp must not duplicate poke side effects.");
+            Assert.IsFalse(startup.Contains("HandlePetPoked"),
+                "Startup must never trigger daily content.");
+        }
+
+        [TestMethod]
+        public void SmallTalkRuntime_IsOwnedByCoordinator()
+        {
+            string form = ReadSource("PetForm.cs");
+            string animation = ReadSource("PetAnimationRuntime.cs");
+            string coordinator = ReadSource("PetSmallTalkCoordinator.cs");
+            string poke = Between(animation,
+                "private async void HandlePetPoked",
+                "private void StartOrdinaryPokeAnimation");
+
+            Assert.IsTrue(form.Contains(
+                    "private readonly PetSmallTalkCoordinator") &&
+                poke.Contains("StartOrdinaryPokeAnimation(nowUtc)") &&
+                poke.Contains("IsOpeningEligible") &&
+                poke.Contains("StartNotificationPokeAnimation(nowUtc)") &&
+                poke.Contains(".HandlePetPokedAsync") &&
+                poke.Contains("if (dailyHandled)") &&
+                poke.Contains("_daypartCheckInCoordinator.HandlePetPoked") &&
+                poke.Contains("_smallTalkCoordinator.HandlePetPoked(nowUtc)") &&
+                !poke.Contains(".Wait(") && !poke.Contains(".Result"),
+                "PetForm must preserve Easter, Daily, Daypart, SmallTalk, animation order.");
+            Assert.IsFalse(form.Contains("SmallTalkPhrases") ||
+                form.Contains("_smallTalkRandom") ||
+                form.Contains("_lastSmallTalkIndex") ||
+                form.Contains("_lastSmallTalkUtc") ||
+                animation.Contains("TryShowSmallTalk"),
+                "PetForm must not retain a second SmallTalk runtime state.");
+            Assert.IsTrue(coordinator.Contains(
+                    "PetSmallTalkPolicy.IsWindowExpired") &&
+                coordinator.Contains("PetSmallTalkPolicy.ShouldSpeak") &&
+                coordinator.Contains("PetMessagePolicy.ShouldSuppress") &&
+                coordinator.Contains("if (!_show(") &&
+                coordinator.Contains("_loopableQuotaRemaining--") &&
+                coordinator.Contains("TryUseMeaningful"),
+                "The coordinator must own eligibility, selection and accepted state.");
+            Assert.IsFalse(coordinator.Contains("PetForm") ||
+                coordinator.Contains("PetBubbleCoordinator") ||
+                coordinator.Contains("System.Windows.Forms") ||
+                coordinator.Contains("KeyboardOverlayForm"),
+                "SmallTalk runtime must remain independent of Windows UI details.");
+        }
+
+        [TestMethod]
+        public void AlmanacDailyContent_IsNarrowDeterministicAndIntegrated()
+        {
+            string calculator = ReadSource(
+                "Core/Calendar/Almanac/AlmanacCalculator.cs");
+            string semantic = ReadSource(
+                "Core/DailyContent/Almanac/AlmanacSemanticCatalog.cs");
+            string selector = ReadSource(
+                "Core/DailyContent/Almanac/AlmanacDailySelector.cs");
+            string wording = ReadSource(
+                "Core/DailyContent/Almanac/AlmanacWordingCatalog.cs");
+            string content = ReadSource(
+                "Core/DailyContent/DailyBriefingContent.cs");
+            string composer = ReadSource(
+                "Core/DailyContent/DailyBriefingComposer.cs");
+            string coordinator = ReadSource("PetDailyContentCoordinator.cs");
+            string form = ReadSource("PetForm.cs");
+            string settingsForm = ReadSource("DailyContentSettingsForm.cs");
+            string settings = ReadSource(
+                "Core/Settings/PetSettingsData.cs");
+            string commands = ReadSource(
+                "Infrastructure/SelfTestCommandRouter.cs");
+            string resolver = ReadSource(
+                "Infrastructure/EmbeddedAssemblyResolver.cs");
+            string coreProject = ReadSource("PennyPet.Core.csproj");
+            string windowsProject = ReadSource("PennyPet.Windows.csproj");
+            string notices = ReadSource("../THIRD_PARTY_NOTICES.md");
+
+            Assert.IsTrue(calculator.Contains("Solar.FromYmdHms(") &&
+                calculator.Contains("localNow.Year") &&
+                calculator.Contains("localNow.Month") &&
+                calculator.Contains("localNow.Day") &&
+                calculator.Contains("GetDayYi(1)") &&
+                calculator.Contains("GetDayJi(1)"),
+                "The adapter must use local civil date and explicit sect 1.");
+            Assert.IsFalse(calculator.Contains(".DayYi") ||
+                calculator.Contains(".DayJi") ||
+                calculator.Contains("UtcDateTime"),
+                "The adapter must not use implicit sect or UTC date.");
+            Assert.IsTrue(semantic.Contains("TryGetValue") &&
+                selector.Contains("YiJiConflict") &&
+                selector.Contains("StringComparer.Ordinal") &&
+                content.Contains("AlmanacDailySelection Almanac") &&
+                composer.Contains("content.Almanac") &&
+                coordinator.Contains("AlmanacCalculator.Calculate") &&
+                coordinator.Contains("AlmanacDailySelector.Select"),
+                "Raw terms must cross the whitelist before the shared budget.");
+            Assert.IsFalse(semantic.Contains("Contains(\"") ||
+                selector.Contains("Random") ||
+                selector.Contains("GetHashCode") ||
+                selector.Contains("PetSettings") ||
+                selector.Contains("System.Windows.Forms") ||
+                semantic.Contains("Lunar.") || selector.Contains("Lunar.") ||
+                wording.Contains("Lunar."),
+                "Selection must use exact mapping and remain platform neutral.");
+            Assert.IsTrue(coreProject.Contains(
+                    "Include=\"lunar-csharp\" Version=\"1.6.8\"") &&
+                windowsProject.Contains(
+                    "Include=\"lunar-csharp\" Version=\"1.6.8\"") &&
+                windowsProject.Contains("PennyPet.Dependencies.lunar.dll") &&
+                resolver.Contains("LunarAssemblyName = \"lunar\"") &&
+                resolver.Contains("LunarResourceName") &&
+                notices.Contains("## lunar-csharp") &&
+                notices.Contains("Version: `1.6.8`"),
+                "Package, notice and single-file allowlist must be exact.");
+            Assert.IsTrue(commands.Contains("--almanac-probe=") &&
+                commands.Contains("--daily-briefing-probe="),
+                "Both pure diagnostic seams must remain available.");
+            Assert.IsFalse(
+                semantic.Contains("Provider") ||
+                selector.Contains("Manager") || selector.Contains("Engine"),
+                "Almanac must remain narrow and avoid speculative framework.");
+            Assert.IsTrue(
+                settings.Contains("AlmanacEnabled") &&
+                settingsForm.Contains("传统黄历（民俗）"),
+                "Almanac preference must be wired into settings and UI.");
+        }
+
+        [TestMethod]
+        public void DailyBriefing_UsesCoreSentenceBudgetAndEndingPolicy()
+        {
+            string ending = ReadSource(
+                "Core/Messaging/PetSentenceEndingPolicy.cs");
+            string content = ReadSource(
+                "Core/DailyContent/DailyBriefingContent.cs");
+            string composer = ReadSource(
+                "Core/DailyContent/DailyBriefingComposer.cs");
+            string coordinator = ReadSource("PetDailyContentCoordinator.cs");
+            string bubble = ReadSource("PetBubbleCoordinator.cs");
+
+            Assert.IsTrue(content.Contains("DailyBriefingSentence") &&
+                content.Contains("PetSentenceIntent") &&
+                composer.Contains("selected.Count == 3") &&
+                composer.Contains("PetSentenceEndingPolicy.Apply") &&
+                coordinator.Contains("localNow.Date, content"),
+                "Daily content must carry explicit semantic sentence facts.");
+            Assert.IsTrue(ending.Contains("PetSentenceRole") &&
+                ending.Contains("PetSentenceIntent") &&
+                ending.Contains("PetSentenceContentKind") &&
+                ending.Contains("2166136261") &&
+                ending.Contains("16777619") &&
+                !ending.Contains("GetHashCode") &&
+                !ending.Contains("System.Windows") &&
+                !ending.Contains("PetSettings") &&
+                !ending.Contains("History"),
+                "Sentence endings must remain deterministic stateless Core rules.");
+            Assert.IsFalse(bubble.Contains("PetSentenceEndingPolicy") ||
+                coordinator.Contains("呢～") || coordinator.Contains("喔～"),
+                "Bubble and Windows coordination must not construct endings.");
+        }
+
+        [TestMethod]
+        public void WeatherDailyContent_UsesOptInAsyncBoundedInfrastructure()
+        {
+            string meaning = ReadSource(
+                "Core/DailyContent/Weather/WeatherMeaningRules.cs");
+            string wording = ReadSource(
+                "Core/DailyContent/Weather/WeatherWordingCatalog.cs");
+            string source = ReadSource(
+                "Infrastructure/Weather/PetWeatherSource.cs");
+            string geocoding = ReadSource(
+                "Infrastructure/Weather/OpenMeteoGeocodingClient.cs");
+            string client = ReadSource(
+                "Infrastructure/Weather/OpenMeteoForecastClient.cs");
+            string coordinator = ReadSource("PetDailyContentCoordinator.cs");
+            string preferences = ReadSource(
+                "Core/DailyContent/DailyContentPreferencesSnapshot.cs");
+            string animation = ReadSource("PetAnimationRuntime.cs");
+            string startup = ReadSource("PetStartupCoordinator.cs");
+            string commands = ReadSource(
+                "Infrastructure/SelfTestCommandRouter.cs");
+            string coreProject = ReadSource("PennyPet.Core.csproj");
+            string resolver = ReadSource(
+                "Infrastructure/EmbeddedAssemblyResolver.cs");
+
+            Assert.IsFalse(meaning.Contains("HttpClient") ||
+                meaning.Contains("https://") || wording.Contains("Random") ||
+                wording.Contains("GetHashCode"),
+                "Weather meaning and wording must remain deterministic Core rules.");
+            Assert.IsTrue(source.Contains("new HttpClient(") &&
+                source.Contains("TimeSpan.FromSeconds(3)") &&
+                source.Contains("TimeSpan.FromSeconds(8)") &&
+                source.Contains("CancellationTokenSource.CreateLinkedTokenSource") &&
+                source.Contains("FailureCooldown") &&
+                source.Contains("TimeSpan.FromMinutes(15)") &&
+                source.Contains("Queue<string>") &&
+                source.Contains("_cacheOrder.Count >= 3") &&
+                source.Contains("_inFlightKey == key"),
+                "Weather transport must own one bounded cache/in-flight/cooldown.");
+            Assert.IsTrue(geocoding.Contains("CancellationToken") &&
+                geocoding.Contains("HttpCompletionOption.ResponseContentRead") &&
+                geocoding.Contains("EnsureSuccessStatusCode"),
+                "Geocoding must accept an explicit per-request cancellation deadline.");
+            Assert.IsTrue(client.Contains("past_days=1") &&
+                client.Contains("forecast_days=2") &&
+                client.Contains("temperature_2m") &&
+                client.Contains("apparent_temperature") &&
+                client.Contains("precipitation_probability") &&
+                client.Contains("precipitation\"") &&
+                client.Contains("snowfall") &&
+                client.Contains("weather_code") &&
+                client.Contains("wind_speed_10m") &&
+                client.Contains("wind_gusts_10m") &&
+                !client.Contains("apikey"),
+                "Forecast request must keep the reviewed eight-variable shape.");
+            string poke = Between(animation,
+                "private async void HandlePetPoked",
+                "private void StartOrdinaryPokeAnimation");
+            Assert.IsTrue(poke.IndexOf("StartNotificationPokeAnimation(nowUtc)",
+                    StringComparison.Ordinal) <
+                poke.IndexOf(".HandlePetPokedAsync", StringComparison.Ordinal) &&
+                coordinator.Contains("await _weatherForecast") &&
+                coordinator.Contains("WeatherMeaningRules.Select") &&
+                coordinator.Contains("WeatherWordingCatalog.Select") &&
+                !poke.Contains(".Wait(") && !poke.Contains(".Result") &&
+                !coordinator.Contains(".Wait(") &&
+                !coordinator.Contains(".Result"),
+                "Poke animation must start before the asynchronous weather path.");
+            Assert.IsTrue(preferences.Contains(
+                    "sealed class DailyContentPreferencesSnapshot") &&
+                preferences.Contains("WeatherLocation WeatherLocation") &&
+                preferences.Contains("ZodiacSign ZodiacSign") &&
+                preferences.Contains("int BirthdayMonth") &&
+                preferences.Contains("int BirthdayDay") &&
+                preferences.Contains("string LastBriefingDate") &&
+                coordinator.Contains(
+                    "DailyContentPreferencesSnapshot preferences = _preferences();") &&
+                !coordinator.Contains("private readonly Func<ZodiacSign>") &&
+                animation.Contains("private async Task HandlePetPokedAsync()") &&
+                animation.Contains(
+                    "ApplicationDiagnostics.ReportNonFatal(\"pet-poke\", error)"),
+                "One immutable preference snapshot must span each async attempt and the UI boundary must observe failures.");
+            Assert.IsFalse(startup.Contains("GetForecastAsync") ||
+                startup.Contains("SearchLocationsAsync"),
+                "Startup must make zero weather requests.");
+            string locationDialog = ReadSource("WeatherLocationDialog.cs");
+            Assert.IsTrue(locationDialog.Contains("requestedQuery") &&
+                locationDialog.Contains("currentQuery") &&
+                locationDialog.Contains("搜索内容已变化") &&
+                locationDialog.Contains("_searchCancellation"),
+                "Weather location search must snapshot the query and cancel on close.");
+            Assert.IsFalse(locationDialog.Contains("QueryKeyDown") ||
+                locationDialog.Contains("_query.Enabled = false") ||
+                locationDialog.Contains("_query.Focus()") ||
+                locationDialog.Contains("AcceptButton = _ok") ||
+                locationDialog.Contains("TopMost = true"),
+                "Weather search must not steal IME Enter or focus.");
+            Assert.IsTrue(commands.Contains("--weather-api-probe=") &&
+                !coreProject.Contains("System.Net.Http") &&
+                !resolver.Contains("System.Net.Http"),
+                "Live probing stays explicit and no new managed dependency is embedded.");
+        }
+
+        [TestMethod]
+        public void OwnedModalWindows_UseSharedLayerBoundaryWithoutSuppressingKeys()
+        {
+            string layers = ReadSource("PetWindowLayerCoordinator.cs");
+            string menu = ReadSource("PetMenuActions.cs");
+            string settings = ReadSource("DailyContentSettingsForm.cs");
+            string reminders = ReadSource("PetReminderWindowsCoordinator.cs");
+            string sticky = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string bubble = ReadSource("PetBubbleCoordinator.cs");
+            string keyboard = ReadSource(
+                "Features/KeyboardOverlay/PetKeyboardOverlayCoordinator.cs");
+            string overlay = ReadSource(
+                "Features/KeyboardOverlay/KeyboardOverlayForm.cs");
+            string dialog = ReadSource("WeatherLocationDialog.cs");
+
+            Assert.IsTrue(layers.Contains("List<Form> _modalStack") &&
+                layers.Contains("DialogResult ShowModal") &&
+                layers.Contains("ModalZOrderFloor") &&
+                layers.Contains("KeepTransientBelowModal") &&
+                layers.Contains("SetWindowPos(transient.Handle, floor.Handle") &&
+                layers.Contains("SwpNoActivate") &&
+                layers.Contains("finally") &&
+                layers.Contains("_modalStack.Remove(dialog)"),
+                "Pet modal ownership and transient z-order must share one bounded runtime stack.");
+            Assert.IsTrue(menu.Contains(
+                    "_windowLayers.ShowModal(this, dialog)") &&
+                settings.Contains(
+                    "_windowLayers.ShowModal(this, dialog)") &&
+                reminders.Contains(
+                    "_windowLayers.ShowModal(this, dialog)") &&
+                sticky.Contains(
+                    "_windowLayers.ShowModal(this, manager)") &&
+                !menu.Contains("ShowOwnedModalDialog") &&
+                !menu.Contains("_ownedModalUi"),
+                "Pet-owned Form dialogs, including nested weather settings, must use the shared layer boundary.");
+            Assert.IsTrue(keyboard.Contains("_windowLayers.HasActiveModal") &&
+                keyboard.Contains("HasFocusedOwnNoteTextInput() ||") &&
+                keyboard.Contains("ShowKeyRepeatCount(this, displayText") &&
+                keyboard.Contains("_keyOverlay.UpdatePosition(this)") &&
+                keyboard.Contains(
+                    "_windowLayers.KeepTransientBelowModal(_keyOverlay)") &&
+                keyboard.Contains(
+                    "_windowLayers.KeepTransientBelowModal(_leftNoteTabs)") &&
+                bubble.Contains("ApplyWindowLayer()") &&
+                bubble.Contains(
+                    "_windowLayers.KeepTransientBelowModal(_bubble)") &&
+                keyboard.Contains("SensitiveInputDetector.IsSensitiveFocus") &&
+                !keyboard.Contains("ModalAvoidanceBounds") &&
+                !overlay.Contains("avoidBounds"),
+                "Pet chrome must stay below modal windows without moving keyboard hints away from the Pet.");
+            Assert.IsTrue(dialog.Contains("FormattingEnabled = true") &&
+                dialog.Contains("ClientSize = new Size(410, 255)") &&
+                dialog.Contains("_results.Size = new Size(364, 96)"),
+                "Weather results must use their display projection in a compact window.");
+        }
+
+        [TestMethod]
+        public void PetMouseDown_OnlyClosesHoverBubble()
+        {
+            string animation = ReadSource("PetAnimationRuntime.cs");
+            string mouseDown = Between(animation,
+                "private void PetMouseDown",
+                "private void PetMouseMove");
+            string bubble = ReadSource("PetBubbleCoordinator.cs");
+            string form = ReadSource("PetForm.cs");
+            string hover = ReadSource("PetHoverRuntime.cs");
+
+            Assert.IsTrue(mouseDown.Contains(
+                    "_hoverSuppressedUntilStableLeave = true") &&
+                mouseDown.Contains("HideHoverBubble()"),
+                "Mouse-down must end the ambient Hover session.");
+            Assert.IsFalse(mouseDown.Contains(
+                "CloseCurrentBubbleWithoutRestoringHover"),
+                "Mouse-down must not close foreground user messages.");
+            Assert.IsTrue(hover.Contains(
+                    "_hoverSuppressedUntilStableLeave = false") &&
+                hover.Contains("CommitStableLeave") &&
+                bubble.Contains(
+                    "PetHoverStabilityRules.ShouldSuppressHover"),
+                "Stable leave must release the latch and Hover requests must honor it.");
+        }
+
+        [TestMethod]
+        public void PetLocationChange_RepositionsCurrentBubble()
+        {
+            string form = ReadSource("PetForm.cs");
+            int locationChanged = form.IndexOf("LocationChanged += delegate",
+                StringComparison.Ordinal);
+            int sizeChanged = form.IndexOf("SizeChanged += delegate",
+                locationChanged, StringComparison.Ordinal);
+            string body = form.Substring(locationChanged,
+                sizeChanged - locationChanged);
+
+            Assert.IsTrue(body.Contains("RepositionCurrentBubble()"),
+                "Pet movement must reposition rather than close its Bubble.");
+        }
+
+        [TestMethod]
+        public void StickyUiHosted_ExternalCloseUsesAsyncFinalSnapshotProtocol()
         {
             string form = ReadSource("PetForm.cs");
             string closing = Between(form,
@@ -376,23 +863,45 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void StickyUiCanary_LeavesStartupLoadingAndExcludedTypesOnLegacyPath()
+        public void StickyUiHosted_FinalArchitectureHasSingleWindowExecutor()
         {
             string startup = ReadSource("PetStartupCoordinator.cs");
+            string form = ReadSource("PetForm.cs");
             string coordinator = ReadSource(
                 "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string dock = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string persistence = ReadSource(
+                "Features/StickyNotes/PetPersistenceCoordinator.cs");
+            string reminder = ReadSource("PetReminderWindowsCoordinator.cs");
+            string menu = ReadSource("PetMenuActions.cs");
+            string host = ReadSource("StickyUiHost.cs");
+            string session = ReadSource("StickyWindowSession.cs");
+            string codec = ReadSource("Core/StickyNotes/StickyNoteCodec.cs");
+            string petOwned = startup + form + coordinator + dock +
+                persistence + reminder + menu;
 
-            Assert.IsFalse(startup.Contains("HostedSticky") ||
-                startup.Contains("StickyUiHost"),
-                "Step 1 must not change startup restore or loading readiness.");
-            Assert.IsTrue(coordinator.Contains("String.IsNullOrEmpty(note.DockGroupId)") &&
-                coordinator.Contains("String.IsNullOrEmpty(note.DockParentId)") &&
-                coordinator.Contains("_noteWindows.TryGetValue(note.Id"),
-                "Dock notes must remain on legacy UI.");
+            Assert.IsTrue(startup.Contains("ShowHostedSticky(") &&
+                coordinator.Contains("StartHostedSticky(") &&
+                host.Contains("Dictionary<string, StickyWindowSession> _sessions") &&
+                session.Contains("new StickyNoteWindow("),
+                "Startup and creation must route through the hosted session executor.");
+            Assert.IsFalse(petOwned.Contains("_noteWindows") ||
+                petOwned.Contains("GetOrCreateStickyNoteWindow") ||
+                petOwned.Contains("FallBackHostedStickyToLegacy") ||
+                petOwned.Contains("RestoreStickyDockComponent") ||
+                petOwned.Contains("new StickyNoteWindow("),
+                "PetForm must not retain a legacy Sticky Window executor.");
+            Assert.IsFalse(host.Contains("StickyNoteRepository") ||
+                host.Contains("IsTodoList") || host.Contains("IsSchedule"),
+                "The host must own sessions, not canonical persistence or content modes.");
+            Assert.IsTrue(codec.Contains("versionOne") &&
+                codec.Contains("versionNine"),
+                "Removing the executor must retain legacy persistence readers.");
         }
 
         [TestMethod]
-        public void LegacyDock_UsesDetachedFactsAndTypedTargetEffectBoundary()
+        public void StickyDock_UsesDetachedFactsAndTypedHostedEffectBoundary()
         {
             string coordinator = ReadSource(
                 "Features/StickyNotes/PetStickyDockCoordinator.cs");
@@ -486,20 +995,21 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void HostedCreateFallback_AdjustsReadinessSets()
+        public void HostedCreateFailure_PreservesDataWithoutLegacyFallback()
         {
             string coordinator =
                 ReadSource("Features/StickyNotes/PetStickyWindowCoordinator.cs");
             string fallback = Between(coordinator,
-                "private void FallBackHostedStickyToLegacy",
+                "private void HandleHostedStickyFailure",
                 "private static void ReportHostedStickyCommandFailure");
 
-            Assert.IsTrue(fallback.Contains(
-                "_renderedFirstRenderNoteIds.Remove(noteId)"),
-                "Fallback must remove the failed hosted id from rendered.");
-            Assert.IsTrue(fallback.Contains(
-                "_expectedFirstRenderNoteIds.Add(noteId)"),
-                "Fallback must keep the note expected on the legacy path.");
+            Assert.IsTrue(fallback.Contains("note.Visible = false") &&
+                fallback.Contains("_notes.SaveAsync();") &&
+                fallback.Contains("RefreshNoteTabs();"),
+                "A failed hosted window must keep canonical content accessible in Side Tabs.");
+            Assert.IsFalse(fallback.Contains("GetOrCreateStickyNoteWindow") ||
+                fallback.Contains("ShowStickyNote("),
+                "Hosted failure must not silently reintroduce the legacy executor.");
         }
 
         [TestMethod]
@@ -508,7 +1018,7 @@ namespace PennyPet.Tests
             string tabs = ReadSource(
                 "Features/StickyNotes/StickyNoteTabs.cs");
             string snapshots = ReadSource(
-                "Features/StickyNotes/SideTabSnapshot.cs");
+                "Core/StickyNotes/SideTabSnapshot.cs");
 
             Assert.IsTrue(snapshots.Contains("NoteId") &&
                 snapshots.Contains("ColorArgb") &&
@@ -521,6 +1031,10 @@ namespace PennyPet.Tests
             Assert.IsTrue(tabs.Contains(
                 "SetNotes(IList<SideTabSnapshot>"),
                 "Side tabs must accept snapshot input.");
+            Assert.IsFalse(snapshots.Contains("ToDisplayData"),
+                "SideTabSnapshot must remain a detached projection, not a fake note adapter.");
+            Assert.IsFalse(tabs.Contains("new StickyNoteData"),
+                "Side tab display code must not reconstruct canonical note objects.");
         }
 
         [TestMethod]
@@ -541,6 +1055,22 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StickyTypedProtocol_ExposesReminderUpdateCommand()
+        {
+            string commands = ReadSource(
+                "Features/StickyNotes/StickyUiCommand.cs");
+            string host = ReadSource("StickyUiHost.cs");
+            string session = ReadSource("StickyWindowSession.cs");
+
+            Assert.IsTrue(
+                commands.Contains("UpdateReminders") &&
+                commands.Contains("CopyReminders") &&
+                host.Contains("StickyUiCommandKind.UpdateReminders") &&
+                session.Contains("UpdateReminders("),
+                "Hosted reminder parity needs a detached update command.");
+        }
+
+        [TestMethod]
         public void StickyTypedProtocol_ProductionUsesNamedPayloadFactories()
         {
             string protocol = ReadSource(
@@ -556,7 +1086,8 @@ namespace PennyPet.Tests
                 protocol.Contains("StickyUiCommand SetDockResizeRole(") &&
                 protocol.Contains("StickyUiEvent FromSnapshot(") &&
                 protocol.Contains("StickyUiEvent Signal(") &&
-                protocol.Contains("StickyUiEvent HorizontalResize("),
+                protocol.Contains("StickyUiEvent HorizontalResize(") &&
+                protocol.Contains("StickyUiEvent DividerResize("),
                 "Protocol must expose factories for its payload shapes.");
             Assert.IsFalse(windowCoordinator.Contains(
                     "new StickyUiCommand(") ||
@@ -577,7 +1108,9 @@ namespace PennyPet.Tests
                 commands.Contains("HeaderDragMoved") &&
                 commands.Contains("HeaderDragCompleted") &&
                 commands.Contains("DockHorizontalResizing") &&
+                commands.Contains("DockDividerResizeStarted") &&
                 commands.Contains("DockDividerResizing") &&
+                commands.Contains("DockDividerResizeCompleted") &&
                 commands.Contains("SetDockResizeRole") &&
                 commands.Contains("CloseRequested"),
                 "Dock protocol must expose header drag and resize event kinds.");
@@ -585,15 +1118,57 @@ namespace PennyPet.Tests
                 session.Contains("_window.HeaderDragMoved +=") &&
                 session.Contains("_window.HeaderDragCompleted +=") &&
                 session.Contains("_window.DockHorizontalResizing +=") &&
+                session.Contains("_window.DockDividerResizeStarted +=") &&
+                session.Contains("_window.DockDividerResizing +=") &&
+                session.Contains("_window.DockDividerResizeCompleted +=") &&
                 session.Contains("EmitSnapshot(") &&
                 host.Contains("StickyUiCommandKind.SetDockResizeRole") &&
                 session.Contains("role.SplitBottom") &&
                 session.Contains("role.DividerMinimumHeight") &&
                 session.Contains("role.DividerMaximumHeight") &&
                 session.Contains("_window.DockDividerResizeActive") &&
-                session.Contains("!_applyingBounds") &&
+                session.Contains("if (_applyingBounds) return;") &&
                 session.Contains("StickyUiEventKind.CloseRequested"),
                 "StickyUiHost must forward dock drag/resize events.");
+        }
+
+        [TestMethod]
+        public void HostedDividerLiveResize_UsesExplicitLeanLifecycle()
+        {
+            string native = ReadSource(
+                "Features/StickyNotes/StickyNativeWindowBehavior.cs");
+            string windowCoordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string dockCoordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string liveResize = Between(dockCoordinator,
+                "private bool ResizeHostedStickyDockDivider",
+                "private bool MatchesHostedDockResizeSession");
+            string progress = Between(windowCoordinator,
+                "if (value.Kind == StickyUiEventKind.DockDividerResizing)",
+                "if (value.Kind == StickyUiEventKind.DockDividerResizeCompleted)");
+
+            Assert.IsTrue(native.Contains("WmEnterSizeMove") &&
+                native.Contains("WmSizing") &&
+                native.Contains("WmExitSizeMove") &&
+                native.Contains("DockDividerResizeStarted") &&
+                native.Contains("DockDividerResizing") &&
+                native.Contains("DockDividerResizeCompleted"),
+                "Native sizing must publish an explicit divider lifecycle.");
+            Assert.IsTrue(liveResize.Contains(
+                    "CalculateDockMemberResizeTargets") &&
+                liveResize.Contains("ApplyDockTargets(changed, sourceNoteId)") &&
+                !liveResize.Contains("LayoutDockChain") &&
+                !liveResize.Contains("RefreshDockResizeRoles"),
+                "Live ticks must move only changed followers from stable facts.");
+            Assert.IsFalse(progress.Contains("SaveAsync") ||
+                progress.Contains("RefreshDockResizeRoles"),
+                "Live progress must not save or refresh resize roles.");
+            Assert.IsTrue(windowCoordinator.Contains(
+                "CompleteHostedStickyDockDivider(value)") &&
+                windowCoordinator.Contains("finally { ClearHostedDockResizeSession(); }") &&
+                windowCoordinator.Contains("_notes.SaveAsync();"),
+                "Completion must save once and clear the transient session.");
         }
 
         [TestMethod]
@@ -605,20 +1180,22 @@ namespace PennyPet.Tests
                 "Features/StickyNotes/PetStickyDockCoordinator.cs");
 
             Assert.IsTrue(windowCoordinator.Contains(
-                "BeginStickyDockDrag(facts, null)") &&
-                windowCoordinator.Contains("MoveStickyDockDrag(facts, null)") &&
-                windowCoordinator.Contains("CompleteStickyDockDrag(facts)"),
+                "BeginStickyDockDrag(facts, value.Facts, value.Topology)") &&
+                windowCoordinator.Contains("MoveStickyDockDrag(facts, value.Facts, value.Topology)") &&
+                windowCoordinator.Contains(
+                    "CompleteStickyDockDrag(facts, value)"),
                 "Hosted drag facts must enter the existing Dock session.");
             Assert.IsTrue(dockCoordinator.Contains(
                 "StickyUiCommand.SetBounds(") &&
                 dockCoordinator.Contains("StickyUiCommand.SetTopMost(") &&
                 dockCoordinator.Contains("ApplyDockTargets") &&
                 dockCoordinator.Contains("ResizeStickyDockGroup") &&
-                dockCoordinator.Contains("ResizeStickyDockDivider") &&
+                dockCoordinator.Contains("ResizeHostedStickyDockDivider") &&
                 dockCoordinator.Contains("CalculateDockDividerTargets") &&
                 dockCoordinator.Contains("CloseStickyDockNote") &&
-                dockCoordinator.Contains("_noteWindows.TryGetValue"),
-                "Hosted and legacy effects must share ApplyDockTarget(s).");
+                !dockCoordinator.Contains("_noteWindows") &&
+                !dockCoordinator.Contains("StickyNoteWindow"),
+                "Dock effects must terminate at the hosted typed boundary.");
             Assert.IsFalse(windowCoordinator.Contains("DockMergeRequested") ||
                 windowCoordinator.Contains("DockAttached") ||
                 windowCoordinator.Contains("DockCompleted") ||
@@ -627,38 +1204,37 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void DockVisualFeedback_UsesDetachedFactsForEveryExecutor()
+        public void DockVisualFeedback_UsesDetachedFactsOnHostedPath()
         {
             string form = ReadSource("PetForm.cs");
             string coordinator = ReadSource(
                 "Features/StickyNotes/PetStickyDockCoordinator.cs");
             string begin = Between(coordinator,
                 "private void BeginStickyDockDrag",
-                "private void StickyNoteHeaderDragMoved");
+                "private void MoveStickyDockDrag");
             string moveVisuals = Between(coordinator,
-                "RememberActiveDockFacts(moveTargets);",
-                "private void StickyNoteHeaderDragCompleted");
+                "RememberActiveDockFacts(PlanToDockTargets(livePlan));",
+                "private void CompleteStickyDockDrag");
             string mergeVisuals = Between(coordinator,
                 "List<StickyNoteData> mergedSnapshot",
-                "else if (!_activeNoteDragHosted)");
+                "CommitVisibleDockOrder(seed);");
             string helpers = Between(coordinator,
                 "private void ShowSplitGuide",
                 "private DockTarget FindDockTarget");
 
             Assert.IsTrue(begin.Contains("ShowSplitGuide(seed, groupFacts)") &&
-                !begin.Contains("_activeNoteSplitEligible && " +
-                    "!_activeNoteDragHosted"),
-                "Hosted split candidates must receive the same guide.");
+                !begin.Contains("StickyNoteWindow"),
+                "Hosted split candidates must receive a detached guide.");
             Assert.IsTrue(moveVisuals.Contains(
                     "UpdateSplitGuide(seed, _activeDockCurrentFacts)") &&
                 moveVisuals.Contains("UpdateDockPreview(seed, previewFacts)") &&
                 !moveVisuals.Contains("_activeNoteDragHosted"),
-                "Hosted drag must not be gated out of preview updates.");
+                "Hosted drag must update previews from detached facts.");
             Assert.IsTrue(mergeVisuals.Contains("ShowTransientDockPulse") &&
                 !mergeVisuals.Contains("if (!_activeNoteDragHosted)"),
-                "Merge pulse must be independent of the source executor.");
+                "Hosted merge must publish the detached seam pulse.");
             Assert.IsTrue(helpers.Contains(
-                    "CalculateDockVisualSeam(parentFacts)") &&
+                    "CalculateDockVisualSeamPhysical(parentFacts)") &&
                 helpers.Contains("IDictionary<string, DockWindowFacts>") &&
                 !helpers.Contains("parent.Bounds") &&
                 !helpers.Contains("StickyDockOperations"),
@@ -674,8 +1250,9 @@ namespace PennyPet.Tests
         [TestMethod]
         public void StickyRecovery_ExpandsAllThroughOwnedEffectBoundaries()
         {
-            string form = ReadSource("PetForm.cs");
             string menu = ReadSource("PetContextMenu.cs");
+            string manager = ReadSource(
+                "Features/StickyNotes/StickyNotes.cs");
             string coordinator = ReadSource(
                 "Features/StickyNotes/PetStickyWindowCoordinator.cs");
             string action = Between(coordinator,
@@ -685,22 +1262,60 @@ namespace PennyPet.Tests
                 "PrepareStickyExpandAndTileTargets(IList<StickyNoteData> notes,",
                 "internal static List<Rectangle> CalculateStickyRecoveryLayout");
 
-            Assert.IsTrue(menu.Contains("展开全部并平铺到此屏幕") &&
-                form.Contains("ExpandAndTileAllStickyNotesToPetScreen"),
-                "The menu must expose the new expand-and-tile product action.");
-            Assert.IsTrue(action.Contains("IsHostedSticky(note)") &&
-                action.Contains("StickyUiCommand.Show(note.Id, false)") &&
+            Assert.IsTrue(manager.Contains("桌面整理") &&
+                manager.Contains("收起全部") &&
+                manager.Contains("展开全部") &&
+                manager.Contains("平铺到当前屏幕") &&
+                coordinator.Contains("ExpandAndTileAllStickyNotesToPetScreen") &&
+                !menu.Contains("Menu.Items.Add(RecoverWindowsItem)") &&
+                !menu.Contains("Menu.Items.Add(BackupNotesItem)") &&
+                !menu.Contains("Menu.Items.Add(ImportNotesItem)") &&
+                !menu.Contains("Menu.Items.Add(RestoreNotesItem)"),
+                "Desktop recovery actions must live in the management console.");
+            Assert.IsTrue(action.Contains("ShowHostedSticky(note, false, false)") &&
                 action.Contains("ApplyDockTarget(target, null)") &&
-                action.Contains("ShowStickyNote(note, false, false, false)"),
-                "Hosted and legacy notes must use their owned effect edges.");
+                !action.Contains("ShowStickyNote("),
+                "Every note must use the hosted effect edge.");
             Assert.IsFalse(action.Contains("GetOrCreateStickyNoteWindow") ||
                 action.Contains("seed.Visible"),
                 "Recovery must neither skip hidden notes nor use a universal legacy route.");
             Assert.IsTrue(preparation.Contains(
                 "StickyDockGroups.ClearMembership(note)") &&
                 preparation.Contains("note.Visible = true") &&
-                preparation.Contains("CalculateStickyRecoveryLayout"),
-                "Preparation must detach, expand, and independently tile every note.");
+                preparation.Contains("cascadeStep"),
+                "Preparation must detach, expand, and independently cascade every note.");
+        }
+
+        [TestMethod]
+        public void StickyManager_UsesBoundedImportPreviewModes()
+        {
+            string manager = ReadSource(
+                "Features/StickyNotes/StickyNotes.cs");
+            string persistence = ReadSource(
+                "Features/StickyNotes/PetPersistenceCoordinator.cs");
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+
+            Assert.IsTrue(manager.Contains("ManagerMode") &&
+                manager.Contains("ImportPreview") &&
+                manager.Contains("BeginImportPreview") &&
+                manager.Contains("ManagerFormClosing") &&
+                manager.Contains("ClearImportPreview();") &&
+                manager.Contains("PrepareImport") &&
+                manager.Contains("ConfirmImport"),
+                "Manager must keep import planning inside the existing form.");
+            Assert.IsFalse(manager.Contains("ImportBackup"),
+                "Manager import must enter the preview boundary, not commit directly.");
+            Assert.IsTrue(persistence.Contains("PrepareStickyNotesImport") &&
+                persistence.Contains("CommitStickyNotesImport") &&
+                persistence.Contains("ImportPlansMatch") &&
+                persistence.Contains("CommitImportedMerge"),
+                "Import must read, plan, revalidate, then use the existing commit owner.");
+            Assert.IsTrue(coordinator.Contains("PrepareImport = PrepareStickyNotesImport") &&
+                coordinator.Contains("ConfirmImport = CommitStickyNotesImport") &&
+                coordinator.Contains("FullRestore = RestoreStickyNotesBackup") &&
+                manager.Contains("高级：完整恢复…"),
+                "The manager must receive typed prepare/confirm commands from PetForm.");
         }
 
         [TestMethod]
@@ -708,6 +1323,10 @@ namespace PennyPet.Tests
         {
             string coordinator = ReadSource(
                 "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string operations = ReadSource(
+                "Core/StickyNotes/StickyDockOperations.cs");
+            string geometry = ReadSource(
+                "Core/StickyNotes/StickyDockGeometry.cs");
             string gate = Between(coordinator,
                 "private bool IsDockParticipant",
                 "private string FindDockChild");
@@ -719,9 +1338,1236 @@ namespace PennyPet.Tests
                 gate.Contains("!note.IsSchedule"),
                 "Todo and Schedule must be allowed to dock with ordinary notes.");
             Assert.IsFalse(gate.Contains("IsHostedSticky"),
-                "Dock participant eligibility must not depend on hosted/legacy ownership.");
+                "Dock participant eligibility must not depend on live session membership.");
             Assert.IsFalse(gate.Contains("ReminderUtcTicks"),
                 "Reminder is not a sticky subtype and must not affect Dock eligibility.");
+            Assert.IsFalse(operations.Contains("IsTodoList") ||
+                operations.Contains("IsSchedule") ||
+                geometry.Contains("IsTodoList") ||
+                geometry.Contains("IsSchedule"),
+                "Core Dock rules must remain independent of Sticky content mode.");
+        }
+
+        [TestMethod]
+        public void DynamicDisplayCoreContracts_RemainPlatformAndUiIndependent()
+        {
+            string topology = ReadSource(
+                "Core/Display/DisplayTopologyModels.cs");
+            string placement = ReadSource(
+                "Core/Display/DisplayPlacementModels.cs");
+            string rules = ReadSource(
+                "Core/Display/DisplayTopologyRules.cs");
+            string combined = topology + placement + rules;
+
+            Assert.IsFalse(combined.Contains("using System.Windows") ||
+                combined.Contains("IntPtr") ||
+                combined.Contains("DllImport") ||
+                combined.Contains("QueryDisplayConfig(") ||
+                combined.Contains("GetDpiForWindow("),
+                "DRT Core contracts must contain no Windows handle or UI dependency.");
+            Assert.IsTrue(topology.Contains(
+                    "IReadOnlyList<DisplaySurfaceSnapshot> Surfaces") &&
+                topology.Contains(
+                    "IReadOnlyList<DisplayTargetIdentity> Targets") &&
+                placement.Contains("WindowPlacementPreference Preferred") &&
+                placement.Contains("WindowFacts Effective"),
+                "Topology collections must be immutable and preferred/effective placement must stay separate.");
+            Assert.IsTrue(ReadSource("PetForm.cs").Contains(
+                    "DisplayTopologyRuntime") &&
+                ReadSource("PetForm.cs").Contains(
+                    "NotifyPotentialChange") &&
+                ReadSource("StickyUiHost.cs").Contains(
+                    "SetCurrentTopology(") &&
+                !ReadSource("StickyUiHost.cs").Contains(
+                    "WindowsDisplayTopologyProvider"),
+                "The host may hold the Pet-published topology but must never capture it.");
+        }
+
+        [TestMethod]
+        public void Drt5_NativePlacementExecutor_OwnsTypedHiddenBootstrap()
+        {
+            string executor = ReadSource(
+                "Infrastructure/Display/WindowsWindowPlacementExecutor.cs");
+            string native = ReadSource(
+                "Infrastructure/Display/NativeDisplayConfig.cs");
+
+            Assert.IsTrue(executor.Contains("WindowInteropHelper") &&
+                executor.Contains(".EnsureHandle()") &&
+                executor.Contains("internal int GetDpiForWindow()") &&
+                executor.Contains("internal bool SetWindowPosExact(") &&
+                executor.Contains("internal void Show()") &&
+                executor.Contains("WindowsWindowFactsReader.Capture("),
+                "The executor must own the typed native placement bootstrap.");
+            string hiddenMove = Between(executor,
+                "internal bool MoveHiddenToSurface(PhysicalRect workArea)",
+                "internal int GetDpiForWindow()");
+            Assert.IsTrue(hiddenMove.Contains("SWP_NOACTIVATE") &&
+                hiddenMove.Contains("SWP_NOZORDER") &&
+                hiddenMove.Contains("SWP_NOSIZE"),
+                "The hidden move must never activate, reorder or resize.");
+            Assert.IsFalse(hiddenMove.Contains("SWP_SHOWWINDOW") ||
+                hiddenMove.Contains("SW_SHOW"),
+                "The hidden bootstrap move must never show the window.");
+            Assert.IsTrue(native.Contains(
+                    "static extern bool SetWindowPos(") &&
+                native.Contains("static extern bool ShowWindow("),
+                "SetWindowPos/ShowWindow must be declared as typed natives.");
+        }
+
+        [TestMethod]
+        public void Drt5_HostedWindowConstructor_DoesNotOwnDesktopPlacement()
+        {
+            string wpf = ReadSource(
+                "Features/StickyNotes/StickyNoteWpf.cs");
+            string session = ReadSource("StickyWindowSession.cs");
+
+            Assert.IsTrue(wpf.Contains("hostedNativePlacement") &&
+                wpf.Contains("data.LocalLogicalWidth") &&
+                wpf.Contains("data.LocalLogicalHeight"),
+                "Hosted construction must size from the logical DIP model.");
+            string hostedBranch = Between(wpf,
+                "if (hostedNativePlacement)", "else");
+            Assert.IsFalse(hostedBranch.Contains("base.Left = data.X") ||
+                hostedBranch.Contains("base.Top = data.Y") ||
+                hostedBranch.Contains("data.Width") ||
+                hostedBranch.Contains("data.Height"),
+                "The hosted path must not feed physical fields into WPF placement.");
+            Assert.IsTrue(session.Contains(
+                    "new StickyNoteWindow(snapshot.CreateWorkingCopy(),") &&
+                session.Contains("false, false, true)"),
+                "Hosted sessions must use the native-placement constructor.");
+        }
+
+        [TestMethod]
+        public void Drt5_Session_PlacesExactlyBeforeShowAndVerifiesFacts()
+        {
+            string session = ReadSource("StickyWindowSession.cs");
+            int ensure = session.IndexOf(
+                "_placementExecutor.EnsureHandle()",
+                StringComparison.Ordinal);
+            int setExact = session.IndexOf(
+                "_placementExecutor.SetWindowPosExact(requested)",
+                StringComparison.Ordinal);
+            int show = session.IndexOf("_placementExecutor.Show()",
+                StringComparison.Ordinal);
+            int capture = session.IndexOf(
+                "_placementExecutor.CaptureFacts(",
+                StringComparison.Ordinal);
+
+            Assert.IsTrue(ensure >= 0 && show > ensure,
+                "The HWND must be created before the window is shown.");
+            Assert.IsTrue(setExact > ensure && show > setExact,
+                "The exact physical rect must land before Show.");
+            Assert.IsTrue(capture > show,
+                "Actual WindowFacts must be captured after Show.");
+            Assert.IsTrue(session.Contains(
+                    "IsWithinPlacementTolerance") &&
+                session.Contains("MoveHiddenToSurface(plan.WorkArea)") &&
+                session.Contains("GetDpiForWindow()"),
+                "The standalone path must run the full hidden bootstrap.");
+
+            string placement = Between(session,
+                "private bool PlaceAtNativeBounds(NativePlacementPlan plan, bool edit)",
+                "private void TracePlacementMismatch");
+            Assert.IsFalse(placement.Contains("_window.ShowAtPhysicalBounds") ||
+                placement.Contains("ShowRestoredAtPhysicalBounds"),
+                "The standalone native path must not reuse the legacy show helper.");
+        }
+
+        [TestMethod]
+        public void DrtCloseout_TopologyGenerationOwnedOnlyByRuntime()
+        {
+            string provider = ReadSource(
+                "Infrastructure/Display/WindowsDisplayTopologyProvider.cs");
+            string runtime = ReadSource(
+                "Infrastructure/Display/DisplayTopologyRuntime.cs");
+            string models = ReadSource(
+                "Core/Display/DisplayTopologyModels.cs");
+
+            Assert.IsTrue(provider.Contains(
+                    "return new DisplayTopologySnapshot(0, surfaces)") &&
+                runtime.Contains(".WithGeneration(") &&
+                runtime.Contains("Generation++") &&
+                models.Contains("WithGeneration(long generation)"),
+                "Only DisplayTopologyRuntime may assign semantic generations.");
+            Assert.IsFalse(provider.Contains("Generation++"),
+                "The capture provider must not own semantic generation.");
+        }
+
+        [TestMethod]
+        public void DrtCloseout_StickySessionNeverRecapturesTopology()
+        {
+            string session = ReadSource("StickyWindowSession.cs");
+            string host = ReadSource("StickyUiHost.cs");
+
+            Assert.IsFalse(session.Contains(
+                    "new WindowsDisplayTopologyProvider()"),
+                "The sticky STA must not capture Windows topology itself.");
+            Assert.IsTrue(session.Contains("_topology") &&
+                session.Contains("topology.FindByRuntimeGdiName("),
+                "Placement must resolve against the Pet-owned topology.");
+            Assert.IsTrue(host.Contains("SetCurrentTopology(") &&
+                !host.Contains("WindowsDisplayTopologyProvider"),
+                "The host facade may hold the Pet-published topology but must never capture it.");
+        }
+
+        [TestMethod]
+        public void DrtCloseout_GeometryEventsUseFactsAsGeometryTruth()
+        {
+            string session = ReadSource("StickyWindowSession.cs");
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+
+            Assert.IsTrue(session.Contains(
+                    "WindowsWindowFactsReader.Capture(hwnd, _noteId,") &&
+                session.Contains("_topology == null ? 0 : _topology.Generation") &&
+                session.Contains("facts, _topology)"),
+                "Facts must be captured with the Pet-owned topology generation.");
+            Assert.IsTrue(coordinator.Contains(
+                    "ApplyHostedStickyFactsGeometry") &&
+                coordinator.Contains("StickyPlacementMath.FromPhysicalRect(") &&
+                coordinator.Contains(
+                    "value.Snapshot.ApplyContentTo(canonical)"),
+                "Geometry events must derive v10 geometry from facts, never snapshot.ApplyTo.");
+
+            string dragHandler = Between(coordinator,
+                "if (value.Kind == StickyUiEventKind.HeaderDragStarted ||",
+                "if (value.Kind == StickyUiEventKind.BoundsChanged)");
+            Assert.IsTrue(dragHandler.Contains(
+                    "DockWindowFacts.FromWindowFacts(") &&
+                !dragHandler.Contains("ApplyHostedStickySnapshot"),
+                "Drag geometry must flow from facts-derived canonical state.");
+            string boundsHandler = Between(coordinator,
+                "if (value.Kind == StickyUiEventKind.BoundsChanged)",
+                "if (value.Kind == StickyUiEventKind.DockDividerResizeStarted)");
+            Assert.IsTrue(boundsHandler.Contains(
+                    "ApplyHostedStickyEvent(value, false)") &&
+                !boundsHandler.Contains("ApplyHostedStickySnapshot"),
+                "BoundsChanged must not apply the full snapshot.");
+        }
+
+        [TestMethod]
+        public void DrtCloseout_HostedNeverWritesPhysicalIntoWpfDips()
+        {
+            string behavior = ReadSource(
+                "Features/StickyNotes/StickyNativeWindowBehavior.cs");
+            string wpf = ReadSource(
+                "Features/StickyNotes/StickyNoteWpf.cs");
+
+            string recover = Between(behavior,
+                "private void RecoverUnexpectedMaximize()",
+                "internal static Rectangle CalculateRecoveredHeaderDragBounds");
+            Assert.IsFalse(recover.Contains("base.Left = Data.X") ||
+                recover.Contains("base.Top = Data.Y") ||
+                recover.Contains("base.Width = Math.Max(MinWidth") ||
+                recover.Contains("base.Height = Math.Max(MinHeight"),
+                "Maximize recovery must not write persisted physical fields into WPF DIP.");
+            Assert.IsTrue(recover.Contains("_lastValidLeft"),
+                "Recovery must restore the last valid DIP geometry.");
+
+            string ensure = Between(wpf,
+                "private void EnsureOnScreen()",
+                "private void EnsureOnScreenNative()");
+            Assert.IsTrue(ensure.Contains("_hostedNativePlacement") &&
+                ensure.Contains("EnsureOnScreenNative();"),
+                "Hosted windows must clamp on the native HWND, not in WPF DIP.");
+            string nativeEnsure = Between(wpf,
+                "private void EnsureOnScreenNative()",
+                "private void CacheLastValidDips()");
+            Assert.IsTrue(nativeEnsure.Contains("EnsureHandle()") &&
+                nativeEnsure.Contains("SetWindowPos(") &&
+                !nativeEnsure.Contains("Data.X"),
+                "The hosted clamp must be a native physical-pixel move.");
+        }
+
+        [TestMethod]
+        public void DrtCloseout_MirrorTargets0IsNotDurablePreferenceRule()
+        {
+            string reader = ReadSource(
+                "Infrastructure/Display/WindowsWindowFactsReader.cs");
+            string models = ReadSource(
+                "Core/Display/DisplayTopologyModels.cs");
+
+            Assert.IsTrue(reader.Contains(
+                    "Targets[0] is NOT a durable") &&
+                reader.Contains("DRT-6 must choose"),
+                "Facts capture must document Targets[0] as an active-target hint only.");
+            Assert.IsTrue(models.Contains(
+                    "never a durable-preferred") &&
+                models.Contains("QueryDisplayConfig enumeration order"),
+                "Mirrored-surface target order must never become an identity rule.");
+        }
+
+        [TestMethod]
+        public void Drt6_CodecWritesV11WhileKeepingHistoricalVersions()
+        {
+            string codec = ReadSource("Core/StickyNotes/StickyNoteCodec.cs");
+
+            Assert.IsTrue(codec.Contains(
+                    "internal const int VersionElevenFieldCount = 37") &&
+                codec.Contains("CurrentVersion = VersionEleven") &&
+                codec.Contains("bool versionEleven = fields.Length >= 37") &&
+                codec.Contains("versionTen || versionEleven"),
+                "The codec must emit v11 and keep v1-v10 parsing paths intact.");
+            Assert.IsTrue(codec.Contains(
+                    "Encode(note.PreferredDisplayTargetKey") &&
+                codec.Contains("note.PreferredLocalLogicalWidth.ToString("),
+                "v11 must persist the durable preferred target and local rect.");
+        }
+
+        [TestMethod]
+        public void Drt6_SessionRestoresPreferredBeforeV10Display()
+        {
+            string session = ReadSource("StickyWindowSession.cs");
+            int preferred = session.IndexOf(
+                "data.PreferredDisplayTargetKey",
+                StringComparison.Ordinal);
+            int legacy = session.IndexOf(
+                "topology.FindByRuntimeGdiName(",
+                StringComparison.Ordinal);
+
+            Assert.IsTrue(preferred >= 0 && legacy > preferred,
+                "Restore must resolve the v11 preferred target before the v10 DisplayId.");
+            Assert.IsTrue(session.Contains(
+                    "data.PreferredLocalLogicalWidth > 0") &&
+                session.Contains("topology.FindByTargetKey("),
+                "The preferred local rect must be projected against its durable target.");
+        }
+
+        [TestMethod]
+        public void Drt6_OnlyUserReasonsCommitPreferred()
+        {
+            string rules = ReadSource(
+                "Core/StickyNotes/StickyPlacementRules.cs");
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+
+            Assert.IsTrue(rules.Contains("internal enum PlacementReason") &&
+                rules.Contains("CanCommitPreferred(PlacementReason reason)") &&
+                rules.Contains("case PlacementReason.UserMoveCommit:") &&
+                rules.Contains("case PlacementReason.DockCommit:"),
+                "Preferred commit must be gated by placement reason.");
+            Assert.IsTrue(coordinator.Contains(
+                    "PlacementReason.UserResizeCommit") &&
+                coordinator.Contains("PlacementReason.Spawn") &&
+                coordinator.Contains("PlacementReason.ExpandAndTile"),
+                "Pet must only commit preferred at user-gesture call sites.");
+        }
+
+        [TestMethod]
+        public void Drt6_PreferredStaysOutsideFullSnapshotApply()
+        {
+            string commands = ReadSource(
+                "Features/StickyNotes/StickyUiCommand.cs");
+            string apply = Between(commands,
+                "internal void ApplyTo(StickyNoteData target)",
+                "internal void ApplyPreferredTo(StickyNoteData target)");
+
+            Assert.IsTrue(commands.Contains(
+                    "internal void ApplyPreferredTo(StickyNoteData target)") &&
+                commands.Contains("ApplyPreferredTo(copy)"),
+                "Working copies must carry the preferred placement separately.");
+            Assert.IsFalse(apply.Contains("PreferredDisplayTargetKey"),
+                "Full snapshot application must never clobber preferred placement.");
+        }
+
+        [TestMethod]
+        public void Drt6_EffectiveRuntimeIsSeparateFromRepository()
+        {
+            string runtime = ReadSource(
+                "Features/StickyNotes/StickyPlacementRuntime.cs");
+
+            Assert.IsTrue(runtime.Contains(
+                    "Dictionary<string, NotePlacementState> _states") &&
+                runtime.Contains("internal bool TryUpdateEffective("),
+                "Effective WindowFacts must live in runtime memory.");
+            Assert.IsFalse(runtime.Contains("StickyNoteRepository") ||
+                runtime.Contains("SaveAsync") ||
+                runtime.Contains("SetWindowPos") ||
+                runtime.Contains("WindowInteropHelper") ||
+                runtime.Contains("StickyNoteWindow("),
+                "The runtime store must not own persistence or UI objects.");
+        }
+
+        [TestMethod]
+        public void Drt6Supplement_SpawnUsesCenteredPolicyWithoutCascade()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+
+            Assert.IsTrue(coordinator.Contains(
+                    "StickySpawnPolicy.PlanCenteredSpawn(") &&
+                coordinator.Contains("PrepareStickyNoteDraft(") &&
+                coordinator.Contains("_notes.CreateDraft(text, Point.Empty)"),
+                "Spawn must route through the centered pure policy on a draft.");
+            Assert.IsFalse(coordinator.Contains("% 7) * 18") ||
+                coordinator.Contains("12 + offset") ||
+                coordinator.Contains("StickyPlacementMath.FromSpawn("),
+                "The cascade and beside-pet spawn paths must be retired.");
+        }
+
+        [TestMethod]
+        public void Drt6Supplement_CreateDraftDoesNotPersistIntermediateState()
+        {
+            string repository = ReadSource(
+                "Features/StickyNotes/StickyNoteRepository.cs");
+            string create = Between(repository,
+                "public StickyNoteData Create(string text, Point location)",
+                "public List<StickyNoteData> GetAll()");
+            string draft = Between(repository,
+                "internal StickyNoteData CreateDraft(string text, Point location)",
+                "public List<StickyNoteData> GetAll()");
+
+            Assert.IsTrue(create.Contains("CreateDraft(text, location)") &&
+                create.Contains("Save();"),
+                "Create() must delegate to CreateDraft and own the only save.");
+            Assert.IsTrue(draft.Contains("_notes.Add(note);") &&
+                !draft.Contains("Save()"),
+                "CreateDraft must add to memory without persisting.");
+        }
+
+        [TestMethod]
+        public void Drt6Supplement_PetFactsAlignedWithSingleTopologySnapshot()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+
+            Assert.IsTrue(coordinator.Contains(
+                    "DisplayTopologySnapshot topology = CurrentTopologySnapshot();") &&
+                coordinator.Contains("CapturePetWindowFacts(topology)") &&
+                coordinator.Contains(
+                    "Handle, PetWindowFactsId,") &&
+                coordinator.Contains("generation, sequence, topology"),
+                "Pet facts must be captured against the same attempt topology.");
+            string fallback = Between(coordinator,
+                "private void ApplyLegacySpawnFallback",
+                "private static void TraceSpawnPlacement");
+            Assert.IsFalse(fallback.Contains("PreferredDisplayTargetKey"),
+                "The legacy fallback must never fabricate a durable preference.");
+        }
+
+        [TestMethod]
+        public void Drt6Supplement_CreationDoesNotDependOnDisplayIndexOrCount()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string spawn = Between(coordinator,
+                "private StickyNoteData PrepareStickyNoteDraft",
+                "private void ApplyLegacySpawnFallback");
+
+            Assert.IsFalse(spawn.Contains("Screen.AllScreens") ||
+                spawn.Contains("Screen.PrimaryScreen") ||
+                spawn.Contains("_notes.GetAll().Count") ||
+                spawn.Contains("MonitorFromRect"),
+                "Spawn must follow the Pet surface, never display order or note count.");
+        }
+
+        [TestMethod]
+        public void Drt7_RehomeSkipsDockMembersAndUsesCorePolicy()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string reconcile = Between(coordinator,
+                "private void HandleStickyTopologyChanged",
+                "private void CompleteTemporaryRehome");
+
+            Assert.IsTrue(reconcile.Contains(
+                    "if (!String.IsNullOrEmpty(note.DockGroupId)) continue;") &&
+                reconcile.Contains(
+                    "FallbackDisplayPolicy.ResolveFallbackSurface("),
+                "DRT-7 must rehome standalone notes only through the Core fallback policy.");
+            Assert.IsFalse(reconcile.Contains(
+                    "CommitHostedStickyPreferred") ||
+                reconcile.Contains("PreferredDisplayTargetKey ="),
+                "Temporary rehome must never commit or rewrite the durable preferred.");
+        }
+
+        [TestMethod]
+        public void Drt7_FallbackPolicyIsPlatformIndependent()
+        {
+            string policy = ReadSource("Core/Display/FallbackDisplayPolicy.cs");
+
+            Assert.IsFalse(policy.Contains("System.Windows") ||
+                policy.Contains("IntPtr") ||
+                policy.Contains("DllImport") ||
+                policy.Contains("WindowsDisplay"),
+                "The fallback policy must stay pure Core.");
+            Assert.IsTrue(policy.Contains("PrimaryOrFirst()") &&
+                policy.Contains("FindByRuntimeGdiName("),
+                "The policy must fall back through Pet surface and primary.");
+        }
+
+        [TestMethod]
+        public void Drt7_UserCommitBlocksReturnButReturnRestores()
+        {
+            string runtime = ReadSource(
+                "Features/StickyNotes/StickyPlacementRuntime.cs");
+
+            Assert.IsTrue(runtime.Contains("MarkUserPlacementCommit(") &&
+                runtime.Contains("MarkReturnedToPreferred(") &&
+                runtime.Contains("MarkTemporaryRehome("),
+                "The runtime must model temporary, user-moved and returned states.");
+            string commit = Between(runtime,
+                "internal void MarkUserPlacementCommit(string noteId)",
+                "internal void MarkReturnedToPreferred(string noteId)");
+            Assert.IsTrue(commit.Contains(
+                    "userMoved = state.IsTemporaryRehome") &&
+                commit.Contains("state.UserMovedSinceRehome"),
+                "A commit during a temporary stay must record user intent.");
+        }
+
+        [TestMethod]
+        public void Drt7_TopologyRehomePublishesFreshWindowFacts()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string session = ReadSource("StickyWindowSession.cs");
+
+            Assert.IsTrue(coordinator.Contains(
+                    "StickyUiCommand.Reproject(rehomedNoteId,") &&
+                coordinator.Contains("ApplyReprojectResult(result, rehomedNoteId, snapshot)"),
+                "A topology rehome must complete through the actual-facts result path.");
+            string reproject = Between(session,
+                "internal StickyUiCommandResult Reproject(",
+                "private WindowFacts CorrectReprojectionOnce");
+            Assert.IsTrue(reproject.Contains(
+                    "StickyUiCommandResult.Handled(_lastSnapshot,") &&
+                reproject.Contains("resultSequence,") &&
+                reproject.Contains("facts, _topology") &&
+                reproject.Contains("RollbackReproject(wasVisible, previousBounds)"),
+                "Reproject must return captured facts and roll back on failure.");
+        }
+
+        [TestMethod]
+        public void Drt7_MissingStartupTargetUsesDetachedTemporarySnapshot()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string start = Between(coordinator,
+                "private void StartHostedSticky(",
+                "private bool IsHostedSticky(");
+
+            Assert.IsTrue(start.Contains(
+                    "TryBuildTemporaryRehomeTarget(note") &&
+                start.Contains("StickyUiCommand.Create(") &&
+                start.Contains("rehomeTarget)") &&
+                start.Contains(
+                    "preferred-display-missing-at-restore"),
+                "Startup restore must attach a typed rehome target without rewriting the durable preferred target.");
+            Assert.IsFalse(start.Contains("temporary.ApplyTo(note)"),
+                "Temporary startup geometry must not mutate the canonical note before the hosted result succeeds.");
+        }
+
+        [TestMethod]
+        public void Drt67Closeout_StandaloneDragCommitUsesEventAuthority()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string commit = Between(coordinator,
+                "private void CompleteDockDurableCommit",
+                "private bool ApplyHostedStickySnapshot");
+
+            Assert.IsTrue(commit.Contains(
+                    "TryPrepareDockCommit(result, expectedTopology, expectedEpoch,") &&
+                commit.Contains("result.DockBatchResult"),
+                "The dock durable commit must consume the captured actual-facts result.");
+            Assert.IsTrue(commit.Contains(
+                    "TryBuildPreferredPlacement(") &&
+                commit.Contains("PlacementReason.DockCommit") &&
+                commit.Contains("CommitVisibleDockOrder(") &&
+                commit.Contains("_notes.Save()"),
+                "Every member preferred must derive from captured facts plus the finalizing topology, then persist once.");
+            Assert.IsFalse(commit.Contains("CurrentTopologySnapshot("),
+                "A G-generation dock commit must never read a later Current generation.");
+        }
+
+        [TestMethod]
+        public void Drt67Closeout_RehomeUsesNativeReprojectNotMonitorDpi()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string session = ReadSource("StickyWindowSession.cs");
+
+            Assert.IsFalse(coordinator.Contains(
+                    "ResolveTemporaryRehomePlacement") ||
+                coordinator.Contains("WindowsDisplayResolver.ResolveDisplay"),
+                "GetDpiForMonitor must not shape the temporary rehome.");
+            Assert.IsTrue(coordinator.Contains(
+                    "TryBuildTemporaryRehomeTarget(") &&
+                coordinator.Contains("StickyUiCommand.Reproject("),
+                "Rehome must flow through the typed native reproject command.");
+            string reproject = Between(session,
+                "internal StickyUiCommandResult Reproject(",
+                "private WindowFacts CorrectReprojectionOnce");
+            Assert.IsTrue(reproject.Contains("GetDpiForWindow()") &&
+                reproject.Contains("MoveHiddenToSurface(") &&
+                reproject.Contains("SetWindowPosExact(projected)"),
+                "The reproject must use the real window DPI on the sticky STA.");
+            Assert.IsFalse(reproject.Contains("PreferredDisplayTargetKey"),
+                "Reprojection must never modify the durable preferred fields.");
+        }
+
+        [TestMethod]
+        public void Drt67Closeout_PreferredReturnHidesBeforeBootstrap()
+        {
+            string session = ReadSource("StickyWindowSession.cs");
+            string reproject = Between(session,
+                "internal StickyUiCommandResult Reproject(",
+                "private WindowFacts CorrectReprojectionOnce");
+            int hide = reproject.IndexOf("_window.Hide()",
+                StringComparison.Ordinal);
+            int move = reproject.IndexOf("MoveHiddenToSurface(",
+                StringComparison.Ordinal);
+
+            Assert.IsTrue(reproject.Contains("bool wasVisible =") &&
+                reproject.Contains("if (wasVisible) _window.Hide();") &&
+                hide >= 0 && move > hide,
+                "A visible window must be hidden before the target-surface bootstrap.");
+            Assert.IsTrue(reproject.Contains(
+                    "StickySpawnPolicy.CenterInWorkArea("),
+                "The rehome path must center-fit the preferred logical size.");
+            string correction = Between(session,
+                "private WindowFacts CorrectReprojectionOnce",
+                "internal StickyUiCommandResult Close()");
+            Assert.IsTrue(correction.Contains("IsWithinPlacementTolerance") &&
+                correction.Contains("SetWindowPosExact(requested)"),
+                "The reproject must allow one bounded correction.");
+        }
+
+        [TestMethod]
+        public void Drt67Closeout_SpawnFallbackCentersWithoutDurable()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string fallback = Between(coordinator,
+                "private void ApplyLegacySpawnFallback",
+                "private static void TraceSpawnPlacement");
+
+            Assert.IsTrue(fallback.Contains(
+                    "StickySpawnPolicy.CenterInWorkArea(") &&
+                fallback.Contains("Screen.FromRectangle(Bounds)"),
+                "The degraded spawn fallback must center on Penny's current working area.");
+            Assert.IsFalse(fallback.Contains("Left - 332") ||
+                fallback.Contains("Right + 12") ||
+                fallback.Contains("PreferredDisplayTargetKey"),
+                "The fallback must not use beside-pet placement or fabricate a durable identity.");
+        }
+
+        [TestMethod]
+        public void Drt9_DockUsesImmutableMailboxAndNativeDeferBatch()
+        {
+            string host = ReadSource("StickyUiHost.cs");
+            string batch = ReadSource(
+                "Infrastructure/Display/WindowsBatchWindowPlacementExecutor.cs");
+            string native = ReadSource(
+                "Infrastructure/Display/NativeDisplayConfig.cs");
+            string dock = ReadSource(
+                "Features/StickyNotes/DockWindowFacts.cs");
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+
+            Assert.IsTrue(dock.Contains(
+                    "internal sealed class DockPlanMailbox") &&
+                dock.Contains("TakeLatest()") &&
+                !dock.Contains("DockBatchLayout"),
+                "The mutable DockBatchLayout must be retired for the immutable mailbox.");
+            Assert.IsTrue(host.Contains("PostLatestDockPlan(") &&
+                host.Contains("mailbox.TakeLatest()") &&
+                host.Contains("WindowsBatchWindowPlacementExecutor.Apply("),
+                "The host must apply the newest plan through the native batch executor.");
+            string apply = Between(host,
+                "private StickyUiCommandResult ApplyLatestDockPlan(",
+                "private void PostEvent");
+            Assert.IsTrue(apply.Contains(
+                    "plan.TopologyGeneration != topology.Generation") &&
+                apply.Contains("WindowsBatchWindowPlacementExecutor.Apply("),
+                "The batch must be gated on the host-owned current generation.");
+            Assert.IsTrue(batch.Contains("BeginDeferWindowPos(") &&
+                batch.Contains("DeferWindowPos(") &&
+                batch.Contains("EndDeferWindowPos(") &&
+                native.Contains(
+                    "static extern IntPtr BeginDeferWindowPos("),
+                "Followers must move in one native deferred batch.");
+            Assert.IsTrue(coordinator.Contains(
+                    "_stickyUiHost.PostLatestDockPlan(") &&
+                coordinator.Contains("DockPlacementPlanner.Plan("),
+                "The drag coordinator must post immutable plans into the mailbox.");
+        }
+
+        [TestMethod]
+        public void Drt9_LiveBatchNeverWritesDurablePreferred()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string batch = Between(coordinator,
+                "private void ApplyLiveDockPlan",
+                "private void ApplyDockBatchResult");
+            Assert.IsFalse(batch.Contains("PreferredDisplayTargetKey") ||
+                batch.Contains("CommitHostedStickyPreferred"),
+                "A live drag batch must never commit the durable preferred placement.");
+
+            string host = ReadSource("StickyUiHost.cs");
+            string apply = Between(host,
+                "private StickyUiCommandResult ApplyLatestDockPlan(",
+                "private void PostEvent");
+            Assert.IsFalse(apply.Contains("Preferred"),
+                "The STA batch executor must not touch durable preferred fields.");
+        }
+
+        [TestMethod]
+        public void Drt10_LiveDragUsesPlannerDrivenBySourceFacts()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string plannerPath = Between(coordinator,
+                "private DockPlacementPlan PlanLiveDockPlan",
+                "private void CompleteStickyDockDrag");
+
+            Assert.IsTrue(plannerPath.Contains(
+                    "WindowFacts sourceFacts") &&
+                plannerPath.Contains("DockPlacementPlanner.Plan(") &&
+                plannerPath.Contains("DisplayGeometry.PhysicalToLocal(") &&
+                plannerPath.Contains("BuildDockChainOrder(seed)"),
+                "The live drag must be planned from the source window's actual facts.");
+            Assert.IsFalse(plannerPath.Contains("WindowsDisplayResolver") ||
+                plannerPath.Contains("Screen.FromRectangle") ||
+                plannerPath.Contains("CalculateDockTranslationTargets"),
+                "Followers must never pick a target display or translate old coordinates.");
+            string move = Between(coordinator,
+                "private void MoveStickyDockDrag",
+                "private DockPlacementPlan PlanLiveDockPlan");
+            Assert.IsTrue(move.Contains("PlanLiveDockPlan(seed, sourceFacts,") &&
+                !move.Contains("CalculateDockTranslationTargets("),
+                "The live move path must route through the planner.");
+        }
+
+        [TestMethod]
+        public void Drt10_PlanSurfaceAndDpiComeFromSourceFacts()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string batch = Between(coordinator,
+                "private DockPlacementPlan PlanLiveDockPlan",
+                "private void CompleteStickyDockDrag");
+
+            Assert.IsTrue(batch.Contains(
+                    "WindowFacts sourceFacts") &&
+                batch.Contains("DockPlacementPlanner.Plan(") &&
+                batch.Contains("sourceFacts.Dpi") &&
+                batch.Contains("_dockInteraction.CanPlan(") &&
+                batch.Contains("_dockPlanMailbox.NextSequence()"),
+                "One plan must carry one capture-time generation, surface, DPI and sequence.");
+            Assert.IsFalse(batch.Contains("WindowsDisplayResolver") ||
+                batch.Contains("MonitorFromRect"),
+                "The plan must never consult the legacy resolver.");
+            string post = Between(coordinator,
+                "private void ApplyLiveDockPlan",
+                "private void ApplyDockBatchResult");
+            Assert.IsFalse(post.Contains("CurrentTopologySnapshot(") ||
+                post.Contains("new DockPlacementPlan("),
+                "The plan must not be re-stamped against a later generation after creation.");
+        }
+
+        [TestMethod]
+        public void DrtCloseout_ReprojectIsTransactionalAndReturnsFacts()
+        {
+            string session = ReadSource("StickyWindowSession.cs");
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+
+            string rollback = Between(session,
+                "private void RollbackReproject",
+                "internal DockBatchMemberResult CaptureDockMember");
+            Assert.IsTrue(rollback.Contains(
+                    "SetWindowPosExact(new PhysicalRect(") &&
+                rollback.Contains("previousBounds") &&
+                rollback.Contains("if (wasVisible) _placementExecutor.Show()"),
+                "A failed reproject must restore previous bounds and visibility.");
+            string apply = Between(coordinator,
+                "private bool ApplyReprojectResult",
+                "private static bool TryBuildPreference");
+            Assert.IsTrue(apply.Contains(
+                    "ApplyHostedStickyFactsGeometry(canonical, result.Facts,") &&
+                apply.Contains("_placementRuntime.TryUpdateEffective("),
+                "A reproject result must update geometry and Effective from actual facts.");
+        }
+
+        [TestMethod]
+        public void DrtCloseout_DockBatchReturnsFactsWithBoundedFallback()
+        {
+            string host = ReadSource("StickyUiHost.cs");
+            string session = ReadSource("StickyWindowSession.cs");
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+
+            string apply = Between(host,
+                "private StickyUiCommandResult ApplyLatestDockPlan(",
+                "private void PostEvent");
+            Assert.IsTrue(apply.Contains(
+                    "session.CaptureDockMember(topology)") &&
+                apply.Contains("new DockBatchResult(") &&
+                apply.Contains("SetBounds(new StickyUiBounds"),
+                "The batch must capture actual facts and keep one bounded fallback.");
+            string member = Between(session,
+                "internal DockBatchMemberResult CaptureDockMember(",
+                "private WindowFacts CaptureFactsWith");
+            Assert.IsTrue(member.Contains("AdoptTopology(topology)") &&
+                member.Contains("CaptureFactsWith(_topology)") &&
+                member.Contains("new DockBatchMemberResult("),
+                "The member result must carry facts plus a content snapshot.");
+
+            string result = Between(coordinator,
+                "private void ApplyDockBatchResult",
+                "private void SetActiveDockGroup");
+            Assert.IsTrue(result.Contains("member.Facts") &&
+                result.Contains(
+                    "ApplyHostedStickyFactsGeometry(canonical, member.Facts,") &&
+                result.Contains("_lastAppliedDockPlanSequence"),
+                "Only same-generation newest-sequence facts may update the repository.");
+        }
+
+        [TestMethod]
+        public void DrtCloseout_LiveDockNeverPreWritesRepository()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string live = Between(coordinator,
+                "private void ApplyLiveDockPlan",
+                "private void ApplyDockBatchResult");
+
+            Assert.IsFalse(live.Contains("ApplyDockCanonicalFromPhysical") ||
+                live.Contains("PreferredDisplayTargetKey") ||
+                live.Contains("WindowsDisplayResolver"),
+                "A live frame must only deposit the desired plan into the mailbox.");
+            string result = Between(coordinator,
+                "private void ApplyDockBatchResult",
+                "private void SetActiveDockGroup");
+            Assert.IsTrue(result.Contains(
+                    "ApplyHostedStickyFactsGeometry(canonical, member.Facts,") &&
+                !result.Contains("WindowsDisplayResolver"),
+                "Only actual facts derived from the same-generation topology may update geometry.");
+        }
+
+        [TestMethod]
+        public void FinalMouseUpPlanCannotBeClearedBeforeApply()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string mailbox = ReadSource(
+                "Features/StickyNotes/DockWindowFacts.cs");
+            string complete = Between(coordinator,
+                "private void CompleteStickyDockDrag",
+                "private static List<string> CollectExpectedPlanMemberIds");
+            string takeFinal = Between(mailbox,
+                "internal DockPlacementPlan TakeFinal(",
+                "internal void CompleteFinal(");
+            string takeLatest = Between(mailbox,
+                "internal DockPlacementPlan TakeLatest()",
+                "internal void ReplaceWithFinal(");
+
+            Assert.IsTrue(complete.Contains(
+                    "_dockPlanMailbox.ReplaceWithFinal(finalPlan)") &&
+                complete.Contains("_stickyUiHost.PostFinalDockPlan("),
+                "Mouse-up must replace pending live work with a final plan.");
+            Assert.IsFalse(takeFinal.Contains("Current = null") ||
+                takeFinal.Contains("ApplyQueued = false"),
+                "The final plan must remain owned until its apply completes.");
+            string finalBranch = Between(takeLatest,
+                "Current.PlanSequence == FinalPlanSequence)",
+                "DockPlacementPlan plan = Current;");
+            Assert.IsFalse(finalBranch.Contains("Current = null") ||
+                finalBranch.Contains("ApplyQueued = false"),
+                "A stale live callback must not release the final barrier.");
+        }
+
+        [TestMethod]
+        public void FinalMouseUpUsesHeaderDragCompletedFacts()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string complete = Between(coordinator,
+                "private void CompleteStickyDockDrag",
+                "private static List<string> CollectExpectedPlanMemberIds");
+            Assert.IsTrue(complete.Contains(
+                "StartDockFinalization(seed, remainderSeed)") &&
+                complete.Contains("CaptureDockFacts(expectedIds,") &&
+                complete.Contains("PostFinalDockPlan"));
+            Assert.IsFalse(complete.Contains("value.Facts") ||
+                complete.Contains("_placementRuntime.GetEffective(") ||
+                complete.Contains("LayoutDockChain(") ||
+                complete.Contains("ApplyDockTarget("));
+        }
+
+        [TestMethod]
+        public void StandaloneDragUsesFinalStaCaptureBarrier()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string finalization = Between(coordinator,
+                "private void StartDockFinalization",
+                "private static List<string> CollectExpectedPlanMemberIds");
+            Assert.IsTrue(finalization.Contains("CaptureDockFacts(expectedIds,") &&
+                finalization.Contains("PostFinalDockPlan") &&
+                finalization.Contains("CompleteDockDurableCommit("));
+            Assert.IsFalse(coordinator.Contains("CompleteStandaloneDragCommit"));
+        }
+
+        [TestMethod]
+        public void DockCommitRejectsMissingMember()
+        {
+            string validation = DockCommitValidationSource();
+            Assert.IsTrue(validation.Contains(
+                    "batch.Members.Count != expected.Count") &&
+                validation.Contains("actual.Count != expected.Count"));
+        }
+
+        [TestMethod]
+        public void DockCommitRejectsNullFacts()
+        {
+            Assert.IsTrue(DockCommitValidationSource().Contains(
+                "member.Facts == null"));
+        }
+
+        [TestMethod]
+        public void DockCommitRejectsGenerationMismatch()
+        {
+            string validation = DockCommitValidationSource();
+            Assert.IsTrue(validation.Contains(
+                    "batch.TopologyGeneration != expectedTopology.Generation") &&
+                validation.Contains(
+                    "member.Facts.TopologyGeneration !="));
+        }
+
+        [TestMethod]
+        public void DockCommitFailureDoesNotSaveOrCommitMembership()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string commit = Between(coordinator,
+                "private void CompleteDockDurableCommit",
+                "private bool TryPrepareDockCommit");
+            int rejectionReturn = commit.IndexOf(
+                "TraceDockCommitRejected(rejection);", StringComparison.Ordinal);
+            int membership = commit.IndexOf("CommitVisibleDockOrder(seed)",
+                StringComparison.Ordinal);
+            int save = commit.IndexOf("_notes.Save()", StringComparison.Ordinal);
+            Assert.IsTrue(rejectionReturn >= 0 && membership > rejectionReturn &&
+                save > membership);
+        }
+
+        [TestMethod]
+        public void LiveDockCaptureDoesNotReachWindowsDisplayResolver()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string live = Between(coordinator,
+                "private DockPlacementPlan PlanLiveDockPlan",
+                "private void CompleteStickyDockDrag");
+            Assert.IsFalse(live.Contains("WindowsDisplayResolver") ||
+                live.Contains("ApplyDockTarget("));
+        }
+
+        [TestMethod]
+        public void CaptureDockMemberDoesNotCallCaptureCanonicalPlacement()
+        {
+            string session = ReadSource("StickyWindowSession.cs");
+            string capture = Between(session,
+                "internal DockBatchMemberResult CaptureDockMember(",
+                "private WindowFacts CaptureFactsWith");
+            string helper = Between(session,
+                "private StickyNoteUiSnapshot CaptureContentSnapshotForNativeResult",
+                "private WindowFacts CaptureFactsWith");
+            Assert.IsTrue(capture.Contains(
+                    "CaptureContentSnapshotForNativeResult()") &&
+                helper.Contains("StickyNoteUiSnapshot.FromContentData("));
+            Assert.IsFalse(capture.Contains("CaptureSnapshot()") ||
+                capture.Contains("CaptureCanonicalPlacement") ||
+                helper.Contains("StickyNoteUiSnapshot.FromData(") ||
+                helper.Contains("CaptureCanonicalPlacement") ||
+                helper.Contains("WindowsDisplayResolver"));
+        }
+
+        [TestMethod]
+        public void NativeBatchRejectsPartialExpectedFollowers()
+        {
+            string host = ReadSource("StickyUiHost.cs");
+            string apply = Between(host,
+                "private StickyUiCommandResult ApplyDockPlan(",
+                "private StickyUiCommandResult CaptureDockFactsForCommit");
+            int missing = apply.IndexOf(
+                "!TryGetSession(target.NoteId, out session)",
+                StringComparison.Ordinal);
+            int zero = apply.IndexOf("handle == IntPtr.Zero",
+                StringComparison.Ordinal);
+            int nativeApply = apply.IndexOf(
+                "WindowsBatchWindowPlacementExecutor.Apply(",
+                StringComparison.Ordinal);
+            Assert.IsTrue(missing >= 0 && zero > missing &&
+                nativeApply > zero);
+        }
+
+        [TestMethod]
+        public void ReprojectHandledRequiresNonNullFacts()
+        {
+            string session = ReadSource("StickyWindowSession.cs");
+            string reproject = Between(session,
+                "internal StickyUiCommandResult Reproject(",
+                "private WindowFacts CorrectReprojectionOnce");
+            int factsGate = reproject.IndexOf("facts == null || _topology == null",
+                StringComparison.Ordinal);
+            int handled = reproject.IndexOf(
+                "StickyUiCommandResult.Handled(_lastSnapshot,",
+                StringComparison.Ordinal);
+            Assert.IsTrue(factsGate >= 0 && handled > factsGate);
+        }
+
+        [TestMethod]
+        public void ReprojectFactsSequenceEqualsResultSequence()
+        {
+            string session = ReadSource("StickyWindowSession.cs");
+            string reproject = Between(session,
+                "internal StickyUiCommandResult Reproject(",
+                "private WindowFacts CorrectReprojectionOnce");
+            Assert.IsTrue(reproject.Contains(
+                    "long resultSequence = ++_sequence;") &&
+                reproject.Contains(
+                    "CorrectReprojectionOnce(projected, resultSequence)") &&
+                reproject.Contains(
+                    "facts.WindowSequence != resultSequence") &&
+                reproject.Contains("resultSequence,\n                facts"));
+        }
+
+        [TestMethod]
+        public void ReprojectRollbackRestoresHiddenState()
+        {
+            string session = ReadSource("StickyWindowSession.cs");
+            string rollback = Between(session,
+                "private void RollbackReproject",
+                "internal DockBatchMemberResult CaptureDockMember");
+            Assert.IsTrue(rollback.Contains(
+                    "if (wasVisible) _placementExecutor.Show();") &&
+                rollback.Contains("else _window.Hide();"));
+        }
+
+        [TestMethod]
+        public void ReprojectRuntimeTransitionRequiresAppliedResult()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string apply = Between(coordinator,
+                "private bool ApplyReprojectResult",
+                "private static bool TryBuildPreference");
+            Assert.IsTrue(apply.Contains("result.Facts == null") &&
+                apply.Contains("WindowFactsVersionRules.Classify(noteId, result.Sequence,") &&
+                apply.Contains("return true;"));
+            Assert.IsTrue(coordinator.Contains(
+                    "ApplyReprojectResult(result, noteId, snapshot)") &&
+                coordinator.Contains(
+                    "ApplyReprojectResult(result, rehomedNoteId, snapshot)"));
+        }
+
+        [TestMethod]
+        public void Drt910_DockPlanUsesSourceActualWidthForEveryMember()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string plan = Between(coordinator,
+                "private DockPlacementPlan PlanDockPlan",
+                "private List<DockLayoutTarget> PlanToDockTargets");
+
+            Assert.IsTrue(plan.Contains(
+                    "DisplayGeometry.PhysicalLengthToLogical(") &&
+                plan.Contains("sourceFacts.PhysicalBounds.Width") &&
+                plan.Contains("new DockLogicalMember(member.Id,\n                    unifiedLogicalWidth,"),
+                "Every member must use the source HWND's actual logical width.");
+            Assert.IsFalse(plan.Contains(
+                "new DockLogicalMember(member.Id,\n                    member.LocalLogicalWidth,"),
+                "Stale per-member widths must not fracture one Dock layout.");
+        }
+
+        [TestMethod]
+        public void Drt10_NativeBatchBootstrapsFollowersToPlanDpi()
+        {
+            string host = ReadSource("StickyUiHost.cs");
+            string apply = Between(host,
+                "private StickyUiCommandResult ApplyDockPlan(",
+                "private StickyUiCommandResult CaptureDockFactsForCommit");
+            string session = ReadSource("StickyWindowSession.cs");
+            string prepare = Between(session,
+                "internal bool TryPrepareDockTargetDpi(",
+                "internal void CompleteDockTargetDpi(");
+
+            int bootstrap = apply.IndexOf("TryPrepareDockTargetDpi(",
+                StringComparison.Ordinal);
+            int batch = apply.IndexOf(
+                "WindowsBatchWindowPlacementExecutor.Apply(",
+                StringComparison.Ordinal);
+            Assert.IsTrue(bootstrap >= 0 && batch > bootstrap &&
+                apply.Contains("topology.FindByRuntimeSurfaceId(") &&
+                apply.Contains("member.Facts.Dpi != plan.TargetDpi") &&
+                apply.Contains("targetSurface.RuntimeGdiName"),
+                "Followers must acquire the one plan DPI before the native batch, then be verified.");
+            Assert.IsTrue(prepare.Contains("_window.Hide()") &&
+                prepare.Contains("MoveHiddenToSurface(") &&
+                prepare.Contains("GetDpiForWindow() != targetDpi"),
+                "A cross-DPI follower must use the hidden target-surface bootstrap.");
+        }
+
+        [TestMethod]
+        public void Drt10_DpiBootstrapFailureRollsBackWholeFrame()
+        {
+            string host = ReadSource("StickyUiHost.cs");
+            string apply = Between(host,
+                "private StickyUiCommandResult ApplyDockPlan(",
+                "private StickyUiCommandResult CaptureDockFactsForCommit");
+            string session = ReadSource("StickyWindowSession.cs");
+            string complete = Between(session,
+                "internal void CompleteDockTargetDpi(",
+                "private void RollbackReproject(");
+
+            Assert.IsTrue(apply.Contains("bool placementApplied = false;") &&
+                apply.Contains("CompleteDockTargetDpi(\n                        transitions[index], placementApplied)") &&
+                complete.Contains("if (!placementApplied)") &&
+                complete.Contains("RollbackReproject("),
+                "A rejected frame must restore every follower's prior bounds and visibility.");
+        }
+
+        [TestMethod]
+        public void Drt10_DurableCommitRejectsMixedTargetFacts()
+        {
+            string validation = DockCommitValidationSource();
+
+            Assert.IsTrue(validation.Contains("batch.TargetDpi <= 0") &&
+                validation.Contains("FindByRuntimeSurfaceId(") &&
+                validation.Contains("member.Facts.Dpi != batch.TargetDpi") &&
+                validation.Contains("targetSurface.RuntimeGdiName"),
+                "A mixed-DPI or wrong-surface result must never become durable.");
+        }
+
+        [TestMethod]
+        public void Drt11_TopologyChangeInvalidatesMailboxBeforeReconcile()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string changed = Between(coordinator,
+                "private void HandleStickyTopologyChanged(",
+                "private void InvalidateDockPlansForTopologyChange(");
+            string invalidate = Between(coordinator,
+                "private void InvalidateDockPlansForTopologyChange(",
+                "private void ResumeDockDragAfterTopologyChange(");
+
+            Assert.IsTrue(changed.IndexOf(
+                    "InvalidateDockPlansForTopologyChange(snapshot)",
+                    StringComparison.Ordinal) < changed.IndexOf(
+                    "ReconcileDockGroups(snapshot, petFacts)",
+                    StringComparison.Ordinal));
+            Assert.IsTrue(invalidate.Contains(
+                    "_dockPlanMailbox.Current = null") &&
+                invalidate.Contains("_dockPlanMailbox.ApplyQueued = false") &&
+                invalidate.Contains(
+                    "_dockPlanMailbox.FinalPlanSequence = 0"));
+        }
+
+        [TestMethod]
+        public void Drt11_ActiveDragRecapturesSourceAfterSettledTopology()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string resume = Between(coordinator,
+                "private void ResumeDockDragAfterTopologyChange(",
+                "private void ReconcileDockGroups(");
+
+            Assert.IsTrue(resume.Contains(
+                    "StickyUiCommand.CaptureDockFacts(") &&
+                resume.Contains("TryApplyDockFactsBarrier(result, expectedIds") &&
+                resume.Contains("_dockInteraction.TryEnterDragging(epoch,"));
+            Assert.IsFalse(resume.Contains("StickyDockGroups.") ||
+                resume.Contains("CommitVisibleDockOrder("),
+                "A topology barrier must preserve membership during a drag.");
+        }
+
+        [TestMethod]
+        public void Drt11_GroupReprojectUsesOneAtomicNativeBatch()
+        {
+            string host = ReadSource("StickyUiHost.cs");
+            string apply = Between(host,
+                "private StickyUiCommandResult ApplyDockGroupReproject(",
+                "private StickyUiCommandResult CaptureDockFactsForCommit");
+
+            Assert.IsTrue(apply.Contains(
+                    "session.TryPrepareDockTargetSurface(") &&
+                apply.Contains("DockPlacementPlanner.PlanReproject(") &&
+                apply.Contains(
+                    "WindowsBatchWindowPlacementExecutor.Apply(handles,") &&
+                apply.Contains("CompleteDockTargetDpi(") &&
+                apply.Contains("placementApplied"));
+            Assert.IsFalse(apply.Contains("SetBounds("),
+                "Group topology placement must not degrade to partial moves.");
+        }
+
+        [TestMethod]
+        public void Drt11_GroupRehomePreservesDurablePreferred()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string apply = Between(coordinator,
+                "private bool TryApplyDockTopologyResult(",
+                "private void ReconcileStandaloneSticky(");
+
+            Assert.IsTrue(apply.Contains(
+                    "ApplyHostedStickyFactsGeometry(") &&
+                apply.Contains("_placementRuntime.TryUpdateEffective(") &&
+                apply.Contains("_notes.SaveAsync()"));
+            Assert.IsFalse(apply.Contains("CommitHostedStickyPreferred(") ||
+                apply.Contains("PreferredLocalLogical") ||
+                apply.Contains("PreferredDisplayTargetKey"),
+                "Temporary group geometry must never overwrite preference.");
+        }
+
+        [TestMethod]
+        public void Drt11_GroupReturnRequiresNoUserMove()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string reconcile = Between(coordinator,
+                "private void ReconcileDockGroup(",
+                "private static DisplaySurfaceSnapshot FindCommonDockPreferredSurface(");
+            string complete = Between(coordinator,
+                "private void PostDockGroupTopologyReproject(",
+                "private bool TryApplyDockTopologyResult(");
+
+            Assert.IsTrue(reconcile.Contains(
+                    "_placementRuntime.UserMovedSinceRehome(member.Id)") &&
+                reconcile.Contains(
+                    "PostDockGroupTopologyReproject(group, snapshot, preferred,") &&
+                complete.Contains("MarkReturnedToPreferred(") &&
+                complete.Contains("MarkTemporaryRehome("));
+        }
+
+        [TestMethod]
+        public void Drt11_GroupResultRejectsStaleOrIncompleteGeneration()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string apply = Between(coordinator,
+                "private bool TryApplyDockTopologyResult(",
+                "private void ReconcileStandaloneSticky(");
+
+            Assert.IsTrue(apply.Contains(
+                    "CurrentTopologySnapshot().Generation != snapshot.Generation") &&
+                apply.Contains("batch.Members.Count != expectedIds.Count") &&
+                apply.Contains(
+                    "member.Facts.TopologyGeneration != snapshot.Generation") &&
+                apply.Contains("actual.Count != expected.Count"));
+        }
+
+        private static string DockCommitValidationSource()
+        {
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            return Between(coordinator,
+                "private bool TryPrepareDockCommit",
+                "private static void TraceDockCommitRejected");
         }
 
         private static string ReadSource(string relativePath)

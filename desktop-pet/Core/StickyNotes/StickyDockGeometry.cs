@@ -87,6 +87,71 @@ namespace PennyPet
                 requestedUpperHeight));
         }
 
+        // Native physical-pixel horizontal resize target. Inputs are the
+        // WM_SIZING screen RECT edges; the scale -> physical min/max
+        // conversion stays in the Windows adapter. Output is physical
+        // Left/Width, never DIP.
+        internal static DockRect CalculatePhysicalHorizontalResizeTarget(
+            int proposedLeft,
+            int proposedRight,
+            bool fromLeft,
+            int minimumPhysicalWidth,
+            int maximumPhysicalWidth)
+        {
+            int minimum = Math.Max(1, minimumPhysicalWidth);
+            int maximum = Math.Max(minimum, maximumPhysicalWidth);
+            int proposedWidth = Math.Max(1,
+                proposedRight - proposedLeft);
+            int width = Math.Max(minimum, Math.Min(maximum,
+                proposedWidth));
+            int left = fromLeft
+                ? proposedRight - width
+                : proposedLeft;
+            return new DockRect(left, 0, width, 0);
+        }
+
+        // Exact physical divider path: the requested source height is an
+        // already-clamped physical HWND height, so followers move by the
+        // exact physical delta without a second 220..700 logical clamp.
+        internal static List<DockRect> CalculateDockMemberResizeTargetsExact(
+            IList<DockRect> startBounds,
+            int sourceIndex,
+            int sourcePhysicalHeight)
+        {
+            List<DockRect> targets = new List<DockRect>();
+            if (startBounds == null || sourceIndex < 0 ||
+                sourceIndex >= startBounds.Count) return targets;
+            int exactHeight = Math.Max(1, sourcePhysicalHeight);
+            int delta = exactHeight - startBounds[sourceIndex].Height;
+            for (int index = sourceIndex + 1;
+                index < startBounds.Count; index++)
+            {
+                DockRect start = startBounds[index];
+                targets.Add(new DockRect(start.Left, start.Top + delta,
+                    start.Width, start.Height));
+            }
+            return targets;
+        }
+
+        internal static List<DockRect> CalculateDockMemberResizeTargets(
+            IList<DockRect> startBounds, int sourceIndex,
+            int requestedSourceHeight, out int sourceHeight)
+        {
+            sourceHeight = CalculateDockDividerHeight(requestedSourceHeight);
+            List<DockRect> targets = new List<DockRect>();
+            if (startBounds == null || sourceIndex < 0 ||
+                sourceIndex >= startBounds.Count) return targets;
+            int delta = sourceHeight - startBounds[sourceIndex].Height;
+            for (int index = sourceIndex + 1;
+                index < startBounds.Count; index++)
+            {
+                DockRect start = startBounds[index];
+                targets.Add(new DockRect(start.Left, start.Top + delta,
+                    start.Width, start.Height));
+            }
+            return targets;
+        }
+
         internal static DockPoint CalculateHeaderReachableTranslation(
             DockRect header, DockRect work)
         {
@@ -235,17 +300,34 @@ namespace PennyPet
             return result;
         }
 
-        internal static DockPoint CalculateSideTabLocation(DockRect pet,
-            DockRect work, DockSize strip, bool onLeft, int overlap,
-            int horizontalOffset)
+        internal static DockPoint CalculateSideTabLocation(
+            DockRect pet, DockRect work, DockSize strip,
+            bool onLeft, int overlap, int horizontalOffset)
         {
-            int x = onLeft ? pet.Left - strip.Width + overlap :
-                pet.Right - overlap - Math.Max(0, horizontalOffset);
-            x = Math.Max(work.Left + 2,
-                Math.Min(x, work.Right - strip.Width - 2));
+            return CalculateSideTabLocation(
+                pet, work, strip, onLeft, overlap, horizontalOffset, 2, 4);
+        }
+
+        internal static DockPoint CalculateSideTabLocation(
+            DockRect pet, DockRect work, DockSize strip,
+            bool onLeft, int overlap, int horizontalOffset,
+            int marginX, int marginY)
+        {
+            int safeMarginX = Math.Max(0, marginX);
+            int safeMarginY = Math.Max(0, marginY);
+
+            int x = onLeft
+                ? pet.Left - strip.Width + overlap
+                : pet.Right - overlap - Math.Max(0, horizontalOffset);
+
+            x = Math.Max(work.Left + safeMarginX,
+                Math.Min(x, work.Right - strip.Width - safeMarginX));
+
             int y = pet.Top + (pet.Height - strip.Height) / 2;
-            y = Math.Max(work.Top + 4,
-                Math.Min(y, work.Bottom - strip.Height - 4));
+
+            y = Math.Max(work.Top + safeMarginY,
+                Math.Min(y, work.Bottom - strip.Height - safeMarginY));
+
             return new DockPoint { X = x, Y = y };
         }
 
@@ -263,29 +345,39 @@ namespace PennyPet
                 (Math.Max(1, tabHeight) + Math.Max(0, tabGap)));
         }
 
-        internal static int CalculateLeftSideTabCount(int totalCount,
-            int petHeight, int workHeight, int tabHeight, int tabGap)
+        internal static int CalculateBalancedLeftSideTabCount(int totalCount)
         {
-            if (totalCount <= 0) return 0;
-            int screenCapacity = CalculateSideTabScreenCapacity(workHeight,
-                tabHeight, tabGap);
-            int preferred = CalculatePreferredSideTabCount(petHeight,
-                workHeight, tabHeight, tabGap);
-            int left = Math.Min(totalCount, preferred);
-            if (totalCount - left > screenCapacity)
-                left = Math.Min(screenCapacity, totalCount - screenCapacity);
-            return Math.Max(0, left);
+            return (Math.Max(0, totalCount) + 1) / 2;
         }
 
-        internal static int CalculatePreferredSideTabCount(int petHeight,
-            int workHeight, int tabHeight, int tabGap)
+        internal static bool IsBalancedSideTabSplit(int leftCount,
+            int rightCount)
         {
-            int normalizedHeight = Math.Max(1, tabHeight);
-            int normalizedGap = Math.Max(0, tabGap);
-            return Math.Min(CalculateSideTabScreenCapacity(workHeight,
-                normalizedHeight, normalizedGap), Math.Max(4,
-                (Math.Max(normalizedHeight, petHeight) + normalizedGap) /
-                (normalizedHeight + normalizedGap)));
+            int total = Math.Max(0, leftCount) + Math.Max(0, rightCount);
+            int desiredLeft = CalculateBalancedLeftSideTabCount(total);
+            return leftCount == desiredLeft &&
+                rightCount == total - desiredLeft;
+        }
+
+        internal static DockRect CalculatePetSideSpawnLocal(
+            DockRect petLocal, DockRect workLocal, DockSize size, int gap)
+        {
+            int safeGap = Math.Max(0, gap);
+            int requestedLeft = petLocal.Left - size.Width - safeGap;
+            if (requestedLeft < workLocal.Left)
+                requestedLeft = petLocal.Right + safeGap;
+            int left = Math.Max(workLocal.Left,
+                Math.Min(requestedLeft,
+                    Math.Max(workLocal.Left, workLocal.Right - size.Width)));
+            int top = Math.Max(workLocal.Top,
+                Math.Min(petLocal.Top, workLocal.Bottom - size.Height));
+            return new DockRect
+            {
+                Left = left,
+                Top = top,
+                Width = size.Width,
+                Height = size.Height
+            };
         }
 
         internal static DockPoint CalculatePopupLocation(DockRect owner,

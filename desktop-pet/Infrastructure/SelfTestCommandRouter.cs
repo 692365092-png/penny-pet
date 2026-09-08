@@ -26,6 +26,26 @@ namespace PennyPet
             if (TryCommand(args, "--startup-probe=", false,
                 delegate(string value) { SelfTest.RunStartupProbe(value); },
                 out exitCode)) return true;
+            if (TryCommand(args, "--solar-term-probe=", false,
+                delegate(string value) { SelfTest.RunSolarTermProbe(value); },
+                out exitCode)) return true;
+            if (TryCommand(args, "--self-test-display-topology=", false,
+                delegate(string value)
+                {
+                    SelfTest.RunDisplayTopologyProbe(value);
+                }, out exitCode)) return true;
+            if (TryCommand(args, "--daily-briefing-probe=", false,
+                delegate(string value)
+                {
+                    SelfTest.RunDailyBriefingProbe(value);
+                },
+                out exitCode)) return true;
+            if (TryCommand(args, "--almanac-probe=", false,
+                delegate(string value) { SelfTest.RunAlmanacProbe(value); },
+                out exitCode)) return true;
+            if (TryCommand(args, "--weather-api-probe=", false,
+                delegate(string value) { SelfTest.RunWeatherApiProbe(value); },
+                out exitCode)) return true;
             if (TryCommand(args, "--render-sticky-preview=", true,
                 delegate(string value) { SelfTest.RenderStickyPreview(value); },
                 out exitCode)) return true;

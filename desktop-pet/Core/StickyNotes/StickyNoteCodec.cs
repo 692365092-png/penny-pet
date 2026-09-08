@@ -10,6 +10,15 @@ namespace PennyPet
     // atomic replacement and diagnostics remain platform responsibilities.
     internal static class StickyNoteCodec
     {
+        internal const int VersionTen = 10;
+        internal const int VersionTenFieldCount = 32;
+        internal const int VersionEleven = 11;
+        internal const int VersionElevenFieldCount = 37;
+        internal const int CurrentVersion = VersionEleven;
+        internal const int CurrentFieldCount = VersionElevenFieldCount;
+        internal const int MaximumDisplayIdCharacters = 1024;
+        internal const int MaximumLocalLogicalValue = 20000;
+
         private static readonly char[] LineSeparators = new char[] { '\n' };
 
         internal static string SerializeLine(StickyNoteData note)
@@ -17,7 +26,8 @@ namespace PennyPet
             if (note == null) throw new ArgumentNullException(nameof(note));
             return String.Join("|", new string[]
             {
-                "9", note.Id ?? String.Empty,
+                CurrentVersion.ToString(CultureInfo.InvariantCulture),
+                note.Id ?? String.Empty,
                 note.Visible ? "1" : "0",
                 note.AlwaysOnTop ? "1" : "0",
                 note.ColorArgb.ToString(CultureInfo.InvariantCulture),
@@ -44,7 +54,21 @@ namespace PennyPet
                 Math.Max(-1, note.DockGroupOrder)
                     .ToString(CultureInfo.InvariantCulture),
                 note.IsSchedule ? "1" : "0",
-                EncodeSchedules(note.ScheduleItems)
+                EncodeSchedules(note.ScheduleItems),
+                Encode(note.DisplayId ?? String.Empty),
+                note.LocalLogicalX.ToString(CultureInfo.InvariantCulture),
+                note.LocalLogicalY.ToString(CultureInfo.InvariantCulture),
+                note.LocalLogicalWidth.ToString(CultureInfo.InvariantCulture),
+                note.LocalLogicalHeight.ToString(CultureInfo.InvariantCulture),
+                Encode(note.PreferredDisplayTargetKey ?? String.Empty),
+                note.PreferredLocalLogicalX.ToString(
+                    CultureInfo.InvariantCulture),
+                note.PreferredLocalLogicalY.ToString(
+                    CultureInfo.InvariantCulture),
+                note.PreferredLocalLogicalWidth.ToString(
+                    CultureInfo.InvariantCulture),
+                note.PreferredLocalLogicalHeight.ToString(
+                    CultureInfo.InvariantCulture)
             });
         }
 
@@ -61,9 +85,12 @@ namespace PennyPet
             bool versionSeven = fields.Length >= 23 && fields[0] == "7";
             bool versionEight = fields.Length >= 25 && fields[0] == "8";
             bool versionNine = fields.Length >= 27 && fields[0] == "9";
+            bool versionTen = fields.Length >= 32 && fields[0] == "10";
+            bool versionEleven = fields.Length >= 37 &&
+                fields[0] == "11";
             if (!versionOne && !versionTwo && !versionThree && !versionFour &&
                 !versionFive && !versionSix && !versionSeven && !versionEight &&
-                !versionNine) return null;
+                !versionNine && !versionTen && !versionEleven) return null;
 
             int number;
             long ticks;
@@ -75,9 +102,13 @@ namespace PennyPet
             if (Int32.TryParse(fields[5], out number)) note.X = number;
             if (Int32.TryParse(fields[6], out number)) note.Y = number;
             if (Int32.TryParse(fields[7], out number))
-                note.Width = Clamp(number, 200, 900);
+                note.Width = Clamp(number,
+                    StickyNoteLimits.MinimumWindowWidth,
+                    StickyNoteLimits.MaximumWindowWidth);
             if (Int32.TryParse(fields[8], out number))
-                note.Height = Clamp(number, 140, 700);
+                note.Height = Clamp(number,
+                    StickyNoteLimits.MinimumWindowHeight,
+                    StickyNoteLimits.MaximumWindowHeight);
             if (Int64.TryParse(fields[9], out ticks) && ticks > 0)
                 note.CreatedUtcTicks = ticks;
             if (Int64.TryParse(fields[10], out ticks) && ticks > 0)
@@ -95,43 +126,73 @@ namespace PennyPet
                 DecodeTodos(fields[14], note.TodoItems);
                 note.Text = Decode(fields[15]);
                 if ((versionThree || versionFour || versionFive || versionSix ||
-                    versionSeven || versionEight || versionNine) &&
+                    versionSeven || versionEight || versionNine ||
+                    versionTen || versionEleven) &&
                     Int32.TryParse(fields[16], out number))
                     note.TabOrder = Math.Max(0, number);
                 if (versionFour || versionFive || versionSix || versionSeven ||
-                    versionEight || versionNine)
+                    versionEight || versionNine || versionTen ||
+                    versionEleven)
                     note.RichTextRtf = NormalizeRtf(Decode(fields[17]));
                 if (versionFive || versionSix || versionSeven || versionEight ||
-                    versionNine)
+                    versionNine || versionTen || versionEleven)
                 {
                     note.FontFamilyName = NormalizeFontFamily(Decode(fields[18]));
                     if (Int32.TryParse(fields[19], out number))
                         note.FontSizeTwips = Clamp(number, 120, 1440);
                 }
-                if (versionSix || versionSeven || versionEight || versionNine)
+                if (versionSix || versionSeven || versionEight || versionNine ||
+                    versionTen || versionEleven)
                 {
                     if (Int32.TryParse(fields[20], out number))
                         note.BackgroundOpacityPercent = Clamp(number, 10, 100);
                     if (Int32.TryParse(fields[21], out number))
                         note.TextColorArgb = NormalizeTextColor(number);
                 }
-                if (versionSeven || versionEight || versionNine)
+                if (versionSeven || versionEight || versionNine ||
+                    versionTen || versionEleven)
                     note.DockParentId = Decode(fields[22]);
-                if (versionEight || versionNine)
+                if (versionEight || versionNine || versionTen ||
+                    versionEleven)
                 {
                     note.DockGroupId = Decode(fields[23]);
                     if (Int32.TryParse(fields[24], out number))
                         note.DockGroupOrder = Math.Max(-1, number);
                 }
-                if (versionNine)
+                if (versionNine || versionTen || versionEleven)
                 {
                     note.IsSchedule = fields[25] == "1";
                     DecodeSchedules(fields[26], note.ScheduleItems);
                     if (note.IsSchedule) note.IsTodoList = false;
                 }
+                if (versionTen || versionEleven)
+                {
+                    note.DisplayId = Decode(fields[27]);
+                    if (Int32.TryParse(fields[28], out number))
+                        note.LocalLogicalX = number;
+                    if (Int32.TryParse(fields[29], out number))
+                        note.LocalLogicalY = number;
+                    if (Int32.TryParse(fields[30], out number))
+                        note.LocalLogicalWidth = number;
+                    if (Int32.TryParse(fields[31], out number))
+                        note.LocalLogicalHeight = number;
+                }
+                if (versionEleven)
+                {
+                    note.PreferredDisplayTargetKey = Decode(fields[32]);
+                    if (Int32.TryParse(fields[33], out number))
+                        note.PreferredLocalLogicalX = number;
+                    if (Int32.TryParse(fields[34], out number))
+                        note.PreferredLocalLogicalY = number;
+                    if (Int32.TryParse(fields[35], out number))
+                        note.PreferredLocalLogicalWidth = number;
+                    if (Int32.TryParse(fields[36], out number))
+                        note.PreferredLocalLogicalHeight = number;
+                }
             }
 
-            if (!versionSix && !versionSeven && !versionEight && !versionNine)
+            if (!versionSix && !versionSeven && !versionEight && !versionNine &&
+                !versionTen && !versionEleven)
                 note.TextColorArgb = IsLightPaper(note.ColorArgb)
                     ? WhiteArgb : BlackArgb;
             if (note.Title.Length > StickyNoteLimits.MaximumTitleCharacters ||
@@ -169,8 +230,12 @@ namespace PennyPet
                 note.FontFamilyName = family;
                 changed = true;
             }
-            int width = Clamp(note.Width, 280, 900);
-            int height = Clamp(note.Height, 220, 700);
+            int width = Clamp(note.Width,
+                StickyNoteLimits.MinimumWindowWidth,
+                StickyNoteLimits.MaximumWindowWidth);
+            int height = Clamp(note.Height,
+                StickyNoteLimits.MinimumWindowHeight,
+                StickyNoteLimits.MaximumWindowHeight);
             int size = Clamp(note.FontSizeTwips, 120, 1440);
             int opacity = Clamp(note.BackgroundOpacityPercent, 10, 100);
             int textColor = NormalizeTextColor(note.TextColorArgb);
@@ -182,6 +247,101 @@ namespace PennyPet
             {
                 note.FontSizeTwips = size;
                 changed = true;
+            }
+            // v10 canonical contract safety: a valid placement needs a display
+            // id and a sane positive local logical rect. If the display id is
+            // missing the placement is incomplete and must not claim canonical
+            // status; otherwise clamp the local rect to a plausible window size
+            // so a corrupt value can never overflow the display scale projection.
+            if (String.IsNullOrWhiteSpace(note.DisplayId))
+            {
+                if (note.LocalLogicalX != 0 || note.LocalLogicalY != 0 ||
+                    note.LocalLogicalWidth != 0 ||
+                    note.LocalLogicalHeight != 0)
+                {
+                    note.LocalLogicalX = 0;
+                    note.LocalLogicalY = 0;
+                    note.LocalLogicalWidth = 0;
+                    note.LocalLogicalHeight = 0;
+                    changed = true;
+                }
+            }
+            else
+            {
+                int localWidth = Math.Max(1,
+                    Math.Min(note.LocalLogicalWidth,
+                        MaximumLocalLogicalValue));
+                int localHeight = Math.Max(1,
+                    Math.Min(note.LocalLogicalHeight,
+                        MaximumLocalLogicalValue));
+                if (note.LocalLogicalWidth != localWidth)
+                {
+                    note.LocalLogicalWidth = localWidth;
+                    changed = true;
+                }
+                if (note.LocalLogicalHeight != localHeight)
+                {
+                    note.LocalLogicalHeight = localHeight;
+                    changed = true;
+                }
+            }
+            // v11 preferred placement safety mirrors the v10 canonical rule:
+            // an empty target key means no preference, and a valid preference
+            // clamps its local rect to a plausible window size so a corrupt
+            // value can never overflow the display scale projection.
+            note.PreferredDisplayTargetKey =
+                (note.PreferredDisplayTargetKey ?? String.Empty).Trim();
+            if (note.PreferredDisplayTargetKey.Length >
+                MaximumDisplayIdCharacters)
+            {
+                note.PreferredDisplayTargetKey = String.Empty;
+                changed = true;
+            }
+            if (String.IsNullOrWhiteSpace(note.PreferredDisplayTargetKey))
+            {
+                if (note.PreferredLocalLogicalX != 0 ||
+                    note.PreferredLocalLogicalY != 0 ||
+                    note.PreferredLocalLogicalWidth != 0 ||
+                    note.PreferredLocalLogicalHeight != 0)
+                {
+                    note.PreferredLocalLogicalX = 0;
+                    note.PreferredLocalLogicalY = 0;
+                    note.PreferredLocalLogicalWidth = 0;
+                    note.PreferredLocalLogicalHeight = 0;
+                    changed = true;
+                }
+            }
+            else if (note.PreferredLocalLogicalWidth <= 0 ||
+                note.PreferredLocalLogicalHeight <= 0)
+            {
+                // Strict state: a durable key without a positive local rect is
+                // not a valid preference and must degrade to unset instead of
+                // being repaired into a fake 1x1 placement.
+                note.PreferredDisplayTargetKey = String.Empty;
+                note.PreferredLocalLogicalX = 0;
+                note.PreferredLocalLogicalY = 0;
+                note.PreferredLocalLogicalWidth = 0;
+                note.PreferredLocalLogicalHeight = 0;
+                changed = true;
+            }
+            else
+            {
+                int preferredWidth = Math.Max(1,
+                    Math.Min(note.PreferredLocalLogicalWidth,
+                        MaximumLocalLogicalValue));
+                int preferredHeight = Math.Max(1,
+                    Math.Min(note.PreferredLocalLogicalHeight,
+                        MaximumLocalLogicalValue));
+                if (note.PreferredLocalLogicalWidth != preferredWidth)
+                {
+                    note.PreferredLocalLogicalWidth = preferredWidth;
+                    changed = true;
+                }
+                if (note.PreferredLocalLogicalHeight != preferredHeight)
+                {
+                    note.PreferredLocalLogicalHeight = preferredHeight;
+                    changed = true;
+                }
             }
             if (note.BackgroundOpacityPercent != opacity)
             {
@@ -269,7 +429,7 @@ namespace PennyPet
                     builder.Append((int)item.State).Append('\t')
                         .Append(item.IsPinned ? '1' : '0').Append('\t')
                         .Append((item.Text ?? String.Empty).Replace("\r", " ")
-                            .Replace("\n", " "));
+                            .Replace("\n", " ").Replace("\t", " "));
                 }
             }
             return Encode(builder.ToString());

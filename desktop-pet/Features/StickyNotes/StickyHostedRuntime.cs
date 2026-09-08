@@ -36,6 +36,15 @@ namespace PennyPet
             return _noteIds.Contains(noteId ?? String.Empty);
         }
 
+        // Synchronize only after EnsureSession acknowledges its real session.
+        // A recreated session may lower the lease; IME/focus/delete stay intact.
+        internal void SynchronizeSessionLease(string noteId, long sequence)
+        {
+            string id = noteId ?? String.Empty;
+            _noteIds.Add(id);
+            _appliedSequences[id] = Math.Max(0, sequence);
+        }
+
         internal bool CanApplySequence(string noteId, long sequence)
         {
             string id = noteId ?? String.Empty;

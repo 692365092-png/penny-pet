@@ -132,6 +132,12 @@ namespace PennyPet
         private bool _closingForExit;
         private bool _disposed;
         private bool _shownRaised;
+        private readonly bool _hostedNativePlacement;
+        private bool _hasLastValidDips;
+        private double _lastValidLeft;
+        private double _lastValidTop;
+        private double _lastValidWidth;
+        private double _lastValidHeight;
         private bool _inputFocusReportQueued;
         private bool _updatingFormatToolbar;
         private bool _rebuildingTodos;
@@ -190,10 +196,21 @@ namespace PennyPet
 
         internal StickyNoteWindow(StickyNoteData data, bool opaqueQaHost,
             bool showInTaskbarForQa)
+            : this(data, opaqueQaHost, showInTaskbarForQa, false)
+        {
+        }
+
+        // Hosted production path: desktop placement belongs to the native
+        // placement executor, never to WPF Left/Top. Width/Height use the
+        // logical DIP size; physical compatibility fields must not be fed
+        // into WPF DIP because that double-scales on a high-DPI display.
+        internal StickyNoteWindow(StickyNoteData data, bool opaqueQaHost,
+            bool showInTaskbarForQa, bool hostedNativePlacement)
         {
             if (data == null) throw new ArgumentNullException("data");
             Data = data;
             _opaqueQaHost = opaqueQaHost;
+            _hostedNativePlacement = hostedNativePlacement;
             _initializing = true;
             _typingFontFamilyName = StickyNoteRepository.NormalizeFontFamily(
                 data.FontFamilyName);
@@ -215,10 +232,22 @@ namespace PennyPet
             MinHeight = 220;
             MaxWidth = 900;
             MaxHeight = 700;
-            base.Left = data.X;
-            base.Top = data.Y;
-            base.Width = Math.Max(MinWidth, data.Width);
-            base.Height = Math.Max(MinHeight, data.Height);
+            if (hostedNativePlacement)
+            {
+                // Left/Top stay unset so the HWND is created without claiming
+                // any desktop position; the executor parks and places it.
+                base.Width = Math.Max(MinWidth,
+                    Math.Max(1, data.LocalLogicalWidth));
+                base.Height = Math.Max(MinHeight,
+                    Math.Max(1, data.LocalLogicalHeight));
+            }
+            else
+            {
+                base.Left = data.X;
+                base.Top = data.Y;
+                base.Width = Math.Max(MinWidth, data.Width);
+                base.Height = Math.Max(MinHeight, data.Height);
+            }
             Topmost = data.AlwaysOnTop;
             SnapsToDevicePixels = true;
             UseLayoutRounding = true;
@@ -492,11 +521,16 @@ namespace PennyPet
             };
             LocationChanged += delegate
             {
+                CacheLastValidDips();
                 if (_initializing) return;
                 Raise(HeaderDragMoved);
                 ScheduleSave();
             };
-            SizeChanged += delegate { if (!_initializing) ScheduleSave(); };
+            SizeChanged += delegate
+            {
+                CacheLastValidDips();
+                if (!_initializing) ScheduleSave();
+            };
             StateChanged += delegate
             {
                 if (base.WindowState == W.WindowState.Maximized)
@@ -541,10 +575,17 @@ namespace PennyPet
         public event EventHandler HeaderDragStarted;
         public event EventHandler HeaderDragMoved;
         public event EventHandler HeaderDragCompleted;
+        public event EventHandler UserResizeCompleted;
         public event EventHandler CloseRequested;
         public event EventHandler PinStateChanged;
         public event EventHandler<DockHorizontalResizeEventArgs>
             DockHorizontalResizing;
+        public event EventHandler<DockDividerResizeEventArgs>
+            DockDividerResizeStarted;
+        public event EventHandler<DockDividerResizeEventArgs>
+            DockDividerResizing;
+        public event EventHandler<DockDividerResizeEventArgs>
+            DockDividerResizeCompleted;
         public event WF.FormClosedEventHandler FormClosed;
 
         public bool IsDisposed { get { return _disposed; } }
@@ -860,6 +901,20 @@ namespace PennyPet
             Data.Y = Top;
             Data.Width = Width;
             Data.Height = Height;
+        }
+
+        // Places the HWND at physical pixels (so Windows performs the correct
+        // per-monitor DPI conversion) and, when editing, activates and focuses
+        // the primary input. Used for a standalone note with a valid display
+        // placement so it lands on the correct monitor regardless of DPI.
+        internal void ShowAtPhysicalBounds(Rectangle bounds, bool edit)
+        {
+            ShowRestoredAtPhysicalBounds(bounds);
+            if (edit)
+            {
+                Activate();
+                FocusPrimaryInputForTest();
+            }
         }
 
         internal Rectangle PhysicalBounds
@@ -1410,10 +1465,52 @@ namespace PennyPet
 
         private void EnsureOnScreen()
         {
+            if (_hostedNativePlacement)
+            {
+                EnsureOnScreenNative();
+                return;
+            }
             Rectangle work = WF.Screen.FromPoint(
                 new System.Drawing.Point(Data.X, Data.Y)).WorkingArea;
             Left = Math.Max(work.Left, Math.Min(Data.X, work.Right - Width));
             Top = Math.Max(work.Top, Math.Min(Data.Y, work.Bottom - Height));
+        }
+
+        // Hosted production never feeds persisted physical Data.X/Y into WPF
+        // DIP. The on-screen clamp happens on the native HWND in physical
+        // pixels instead; the dock owner follows up with an authoritative
+        // SetBounds batch, so this only keeps the transient window visible.
+        private void EnsureOnScreenNative()
+        {
+            IntPtr hwnd = new System.Windows.Interop.WindowInteropHelper(
+                this).EnsureHandle();
+            NativeRect rect;
+            if (!GetWindowRect(hwnd, out rect)) return;
+            Rectangle work = WF.Screen.FromPoint(
+                new System.Drawing.Point(rect.Left, rect.Top)).WorkingArea;
+            int width = rect.Right - rect.Left;
+            int height = rect.Bottom - rect.Top;
+            int left = Math.Max(work.Left,
+                Math.Min(rect.Left, work.Right - width));
+            int top = Math.Max(work.Top,
+                Math.Min(rect.Top, work.Bottom - height));
+            SetWindowPos(hwnd, IntPtr.Zero, left, top, 0, 0,
+                SwpNoSize | SwpNoZOrder | SwpNoActivate);
+        }
+
+        private void CacheLastValidDips()
+        {
+            // Never record the transient geometry written while recovering
+            // from a system maximize/snap; only live, settled normal bounds.
+            if (_recoveringSystemGeometry) return;
+            if (base.WindowState != W.WindowState.Normal) return;
+            if (Double.IsNaN(base.Left) || Double.IsNaN(base.Top) ||
+                Double.IsNaN(base.Width) || Double.IsNaN(base.Height)) return;
+            _hasLastValidDips = true;
+            _lastValidLeft = base.Left;
+            _lastValidTop = base.Top;
+            _lastValidWidth = base.Width;
+            _lastValidHeight = base.Height;
         }
 
         private void WindowClosing(object sender,

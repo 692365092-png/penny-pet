@@ -35,16 +35,6 @@ namespace PennyPet
             return previousSecond != currentSecond;
         }
 
-        internal static bool ShouldReplaceBubble(bool currentIsDueReminder,
-            bool currentIsPreAlert, bool incomingIsDueReminder, bool exiting)
-        {
-            // An at-time reminder is persistent against pet clicks, but it is
-            // not allowed to block later feedback. Any later application
-            // bubble replaces it. Pre-alert countdowns keep their older rule.
-            if (currentIsDueReminder) return true;
-            return !currentIsPreAlert || incomingIsDueReminder || exiting;
-        }
-
         internal static bool IsPreAlertWindow(TimeSpan remaining)
         {
             return remaining > TimeSpan.Zero &&

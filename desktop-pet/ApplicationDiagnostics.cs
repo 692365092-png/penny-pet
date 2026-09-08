@@ -75,6 +75,7 @@ namespace PennyPet
                     string directory = Path.GetDirectoryName(path);
                     if (!String.IsNullOrEmpty(directory))
                         Directory.CreateDirectory(directory);
+                    EnsureLogCapacity(path);
                     string line = "[" + DateTime.Now.ToString(
                         "yyyy-MM-dd HH:mm:ss.fff") + "] window-layer / " +
                         (operation ?? "unknown") + " / " +
@@ -116,12 +117,7 @@ namespace PennyPet
                     string directory = Path.GetDirectoryName(path);
                     if (!String.IsNullOrEmpty(directory))
                         Directory.CreateDirectory(directory);
-                    if (File.Exists(path) && new FileInfo(path).Length > 1024 * 1024)
-                    {
-                        string previous = path + ".previous";
-                        if (File.Exists(previous)) File.Delete(previous);
-                        File.Move(path, previous);
-                    }
+                    EnsureLogCapacity(path);
                     StringBuilder text = new StringBuilder();
                     text.AppendLine("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") +
                         "] " + (context ?? "unknown") + " / " + (outcome ?? String.Empty));
@@ -136,6 +132,16 @@ namespace PennyPet
             catch
             {
                 // Diagnostics must never become another application failure.
+            }
+        }
+
+        private static void EnsureLogCapacity(string path)
+        {
+            if (File.Exists(path) && new FileInfo(path).Length > 1024 * 1024)
+            {
+                string previous = path + ".previous";
+                if (File.Exists(previous)) File.Delete(previous);
+                File.Move(path, previous);
             }
         }
     }

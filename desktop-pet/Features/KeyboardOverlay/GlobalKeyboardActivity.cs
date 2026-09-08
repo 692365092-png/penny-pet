@@ -14,7 +14,6 @@ namespace PennyPet
         private const int WmSysKeyUp = 0x0105;
         private IntPtr _hook;
         private HookProc _callback;
-        private readonly uint _ownProcessId = (uint)Process.GetCurrentProcess().Id;
         private uint _lastVirtualKeyCode;
         private uint _lastKeyTime;
         private int _repeatCount;
@@ -59,8 +58,9 @@ namespace PennyPet
                 {
                     KeyboardHookData data = (KeyboardHookData)Marshal.PtrToStructure(
                         lParam, typeof(KeyboardHookData));
-                    const uint injected = 0x10;
-                    if ((data.Flags & injected) == 0)
+                    const uint injectedFlag = 0x10;
+                    bool injected = (data.Flags & injectedFlag) != 0;
+                    if (ShouldPublishKey(injected))
                     {
                         if (keyUp)
                             _pressedKeys.Remove(data.VirtualKeyCode);
@@ -73,9 +73,7 @@ namespace PennyPet
                             // exact target that received this key-down event.
                             KeyboardFocusSnapshot focus =
                                 KeyboardFocusSnapshot.Capture();
-                            if (ShouldPublishKeyDown(alreadyPressed) &&
-                                ShouldPublishKey(false, _ownProcessId,
-                                    focus.ProcessId))
+                            if (ShouldPublishKeyDown(alreadyPressed))
                             {
                                 string display = KeyboardInputFormatter.Format(
                                     (int)data.VirtualKeyCode);
@@ -103,10 +101,9 @@ namespace PennyPet
             return CallNextHookEx(_hook, code, wParam, lParam);
         }
 
-        internal static bool ShouldPublishKey(bool injected, uint ownProcessId,
-            uint foregroundProcessId)
+        internal static bool ShouldPublishKey(bool injected)
         {
-            return !injected && ownProcessId != foregroundProcessId;
+            return !injected;
         }
 
         internal static int NextRepeatCount(uint previousKey, uint currentKey,

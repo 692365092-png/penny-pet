@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Globalization;
 using System.Reflection;
 using System.Text;
 using System.Windows.Forms;
@@ -12,6 +13,102 @@ namespace PennyPet
 {
     internal static partial class SelfTest
     {
+        public static void RunWeatherApiProbe(string outputPath)
+        {
+            Stopwatch timer = Stopwatch.StartNew();
+            WeatherLocation location;
+            WeatherLocation.TryCreate("武汉", "湖北", "中国", 30.5928,
+                114.3055, "Asia/Shanghai", out location);
+            WeatherForecastWindow forecast = null;
+            int requestCount = 0;
+            string failure = null;
+            try
+            {
+                using (PetWeatherSource source = new PetWeatherSource())
+                {
+                    forecast = source.GetForecastAsync(location)
+                        .GetAwaiter().GetResult();
+                    requestCount = source.ForecastRequestCountForTest;
+                }
+                if (forecast == null) failure = "Forecast unavailable.";
+            }
+            catch (Exception error)
+            {
+                failure = error.GetType().Name + ": " + error.Message;
+            }
+            timer.Stop();
+            WeatherMeaning? meaning = WeatherMeaningRules.Select(forecast);
+            WeatherDailySelection selection = meaning.HasValue
+                ? WeatherWordingCatalog.Select(meaning.Value,
+                    DateTime.Now.Date, location.StableKey) : null;
+            string json = "{\n" +
+                "  \"ok\": " + Bool(failure == null &&
+                    requestCount == 1) + ",\n" +
+                "  \"endpoint\": \"" + JsonText(
+                    OpenMeteoForecastClient.Endpoint) + "\",\n" +
+                "  \"location\": \"" + JsonText(location.DisplayName) +
+                    "\",\n" +
+                "  \"timezone\": \"" + JsonText(location.Timezone) +
+                    "\",\n" +
+                "  \"hourly_variables\": [\"" + String.Join("\", \"",
+                    OpenMeteoForecastClient.HourlyVariables) + "\"],\n" +
+                "  \"forecast_request_count\": " + requestCount + ",\n" +
+                "  \"elapsed_ms\": " + timer.ElapsedMilliseconds + ",\n" +
+                "  \"yesterday\": " + WeatherDayJson(
+                    forecast == null ? null : forecast.Yesterday) + ",\n" +
+                "  \"today\": " + WeatherDayJson(
+                    forecast == null ? null : forecast.Today) + ",\n" +
+                "  \"tomorrow\": " + WeatherDayJson(
+                    forecast == null ? null : forecast.Tomorrow) + ",\n" +
+                "  \"meaning\": " + (meaning.HasValue ? "\"" +
+                    meaning.Value + "\"" : "null") + ",\n" +
+                "  \"wording\": " + (selection == null ? "null" :
+                    "\"" + JsonText(selection.Text) + "\"") + ",\n" +
+                "  \"failure\": " + (failure == null ? "null" :
+                    "\"" + JsonText(failure) + "\"") + "\n" +
+                "}\n";
+            string parent = Path.GetDirectoryName(Path.GetFullPath(outputPath));
+            if (!String.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
+            File.WriteAllText(outputPath, json, new UTF8Encoding(false));
+        }
+
+        private static string WeatherDayJson(WeatherDaySummary day)
+        {
+            if (day == null) return "null";
+            return "{\"date\":\"" + day.Date.ToString("yyyy-MM-dd",
+                    CultureInfo.InvariantCulture) + "\"," +
+                "\"temperature_min_c\":" + Number(day.MinimumTemperatureC) +
+                ",\"temperature_max_c\":" + Number(day.MaximumTemperatureC) +
+                ",\"apparent_min_c\":" +
+                    Number(day.MinimumApparentTemperatureC) +
+                ",\"apparent_max_c\":" +
+                    Number(day.MaximumApparentTemperatureC) +
+                ",\"precipitation_probability_max\":" +
+                    Number(day.MaximumPrecipitationProbability) +
+                ",\"precipitation_total_mm\":" +
+                    Number(day.TotalPrecipitationMm) +
+                ",\"snowfall_total_cm\":" + Number(day.TotalSnowfallCm) +
+                ",\"wind_speed_max_kmh\":" +
+                    Number(day.MaximumWindSpeedKmh) +
+                ",\"wind_gust_max_kmh\":" +
+                    Number(day.MaximumWindGustKmh) +
+                ",\"likely_precipitation_hours\":" +
+                    day.LikelyPrecipitationHours +
+                ",\"has_snow_code\":" + Bool(day.HasSnowCode) + "}";
+        }
+
+        private static string Number(double value)
+        {
+            return value.ToString("0.###", CultureInfo.InvariantCulture);
+        }
+
+        private static string JsonText(string value)
+        {
+            return (value ?? String.Empty).Replace("\\", "\\\\")
+                .Replace("\"", "\\\"").Replace("\r", "\\r")
+                .Replace("\n", "\\n");
+        }
+
         public static void RunStickyInputProbe(string outputPath)
         {
             Stopwatch timer = Stopwatch.StartNew();
@@ -583,11 +680,13 @@ namespace PennyPet
 
         public static void RenderHoverBubblePreview(string outputPath)
         {
-            using (Bitmap preview = new Bitmap(680, 160, PixelFormat.Format32bppArgb))
-            using (Graphics graphics = Graphics.FromImage(preview))
             using (SpeechBubbleForm empty = new SpeechBubbleForm("今天想要做些什么呢？", 0))
             using (SpeechBubbleForm countdown = new SpeechBubbleForm(
                 "距离最近提醒还有1小时20分钟。\n当前共有 3 条提醒。", 0))
+            using (Bitmap preview = new Bitmap(empty.Width + countdown.Width +
+                30, Math.Max(empty.Height, countdown.Height) + 20,
+                PixelFormat.Format32bppArgb))
+            using (Graphics graphics = Graphics.FromImage(preview))
             using (Bitmap emptyBitmap = new Bitmap(empty.Width, empty.Height,
                 PixelFormat.Format32bppArgb))
             using (Bitmap countdownBitmap = new Bitmap(countdown.Width, countdown.Height,
@@ -601,7 +700,8 @@ namespace PennyPet
                 countdownBitmap.MakeTransparent(countdown.TransparencyKey);
                 graphics.Clear(Color.FromArgb(225, 229, 236));
                 graphics.DrawImageUnscaled(emptyBitmap, 5, 10);
-                graphics.DrawImageUnscaled(countdownBitmap, 345, 10);
+                graphics.DrawImageUnscaled(countdownBitmap,
+                    empty.Width + 20, 10);
                 string parent = Path.GetDirectoryName(Path.GetFullPath(outputPath));
                 if (!String.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
                 preview.Save(outputPath, ImageFormat.Png);
@@ -800,13 +900,15 @@ namespace PennyPet
                     tabNote.IsSchedule = i % 3 == 1;
                     tabNotes.Add(tabNote);
                 }
-                Rectangle previewWork = new Rectangle(0, 0, 1920, 1080);
                 int previewLeftCount = StickyNoteTabsForm.CalculateLeftCount(
-                    tabNotes.Count, 208, previewWork);
-                List<StickyNoteData> previewLeft = tabNotes.GetRange(0,
+                    tabNotes.Count);
+                List<SideTabSnapshot> tabSnapshots = new List<SideTabSnapshot>();
+                foreach (StickyNoteData tabNote in tabNotes)
+                    tabSnapshots.Add(SideTabSnapshot.FromData(tabNote));
+                List<SideTabSnapshot> previewLeft = tabSnapshots.GetRange(0,
                     previewLeftCount);
-                List<StickyNoteData> previewRight = tabNotes.GetRange(
-                    previewLeftCount, tabNotes.Count - previewLeftCount);
+                List<SideTabSnapshot> previewRight = tabSnapshots.GetRange(
+                    previewLeftCount, tabSnapshots.Count - previewLeftCount);
                 using (StickyNoteTabsForm leftTabs = new StickyNoteTabsForm(
                     StickyTabSide.Left, delegate(string noteId) { }))
                 using (StickyNoteTabsForm rightTabs = new StickyNoteTabsForm(
@@ -819,11 +921,11 @@ namespace PennyPet
                     leftTabs.SetNotes(previewLeft);
                     rightTabs.SetNotes(previewRight);
                     StickyNoteData crossSideSource = previewLeft.Count >= 3 &&
-                        previewRight.Count >= 2 ? previewLeft[1] : null;
+                        previewRight.Count >= 2 ? tabNotes[1] : null;
                     if (crossSideSource != null)
                     {
-                        StickyNoteTabsForm.BeginDragSession(crossSideSource);
-                        rightTabs.ShowDropPreviewForTest(crossSideSource, 2);
+                        StickyNoteTabsForm.BeginDragSession(crossSideSource.Id);
+                        rightTabs.ShowDropPreviewForTest(crossSideSource.Id, 2);
                     }
                     Application.DoEvents();
                     using (Bitmap leftTabsBitmap = new Bitmap(leftTabs.Width,
@@ -848,7 +950,7 @@ namespace PennyPet
                             petY + (petFrame.Height - rightTabsBitmap.Height) / 2);
                     }
                     if (crossSideSource != null)
-                        StickyNoteTabsForm.EndDragSession(crossSideSource);
+                        StickyNoteTabsForm.EndDragSession(crossSideSource.Id);
                     leftTabs.Hide();
                     rightTabs.Hide();
                 }
@@ -889,6 +991,684 @@ namespace PennyPet
         private static void CancelCheckCollection()
         {
             _reportedChecks = null;
+        }
+
+        private sealed class SolarTermProbeCase
+        {
+            internal readonly DateTimeOffset LocalDate;
+            internal readonly SolarTerm ExpectedTerm;
+            internal readonly string ExpectedName;
+            internal readonly int ExpectedLongitude;
+
+            internal SolarTermProbeCase(int year, int month, int day,
+                TimeSpan offset, SolarTerm expectedTerm,
+                string expectedName, int expectedLongitude)
+            {
+                LocalDate = new DateTimeOffset(year, month, day, 12, 0, 0,
+                    offset);
+                ExpectedTerm = expectedTerm;
+                ExpectedName = expectedName;
+                ExpectedLongitude = expectedLongitude;
+            }
+        }
+
+        public static void RunDailyBriefingProbe(string outputPath)
+        {
+            DateTimeOffset localDate = new DateTimeOffset(2026, 9, 3,
+                12, 0, 0,
+                TimeSpan.FromHours(8));
+            const ZodiacSign sign = ZodiacSign.Scorpio;
+            DayPart dayPart = DailyContentRules.ResolveDayPart(localDate);
+            SolarTermInfo? solar = SolarTermCalculator.FindForLocalDate(
+                localDate);
+            DailyLineEntry curated = CuratedDailyLineSelector.Select(
+                localDate);
+            DailyLineEntry zodiac = ZodiacDailySelector.Select(sign,
+                localDate);
+            AlmanacDayInfo almanacDay = AlmanacCalculator.Calculate(localDate);
+            AlmanacDailySelection almanac = almanacDay == null ? null :
+                AlmanacDailySelector.Select(almanacDay, localDate);
+            DailyBriefingContent content = new DailyBriefingContent(solar,
+                null, almanac, curated, zodiac);
+            DailyBriefingSentence[] selected =
+                DailyBriefingComposer.SelectSupplementary(content);
+            string finalText = DailyBriefingComposer.Compose(dayPart,
+                localDate.Date, content);
+            StringBuilder selectedJson = new StringBuilder();
+            for (int i = 0; i < selected.Length; i++)
+            {
+                if (i > 0) selectedJson.Append(", ");
+                selectedJson.Append(JsonString(selected[i].Body));
+            }
+            bool deterministic = curated.Id == CuratedDailyLineSelector
+                .Select(localDate).Id && ((zodiac == null &&
+                    ZodiacDailySelector.Select(sign, localDate) == null) ||
+                    (zodiac != null && zodiac.Id == ZodiacDailySelector
+                        .Select(sign, localDate).Id)) &&
+                ((almanac == null && (almanacDay == null ||
+                    AlmanacDailySelector.Select(almanacDay, localDate) ==
+                        null)) || (almanac != null && almanac.VariantId ==
+                    AlmanacDailySelector.Select(almanacDay,
+                        localDate).VariantId));
+            bool ok = deterministic && curated != null && almanacDay != null &&
+                selected.Length <= 2;
+            string json = "{\n" +
+                "  \"ok\": " + Bool(ok) + ",\n" +
+                "  \"deterministic\": " + Bool(deterministic) + ",\n" +
+                "  \"date\": \"2026-09-03\",\n" +
+                "  \"dayPart\": " + JsonString(dayPart.ToString()) +
+                    ",\n" +
+                "  \"solarCandidate\": " + JsonString(solar.HasValue
+                    ? solar.Value.ChineseName : null) + ",\n" +
+                "  \"almanacCandidate\": " +
+                    AlmanacSelectionJson(almanac) + ",\n" +
+                "  \"curatedId\": " + JsonString(curated.Id) + ",\n" +
+                "  \"curatedText\": " + JsonString(curated.Text) + ",\n" +
+                "  \"zodiacEligible\": " + Bool(zodiac != null) + ",\n" +
+                "  \"zodiacId\": " + JsonString(zodiac == null ? null :
+                    zodiac.Id) + ",\n" +
+                "  \"zodiacText\": " + JsonString(zodiac == null ? null :
+                    zodiac.Text) + ",\n" +
+                "  \"selectedSupplementary\": [" + selectedJson +
+                    "],\n" +
+                "  \"finalText\": " + JsonString(finalText) + "\n" +
+                "}\n";
+            string parent = Path.GetDirectoryName(Path.GetFullPath(outputPath));
+            if (!String.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
+            File.WriteAllText(outputPath, json, new UTF8Encoding(false));
+        }
+
+        private static string JsonString(string value)
+        {
+            if (value == null) return "null";
+            return "\"" + value.Replace("\\", "\\\\")
+                .Replace("\"", "\\\"").Replace("\r", "\\r")
+                .Replace("\n", "\\n").Replace("\t", "\\t") + "\"";
+        }
+
+        private static string AlmanacSelectionJson(
+            AlmanacDailySelection selection)
+        {
+            if (selection == null) return "null";
+            return "{ \"topic\": " + JsonString(selection.Topic.ToString()) +
+                ", \"sourceTerm\": " + JsonString(selection.SourceTerm) +
+                ", \"polarity\": " + JsonString(selection.IsYi ? "Yi" :
+                    "Ji") +
+                ", \"variantId\": " + JsonString(selection.VariantId) +
+                ", \"framingId\": " + JsonString(selection.FramingId) +
+                ", \"wordingId\": " + JsonString(selection.WordingId) +
+                ", \"text\": " + JsonString(selection.Text) + " }";
+        }
+
+        public static void RunAlmanacProbe(string outputPath)
+        {
+            DateTimeOffset sampleDate = new DateTimeOffset(2026, 9, 3,
+                12, 0, 0, TimeSpan.FromHours(8));
+            AlmanacDayInfo sample = AlmanacCalculator.Calculate(sampleDate);
+            AlmanacDailySelection sampleSelection = sample == null ? null :
+                AlmanacDailySelector.Select(sample, sampleDate);
+            string[] recognized;
+            string[] suppressed;
+            AlmanacDailySelector.DescribeTopics(sample, out recognized,
+                out suppressed);
+
+            Dictionary<string, int> unmapped =
+                new Dictionary<string, int>(StringComparer.Ordinal);
+            Dictionary<string, int> prefixes =
+                new Dictionary<string, int>(StringComparer.Ordinal);
+            Dictionary<AlmanacTopic, HashSet<string>> variants =
+                new Dictionary<AlmanacTopic, HashSet<string>>();
+            List<AlmanacCoverageProbeYear> years =
+                new List<AlmanacCoverageProbeYear>();
+            Dictionary<string, string> recommended =
+                new Dictionary<string, string>(StringComparer.Ordinal);
+            bool calculatorOk = sample != null;
+            int selectedTextCount = 0;
+            int legacyAlmanacTermCount = 0;
+            int startsWithToday = 0;
+            int yiJiTermCount = 0;
+            int traditionalCalendarTermCount = 0;
+            int folkTermCount = 0;
+            int lifeFirstCount = 0;
+            int sourceLateCount = 0;
+            for (int year = 2026; year <= 2028; year++)
+            {
+                AlmanacCoverageProbeYear stats =
+                    new AlmanacCoverageProbeYear(year);
+                DateTimeOffset date = new DateTimeOffset(year, 1, 1,
+                    12, 0, 0, TimeSpan.FromHours(8));
+                DateTimeOffset end = date.AddYears(1);
+                while (date < end)
+                {
+                    stats.Days++;
+                    AlmanacDayInfo day = AlmanacCalculator.Calculate(date);
+                    calculatorOk &= day != null;
+                    AlmanacDailySelection selection = day == null ? null :
+                        AlmanacDailySelector.Select(day, date);
+                    if (selection == null)
+                    {
+                        stats.NoSelection++;
+                        RememberDate(recommended, "noSelection", date);
+                    }
+                    else
+                    {
+                        stats.Selected++;
+                        if (selection.Topic == AlmanacTopic.ConservativeDay)
+                        {
+                            stats.Conservative++;
+                            RememberDate(recommended, "conservative", date);
+                        }
+                        else if (AlmanacSemanticCatalog.IsEverydayYi(
+                            selection.Topic) && selection.IsYi)
+                        {
+                            stats.Everyday++;
+                            RememberDate(recommended, "everyday", date);
+                        }
+                        else
+                        {
+                            stats.Cultural++;
+                        }
+                        if (selection.Topic == AlmanacTopic.Outing)
+                            RememberDate(recommended, selection.IsYi
+                                ? "outingYi" : "outingJi", date);
+                        if (SolarTermCalculator.FindForLocalDate(date)
+                            .HasValue)
+                            RememberDate(recommended, "solarAlmanac", date);
+                        HashSet<string> topicVariants;
+                        if (!variants.TryGetValue(selection.Topic,
+                            out topicVariants))
+                        {
+                            topicVariants = new HashSet<string>(
+                                StringComparer.Ordinal);
+                            variants.Add(selection.Topic, topicVariants);
+                        }
+                        topicVariants.Add(selection.VariantId);
+                        string compact = selection.Text.Replace("\n", "");
+                        string prefix = compact.Substring(0,
+                            Math.Min(6, compact.Length));
+                        Increment(prefixes, prefix);
+                        selectedTextCount++;
+                        if (compact.Contains("老黄历"))
+                            legacyAlmanacTermCount++;
+                        if (compact.StartsWith("今天",
+                            StringComparison.Ordinal)) startsWithToday++;
+                        if (compact.Contains("宜忌")) yiJiTermCount++;
+                        if (compact.Contains("传统日历"))
+                            traditionalCalendarTermCount++;
+                        if (compact.Contains("民俗")) folkTermCount++;
+                        if (selection.FramingId == "F06-LIFE-FIRST")
+                            lifeFirstCount++;
+                        if (selection.FramingId == "F07-SOURCE-LATE")
+                            sourceLateCount++;
+                    }
+                    if (day != null)
+                    {
+                        HashSet<string> dailyUnmapped =
+                            new HashSet<string>(StringComparer.Ordinal);
+                        CollectUnmapped(day.Yi, dailyUnmapped);
+                        CollectUnmapped(day.Ji, dailyUnmapped);
+                        foreach (string term in dailyUnmapped)
+                            Increment(unmapped, term);
+                        if (ContainsRestricted(day))
+                            RememberDate(recommended, "restrictedRaw", date);
+                    }
+                    date = date.AddDays(1);
+                }
+                years.Add(stats);
+            }
+
+            int totalDays = 0;
+            int totalSelected = 0;
+            int totalEveryday = 0;
+            int totalCultural = 0;
+            int totalConservative = 0;
+            int totalNone = 0;
+            StringBuilder coverageJson = new StringBuilder();
+            for (int i = 0; i < years.Count; i++)
+            {
+                AlmanacCoverageProbeYear item = years[i];
+                totalDays += item.Days;
+                totalSelected += item.Selected;
+                totalEveryday += item.Everyday;
+                totalCultural += item.Cultural;
+                totalConservative += item.Conservative;
+                totalNone += item.NoSelection;
+                coverageJson.Append("    ");
+                coverageJson.Append(CoverageJson(item));
+                if (i < years.Count - 1) coverageJson.Append(",");
+                coverageJson.Append("\n");
+            }
+
+            StringBuilder variantJson = new StringBuilder();
+            Array topicValues = Enum.GetValues(typeof(AlmanacTopic));
+            for (int i = 0; i < topicValues.Length; i++)
+            {
+                AlmanacTopic topic = (AlmanacTopic)topicValues.GetValue(i);
+                HashSet<string> topicVariants;
+                int count = variants.TryGetValue(topic, out topicVariants)
+                    ? topicVariants.Count : 0;
+                variantJson.Append("    { \"topic\": ");
+                variantJson.Append(JsonString(topic.ToString()));
+                variantJson.Append(", \"variantCount\": ");
+                variantJson.Append(count);
+                variantJson.Append(" }");
+                if (i < topicValues.Length - 1) variantJson.Append(",");
+                variantJson.Append("\n");
+            }
+            string json = "{\n" +
+                "  \"ok\": " + Bool(calculatorOk && sample != null) +
+                    ",\n" +
+                "  \"packageVersion\": \"1.6.8\",\n" +
+                "  \"assemblyName\": \"lunar\",\n" +
+                "  \"date\": \"2026-09-03\",\n" +
+                "  \"sect\": 1,\n" +
+                "  \"rawYi\": " + JsonArray(sample == null ? null :
+                    sample.Yi) + ",\n" +
+                "  \"rawJi\": " + JsonArray(sample == null ? null :
+                    sample.Ji) + ",\n" +
+                "  \"recognizedTopics\": " + JsonArray(recognized) +
+                    ",\n" +
+                "  \"suppressedTopics\": " + JsonArray(suppressed) +
+                    ",\n" +
+                "  \"selection\": " +
+                    AlmanacSelectionJson(sampleSelection) + ",\n" +
+                "  \"coverage\": [\n" + coverageJson + "  ],\n" +
+                "  \"aggregate\": { \"days\": " + totalDays +
+                    ", \"selected\": " + totalSelected +
+                    ", \"selectedPercent\": " + Percent(totalSelected,
+                        totalDays) +
+                    ", \"everyday\": " + totalEveryday +
+                    ", \"everydayPercent\": " + Percent(totalEveryday,
+                        totalDays) +
+                    ", \"cultural\": " + totalCultural +
+                    ", \"culturalPercent\": " + Percent(totalCultural,
+                        totalDays) +
+                    ", \"conservative\": " + totalConservative +
+                    ", \"conservativePercent\": " + Percent(
+                        totalConservative, totalDays) +
+                    ", \"noSelection\": " + totalNone +
+                    ", \"noSelectionPercent\": " + Percent(totalNone,
+                        totalDays) + " },\n" +
+                "  \"wordingCoverage\": [\n" + variantJson + "  ],\n" +
+                "  \"topPrefixes\": " + CountListJson(prefixes, 10) +
+                    ",\n" +
+                "  \"legacyAlmanacTermPercent\": " + Percent(
+                    legacyAlmanacTermCount, selectedTextCount) + ",\n" +
+                "  \"todayPrefixPercent\": " + Percent(startsWithToday,
+                    selectedTextCount) + ",\n" +
+                "  \"yiJiTermPercent\": " + Percent(yiJiTermCount,
+                    selectedTextCount) + ",\n" +
+                "  \"traditionalCalendarTermPercent\": " + Percent(
+                    traditionalCalendarTermCount, selectedTextCount) +
+                    ",\n" +
+                "  \"folkTermPercent\": " + Percent(folkTermCount,
+                    selectedTextCount) + ",\n" +
+                "  \"lifeFirstPercent\": " + Percent(lifeFirstCount,
+                    selectedTextCount) + ",\n" +
+                "  \"sourceLatePercent\": " + Percent(sourceLateCount,
+                    selectedTextCount) + ",\n" +
+                "  \"topUnmapped\": " + CountListJson(unmapped, 20) +
+                    ",\n" +
+                "  \"recommendedDates\": " +
+                    StringDictionaryJson(recommended) + "\n" +
+                "}\n";
+            string parent = Path.GetDirectoryName(Path.GetFullPath(outputPath));
+            if (!String.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
+            File.WriteAllText(outputPath, json, new UTF8Encoding(false));
+        }
+
+        private static string CoverageJson(AlmanacCoverageProbeYear item)
+        {
+            return "{ \"year\": " + item.Year + ", \"days\": " +
+                item.Days + ", \"selected\": " + item.Selected +
+                ", \"selectedPercent\": " + Percent(item.Selected,
+                    item.Days) + ", \"everyday\": " + item.Everyday +
+                ", \"cultural\": " + item.Cultural +
+                ", \"conservative\": " + item.Conservative +
+                ", \"noSelection\": " + item.NoSelection + " }";
+        }
+
+        private static string Percent(int count, int total)
+        {
+            double percent = total == 0 ? 0D : count * 100D / total;
+            return percent.ToString("0.00",
+                System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        private static string JsonArray(IEnumerable<string> values)
+        {
+            if (values == null) return "[]";
+            StringBuilder json = new StringBuilder("[");
+            bool first = true;
+            foreach (string value in values)
+            {
+                if (!first) json.Append(", ");
+                json.Append(JsonString(value));
+                first = false;
+            }
+            json.Append("]");
+            return json.ToString();
+        }
+
+        private static string CountListJson(Dictionary<string, int> counts,
+            int limit)
+        {
+            List<KeyValuePair<string, int>> ordered =
+                new List<KeyValuePair<string, int>>(counts);
+            ordered.Sort(delegate(KeyValuePair<string, int> left,
+                KeyValuePair<string, int> right)
+            {
+                int byCount = right.Value.CompareTo(left.Value);
+                return byCount != 0 ? byCount :
+                    StringComparer.Ordinal.Compare(left.Key, right.Key);
+            });
+            StringBuilder json = new StringBuilder("[");
+            int take = Math.Min(limit, ordered.Count);
+            for (int i = 0; i < take; i++)
+            {
+                if (i > 0) json.Append(", ");
+                json.Append("{ \"value\": ");
+                json.Append(JsonString(ordered[i].Key));
+                json.Append(", \"days\": ");
+                json.Append(ordered[i].Value);
+                json.Append(" }");
+            }
+            json.Append("]");
+            return json.ToString();
+        }
+
+        private static string StringDictionaryJson(
+            Dictionary<string, string> values)
+        {
+            List<string> keys = new List<string>(values.Keys);
+            keys.Sort(StringComparer.Ordinal);
+            StringBuilder json = new StringBuilder("{");
+            for (int i = 0; i < keys.Count; i++)
+            {
+                if (i > 0) json.Append(", ");
+                json.Append(JsonString(keys[i]));
+                json.Append(": ");
+                json.Append(JsonString(values[keys[i]]));
+            }
+            json.Append("}");
+            return json.ToString();
+        }
+
+        private static void CollectUnmapped(IReadOnlyList<string> terms,
+            HashSet<string> destination)
+        {
+            foreach (string term in terms)
+            {
+                AlmanacTopic ignored;
+                if (!AlmanacSemanticCatalog.TryMap(term, out ignored))
+                    destination.Add(term);
+            }
+        }
+
+        private static bool ContainsRestricted(AlmanacDayInfo day)
+        {
+            string[] restricted = { "求医", "治病", "针灸", "纳财",
+                "求财", "置产", "词讼", "立券", "交易", "安葬",
+                "入殓", "祭祀", "祈福", "动土", "修造" };
+            foreach (string expected in restricted)
+                foreach (string term in day.Yi)
+                    if (term == expected) return true;
+            foreach (string expected in restricted)
+                foreach (string term in day.Ji)
+                    if (term == expected) return true;
+            return false;
+        }
+
+        private static void Increment(Dictionary<string, int> counts,
+            string key)
+        {
+            int count;
+            counts.TryGetValue(key, out count);
+            counts[key] = count + 1;
+        }
+
+        private static void RememberDate(Dictionary<string, string> dates,
+            string key, DateTimeOffset date)
+        {
+            if (!dates.ContainsKey(key))
+                dates.Add(key, date.ToString("yyyy-MM-dd",
+                    System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        private sealed class AlmanacCoverageProbeYear
+        {
+            internal AlmanacCoverageProbeYear(int year)
+            {
+                Year = year;
+            }
+
+            internal int Year;
+            internal int Days;
+            internal int Selected;
+            internal int Everyday;
+            internal int Cultural;
+            internal int Conservative;
+            internal int NoSelection;
+        }
+
+        public static void RunSolarTermProbe(string outputPath)
+        {
+            Stopwatch timer = Stopwatch.StartNew();
+            SolarTermProbeCase[] cases = new SolarTermProbeCase[]
+            {
+                new SolarTermProbeCase(2016, 2, 4, TimeSpan.FromHours(8),
+                    SolarTerm.StartOfSpring, "立春", 315),
+                new SolarTermProbeCase(2016, 3, 20, TimeSpan.FromHours(8),
+                    SolarTerm.VernalEquinox, "春分", 0),
+                new SolarTermProbeCase(2016, 6, 21, TimeSpan.FromHours(8),
+                    SolarTerm.SummerSolstice, "夏至", 90),
+                new SolarTermProbeCase(2016, 9, 7, TimeSpan.FromHours(8),
+                    SolarTerm.WhiteDew, "白露", 165),
+                new SolarTermProbeCase(2016, 12, 21, TimeSpan.FromHours(8),
+                    SolarTerm.WinterSolstice, "冬至", 270),
+                new SolarTermProbeCase(2026, 2, 4, TimeSpan.FromHours(8),
+                    SolarTerm.StartOfSpring, "立春", 315),
+                new SolarTermProbeCase(2026, 2, 18, TimeSpan.FromHours(8),
+                    SolarTerm.RainWater, "雨水", 330),
+                new SolarTermProbeCase(2026, 9, 7, TimeSpan.FromHours(8),
+                    SolarTerm.WhiteDew, "白露", 165),
+                new SolarTermProbeCase(2026, 9, 23, TimeSpan.FromHours(8),
+                    SolarTerm.AutumnalEquinox, "秋分", 180),
+                new SolarTermProbeCase(2026, 12, 7, TimeSpan.FromHours(8),
+                    SolarTerm.MajorSnow, "大雪", 255),
+                new SolarTermProbeCase(2026, 12, 22, TimeSpan.FromHours(8),
+                    SolarTerm.WinterSolstice, "冬至", 270)
+            };
+            DateTimeOffset[] nonTermDates = new DateTimeOffset[]
+            {
+                new DateTimeOffset(2026, 9, 6, 12, 0, 0,
+                    TimeSpan.FromHours(8)),
+                new DateTimeOffset(2026, 9, 8, 12, 0, 0,
+                    TimeSpan.FromHours(8))
+            };
+
+            bool oracleOk = true;
+            bool nonTermOk = true;
+            string failure = null;
+            StringBuilder json = new StringBuilder();
+            try
+            {
+                json.Append("  \"oracle\": [\n");
+                for (int i = 0; i < cases.Length; i++)
+                {
+                    SolarTermInfo? info =
+                        SolarTermCalculator.FindForLocalDate(
+                            cases[i].LocalDate);
+                    bool match = info.HasValue &&
+                        info.Value.Term == cases[i].ExpectedTerm &&
+                        info.Value.ChineseName == cases[i].ExpectedName &&
+                        info.Value.LongitudeDegrees ==
+                            cases[i].ExpectedLongitude;
+                    oracleOk &= match;
+                    json.Append(SolarTermProbeEntry("oracle-" + (i + 1),
+                        cases[i].LocalDate, info, match));
+                    if (i < cases.Length - 1) json.Append(",");
+                    json.Append("\n");
+                }
+                json.Append("  ],\n  \"non_term\": [\n");
+                for (int i = 0; i < nonTermDates.Length; i++)
+                {
+                    SolarTermInfo? info =
+                        SolarTermCalculator.FindForLocalDate(nonTermDates[i]);
+                    bool match = !info.HasValue;
+                    nonTermOk &= match;
+                    json.Append(SolarTermProbeEntry("non-term-" + (i + 1),
+                        nonTermDates[i], info, match));
+                    if (i < nonTermDates.Length - 1) json.Append(",");
+                    json.Append("\n");
+                }
+                json.Append("  ],\n");
+                SolarTermInfo? current =
+                    SolarTermCalculator.FindForLocalDate(DateTimeOffset.Now);
+                json.Append("  \"current\": ");
+                json.Append(SolarTermProbeEntry("current",
+                    DateTimeOffset.Now, current, true));
+                json.Append("\n");
+            }
+            catch (Exception error)
+            {
+                failure = error.GetType().Name + ": " + error.Message;
+            }
+            timer.Stop();
+            bool ok = failure == null && oracleOk && nonTermOk;
+            string escapedFailure = failure == null ? "" : failure
+                .Replace("\\", "\\\\").Replace("\"", "\\\"");
+            string prefix = "{\n  \"ok\": " + Bool(ok) + ",\n" +
+                "  \"oracle_ok\": " + Bool(oracleOk) + ",\n" +
+                "  \"non_term_ok\": " + Bool(nonTermOk) + ",\n" +
+                "  \"elapsed_ms\": " + timer.ElapsedMilliseconds + ",\n" +
+                "  \"failure\": \"" + escapedFailure + "\",\n";
+            string body = json.Length == 0
+                ? "  \"oracle\": []\n" : json.ToString().Substring(
+                    json.ToString().IndexOf("  \"oracle\":",
+                    StringComparison.Ordinal));
+            string parent = Path.GetDirectoryName(
+                Path.GetFullPath(outputPath));
+            if (!String.IsNullOrEmpty(parent))
+                Directory.CreateDirectory(parent);
+            File.WriteAllText(outputPath, prefix + body + "}\n",
+                new UTF8Encoding(false));
+        }
+
+        public static void RunDisplayTopologyProbe(string outputPath)
+        {
+            Stopwatch timer = Stopwatch.StartNew();
+            string failure = null;
+            DisplayTopologySnapshot snapshot = null;
+            WindowsDisplayTopologyProvider provider =
+                new WindowsDisplayTopologyProvider();
+            try
+            {
+                snapshot = provider.Capture();
+                if (snapshot == null && failure == null)
+                    failure = provider.LastCaptureError;
+            }
+            catch (Exception error)
+            {
+                failure = error.GetType().Name + ": " + error.Message;
+            }
+            timer.Stop();
+            bool ok = failure == null && snapshot != null;
+            StringBuilder json = new StringBuilder();
+            json.Append("  \"surfaces\": [\n");
+            if (snapshot != null)
+            {
+                IReadOnlyList<DisplaySurfaceSnapshot> surfaces =
+                    snapshot.Surfaces;
+                for (int index = 0; index < surfaces.Count; index++)
+                {
+                    DisplaySurfaceSnapshot surface = surfaces[index];
+                    json.Append("    { ");
+                    json.Append("\"surface_id\": " +
+                        JsonString(surface.RuntimeSurfaceId) + ", ");
+                    json.Append("\"gdi\": " +
+                        JsonString(surface.RuntimeGdiName) + ", ");
+                    json.Append("\"bounds\": { \"left\": " +
+                        surface.Bounds.Left + ", \"top\": " +
+                        surface.Bounds.Top + ", \"width\": " +
+                        surface.Bounds.Width + ", \"height\": " +
+                        surface.Bounds.Height + " }, ");
+                    json.Append("\"work_area\": { \"left\": " +
+                        surface.WorkArea.Left + ", \"top\": " +
+                        surface.WorkArea.Top + ", \"width\": " +
+                        surface.WorkArea.Width + ", \"height\": " +
+                        surface.WorkArea.Height + " }, ");
+                    json.Append("\"primary\": " +
+                        Bool(surface.IsPrimary) + ", ");
+                    json.Append("\"rotation_degrees\": " +
+                        surface.RotationDegrees + ", ");
+                    json.Append("\"targets\": [");
+                    for (int targetIndex = 0;
+                        targetIndex < surface.Targets.Count; targetIndex++)
+                    {
+                        DisplayTargetIdentity target =
+                            surface.Targets[targetIndex];
+                        if (targetIndex > 0) json.Append(", ");
+                        json.Append("{ \"key_prefix\": " + JsonString(
+                            target.StableKey.StartsWith("mdp:",
+                                StringComparison.OrdinalIgnoreCase)
+                                ? "mdp:" : "ephemeral:") +
+                            ", \"durable\": " + Bool(target.IsDurable) +
+                            ", \"friendly\": " +
+                            JsonString(target.FriendlyName) + " }");
+                    }
+                    json.Append("] }");
+                    if (index < surfaces.Count - 1) json.Append(",");
+                    json.Append("\n");
+                }
+            }
+            json.Append("  ]\n");
+            string escapedFailure = failure == null ? String.Empty :
+                failure.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            string prefix = "{\n  \"ok\": " + Bool(ok) + ",\n" +
+                "  \"surface_count\": " +
+                (snapshot == null ? 0 : snapshot.Surfaces.Count) + ",\n" +
+                "  \"elapsed_ms\": " + timer.ElapsedMilliseconds + ",\n" +
+                "  \"failure\": \"" + escapedFailure + "\",\n";
+            string parent = Path.GetDirectoryName(
+                Path.GetFullPath(outputPath));
+            if (!String.IsNullOrEmpty(parent))
+                Directory.CreateDirectory(parent);
+            File.WriteAllText(outputPath, prefix + json + "}\n",
+                new UTF8Encoding(false));
+        }
+
+        private static string SolarTermProbeEntry(string label,
+            DateTimeOffset local, SolarTermInfo? info, bool matched)
+        {
+            string term = info.HasValue ? "\"" + info.Value.Term + "\"" :
+                "null";
+            string chineseName = info.HasValue
+                ? "\"" + info.Value.ChineseName + "\"" : "null";
+            string longitude = info.HasValue
+                ? info.Value.LongitudeDegrees.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture) :
+                "null";
+            string instantUtc = info.HasValue
+                ? "\"" + info.Value.InstantUtc.ToString(
+                    "yyyy-MM-ddTHH:mm:sszzz",
+                    System.Globalization.CultureInfo.InvariantCulture) + "\"" :
+                "null";
+            string localDate = local.ToString("yyyy-MM-dd",
+                System.Globalization.CultureInfo.InvariantCulture);
+            string offset = local.Offset.Hours >= 0 ? "+" : "-";
+            offset += Math.Abs(local.Offset.Hours).ToString("00",
+                System.Globalization.CultureInfo.InvariantCulture) + ":" +
+                Math.Abs(local.Offset.Minutes).ToString("00",
+                    System.Globalization.CultureInfo.InvariantCulture);
+            return "    { \"label\": \"" + label + "\", " +
+                "\"local_date\": \"" + localDate + "\", " +
+                "\"offset\": \"" + offset + "\", " +
+                "\"matched\": " + (matched ? "true" : "false") + ", " +
+                "\"term\": " + term + ", " +
+                "\"chinese_name\": " + chineseName + ", " +
+                "\"longitude\": " + longitude + ", " +
+                "\"instant_utc\": " + instantUtc + " }";
         }
 
         private static string Bool(bool value)

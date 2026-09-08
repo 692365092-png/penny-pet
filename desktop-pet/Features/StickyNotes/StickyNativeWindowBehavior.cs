@@ -95,12 +95,18 @@ namespace PennyPet
             try
             {
                 base.WindowState = W.WindowState.Normal;
-                base.Left = Data.X;
-                base.Top = Data.Y;
-                base.Width = Math.Max(MinWidth, Math.Min(MaxWidth,
-                    Data.Width));
-                base.Height = Math.Max(MinHeight, Math.Min(MaxHeight,
-                    Data.Height));
+                // Hosted production must never write persisted physical
+                // Data.X/Y/W/H into WPF DIP. Restore the last valid DIP
+                // geometry captured from the live HWND instead; if none was
+                // recorded yet, WPF's native normal-state restore owns the
+                // placement.
+                if (_hasLastValidDips)
+                {
+                    base.Left = _lastValidLeft;
+                    base.Top = _lastValidTop;
+                    base.Width = _lastValidWidth;
+                    base.Height = _lastValidHeight;
+                }
             }
             finally { _recoveringSystemGeometry = false; }
         }
@@ -230,6 +236,22 @@ namespace PennyPet
             IntPtr lParam, ref bool handled)
         {
             if (_disposed) return IntPtr.Zero;
+            const int WmDpiChanged = 0x02E0;
+            if (message == WmDpiChanged)
+            {
+                // DRT-4 observer only: capture actual facts, never hand-scale.
+                WindowFacts facts = WindowsWindowFactsReader.Capture(hwnd,
+                    Data.Id, 0, 0);
+                if (facts != null)
+                    DisplayDiagnostics.Trace("WindowDpiChanged",
+                        "note=" + Data.Id + " dpi=" + facts.Dpi +
+                        " gdi=" + facts.RuntimeGdiName +
+                        " physical=(" + facts.PhysicalBounds.Left + "," +
+                        facts.PhysicalBounds.Top + "," +
+                        facts.PhysicalBounds.Width + "," +
+                        facts.PhysicalBounds.Height + ")");
+                return IntPtr.Zero;
+            }
             if (message == WmSysCommand &&
                 (wParam.ToInt64() & 0xFFF0L) == ScMaximize)
             {
@@ -243,13 +265,21 @@ namespace PennyPet
                 _resizeStartWidth = Width;
                 _dockDividerResizeActive = _dockSplitBottom &&
                     _lastResizeHitTest == HtBottom;
+                if (_dockDividerResizeActive)
+                    RaiseDockDividerResize(DockDividerResizeStarted,
+                        CurrentPhysicalHeight());
                 return IntPtr.Zero;
             }
             if (message == WmExitSizeMove)
             {
+                bool dividerResize = _dockDividerResizeActive;
                 _windowResizeActive = false;
                 _dockDividerResizeActive = false;
                 _lastResizeHitTest = 0;
+                if (dividerResize)
+                    RaiseDockDividerResize(DockDividerResizeCompleted,
+                        CurrentPhysicalHeight());
+                else Raise(UserResizeCompleted);
                 return IntPtr.Zero;
             }
             if (message == WmSizing && _dockSplitBottom &&
@@ -269,6 +299,12 @@ namespace PennyPet
                     maximumPixels, requested));
                 sizing.Bottom = sizing.Top + requested;
                 Marshal.StructureToPtr(sizing, lParam, false);
+                RaiseDockDividerResize(DockDividerResizing,
+                    requested);
+                DisplayDiagnostics.Trace("DockResizePhysical",
+                    "note=" + Data.Id +
+                    " axis=y scale=" + scale.ToString("0.###") +
+                    " height=" + requested);
                 handled = true;
                 return new IntPtr(1);
             }
@@ -284,21 +320,36 @@ namespace PennyPet
                 NativeRect sizing = (NativeRect)Marshal.PtrToStructure(
                     lParam, typeof(NativeRect));
                 double scale = DeviceScaleX();
-                double proposedWidth = Math.Max(MinWidth, Math.Min(MaxWidth,
-                    (sizing.Right - sizing.Left) / scale));
+                int minimumPixels = Math.Max(1, (int)Math.Round(
+                    MinWidth * scale, MidpointRounding.AwayFromZero));
+                int maximumPixels = Math.Max(minimumPixels,
+                    (int)Math.Round(MaxWidth * scale,
+                        MidpointRounding.AwayFromZero));
                 bool fromLeft = _lastResizeHitTest == HtLeft ||
                     _lastResizeHitTest == HtTopLeft ||
                     _lastResizeHitTest == HtBottomLeft;
-                double proposedLeft = fromLeft
-                    ? _resizeStartLeft + _resizeStartWidth - proposedWidth
-                    : _resizeStartLeft;
+                DockRect physical =
+                    StickyDockGeometry
+                        .CalculatePhysicalHorizontalResizeTarget(
+                            sizing.Left, sizing.Right, fromLeft,
+                            minimumPixels, maximumPixels);
+                if (fromLeft)
+                    sizing.Left = physical.Left;
+                else
+                    sizing.Right = physical.Left + physical.Width;
+                Marshal.StructureToPtr(sizing, lParam, false);
                 EventHandler<DockHorizontalResizeEventArgs> resizeHandler =
                     DockHorizontalResizing;
                 if (resizeHandler != null)
                     resizeHandler(this, new DockHorizontalResizeEventArgs(
-                        (int)Math.Round(proposedLeft),
-                        (int)Math.Round(proposedWidth)));
-                return IntPtr.Zero;
+                        physical.Left, physical.Width));
+                DisplayDiagnostics.Trace("DockResizePhysical",
+                    "note=" + Data.Id +
+                    " axis=x scale=" + scale.ToString("0.###") +
+                    " left=" + physical.Left +
+                    " width=" + physical.Width);
+                handled = true;
+                return new IntPtr(1);
             }
             if (message != WmNcHitTest) return IntPtr.Zero;
             int screenX = unchecked((short)(long)lParam);
@@ -332,13 +383,18 @@ namespace PennyPet
             else if (top) result = HtTop;
             else if (bottom) result = HtBottom;
             _lastResizeHitTest = result;
-            if (_dockSplitBottom && result == HtBottom)
-                _dockDividerResizeActive = true;
-            else if (!_windowResizeActive)
+            if (!_windowResizeActive)
                 _dockDividerResizeActive = false;
             if (result == 0) return IntPtr.Zero;
             handled = true;
             return new IntPtr(result);
+        }
+
+        private void RaiseDockDividerResize(
+            EventHandler<DockDividerResizeEventArgs> handler, int height)
+        {
+            if (handler != null)
+                handler(this, new DockDividerResizeEventArgs(height));
         }
 
         private double DeviceScaleY()
@@ -347,6 +403,18 @@ namespace PennyPet
             if (source == null || source.CompositionTarget == null) return 1.0;
             double scale = source.CompositionTarget.TransformToDevice.M22;
             return scale > 0.1 && scale < 8.0 ? scale : 1.0;
+        }
+
+        // Physical HWND height authority for divider events. Only falls back
+        // to WPF Height * TransformToDevice when no real HWND rect exists.
+        private int CurrentPhysicalHeight()
+        {
+            Rectangle physical = PhysicalBounds;
+            if (physical != Rectangle.Empty && physical.Height > 0)
+                return physical.Height;
+            double scale = DeviceScaleY();
+            return Math.Max(1, (int)Math.Round(
+                Height * scale, MidpointRounding.AwayFromZero));
         }
 
         private double DeviceScaleX()

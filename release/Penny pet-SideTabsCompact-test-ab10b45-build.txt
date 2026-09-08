@@ -1,0 +1,23 @@
+branch=codex/display-scale-v2
+source_commit=ab10b45
+baseline=8ea4c4afe2045e0d3b56aa656a660445c7e81b62
+checkpoint=SideTabs-Compact-Density
+platform=x64
+logical_tab=128x30
+logical_icon=20
+logical_icon_margin=7
+font_points=8.5
+DPI_Model=UNCHANGED
+EdgeAwareSplit=UNCHANGED
+PetPlacement=UNCHANGED
+Dock=UNCHANGED
+Persistence=UNCHANGED
+Release=PASS (0 warnings, 0 errors)
+MSTest=PASS (331 tests)
+modular_SelfTests=PASS (exit=0, ok=true)
+single_file_package_SelfTests=PASS (exit=0, ok=true, 292 *_ok checks)
+git_diff_check=PASS
+Windows_CI=check after push; not a local test result
+Manual=PENDING (100/125/150/200% density, titles, icons, edge split,
+  drag/reorder, 11 tabs, mixed-DPI round-trip)
+PC-1=BLOCKED

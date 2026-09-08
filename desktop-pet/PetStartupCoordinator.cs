@@ -80,13 +80,13 @@ namespace PennyPet
                 StickyNoteData note = _startupVisibleNotes.Dequeue();
                 try
                 {
-                    ShowStickyNote(note, false, false);
+                    ShowHostedSticky(note, false, false);
                 }
                 catch (Exception error)
                 {
                     ApplicationDiagnostics.ReportNonFatal(
                         "deferred-sticky-restore", error);
-                    RecoverFailedLegacyStickyWindow(note);
+                    RecoverFailedHostedStickyWindow(note);
                 }
                 return;
             }

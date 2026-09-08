@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Threading;
@@ -15,7 +17,11 @@ namespace PennyPet
         private readonly List<StickyNoteData> _notes = new List<StickyNoteData>();
         private bool _loadSucceeded = true;
         private bool _recoveredFromLoadFailure;
+        private bool _recoveredFromPartialSalvage;
+        private int _salvagedNoteCount;
+        private int _skippedCorruptLineCount;
         private string _recoveryBackupPath = String.Empty;
+        private UnsupportedStickySchemaException _futureSchemaError;
         private bool _hasUnsavedChanges;
         private Exception _lastSaveError;
         private int _consecutiveSaveFailures;
@@ -92,15 +98,75 @@ namespace PennyPet
             if (TryPopulateFromFile(repository, filePath, out primaryError))
                 return repository;
 
+            UnsupportedStickySchemaException futurePrimary =
+                primaryError as UnsupportedStickySchemaException;
+            if (futurePrimary != null)
+            {
+                repository.BlockFutureSchema(futurePrimary);
+                return repository;
+            }
+
             ApplicationDiagnostics.ReportNonFatal("sticky-notes-load", primaryError);
             repository._notes.Clear();
             string backupPath = filePath + ".bak";
             Exception backupError = null;
             bool backupLoaded = File.Exists(backupPath) &&
                 TryPopulateFromFile(repository, backupPath, out backupError);
+            UnsupportedStickySchemaException futureBackup =
+                backupError as UnsupportedStickySchemaException;
+            if (!backupLoaded && futureBackup != null)
+            {
+                repository.BlockFutureSchema(futureBackup);
+                return repository;
+            }
             if (!backupLoaded && File.Exists(backupPath) && backupError != null)
                 ApplicationDiagnostics.ReportNonFatal("sticky-notes-backup-load",
                     backupError);
+
+            if (!backupLoaded)
+            {
+                int salvagedCount;
+                int skippedCount;
+                bool salvaged;
+                try
+                {
+                    salvaged = TrySalvageStrict(repository, filePath,
+                        out salvagedCount, out skippedCount);
+                    if (!salvaged && File.Exists(backupPath))
+                        salvaged = TrySalvageStrict(repository, backupPath,
+                            out salvagedCount, out skippedCount);
+                }
+                catch (UnsupportedStickySchemaException futureSchema)
+                {
+                    repository.BlockFutureSchema(futureSchema);
+                    return repository;
+                }
+                if (salvaged)
+                {
+                    try
+                    {
+                        // Preserve both unreadable sources byte-for-byte before
+                        // writing any clean recovered primary.
+                        repository._recoveryBackupPath =
+                            PreserveUnreadableFile(filePath);
+                        PreserveUnreadableFile(backupPath);
+                        repository._recoveredFromPartialSalvage = true;
+                        repository._salvagedNoteCount = salvagedCount;
+                        repository._skippedCorruptLineCount = skippedCount;
+                        repository._recoveredFromLoadFailure = true;
+                        repository._loadSucceeded = true;
+                        repository.SaveToFile(filePath);
+                        return repository;
+                    }
+                    catch (Exception salvageError)
+                    {
+                        repository._notes.Clear();
+                        repository._loadSucceeded = false;
+                        ApplicationDiagnostics.ReportNonFatal(
+                            "sticky-notes-salvage", salvageError);
+                    }
+                }
+            }
 
             try
             {
@@ -144,7 +210,10 @@ namespace PennyPet
                     StickyNoteLimits.MaximumDataFileBytes)
                     throw new InvalidDataException(
                         "Sticky-note data file is too large.");
-                foreach (string line in File.ReadAllLines(filePath, Encoding.UTF8))
+                string[] lines = File.ReadAllLines(filePath, Encoding.UTF8);
+                Exception schemaError = InspectSchemaVersions(lines, filePath);
+                if (schemaError != null) throw schemaError;
+                foreach (string line in lines)
                     AddParsedLine(repository, line);
                 repository.NormalizeTabOrders();
                 StickyDockGroups.NormalizeAll(repository._notes);
@@ -175,6 +244,99 @@ namespace PennyPet
             repository._notes.Add(note);
         }
 
+        private static Exception InspectSchemaVersions(
+            IEnumerable<string> lines, string sourcePath)
+        {
+            InvalidDataException firstInvalidVersion = null;
+            foreach (string line in lines)
+            {
+                if (String.IsNullOrWhiteSpace(line)) continue;
+                int separator = line.IndexOf('|');
+                string token = separator < 0 ? line :
+                    line.Substring(0, separator);
+                int version;
+                if (!Int32.TryParse(token, NumberStyles.None,
+                    CultureInfo.InvariantCulture, out version) || version <= 0)
+                {
+                    if (firstInvalidVersion == null)
+                        firstInvalidVersion = new InvalidDataException(
+                            "便利贴数据版本无效。");
+                    continue;
+                }
+                if (version > StickyNoteCodec.CurrentVersion)
+                    return new UnsupportedStickySchemaException(version,
+                        StickyNoteCodec.CurrentVersion, sourcePath);
+            }
+            return firstInvalidVersion;
+        }
+
+        private static bool TrySalvageStrict(StickyNoteRepository repository,
+            string filePath, out int salvagedCount, out int skippedCount)
+        {
+            salvagedCount = 0;
+            skippedCount = 0;
+            if (String.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+                return false;
+            if (new FileInfo(filePath).Length >
+                StickyNoteLimits.MaximumDataFileBytes) return false;
+            List<StickyNoteData> salvaged = new List<StickyNoteData>();
+            HashSet<string> ids = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+            string[] lines = File.ReadAllLines(filePath, Encoding.UTF8);
+            UnsupportedStickySchemaException futureSchema =
+                InspectSchemaVersions(lines, filePath) as
+                    UnsupportedStickySchemaException;
+            if (futureSchema != null) throw futureSchema;
+            foreach (string line in lines)
+            {
+                if (String.IsNullOrWhiteSpace(line)) continue;
+                if (salvaged.Count >= StickyNoteLimits.MaximumNotes)
+                {
+                    skippedCount++;
+                    continue;
+                }
+                try
+                {
+                    // Strict raw-field validation must run before the codec so
+                    // corrupt Base64 cannot be fail-soft-decoded into empty text.
+                    StickyImportBackupValidator.ValidateRawLine(line);
+                    StickyNoteData note = StickyNoteCodec.ParseLine(line);
+                    if (note == null || String.IsNullOrWhiteSpace(note.Id) ||
+                        !ids.Add(note.Id))
+                        throw new InvalidDataException(
+                            "Salvage line has an invalid or duplicate NoteId.");
+                    salvaged.Add(note);
+                }
+                catch (Exception)
+                {
+                    skippedCount++;
+                }
+            }
+            if (salvaged.Count == 0) return false;
+            repository._notes.Clear();
+            foreach (StickyNoteData note in salvaged)
+                repository._notes.Add(note);
+            repository.NormalizeTabOrders();
+            StickyDockGroups.NormalizeAll(repository._notes);
+            salvagedCount = salvaged.Count;
+            return true;
+        }
+
+        private void BlockFutureSchema(
+            UnsupportedStickySchemaException error)
+        {
+            _notes.Clear();
+            _loadSucceeded = false;
+            _futureSchemaError = error;
+            _recoveredFromLoadFailure = false;
+            _recoveredFromPartialSalvage = false;
+            _salvagedNoteCount = 0;
+            _skippedCorruptLineCount = 0;
+            _recoveryBackupPath = String.Empty;
+            ApplicationDiagnostics.ReportNonFatal(
+                "sticky-notes-future-schema", error);
+        }
+
         private static string PreserveUnreadableFile(string filePath)
         {
             if (!File.Exists(filePath)) return String.Empty;
@@ -193,9 +355,43 @@ namespace PennyPet
             get { return _loadSucceeded; }
         }
 
+        internal bool IsFutureSchemaBlocked
+        {
+            get { return _futureSchemaError != null; }
+        }
+
+        internal int DetectedFutureVersion
+        {
+            get
+            {
+                return _futureSchemaError == null ? 0 :
+                    _futureSchemaError.DetectedVersion;
+            }
+        }
+
+        internal UnsupportedStickySchemaException FutureSchemaError
+        {
+            get { return _futureSchemaError; }
+        }
+
         internal bool RecoveredFromLoadFailure
         {
             get { return _recoveredFromLoadFailure; }
+        }
+
+        internal bool RecoveredFromPartialSalvage
+        {
+            get { return _recoveredFromPartialSalvage; }
+        }
+
+        internal int SalvagedNoteCount
+        {
+            get { return _salvagedNoteCount; }
+        }
+
+        internal int SkippedCorruptLineCount
+        {
+            get { return _skippedCorruptLineCount; }
         }
 
         internal string RecoveryBackupPath
@@ -236,6 +432,18 @@ namespace PennyPet
 
         public StickyNoteData Create(string text, Point location)
         {
+            StickyNoteData note = CreateDraft(text, location);
+            if (note != null) Save();
+            return note;
+        }
+
+        // Prepares a live in-memory draft without persisting it, so one
+        // creation attempt can fully configure type, v10 compatibility
+        // placement, v11 preferred placement and visibility before the single
+        // first disk write. The first persisted state must never be an
+        // intermediate model.
+        internal StickyNoteData CreateDraft(string text, Point location)
+        {
             if (!CanCreate) return null;
             StickyNoteData note = new StickyNoteData();
             string body = text ?? String.Empty;
@@ -245,7 +453,6 @@ namespace PennyPet
             note.Y = location.Y;
             note.TabOrder = NextTabOrder();
             _notes.Add(note);
-            Save();
             return note;
         }
 
@@ -268,6 +475,7 @@ namespace PennyPet
 
         public void ReorderHidden(StickyNoteData moved, int destinationIndex)
         {
+            if (!_loadSucceeded) return;
             if (moved == null || moved.Visible) return;
             List<StickyNoteData> all = GetInTabOrder();
             List<StickyNoteData> hidden = new List<StickyNoteData>();
@@ -303,6 +511,7 @@ namespace PennyPet
 
         public bool Remove(StickyNoteData note)
         {
+            if (!_loadSucceeded) return false;
             bool removed = note != null && _notes.Remove(note);
             if (removed) Save();
             return removed;
@@ -317,10 +526,7 @@ namespace PennyPet
         {
             if (!_loadSucceeded)
             {
-                NotifySaveFailed(PersistenceResult.Failure(
-                    new InvalidOperationException(
-                        "Sticky-note data was not loaded safely; refusing to overwrite it.")),
-                    _consecutiveSaveFailures + 1);
+                RejectBlockedSave("save asynchronously");
                 return;
             }
             bool startWriter;
@@ -336,9 +542,33 @@ namespace PennyPet
                 ThreadPool.QueueUserWorkItem(delegate { AsyncWriterLoop(); });
         }
 
-        internal void WaitForPendingSaves()
+        internal PersistenceResult WaitForPendingSaves()
         {
-            while (HasPendingSaves) Thread.Sleep(10);
+            return WaitForPendingSaves(TimeSpan.FromSeconds(5));
+        }
+
+        internal PersistenceResult WaitForPendingSaves(TimeSpan timeout)
+        {
+            if (timeout < TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(timeout));
+            Stopwatch elapsed = Stopwatch.StartNew();
+            lock (_saveGate)
+            {
+                while (_writerRunning)
+                {
+                    TimeSpan remaining = timeout - elapsed.Elapsed;
+                    if (remaining <= TimeSpan.Zero)
+                    {
+                        TimeoutException error = new TimeoutException(
+                            "Timed out waiting for pending sticky-note saves.");
+                        ApplicationDiagnostics.ReportNonFatal(
+                            "sticky-notes-pending-save-timeout", error);
+                        return PersistenceResult.Failure(error);
+                    }
+                    Monitor.Wait(_saveGate, remaining);
+                }
+            }
+            return PersistenceResult.Success();
         }
 
         private void AsyncWriterLoop()
@@ -353,6 +583,7 @@ namespace PennyPet
                         _latestGeneration <= _lastWrittenGeneration)
                     {
                         _writerRunning = false;
+                        Monitor.PulseAll(_saveGate);
                         return;
                     }
                     snapshot = _latestSnapshot;
@@ -388,6 +619,7 @@ namespace PennyPet
                     {
                         _writerRunning = false;
                         _latestSnapshot = null;
+                        Monitor.PulseAll(_saveGate);
                     }
                     return;
                 }
@@ -396,6 +628,10 @@ namespace PennyPet
 
         internal PersistenceResult SaveToFile(string filePath)
         {
+            // Never create a snapshot or generation for a repository whose
+            // on-disk schema this reader cannot safely own.
+            if (!_loadSucceeded)
+                return RejectBlockedSave("save");
             long generation;
             List<StickyNoteData> snapshot;
             lock (_saveGate)
@@ -407,11 +643,6 @@ namespace PennyPet
                 StickyDockGroups.NormalizeAll(_notes);
                 snapshot = CloneNotes(_notes);
             }
-            // A temporary read/parse failure must never turn an existing note file
-            // into an empty one. The next clean launch can read it again.
-            if (!_loadSucceeded)
-                return RecordSaveFailure(new InvalidOperationException(
-                    "Sticky-note data was not loaded safely; refusing to overwrite it."));
             PersistenceResult result = WriteSnapshot(filePath, snapshot,
                 generation, "sticky-notes-save");
             if (result.Succeeded)
@@ -434,12 +665,16 @@ namespace PennyPet
 
         internal PersistenceResult ExportSnapshot(string filePath)
         {
+            if (!_loadSucceeded)
+                return PersistenceResult.Failure(
+                    CreateMutationBlockedError("export"));
             try
             {
-                StickyDockGroups.NormalizeAll(_notes);
-                List<string> lines = new List<string>();
-                foreach (StickyNoteData note in _notes)
-                    lines.Add(StickyNoteCodec.SerializeLine(note));
+                // Export is a detached read; normalizing the live repository
+                // here could silently change current workspace ownership.
+                List<StickyNoteData> snapshot = CloneNotes(_notes);
+                StickyDockGroups.NormalizeAll(snapshot);
+                List<string> lines = SerializeSnapshot(snapshot);
                 AtomicTextFile.WriteAllLines(filePath, lines, false);
                 return PersistenceResult.Success();
             }
@@ -449,6 +684,136 @@ namespace PennyPet
                     "sticky-notes-emergency-export", error);
                 return PersistenceResult.Failure(error);
             }
+        }
+
+        internal PersistenceResult CommitImportedMerge(
+            StickyImportMergeResult merge, string backupPath)
+        {
+            if (merge == null || String.IsNullOrWhiteSpace(backupPath))
+                return PersistenceResult.Failure(new ArgumentException(
+                    "A merge plan and automatic backup path are required."));
+            if (!_loadSucceeded)
+                return PersistenceResult.Failure(
+                    CreateMutationBlockedError("merge"));
+
+            List<StickyNoteData> committed;
+            try
+            {
+                committed = CloneAndValidateMergeSnapshot(
+                    merge.MergedSnapshot);
+            }
+            catch (Exception error)
+            {
+                return PersistenceResult.Failure(error);
+            }
+            return CommitPreparedSnapshot(committed, backupPath,
+                "sticky-notes-import-merge");
+        }
+
+        internal PersistenceResult CommitFullRestore(
+            IEnumerable<StickyNoteData> restoredSnapshot, string backupPath)
+        {
+            if (restoredSnapshot == null || String.IsNullOrWhiteSpace(backupPath))
+                return PersistenceResult.Failure(new ArgumentException(
+                    "A restore snapshot and automatic backup path are required."));
+            if (!_loadSucceeded)
+                return PersistenceResult.Failure(
+                    CreateMutationBlockedError("restore"));
+
+            List<StickyNoteData> committed;
+            try
+            {
+                committed = CloneAndValidateMergeSnapshot(restoredSnapshot);
+            }
+            catch (Exception error)
+            {
+                return PersistenceResult.Failure(error);
+            }
+            return CommitPreparedSnapshot(committed, backupPath,
+                "sticky-notes-full-restore");
+        }
+
+        internal PersistenceResult CommitFullRestore(
+            IEnumerable<StickyNoteData> restoredSnapshot)
+        {
+            // Keep one rolling rollback snapshot so repeated restores do not
+            // create an unbounded trail of automatic backup files.
+            return CommitFullRestore(restoredSnapshot,
+                _filePath + ".before-restore.pennysticky");
+        }
+
+        private PersistenceResult CommitPreparedSnapshot(
+            List<StickyNoteData> committed, string backupPath,
+            string diagnosticContext)
+        {
+            string primaryPath = Path.GetFullPath(_filePath);
+            string automaticBackupPath = Path.GetFullPath(backupPath);
+            if (String.Equals(primaryPath, automaticBackupPath,
+                StringComparison.OrdinalIgnoreCase))
+                return PersistenceResult.Failure(new InvalidOperationException(
+                    "Automatic backup path must differ from the data file."));
+
+            PersistenceResult pendingSaves = WaitForPendingSaves();
+            if (!pendingSaves.Succeeded) return pendingSaves;
+
+            long generation;
+            List<StickyNoteData> currentSnapshot;
+            lock (_saveGate)
+            {
+                generation = ++_requestedGeneration;
+                _latestSnapshot = null;
+                _latestGeneration = generation;
+                _hasUnsavedChanges = true;
+                currentSnapshot = CloneNotes(_notes);
+            }
+
+            PersistenceResult backupResult;
+            lock (_ioGate)
+            {
+                try
+                {
+                    // One rolling pre-change backup is deliberate: it protects
+                    // the current dataset without accumulating unbounded files.
+                    AtomicTextFile.WriteAllLines(automaticBackupPath,
+                        SerializeSnapshot(currentSnapshot), false);
+                }
+                catch (Exception error)
+                {
+                    backupResult = PersistenceResult.Failure(error);
+                    ApplicationDiagnostics.ReportNonFatal(
+                        diagnosticContext + "-backup", error);
+                    return RecordSaveFailure(backupResult.Error);
+                }
+                backupResult = WriteSnapshot(_filePath, committed,
+                    generation, diagnosticContext);
+            }
+            if (!backupResult.Succeeded)
+                return RecordSaveFailure(backupResult.Error);
+
+            lock (_saveGate)
+            {
+                _notes.Clear();
+                foreach (StickyNoteData note in committed)
+                    _notes.Add(note.CloneForPersistence());
+                _completedGeneration = Math.Max(_completedGeneration,
+                    generation);
+                if (generation == _requestedGeneration)
+                {
+                    _hasUnsavedChanges = false;
+                    _lastSaveError = null;
+                    _consecutiveSaveFailures = 0;
+                }
+            }
+            return PersistenceResult.Success();
+        }
+
+        internal PersistenceResult CommitImportedMerge(
+            StickyImportMergeResult merge)
+        {
+            // Keep one rolling rollback snapshot so repeated imports never
+            // create an unbounded trail of automatic backup files.
+            return CommitImportedMerge(merge,
+                _filePath + ".before-import.pennysticky");
         }
 
         private PersistenceResult RecordSaveFailure(Exception error)
@@ -482,6 +847,53 @@ namespace PennyPet
             if (notes != null)
                 foreach (StickyNoteData note in notes)
                     if (note != null) result.Add(note.CloneForPersistence());
+            return result;
+        }
+
+        private PersistenceResult RejectBlockedSave(string operation)
+        {
+            Exception error = CreateMutationBlockedError(operation);
+            _lastSaveError = error;
+            _consecutiveSaveFailures++;
+            PersistenceResult result = PersistenceResult.Failure(error);
+            NotifySaveFailed(result, _consecutiveSaveFailures);
+            return result;
+        }
+
+        private Exception CreateMutationBlockedError(string operation)
+        {
+            string reason = IsFutureSchemaBlocked
+                ? "a newer sticky-note schema was detected"
+                : "sticky-note data was not loaded safely";
+            return new InvalidOperationException(
+                "Cannot " + operation + " because " + reason + ".");
+        }
+
+        private static List<string> SerializeSnapshot(
+            IEnumerable<StickyNoteData> snapshot)
+        {
+            List<string> lines = new List<string>();
+            if (snapshot != null)
+                foreach (StickyNoteData note in snapshot)
+                    if (note != null) lines.Add(StickyNoteCodec.SerializeLine(note));
+            return lines;
+        }
+
+        private static List<StickyNoteData> CloneAndValidateMergeSnapshot(
+            IEnumerable<StickyNoteData> snapshot)
+        {
+            List<StickyNoteData> result = CloneNotes(snapshot);
+            if (result.Count > StickyNoteLimits.MaximumNotes)
+                throw new InvalidDataException("Too many sticky notes.");
+            HashSet<string> ids = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+            foreach (StickyNoteData note in result)
+            {
+                if (String.IsNullOrWhiteSpace(note.Id) || !ids.Add(note.Id))
+                    throw new InvalidDataException(
+                        "Merged sticky-note data contains invalid NoteIds.");
+            }
+            StickyDockGroups.NormalizeAll(result);
             return result;
         }
 

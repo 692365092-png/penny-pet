@@ -46,6 +46,12 @@ namespace PennyPet
                     Application.Run(pet);
                 }
             }
+            catch (UnsupportedStickySchemaException error)
+            {
+                MessageBox.Show(BuildFutureSchemaBlockedMessage(error),
+                    "Penny pet - 便利贴数据版本不兼容",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
             catch (Exception error)
             {
                 ApplicationDiagnostics.ReportFatal("application-run", error);
@@ -56,6 +62,19 @@ namespace PennyPet
             }
             WpfApplicationHost.Shutdown();
             GC.KeepAlive(_singleInstance);
+        }
+
+        internal static string BuildFutureSchemaBlockedMessage(
+            UnsupportedStickySchemaException error)
+        {
+            return "便利贴数据由更新版本的 Penny 创建。\n\n" +
+                "当前程序最多支持数据版本 v" +
+                error.MaximumSupportedVersion + "，\n" +
+                "检测到的数据版本为 v" + error.DetectedVersion +
+                "。\n\n" +
+                "为防止覆盖或丢失便利贴，\n" +
+                "当前版本不会读取或修改这些数据。\n\n" +
+                "请关闭此版本并使用更新版本的 Penny。";
         }
     }
 }

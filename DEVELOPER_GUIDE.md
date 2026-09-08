@@ -60,18 +60,21 @@ dotnet test '.\desktop-pet\PennyPet.Tests.csproj' --configuration Release
   - 便利贴、三态 Todo、Schedule 和 Dock 持久化模型。
   - `StickyDockGroups`：组顺序、父子关系、规范化和快照恢复。
 - `Core/StickyNotes/StickyNoteCodec.cs`：v1-v9 数据行编解码、内容限制和旧格式兼容。
+- `Core/StickyNotes/StickyImportBackupValidator.cs` / `StickyImportMergePlanner.cs`：完整校验、稳定 NoteId 合并、幂等 conflict copy 和 partial Dock 保守降级；都是无文件副作用的纯规则。
 - `Core/StickyNotes/StickyDockOperations.cs`：组插入、抽离、隐藏槽位、快照、统一置顶数据和长按拆分判定。
+- `Core/StickyNotes/SideTabSnapshot.cs`：Side Tabs 直接消费的 detached 轻量显示投影；不是 canonical 或 persistence owner。
 - `Core/StickyNotes/StickyTabDropSession.cs`：跨 OLE 嵌套消息循环的页签拖放事务。
 - `Core/StickyNotes/StickyDockGeometry.cs`：`DockPoint`、`DockSize`、`DockRect`，以及 Dock 统一布局、divider、header 可达性、恢复、新建、页签、弹窗和异常拖拽恢复的纯数值规则。
 - `Core/Startup/PetStartupRules.cs`：UI/美术 readiness 纯门禁；不是完整启动状态机。
-- `Core/DailyNote/DailyNoteFeature.cs`：已经落地的三十日进度、同日幂等、断签和完成判定；后续 UI、内容来源和持久化按真实需求设计。
 - `Features/StickyNotes/StickyNoteRepository.cs`：Windows 文件读取、迁移、备份、原子保存、dirty、重试和紧急导出。
-- `Features/StickyNotes/StickyNoteWpf.cs`：WPF 窗口构造、总体生命周期、持久化和外观接线。
+- `Features/StickyNotes/StickyNotes.cs` / `PetPersistenceCoordinator.cs`：WinForms Manager 的 Normal/ImportPreview/Busy、具体导入命令、pre-import backup、commit 与 hosted reconcile。
+- `Features/StickyNotes/StickyNoteWpf.cs`：WPF 窗口构造、总体生命周期和外观接线；窗口数据是 hosted working copy，不直接保存 repository。
+- `StickyUiThreadHost.cs` / `StickyUiHost.cs` / `StickyWindowSession.cs`：Sticky WPF STA、唯一 session registry/command executor，以及唯一持有 `StickyNoteWindow` 的会话边界。
 - `Features/StickyNotes/StickyEditorCoordinator.cs`：RichText、字体、焦点和 IME；最高风险。
 - `Features/StickyNotes/StickyTodoCoordinator.cs` / `StickyScheduleCoordinator.cs`：待办和日程 UI。
 - `Features/StickyNotes/StickyReminderCoordinator.cs` / `StickyAppearanceCoordinator.cs`：提醒条和外观 UI。
 - `Features/StickyNotes/StickyNativeWindowBehavior.cs`：Win32 消息、拖拽、resize 和最大化拦截。
-- `Features/StickyNotes/PetStickyDockCoordinator.cs`：Windows 屏幕/DPI/窗口事实采集、原生几何转换和真实窗口副作用。
+- `Features/StickyNotes/PetStickyDockCoordinator.cs`：Windows 屏幕/DPI facts、canonical Dock 协调、原生几何转换和 typed hosted effects。
 - `Features/StickyNotes/StickyNoteTabs.cs`：侧边页签和隐藏/恢复 UI。
 
 `StickyDockGeometry` 持有平台无关几何，Windows Coordinator 负责把 `Point`、`Size`、`Rectangle` 转成 `DockPoint`、`DockSize`、`DockRect`，调用 Core 后再移动或缩放窗口。`DockCoordinateSafetyLimit = 30000` 是 Win32 限制，由 Windows 层传入，不能下沉成跨平台业务常量。
@@ -81,9 +84,14 @@ Dock 修改必须同时检查：组关系、组内顺序、持久化快照、统
 当前 Dock 行为边界：
 
 - Reminder 是所有便利贴共享的 capability/UI，不是独立 Sticky subtype 或第四种 Dock participant；设置或未设置提醒的 ordinary / Todo / Schedule 均可正常参与 mixed Dock。eligibility 不依赖 `IsTodoList / IsSchedule / IsHostedSticky / ReminderUtcTicks`。
-- hosted 与 legacy executor 可以位于同一 group，共用 `DockWindowFacts`、同一 session/Core rules、`DockLayoutTarget`、preview、merge pulse 和 split guide；executor 差异只留在 owned effect edge。
-- “展开全部并平铺到此屏幕”会展开全部 note、清除 canonical Dock relation，再分别通过 hosted/legacy effect path 平铺；不要把它退化成只移动可见窗口。
-- Side Tabs 始终保持 no-activate TopMost chrome。monitor、working area 或 Pet scale 改变时会重新验证 desired left/right split；split 不变只 reposition，改变才 rebuild controls。
+- Ordinary、Todo、Schedule 是同一 Sticky window system 的 content modes；Dock 不得按 `IsTodoList` 或 `IsSchedule` 拆 group、重排或选择不同规则。
+- `StickyUiHost` 是唯一 production executor。新建、startup restore、persisted mixed Dock、SideTab 展开和窗口 effects 都使用 `StickyUiCommand`；禁止重新引入 Pet-owned `Dictionary<string, StickyNoteWindow>` 或 silent legacy fallback。
+- “展开全部并平铺到此屏幕”会展开全部 note、清除 canonical Dock relation，再通过 hosted effect path 平铺；不要把它退化成只移动可见窗口。
+- `StickyNoteCodec` 的 v1-v9 compatibility readers 是用户数据兼容层，不属于已删除的 legacy runtime executor，必须保留。
+- Side Tabs 保持 no-activate chrome；左右 strip 按几何 overlap 独立决定 TopMost，被可见 Sticky 覆盖时该 strip 临时降层。monitor、working area 或 Pet scale 改变时会重新验证 desired left/right split；split 不变只 reposition，改变才 rebuild controls。
+- Side Tabs 直接消费 `SideTabSnapshot`；业务 note identity 使用稳定 `NoteId`，拖拽 source identity 才使用平台 UI object reference。OLE nested-loop、透明 canvas、BringToFront timing 等 workaround 是 Windows-only，不应复制成 macOS UI 框架。
+- Manager 排序与搜索只改变表格视图。Import & Merge 必须先完整 read/parse/validate/plan，在同一个 Manager 预览；取消或关闭不得修改 repository，确认时重新规划后才允许原子 commit。Preview 是 Form 生命周期内的有界运行状态，不写磁盘、不留历史。
+- 新导入及 conflict copy 默认 `Visible=false`；current NoteId 的 geometry、visibility 和 Dock relation 优先。不得为导入创建另一套 window creator 或 Dock engine。
 
 ### 链接边界
 
@@ -107,6 +115,22 @@ Dock 修改必须同时检查：组关系、组内顺序、持久化快照、统
 
 现有 `_startupUiReady + _startupArtReady`、`_startupDisplaySuppressed` 和 warm-row preload 语义保持在 Windows 启动流程。当前 Core 只有 `PetStartupRules` 的 readiness 纯门禁，不得将其描述为完整跨平台 startup framework。
 
+### Daily Briefing 内容与句末
+
+- `DailyBriefingComposer` 按 semantic sentence 而不是 provider 数量计预算：Greeting 也占一条，总数最多三条，每个 supplementary 最多一条；有 Weather 或 Almanac 时不为填位补 Curated/Zodiac。
+- Weather body 必须直说一个天气事实，最多附带一个行动；Almanac body 必须单句完成内容与必要降权。长度靠人工精简，不得运行时截断、摘要或通过 Bubble 换行掩盖。
+- 普通 Daily body 保留句内标点，不负责最终终止符。`PetSentenceEndingPolicy` 只根据 Role、显式 Intent、ContentKind、稳定 ID 和当地日期添加句末；禁止在 Bubble、Weather、Almanac 或 Windows Coordinator 各自拼语气词。
+- Ending 是不持久化的派生展示结果，不需要历史或 Cache。同一输入必须稳定，不得使用 `string.GetHashCode()`；Middle 保持克制，Question 不靠文本猜测，Serious Weather 不得使用 cheerful ending。
+
+### Daily Weather 与数据寿命
+
+- 新数据先分类：用户偏好长期保存当前值；必要运行状态只保存最小值并覆盖；Cache 必须有 TTL、数量上限或覆盖策略；只有用户真正创造的内容才允许长期累积。
+- 天气城市属于用户偏好：`PetSettingsCodec` 只保存当前名称、行政区、国家、经纬度和 IANA 时区，使用 invariant 数字格式；换城市覆盖并使进程 Cache 失效。
+- 预报属于 Cache：`PetWeatherSource` 最多保留 3 个 `location + local day` 成功结果；同键并发复用一个 Task，失败键冷却 15 分钟，退出即丢弃。不得添加 forecast/history 磁盘文件。
+- `Core/DailyContent/Weather` 是纯摘要、语义和 wording；`Infrastructure/Weather` 才能引用 `HttpClient`、Open-Meteo URL 和 JSON DTO。不要为第二个 provider 预建 interface、factory、registry 或 DI。
+- 启动和 Timer 不得调用天气。城市搜索只响应明确 Search 按钮；WeatherLocationDialog 不再用 AcceptButton 抢 Enter。Daily 预报只响应首个 eligible Poke，3 秒超时、零重试，失败继续组合其他内容。
+- fixture 是普通测试的唯一网络输入。需要人工验证实时响应时运行 `PennyPet.SelfTests.exe --weather-api-probe=<output.json>`；该命令不是 CI gate。
+
 ### 键盘显示与隐私
 
 - `Features/KeyboardOverlay/GlobalKeyboardActivity.cs`：Windows 全局低级键盘 Hook。
@@ -114,8 +138,9 @@ Dock 修改必须同时检查：组关系、组内顺序、持久化快照、统
 - `KeyboardInputFormatter.cs` / `KeyboardOverlayForm.cs`：Windows 虚拟键显示和透明覆盖窗口。
 - `Core/Keyboard/KeyDisplayAccumulator.cs`：连按/长按计数状态机。
 - `Core/Keyboard/PetKeyboardPrivacyPolicy.cs`：首次确认、偏好和检查失败时 fail-closed 的平台中性判定。
+- `PetWindowLayerCoordinator.cs`：统一登记 Pet-owned WinForms Form modal stack；键盘覆盖、Bubble 和 Side Tabs 仍是 no-activate chrome，但在整个嵌套 modal chain 之后。键盘提示的位置始终只跟随 Pet，不因 modal 移到窗口边界。该栈只存在于内存，窗口关闭即移除。
 
-按键显示默认关闭；关闭必须卸载 Hook。第三方自绘控件、浏览器、跨权限窗口和远程桌面无法保证全部识别，产品文案只能说“尽力隐藏”。
+按键显示默认关闭；关闭必须卸载 Hook。Pet-owned modal 的普通文本输入可以显示按键，但密码/凭据检测仍独立执行并 fail closed；不要用隐藏整个 overlay 的方式修复窗口层级。第三方自绘控件、浏览器、跨权限窗口和远程桌面无法保证全部识别，产品文案只能说“尽力隐藏”。
 
 ## 4. IME 与富文本：修改前必读
 
@@ -136,6 +161,8 @@ Dock 修改必须同时检查：组关系、组内顺序、持久化快照、统
 - `settings.ini` / `.bak`：位置、大小、启动偏好、键盘显示和提醒。
 - `sticky-notes.dat` / `.bak`：便利贴、待办、日程、显示状态和 Dock。
 - `diagnostics.log`：本地异常诊断。
+
+`.pennysticky` v1 导出的是 Sticky dataset，不是整个 Penny 数据目录。完整 reminder records（包含文本、deadline、pre-alert 和 `SourceNoteId`）由 `settings.ini` 持有；Sticky 内的 `ReminderUtcTicks` 只是下一次提醒投影。因此当前 Sticky Backup 不承诺 linked reminder 或 standalone reminder 跨设备迁移。未来若增加 linked reminder portability，必须单独设计有界格式，并在 conflict copy 时重映射目标 NoteId。
 
 兼容逻辑仍会从旧品牌目录导入数据。读取失败时先尝试 `.bak`，无法读取的源文件会保留为损坏备份。写入失败时保持 dirty 并重试；退出前仍失败时允许重试、导出快照或取消退出。不要用默认值覆盖尚未安全保留的旧数据。
 

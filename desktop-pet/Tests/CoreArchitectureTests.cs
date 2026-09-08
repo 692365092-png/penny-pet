@@ -19,7 +19,18 @@ namespace PennyPet.Tests
             "Microsoft.Win32.Registry",
             "System.Drawing.Bitmap",
             "System.Windows.Forms.",
-            "System.Windows.Automation."
+            "System.Windows.Automation.",
+            "System.Net.Http",
+            "HttpClient",
+            "https://",
+
+            // DRT-13 final Core platform-boundary guards.
+            "using System.Runtime.InteropServices",
+            "System.Runtime.InteropServices.",
+            "DllImport(",
+            "user32.dll",
+            "shcore.dll",
+            "QueryDisplayConfig("
         };
 
         [TestMethod]

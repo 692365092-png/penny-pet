@@ -13,6 +13,11 @@ namespace PennyPet
     // so the established WPF focus and input path does not gain a new boundary.
     internal sealed partial class StickyNoteWindow
     {
+        // Collapse is runtime-only UI state. It is intentionally not persisted
+        // and never changes Todo data, window size, or Dock geometry.
+        private readonly HashSet<StickyTodoState> _collapsedTodoGroups =
+            new HashSet<StickyTodoState>();
+
         private void TodoInputKeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key != Key.Enter) return;
@@ -29,6 +34,9 @@ namespace PennyPet
             // makes the new editable row immediately visible at its top.
             Data.TodoItems.Insert(0, item);
             _selectedTodo = item;
+            // A brand-new item must be visible immediately, so re-expand the
+            // unfinished group even if the user had collapsed it.
+            _collapsedTodoGroups.Remove(StickyTodoState.Pending);
             RefreshTodoList();
             Dispatcher.BeginInvoke(DispatcherPriority.Input,
                 new Action(delegate
@@ -107,15 +115,25 @@ namespace PennyPet
 
         private void AddTodoSection(string title, StickyTodoState state)
         {
+            bool collapsed = _collapsedTodoGroups.Contains(state);
             WC.TextBlock heading = new WC.TextBlock();
-            heading.Text = title;
+            heading.Text = (collapsed ? "▶ " : "▼ ") + title;
             heading.Tag = "todo-heading";
             heading.Margin = new W.Thickness(9, 7, 7, 3);
             heading.FontFamily = new System.Windows.Media.FontFamily(
                 "Microsoft YaHei UI");
             heading.FontSize = PointSizeToDip(8.5F);
             heading.FontWeight = W.FontWeights.Bold;
+            heading.Cursor = Cursors.Hand;
+            heading.MouseLeftButtonDown += delegate(object sender,
+                MouseButtonEventArgs e)
+            {
+                if (_rebuildingTodos) return;
+                ToggleTodoGroup(state);
+                e.Handled = true;
+            };
             _todoRows.Children.Add(heading);
+            if (collapsed) return;
             // Always render pinned items before ordinary items, while keeping
             // the user's order inside each partition stable.
             for (int pass = 0; pass < 2; pass++)
@@ -128,6 +146,15 @@ namespace PennyPet
                     _todoRows.Children.Add(CreateTodoRow(item));
                 }
             }
+        }
+
+        private void ToggleTodoGroup(StickyTodoState state)
+        {
+            if (_collapsedTodoGroups.Contains(state))
+                _collapsedTodoGroups.Remove(state);
+            else
+                _collapsedTodoGroups.Add(state);
+            RefreshTodoList();
         }
 
         private W.UIElement CreateTodoRow(StickyTodoItem item)
@@ -165,6 +192,10 @@ namespace PennyPet
             editor.Focusable = false;
             editor.Cursor = Cursors.Arrow;
             ConfigureMultilingualTextInput(editor);
+            // Strikeout is render state only. It overlays whatever font
+            // weight/style the row already has and never mutates item text.
+            editor.TextDecorations = item.State == StickyTodoState.Completed
+                ? System.Windows.TextDecorations.Strikethrough : null;
             WC.TextBlock pinMarker = new WC.TextBlock();
             pinMarker.Text = "•";
             pinMarker.Margin = new W.Thickness(0, 0, 5, 0);
@@ -384,7 +415,8 @@ namespace PennyPet
             if (_todoRows == null) return;
             Color paper = Color.FromArgb(Data.ColorArgb);
             Color selected = WF.ControlPaint.Dark(paper, 0.14F);
-            Color pinned = WF.ControlPaint.Dark(paper, 0.065F);
+            Color body = WF.ControlPaint.LightLight(paper);
+            Color pinned = CalculatePinnedItemColor(body, paper);
             Color borderColor = WF.ControlPaint.Dark(paper, 0.12F);
             int opacity = Math.Max(10, Data.BackgroundOpacityPercent);
             System.Windows.Media.Brush text = OpaqueBrush(EffectiveTextColor());
@@ -419,6 +451,17 @@ namespace PennyPet
             _todoPinToggleButton.IsEnabled = true;
             _todoPinToggleButton.Content = _selectedTodo != null &&
                 _selectedTodo.IsPinned ? "取消置顶" : "置顶待办";
+        }
+
+        private static Color CalculatePinnedItemColor(Color body, Color header)
+        {
+            // Pinned rows sit between the strong header color and the light
+            // body background: 35% toward the header keeps them visible
+            // without competing with the title bar.
+            return Color.FromArgb(body.A,
+                (int)Math.Round(body.R + (header.R - body.R) * 0.35),
+                (int)Math.Round(body.G + (header.G - body.G) * 0.35),
+                (int)Math.Round(body.B + (header.B - body.B) * 0.35));
         }
     }
 }

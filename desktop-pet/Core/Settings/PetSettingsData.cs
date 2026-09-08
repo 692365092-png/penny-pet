@@ -10,6 +10,10 @@ namespace PennyPet
         public bool HasLocation;
         public int X;
         public int Y;
+        // DRT-12 durable Pet placement. Raw X/Y remain compatibility-only.
+        public string PetPreferredTargetKey = String.Empty;
+        public int PetPreferredLocalLogicalX;
+        public int PetPreferredLocalLogicalY;
         public bool StartupPreferenceInitialized;
         public bool StartAtLogin;
         public int ScalePercent = 100;
@@ -17,6 +21,23 @@ namespace PennyPet
         public bool KeyboardPrivacyNoticeAccepted;
         public int KeyOverlayScalePercent = 100;
         public bool SilentMode;
+        public bool DailyContentEnabled = true;
+        public bool SolarTermEnabled = true;
+        public bool AlmanacEnabled = true;
+        public bool WeatherEnabled;
+        public string WeatherLocationName = String.Empty;
+        public string WeatherLocationAdmin1 = String.Empty;
+        public string WeatherLocationCountry = String.Empty;
+        public double WeatherLatitude;
+        public double WeatherLongitude;
+        public string WeatherTimezone = String.Empty;
+        public ZodiacSign ZodiacSign = ZodiacSign.None;
+        public int UserBirthdayMonth;
+        public int UserBirthdayDay;
+        public string LastDailyBriefingDate = String.Empty;
+        public string DailyLedgerDate = String.Empty;
+        public int DailyLedgerDaypartsMask;
+        public string DailyLedgerUsedMeaningfulIds = String.Empty;
         public readonly List<ReminderItem> Reminders =
             new List<ReminderItem>();
 
@@ -45,6 +66,14 @@ namespace PennyPet
             HasLocation = source.HasLocation;
             X = source.X;
             Y = source.Y;
+            PetPreferredTargetKey =
+                source.PetPreferredTargetKey ?? String.Empty;
+
+            PetPreferredLocalLogicalX =
+                source.PetPreferredLocalLogicalX;
+
+            PetPreferredLocalLogicalY =
+                source.PetPreferredLocalLogicalY;
             StartupPreferenceInitialized = source.StartupPreferenceInitialized;
             StartAtLogin = source.StartAtLogin;
             ScalePercent = source.ScalePercent;
@@ -53,6 +82,26 @@ namespace PennyPet
                 source.KeyboardPrivacyNoticeAccepted;
             KeyOverlayScalePercent = source.KeyOverlayScalePercent;
             SilentMode = source.SilentMode;
+            DailyContentEnabled = source.DailyContentEnabled;
+            SolarTermEnabled = source.SolarTermEnabled;
+            AlmanacEnabled = source.AlmanacEnabled;
+            WeatherEnabled = source.WeatherEnabled;
+            WeatherLocationName = source.WeatherLocationName;
+            WeatherLocationAdmin1 = source.WeatherLocationAdmin1;
+            WeatherLocationCountry = source.WeatherLocationCountry;
+            WeatherLatitude = source.WeatherLatitude;
+            WeatherLongitude = source.WeatherLongitude;
+            WeatherTimezone = source.WeatherTimezone;
+            ZodiacSign = PetSettingRules.NormalizeZodiacSign(
+                source.ZodiacSign);
+            UserBirthdayMonth = source.UserBirthdayMonth;
+            UserBirthdayDay = source.UserBirthdayDay;
+            LastDailyBriefingDate = source.LastDailyBriefingDate;
+            DailyLedgerDate = source.DailyLedgerDate;
+            DailyLedgerDaypartsMask = Math.Max(0,
+                source.DailyLedgerDaypartsMask);
+            DailyLedgerUsedMeaningfulIds =
+                source.DailyLedgerUsedMeaningfulIds ?? String.Empty;
             SetReminders(source.Reminders);
         }
     }

@@ -4,9 +4,13 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Net.Http;
 using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace PennyPet
@@ -174,6 +178,10 @@ namespace PennyPet
             internal bool ReminderMemoryOk;
             internal bool KeyboardPrivacyNoticePersistenceOk;
             internal bool SilentModePersistenceOk;
+            internal bool DailyBriefingDatePersistenceOk;
+            internal bool DailyContentPreferencesPersistenceOk;
+            internal bool ZodiacPreferencePersistenceOk;
+            internal bool WeatherPreferencePersistenceOk;
             internal bool FailureDirtyRetryOk;
             internal bool BackupRecoveryOk;
         }
@@ -227,6 +235,17 @@ namespace PennyPet
             memorySettings.KeyboardPrivacyNoticeAccepted = true;
             memorySettings.KeyOverlayScalePercent = 150;
             memorySettings.SilentMode = true;
+            memorySettings.DailyContentEnabled = false;
+            memorySettings.SolarTermEnabled = false;
+            memorySettings.WeatherEnabled = true;
+            memorySettings.WeatherLocationName = "武汉";
+            memorySettings.WeatherLocationAdmin1 = "湖北";
+            memorySettings.WeatherLocationCountry = "中国";
+            memorySettings.WeatherLatitude = 30.5928;
+            memorySettings.WeatherLongitude = 114.3055;
+            memorySettings.WeatherTimezone = "Asia/Shanghai";
+            memorySettings.ZodiacSign = ZodiacSign.Scorpio;
+            memorySettings.LastDailyBriefingDate = "20350908";
             memorySettings.SaveToFile(persistenceTestPath);
             PetSettings diskSettings = PetSettings.LoadFromFile(
                 persistenceTestPath);
@@ -245,6 +264,31 @@ namespace PennyPet
             result.KeyboardPrivacyNoticePersistenceOk =
                 diskSettings.KeyboardPrivacyNoticeAccepted;
             result.SilentModePersistenceOk = diskSettings.SilentMode;
+            result.DailyBriefingDatePersistenceOk =
+                diskSettings.LastDailyBriefingDate == "20350908";
+            PetSettingsData legacyDailySettings = PetSettingsCodec.Parse(
+                new string[] { "SilentMode=0" });
+            result.DailyContentPreferencesPersistenceOk =
+                !diskSettings.DailyContentEnabled &&
+                !diskSettings.SolarTermEnabled &&
+                legacyDailySettings.DailyContentEnabled &&
+                legacyDailySettings.SolarTermEnabled &&
+                new PetSettings().DailyContentEnabled &&
+                new PetSettings().SolarTermEnabled;
+            result.ZodiacPreferencePersistenceOk =
+                diskSettings.ZodiacSign == ZodiacSign.Scorpio &&
+                legacyDailySettings.ZodiacSign == ZodiacSign.None &&
+                new PetSettings().ZodiacSign == ZodiacSign.None;
+            result.WeatherPreferencePersistenceOk =
+                diskSettings.WeatherEnabled &&
+                diskSettings.WeatherLocationName == "武汉" &&
+                diskSettings.WeatherLocationAdmin1 == "湖北" &&
+                diskSettings.WeatherLocationCountry == "中国" &&
+                Math.Abs(diskSettings.WeatherLatitude - 30.5928) < 0.000001 &&
+                Math.Abs(diskSettings.WeatherLongitude - 114.3055) < 0.000001 &&
+                diskSettings.WeatherTimezone == "Asia/Shanghai" &&
+                !legacyDailySettings.WeatherEnabled &&
+                !new PetSettings().WeatherEnabled;
 
             string settingsRetryPath = outputPath +
                 ".settings-retry-test.ini";
@@ -301,6 +345,10 @@ namespace PennyPet
             internal bool PersistenceOk;
             internal bool FailureDirtyRetryOk;
             internal bool GenerationMonotonicOk;
+            internal bool PendingSaveWaitBoundedOk;
+            internal bool CurrentBackupRoundTripOk;
+            internal bool ImportMergeCommitOk;
+            internal bool FullRestoreCommitOk;
             internal bool MultilingualOk;
             internal bool RichTextOk;
             internal bool RichTextNoSilentTruncationOk;
@@ -347,6 +395,46 @@ namespace PennyPet
                 result.FilePath);
             List<StickyNoteData> restoredNotes = result.Repository.GetAll();
 
+            string currentBackupPath = outputPath +
+                ".sticky-current-backup-test.pennysticky";
+            try
+            {
+                PersistenceResult exported = result.Repository.ExportSnapshot(
+                    currentBackupPath);
+                StickyImportValidationResult imported =
+                    StickyBackupFileReader.Read(currentBackupPath);
+                result.CurrentBackupRoundTripOk = exported.Succeeded &&
+                    imported.Succeeded && imported.Notes.Count ==
+                    restoredNotes.Count && imported.Notes.Count == 1 &&
+                    StickyImportMergePlanner.PersistedContentEquals(
+                        restoredNotes[0], imported.Notes[0]);
+            }
+            finally
+            {
+                if (File.Exists(currentBackupPath))
+                    File.Delete(currentBackupPath);
+                if (File.Exists(currentBackupPath + ".bak"))
+                    File.Delete(currentBackupPath + ".bak");
+            }
+
+            string waitPath = outputPath + ".pending-save-wait-test.dat";
+            StickyNoteRepository waitRepository =
+                StickyNoteRepository.LoadFromFile(waitPath);
+            FieldInfo writerRunning = typeof(StickyNoteRepository).GetField(
+                "_writerRunning", BindingFlags.Instance |
+                BindingFlags.NonPublic);
+            writerRunning.SetValue(waitRepository, true);
+            Stopwatch waitTimer = Stopwatch.StartNew();
+            PersistenceResult timedOut = waitRepository.WaitForPendingSaves(
+                TimeSpan.FromMilliseconds(25));
+            waitTimer.Stop();
+            writerRunning.SetValue(waitRepository, false);
+            result.PendingSaveWaitBoundedOk = !timedOut.Succeeded &&
+                timedOut.Error is TimeoutException &&
+                waitTimer.Elapsed < TimeSpan.FromSeconds(1) &&
+                waitRepository.WaitForPendingSaves(
+                    TimeSpan.Zero).Succeeded;
+
             string persistenceStatePath = outputPath +
                 ".persistence-state-test.dat";
             StickyNoteRepository persistenceStateRepository =
@@ -392,6 +480,139 @@ namespace PennyPet
             if (File.Exists(generationPath)) File.Delete(generationPath);
             if (File.Exists(generationPath + ".bak"))
                 File.Delete(generationPath + ".bak");
+
+            string mergePath = outputPath + ".sticky-import-merge-test.dat";
+            string mergeBackupPath = mergePath + ".before-import.pennysticky";
+            try
+            {
+                StickyNoteRepository mergeRepository =
+                    StickyNoteRepository.LoadFromFile(mergePath);
+                StickyNoteData currentVersion = mergeRepository.Create(
+                    "current-version", Point.Empty);
+                mergeRepository.SaveToFile(mergePath);
+                StickyNoteData importedVersion =
+                    currentVersion.CloneForPersistence();
+                importedVersion.Text = "imported-version";
+                StickyNoteData importedNew = new StickyNoteData
+                {
+                    Id = "imported-new",
+                    Text = "new-note"
+                };
+                StickyImportMergeResult mergePlan =
+                    StickyImportMergePlanner.Calculate(
+                        mergeRepository.GetAll(), new[]
+                        {
+                            importedVersion, importedNew
+                        });
+                PersistenceResult mergeCommit =
+                    mergeRepository.CommitImportedMerge(mergePlan);
+                StickyNoteRepository reopenedMerge =
+                    StickyNoteRepository.LoadFromFile(mergePath);
+                StickyNoteRepository preMergeBackup =
+                    StickyNoteRepository.LoadFromFile(mergeBackupPath);
+                int conflictCopies = reopenedMerge.GetAll().Count - 2;
+                result.ImportMergeCommitOk = mergeCommit.Succeeded &&
+                    reopenedMerge.GetAll().Count == 3 && conflictCopies == 1 &&
+                    reopenedMerge.Find(currentVersion.Id).Text ==
+                        "current-version" &&
+                    reopenedMerge.Find("imported-new") != null &&
+                    !reopenedMerge.Find("imported-new").Visible &&
+                    preMergeBackup.Find(currentVersion.Id) != null &&
+                    preMergeBackup.Find(currentVersion.Id).Text ==
+                        "current-version";
+
+                string blockedPath = outputPath +
+                    ".sticky-import-blocked-directory";
+                string blockedBackupPath = blockedPath +
+                    ".before-import.pennysticky";
+                try
+                {
+                    if (File.Exists(blockedPath))
+                        File.Delete(blockedPath);
+                    if (Directory.Exists(blockedPath))
+                        Directory.Delete(blockedPath, true);
+                    Directory.CreateDirectory(blockedPath);
+                    StickyNoteRepository blockedRepository =
+                        StickyNoteRepository.LoadFromFile(blockedPath);
+                    StickyNoteData blockedCurrent = blockedRepository.Create(
+                        "blocked-current", Point.Empty);
+                    StickyNoteData blockedIncoming =
+                        blockedCurrent.CloneForPersistence();
+                    blockedIncoming.Text = "blocked-import";
+                    StickyImportMergeResult blockedPlan =
+                        StickyImportMergePlanner.Calculate(
+                            blockedRepository.GetAll(), new[]
+                            {
+                                blockedIncoming
+                            });
+                    PersistenceResult failedMerge = blockedRepository
+                        .CommitImportedMerge(blockedPlan);
+                    StickyNoteData blockedAfter = blockedRepository.Find(
+                        blockedCurrent.Id);
+                    result.ImportMergeCommitOk = result.ImportMergeCommitOk &&
+                        !failedMerge.Succeeded && blockedAfter != null &&
+                        blockedAfter.Text == "blocked-current" &&
+                        blockedRepository.Count == 1 &&
+                        File.Exists(blockedBackupPath);
+                }
+                finally
+                {
+                    foreach (string blockedFile in new string[] {
+                        blockedBackupPath, blockedPath + ".tmp" })
+                        if (File.Exists(blockedFile)) File.Delete(blockedFile);
+                    if (Directory.Exists(blockedPath))
+                        Directory.Delete(blockedPath, true);
+                    if (File.Exists(blockedPath)) File.Delete(blockedPath);
+                }
+            }
+            finally
+            {
+                foreach (string mergeFile in new string[] {
+                    mergePath, mergePath + ".bak", mergeBackupPath,
+                    mergeBackupPath + ".bak" })
+                    if (File.Exists(mergeFile)) File.Delete(mergeFile);
+            }
+
+            string restorePath = outputPath + ".sticky-full-restore-test.dat";
+            string restoreBackupPath = restorePath + ".before-restore.pennysticky";
+            try
+            {
+                StickyNoteRepository restoreRepository =
+                    StickyNoteRepository.LoadFromFile(restorePath);
+                StickyNoteData restoreCurrent = restoreRepository.Create(
+                    "restore-current", Point.Empty);
+                restoreRepository.SaveToFile(restorePath);
+                StickyNoteData replacement = new StickyNoteData
+                {
+                    Id = "restored-only",
+                    Text = "restored-content"
+                };
+                PersistenceResult restoreCommit =
+                    restoreRepository.CommitFullRestore(
+                        new[] { replacement }, restoreBackupPath);
+                StickyNoteRepository reopenedRestore =
+                    StickyNoteRepository.LoadFromFile(restorePath);
+                StickyNoteRepository preRestore =
+                    StickyNoteRepository.LoadFromFile(restoreBackupPath);
+                result.FullRestoreCommitOk = restoreCommit.Succeeded &&
+                    reopenedRestore.Count == 1 &&
+                    reopenedRestore.Find("restored-only") != null &&
+                    reopenedRestore.Find(restoreCurrent.Id) == null &&
+                    preRestore.Find(restoreCurrent.Id) != null &&
+                    preRestore.Find(restoreCurrent.Id).Text ==
+                        "restore-current";
+            }
+            catch
+            {
+                result.FullRestoreCommitOk = false;
+            }
+            finally
+            {
+                foreach (string restoreFile in new string[] {
+                    restorePath, restorePath + ".bak", restoreBackupPath,
+                    restoreBackupPath + ".bak" })
+                    if (File.Exists(restoreFile)) File.Delete(restoreFile);
+            }
 
             result.PersistenceOk = restoredNotes.Count == 1 &&
                 restoredNotes[0].Text == multilingualSample &&
@@ -506,6 +727,20 @@ namespace PennyPet
             internal bool AncientCacheDisplayRepairOk;
             internal bool FailedLoadNeverOverwritesOk;
             internal bool BackupRecoveryOk;
+            internal bool FuturePrimaryBlocksStartupOk;
+            internal bool FutureFailureClassificationOk;
+            internal bool FutureNoSalvageOk;
+            internal bool FutureOlderBackupNotLoadedOk;
+            internal bool FutureRepositoryReadOnlyOk;
+            internal bool FutureSyncSaveRejectedOk;
+            internal bool FutureAsyncSaveRejectedOk;
+            internal bool FutureMutationsRejectedOk;
+            internal bool FuturePrimaryBytesUnchangedOk;
+            internal bool FutureBackupBytesUnchangedOk;
+            internal bool FutureNoRecoveryArtifactsOk;
+            internal bool HistoricalStartupMatrixOk;
+            internal bool CurrentStartupRoundTripOk;
+            internal bool FutureUserMessageOk;
         }
 
         private static StickyCompatibilityCheckResult
@@ -597,7 +832,7 @@ namespace PennyPet
             versionFourRepository.SaveToFile(versionFourStickyPath);
             result.VersionFourMigrationOk = result.VersionFourMigrationOk &&
                 File.ReadAllText(versionFourStickyPath, Encoding.UTF8)
-                    .StartsWith("9|");
+                    .StartsWith(StickyNoteCodec.CurrentVersion + "|");
             if (File.Exists(versionFourStickyPath))
                 File.Delete(versionFourStickyPath);
             if (File.Exists(versionFourStickyPath + ".bak"))
@@ -621,7 +856,7 @@ namespace PennyPet
                 File.ReadAllText(preservedCorruptPath, Encoding.UTF8) ==
                     "this-is-not-a-note" &&
                 File.ReadAllText(corruptStickyPath, Encoding.UTF8)
-                    .StartsWith("9|");
+                    .StartsWith(StickyNoteCodec.CurrentVersion + "|");
             if (File.Exists(corruptStickyPath)) File.Delete(corruptStickyPath);
             if (File.Exists(corruptStickyPath + ".bak"))
                 File.Delete(corruptStickyPath + ".bak");
@@ -645,7 +880,7 @@ namespace PennyPet
                 File.ReadAllText(backupRecoveryRepository.RecoveryBackupPath,
                     Encoding.UTF8) == "broken-primary" &&
                 File.ReadAllText(backupRecoveryPath, Encoding.UTF8)
-                    .StartsWith("9|");
+                    .StartsWith(StickyNoteCodec.CurrentVersion + "|");
             string preservedBackupPrimary =
                 backupRecoveryRepository.RecoveryBackupPath;
             if (File.Exists(backupRecoveryPath))
@@ -655,7 +890,203 @@ namespace PennyPet
             if (!String.IsNullOrEmpty(preservedBackupPrimary) &&
                 File.Exists(preservedBackupPrimary))
                 File.Delete(preservedBackupPrimary);
+            RunStickyFutureSchemaChecks(result, outputPath);
             return result;
+        }
+
+        private static void RunStickyFutureSchemaChecks(
+            StickyCompatibilityCheckResult result, string outputPath)
+        {
+            result.HistoricalStartupMatrixOk = true;
+            for (int version = 1; version <= StickyNoteCodec.CurrentVersion;
+                version++)
+            {
+                string path = outputPath + ".sticky-startup-v" + version +
+                    "-test.dat";
+                try
+                {
+                    File.WriteAllText(path, ReadStickyFixture(
+                        "sticky-v" + version + ".txt"),
+                        new UTF8Encoding(false));
+                    StickyNoteRepository historical =
+                        StickyNoteRepository.LoadFromFile(path);
+                    result.HistoricalStartupMatrixOk =
+                        result.HistoricalStartupMatrixOk &&
+                        historical.LoadSucceeded &&
+                        !historical.IsFutureSchemaBlocked &&
+                        historical.Count == 1;
+                }
+                finally
+                {
+                    if (File.Exists(path)) File.Delete(path);
+                    if (File.Exists(path + ".bak"))
+                        File.Delete(path + ".bak");
+                }
+            }
+
+            string currentPath = outputPath +
+                ".sticky-current-startup-test.dat";
+            try
+            {
+                StickyNoteData current = new StickyNoteData
+                {
+                    Id = "current-startup",
+                    Text = "current schema"
+                };
+                File.WriteAllText(currentPath,
+                    StickyNoteCodec.SerializeLine(current),
+                    new UTF8Encoding(false));
+                StickyNoteRepository currentRepository =
+                    StickyNoteRepository.LoadFromFile(currentPath);
+                result.CurrentStartupRoundTripOk =
+                    currentRepository.LoadSucceeded &&
+                    !currentRepository.IsFutureSchemaBlocked &&
+                    currentRepository.Find(current.Id) != null;
+            }
+            finally
+            {
+                if (File.Exists(currentPath)) File.Delete(currentPath);
+                if (File.Exists(currentPath + ".bak"))
+                    File.Delete(currentPath + ".bak");
+            }
+
+            string futurePath = outputPath +
+                ".sticky-future-schema-test.dat";
+            string backupPath = futurePath + ".bak";
+            string exportPath = futurePath + ".export";
+            int futureVersion = StickyNoteCodec.CurrentVersion + 1;
+            try
+            {
+                string olderBackup = ReadStickyFixture("sticky-v10.txt");
+                string futureLine = ReadStickyFixture("sticky-vFuture.txt")
+                    .Replace("{VERSION}", futureVersion.ToString());
+                // The valid older line ahead of the future line proves that
+                // no partially parsed primary data can escape the preflight.
+                File.WriteAllText(futurePath, olderBackup +
+                    Environment.NewLine + futureLine,
+                    new UTF8Encoding(false));
+                File.WriteAllText(backupPath, olderBackup,
+                    new UTF8Encoding(false));
+                string primaryHash = CalculateSha256(futurePath);
+                string backupHash = CalculateSha256(backupPath);
+
+                StickyNoteRepository blocked =
+                    StickyNoteRepository.LoadFromFile(futurePath);
+                int rejectedSaveEvents = 0;
+                blocked.SaveFailed += delegate { rejectedSaveEvents++; };
+                UnsupportedStickySchemaException schemaError =
+                    blocked.FutureSchemaError;
+                result.FuturePrimaryBlocksStartupOk =
+                    blocked.IsFutureSchemaBlocked &&
+                    !blocked.LoadSucceeded && blocked.Count == 0 &&
+                    blocked.DetectedFutureVersion == futureVersion;
+                result.FutureFailureClassificationOk = schemaError != null &&
+                    schemaError.DetectedVersion == futureVersion &&
+                    schemaError.MaximumSupportedVersion ==
+                        StickyNoteCodec.CurrentVersion &&
+                    String.Equals(schemaError.SourcePath, futurePath,
+                        StringComparison.OrdinalIgnoreCase);
+                result.FutureNoSalvageOk =
+                    !blocked.RecoveredFromLoadFailure &&
+                    !blocked.RecoveredFromPartialSalvage &&
+                    blocked.SalvagedNoteCount == 0 &&
+                    blocked.SkippedCorruptLineCount == 0 &&
+                    String.IsNullOrEmpty(blocked.RecoveryBackupPath);
+                result.FutureOlderBackupNotLoadedOk =
+                    blocked.Find("legacy-v10") == null && blocked.Count == 0;
+
+                StickyNoteData rejectedCreate = blocked.Create(
+                    "must not exist", Point.Empty);
+                result.FutureRepositoryReadOnlyOk = rejectedCreate == null &&
+                    !blocked.CanCreate && !blocked.Remove(new StickyNoteData()) &&
+                    !blocked.HasUnsavedChanges;
+                PersistenceResult syncSave = blocked.Save();
+                result.FutureSyncSaveRejectedOk = !syncSave.Succeeded &&
+                    syncSave.Error is InvalidOperationException &&
+                    !blocked.HasUnsavedChanges && rejectedSaveEvents == 1;
+                Exception syncSaveError = blocked.LastSaveError;
+                blocked.SaveAsync();
+                result.FutureAsyncSaveRejectedOk =
+                    blocked.LastSaveError is InvalidOperationException &&
+                    !Object.ReferenceEquals(syncSaveError,
+                        blocked.LastSaveError) && rejectedSaveEvents == 2 &&
+                    !blocked.HasPendingSaves && !blocked.HasUnsavedChanges;
+
+                StickyNoteData incoming = new StickyNoteData
+                {
+                    Id = "blocked-import",
+                    Text = "blocked"
+                };
+                StickyImportMergeResult merge = StickyImportMergePlanner
+                    .Calculate(blocked.GetAll(), new[] { incoming });
+                PersistenceResult mergeResult = blocked.CommitImportedMerge(
+                    merge, futurePath + ".before-import");
+                PersistenceResult restoreResult = blocked.CommitFullRestore(
+                    new[] { incoming }, futurePath + ".before-restore");
+                PersistenceResult exportResult = blocked.ExportSnapshot(
+                    exportPath);
+                result.FutureMutationsRejectedOk =
+                    !mergeResult.Succeeded && !restoreResult.Succeeded &&
+                    !exportResult.Succeeded && !File.Exists(exportPath);
+
+                result.FuturePrimaryBytesUnchangedOk =
+                    primaryHash == CalculateSha256(futurePath);
+                result.FutureBackupBytesUnchangedOk =
+                    backupHash == CalculateSha256(backupPath);
+                string directory = Path.GetDirectoryName(
+                    Path.GetFullPath(futurePath));
+                string name = Path.GetFileName(futurePath);
+                result.FutureNoRecoveryArtifactsOk =
+                    Directory.GetFiles(directory,
+                        name + ".unreadable-*").Length == 0 &&
+                    !File.Exists(futurePath + ".tmp") &&
+                    !File.Exists(futurePath + ".before-import") &&
+                    !File.Exists(futurePath + ".before-restore");
+
+                string message = PennyApplicationHost
+                    .BuildFutureSchemaBlockedMessage(schemaError);
+                result.FutureUserMessageOk =
+                    message.Contains("最多支持数据版本 v" +
+                        StickyNoteCodec.CurrentVersion) &&
+                    message.Contains("检测到的数据版本为 v" +
+                        futureVersion) &&
+                    message.Contains("不会读取或修改这些数据") &&
+                    message.Contains("请关闭此版本并使用更新版本的 Penny");
+            }
+            finally
+            {
+                foreach (string path in new[] { futurePath, backupPath,
+                    exportPath, futurePath + ".tmp",
+                    futurePath + ".before-import",
+                    futurePath + ".before-restore" })
+                    if (File.Exists(path)) File.Delete(path);
+                string directory = Path.GetDirectoryName(
+                    Path.GetFullPath(futurePath));
+                string name = Path.GetFileName(futurePath);
+                foreach (string path in Directory.GetFiles(directory,
+                    name + ".unreadable-*")) File.Delete(path);
+            }
+        }
+
+        private static string ReadStickyFixture(string fileName)
+        {
+            string resourceName = "PennyPet.Tests.Fixtures." + fileName;
+            using (Stream stream = Assembly.GetExecutingAssembly()
+                .GetManifestResourceStream(resourceName))
+            {
+                if (stream == null)
+                    throw new InvalidOperationException(
+                        "Missing sticky fixture: " + resourceName);
+                using (StreamReader reader = new StreamReader(stream,
+                    Encoding.UTF8)) return reader.ReadToEnd().Trim();
+            }
+        }
+
+        private static string CalculateSha256(string path)
+        {
+            using (SHA256 hash = SHA256.Create())
+                return Convert.ToBase64String(
+                    hash.ComputeHash(File.ReadAllBytes(path)));
         }
 
         private sealed class DockPersistenceCheckResult
@@ -694,7 +1125,8 @@ namespace PennyPet
             result.SideTabOrderOk = orderedTabs.Count == 3 &&
                 orderedTabs[0].Text == "B" && orderedTabs[1].Text == "C" &&
                 orderedTabs[2].Text == "A" &&
-                File.ReadAllText(tabOrderPath, Encoding.UTF8).StartsWith("9|");
+                File.ReadAllText(tabOrderPath, Encoding.UTF8)
+                    .StartsWith(StickyNoteCodec.CurrentVersion + "|");
             if (File.Exists(tabOrderPath)) File.Delete(tabOrderPath);
             if (File.Exists(tabOrderPath + ".bak"))
                 File.Delete(tabOrderPath + ".bak");
@@ -770,7 +1202,8 @@ namespace PennyPet
                 persistedDockOrder[0].DockGroupOrder == 0 &&
                 persistedDockOrder[1].DockGroupOrder == 1 &&
                 persistedDockOrder[2].DockGroupOrder == 2 &&
-                File.ReadAllText(dockPath, Encoding.UTF8).StartsWith("9|");
+                File.ReadAllText(dockPath, Encoding.UTF8)
+                    .StartsWith(StickyNoteCodec.CurrentVersion + "|");
             dockParent.Visible = true;
             dockInsertedTodo.Visible = true;
             dockChild.Visible = true;
@@ -842,11 +1275,11 @@ namespace PennyPet
             expandRuntime.AddNote(expandA.Id);
             List<DockLayoutTarget> expandTargets = PetForm
                 .PrepareStickyExpandAndTileTargets(expandRepository.GetAll(),
-                    new Rectangle(0, 0, 1920, 1040));
+                    new Rectangle(0, 0, 1920, 1040), 1.0);
             List<DockLayoutTarget> secondaryTargets = PetForm
                 .PrepareStickyExpandAndTileTargets(new StickyNoteData[] {
                     new StickyNoteData(), new StickyNoteData() },
-                    new Rectangle(-1920, 0, 1920, 1040));
+                    new Rectangle(-1920, 0, 1920, 1040), 1.0);
             expandRepository.SaveToFile(expandPath);
             StickyNoteRepository restoredExpandRepository =
                 StickyNoteRepository.LoadFromFile(expandPath);
@@ -886,8 +1319,8 @@ namespace PennyPet
                         note.X < 1920 && note.Y < 1040;
                 }) &&
                 restoredExpandRepository.Find(expandA.Id).Width == 320 &&
-                restoredExpandRepository.Find(expandB.Id).Width == 420 &&
-                restoredExpandRepository.Find(expandC.Id).Height == 260;
+                restoredExpandRepository.Find(expandB.Id).Width == 320 &&
+                restoredExpandRepository.Find(expandC.Id).Height == 360;
             if (File.Exists(expandPath)) File.Delete(expandPath);
             if (File.Exists(expandPath + ".bak"))
                 File.Delete(expandPath + ".bak");
@@ -1131,6 +1564,8 @@ namespace PennyPet
             internal bool RootAnchorPreservedOk;
             internal bool DividerMovesFollowingChainOk;
             internal bool DividerIndependentRangeOk;
+            internal bool DividerPreservesDownstreamHeightsOk;
+            internal bool DividerLiveSessionTargetsOk;
             internal bool WideNarrowDockingOk;
             internal bool LongCoordinateGuardOk;
             internal bool FirstDragRecoveryOk;
@@ -1175,6 +1610,48 @@ namespace PennyPet
                 PetForm.CalculateDockDividerHeight(50) == 220 &&
                 PetForm.CalculateDockDividerHeight(500) == 500 &&
                 PetForm.CalculateDockDividerHeight(900) == 700;
+            List<Rectangle> beforeDividerLayout =
+                PetForm.CalculateUnifiedDockLayout(
+                    new Size[] { new Size(420, 300),
+                        new Size(420, 300), new Size(420, 300) },
+                    120, 80, 420);
+            List<Rectangle> afterDividerLayout =
+                PetForm.CalculateUnifiedDockLayout(
+                    new Size[] { new Size(420, 350),
+                        new Size(420, 300), new Size(420, 300) },
+                    120, 80, 420);
+            result.DividerPreservesDownstreamHeightsOk =
+                beforeDividerLayout.Count == 3 &&
+                afterDividerLayout.Count == 3 &&
+                afterDividerLayout[1].Height == 300 &&
+                afterDividerLayout[2].Height == 300 &&
+                afterDividerLayout[1].Top ==
+                    beforeDividerLayout[1].Top + 50 &&
+                afterDividerLayout[2].Top ==
+                    beforeDividerLayout[2].Top + 50;
+            List<DockWindowFacts> liveResizeStart =
+                new List<DockWindowFacts>
+                {
+                    new DockWindowFacts("a", 100, 100, 420, 300, true, true),
+                    new DockWindowFacts("b", 100, 400, 420, 300, true, true),
+                    new DockWindowFacts("c", 100, 700, 420, 300, true, true),
+                    new DockWindowFacts("d", 100, 1000, 420, 300, true, true)
+                };
+            int liveSourceHeight = 0;
+            List<DockLayoutTarget> liveTargets = null;
+            int[] liveCycle = { 450, 250, 600, 300 };
+            for (int repeat = 0; repeat < 50; repeat++)
+                foreach (int requested in liveCycle)
+                    liveTargets = PetForm.CalculateDockMemberResizeTargets(
+                        liveResizeStart, "b", requested,
+                        out liveSourceHeight);
+            result.DividerLiveSessionTargetsOk =
+                liveSourceHeight == 300 && liveTargets.Count == 2 &&
+                liveTargets.TrueForAll(target => target.NoteId != "b" &&
+                    target.Height == 300 && target.X == 100 &&
+                    target.Width == 420 && target.TopMost) &&
+                liveTargets[0].NoteId == "c" && liveTargets[0].Y == 700 &&
+                liveTargets[1].NoteId == "d" && liveTargets[1].Y == 1000;
             result.WideNarrowDockingOk = PetForm.CanDockBelow(
                 new Rectangle(80, 400, 900, 300),
                 new Rectangle(400, 100, 280, 300), 20) &&
@@ -1232,7 +1709,7 @@ namespace PennyPet
                 recoveredSecondary.Y <= 1008;
             result.ExecutorNeutralDockVisualSeamOk =
                 PetForm.CalculateDockVisualSeam(new DockWindowFacts(
-                    "hosted-or-legacy", -860, 140, 420, 310, true, true)) ==
+                    "hosted-note", -860, 140, 420, 310, true, true)) ==
                     new Rectangle(-860, 447, 420, 6) &&
                 PetForm.CalculateDockVisualSeam(null).IsEmpty;
             return result;
@@ -1594,13 +2071,12 @@ namespace PennyPet
         {
             StickySideTabCheckResult result = new StickySideTabCheckResult();
             Rectangle workArea = new Rectangle(0, 0, 1920, 1080);
-            int leftCount = StickyNoteTabsForm.CalculateLeftCount(9, 208,
-                workArea);
-            result.OverflowOk = leftCount >= 4 && leftCount < 9 &&
-                9 - leftCount > 0 &&
+            int leftCount = StickyNoteTabsForm.CalculateLeftCount(9);
+            result.OverflowOk = leftCount == 5 &&
+                9 - leftCount == 4 &&
                 StickyNoteTabsForm.ScreenCapacity(workArea) >= 9 - leftCount;
             result.DragPreviewOk =
-                StickyNoteTabsForm.PreviewInsertionGap >= 12 &&
+                StickyNoteTabsForm.PreviewInsertionGap >= 10 &&
                 StickyNoteTabsForm.DragSourceVisualOffset >= 6 &&
                 StickyNoteTabsForm.DragSourceVisualOffset <= 12 &&
                 StickyNoteTabsForm.PetGap == -20 &&
@@ -1615,40 +2091,43 @@ namespace PennyPet
                 StickyNoteTabsForm.PreviewTargetTop(0, 2, 0) ==
                     StickyNoteTabsForm.PreviewInsertionGap;
             StickyTabDropSession dropSession = new StickyTabDropSession();
-            StickyNoteData dropNote = new StickyNoteData();
+            string dropNoteId = "drop-note";
             object dropSource = new object();
             int dropCommits = 0;
-            dropSession.Begin(dropNote, dropSource);
-            bool dropQueued = dropSession.QueueCommit(dropNote,
+            dropSession.Begin(dropNoteId, dropSource);
+            bool dropQueued = dropSession.QueueCommit(dropNoteId,
                 delegate { dropCommits++; });
             result.DeferredDropCommitOk = dropQueued && dropCommits == 0 &&
                 dropSession.IsSource(dropSource) &&
-                dropSession.Complete(dropNote) && dropCommits == 1 &&
-                dropSession.CurrentNote == null &&
-                !dropSession.Complete(dropNote);
+                dropSession.Complete(dropNoteId) && dropCommits == 1 &&
+                String.IsNullOrEmpty(dropSession.ActiveNoteId) &&
+                !dropSession.Complete(dropNoteId);
             StickyNoteData previewNote = new StickyNoteData();
             StickyNoteData boundaryNote = new StickyNoteData();
             StickyNoteData targetNote = new StickyNoteData();
+            SideTabSnapshot previewItem = SideTabSnapshot.FromData(previewNote);
+            SideTabSnapshot boundaryItem = SideTabSnapshot.FromData(boundaryNote);
+            SideTabSnapshot targetItem = SideTabSnapshot.FromData(targetNote);
             using (StickyNoteTabsForm left = new StickyNoteTabsForm(
                 StickyTabSide.Left, delegate(string noteId) { }))
             using (StickyNoteTabsForm right = new StickyNoteTabsForm(
                 StickyTabSide.Right, delegate(string noteId) { }))
             {
-                left.SetNotes(new List<StickyNoteData> { previewNote }, 0);
-                right.SetNotes(new List<StickyNoteData>
-                    { boundaryNote, targetNote }, 1);
+                left.SetNotes(new List<SideTabSnapshot> { previewItem }, 0);
+                right.SetNotes(new List<SideTabSnapshot>
+                    { boundaryItem, targetItem }, 1);
                 left.Hide();
                 right.Hide();
-                StickyNoteTabsForm.BeginDragSession(previewNote, left);
-                left.ShowDropPreviewForTest(previewNote, 0);
+                StickyNoteTabsForm.BeginDragSession(previewNote.Id, left);
+                left.ShowDropPreviewForTest(previewNote.Id, 0);
                 bool leftWasTarget = left.HasDropPreviewForTest;
-                right.ShowDropPreviewForTest(previewNote, 2);
+                right.ShowDropPreviewForTest(previewNote.Id, 2);
                 result.ExplicitSourceKeepsTargetFirstOk =
-                    right.TabTopForTest(targetNote) == 0 &&
-                    !right.TabVisibleForTest(boundaryNote) &&
-                    left.HasBoundaryRolloverForTest(boundaryNote, false);
+                    right.TabTopForTest(targetNote.Id) == 0 &&
+                    !right.TabVisibleForTest(boundaryNote.Id) &&
+                    left.HasBoundaryRolloverForTest(boundaryNote.Id, false);
                 result.TargetNeverMarkedAsSourceOk =
-                    !right.HasDragSourceVisualForTest(previewNote);
+                    !right.HasDragSourceVisualForTest(previewNote.Id);
                 result.ExclusiveCanvasStateOk =
                     left.HasStableDragCanvasForTest &&
                     right.HasStableDragCanvasForTest;
@@ -1658,58 +2137,62 @@ namespace PennyPet
                     result.ExplicitSourceKeepsTargetFirstOk &&
                     result.TargetNeverMarkedAsSourceOk &&
                     result.ExclusiveCanvasStateOk &&
-                    left.HasDragSourceVisualForTest(previewNote);
-                StickyNoteTabsForm.EndDragSession(previewNote);
+                    left.HasDragSourceVisualForTest(previewNote.Id);
+                StickyNoteTabsForm.EndDragSession(previewNote.Id);
                 result.PreviewClearsBothSidesOk = targetIsExclusive &&
                     !left.HasDropPreviewForTest &&
                     !right.HasDropPreviewForTest &&
                     left.HasStableDragCanvasForTest &&
                     right.HasStableDragCanvasForTest &&
-                    right.TabVisibleForTest(boundaryNote) &&
-                    !left.HasBoundaryRolloverForTest(boundaryNote, false) &&
-                    !left.HasDragSourceVisualForTest(previewNote);
-                StickyNoteTabsForm.BeginDragSession(previewNote, left);
-                right.ShowDropPreviewForTest(previewNote, 0);
+                    right.TabVisibleForTest(boundaryNote.Id) &&
+                    !left.HasBoundaryRolloverForTest(boundaryNote.Id, false) &&
+                    !left.HasDragSourceVisualForTest(previewNote.Id);
+                StickyNoteTabsForm.BeginDragSession(previewNote.Id, left);
+                right.ShowDropPreviewForTest(previewNote.Id, 0);
                 result.BoundaryEdgeDropOk =
-                    right.TabVisibleForTest(boundaryNote) &&
-                    !left.HasBoundaryRolloverForTest(boundaryNote, false) &&
-                    left.HasDragSourceVisualForTest(previewNote);
-                StickyNoteTabsForm.EndDragSession(previewNote);
+                    right.TabVisibleForTest(boundaryNote.Id) &&
+                    !left.HasBoundaryRolloverForTest(boundaryNote.Id, false) &&
+                    left.HasDragSourceVisualForTest(previewNote.Id);
+                StickyNoteTabsForm.EndDragSession(previewNote.Id);
             }
             StickyNoteData reverseTop = new StickyNoteData();
             StickyNoteData reverseBoundary = new StickyNoteData();
             StickyNoteData reverseSource = new StickyNoteData();
             StickyNoteData reverseTail = new StickyNoteData();
+            SideTabSnapshot reverseTopItem = SideTabSnapshot.FromData(reverseTop);
+            SideTabSnapshot reverseBoundaryItem = SideTabSnapshot.FromData(reverseBoundary);
+            SideTabSnapshot reverseSourceItem = SideTabSnapshot.FromData(reverseSource);
+            SideTabSnapshot reverseTailItem = SideTabSnapshot.FromData(reverseTail);
             using (StickyNoteTabsForm left = new StickyNoteTabsForm(
                 StickyTabSide.Left, delegate(string noteId) { }))
             using (StickyNoteTabsForm right = new StickyNoteTabsForm(
                 StickyTabSide.Right, delegate(string noteId) { }))
             {
-                left.SetNotes(new List<StickyNoteData>
-                    { reverseTop, reverseBoundary }, 0);
-                right.SetNotes(new List<StickyNoteData>
-                    { reverseSource, reverseTail }, 2);
+                left.SetNotes(new List<SideTabSnapshot>
+                    { reverseTopItem, reverseBoundaryItem }, 0);
+                right.SetNotes(new List<SideTabSnapshot>
+                    { reverseSourceItem, reverseTailItem }, 2);
                 left.Hide();
                 right.Hide();
-                StickyNoteTabsForm.BeginDragSession(reverseSource, right);
-                left.ShowDropPreviewForTest(reverseSource, 1);
+                StickyNoteTabsForm.BeginDragSession(reverseSource.Id, right);
+                left.ShowDropPreviewForTest(reverseSource.Id, 1);
                 result.ReverseBoundaryRolloverOk =
-                    left.TabTopForTest(reverseTop) == 0 &&
-                    !left.TabVisibleForTest(reverseBoundary) &&
-                    right.HasBoundaryRolloverForTest(reverseBoundary, true) &&
+                    left.TabTopForTest(reverseTop.Id) == 0 &&
+                    !left.TabVisibleForTest(reverseBoundary.Id) &&
+                    right.HasBoundaryRolloverForTest(reverseBoundary.Id, true) &&
                     right.HasStableDragCanvasForTest;
-                StickyNoteTabsForm.EndDragSession(reverseSource);
+                StickyNoteTabsForm.EndDragSession(reverseSource.Id);
                 result.ReverseBoundaryRolloverOk =
                     result.ReverseBoundaryRolloverOk &&
-                    left.TabVisibleForTest(reverseBoundary) &&
-                    !right.HasBoundaryRolloverForTest(reverseBoundary, true);
-                StickyNoteTabsForm.BeginDragSession(reverseSource, right);
-                left.ShowDropPreviewForTest(reverseSource, 2);
+                    left.TabVisibleForTest(reverseBoundary.Id) &&
+                    !right.HasBoundaryRolloverForTest(reverseBoundary.Id, true);
+                StickyNoteTabsForm.BeginDragSession(reverseSource.Id, right);
+                left.ShowDropPreviewForTest(reverseSource.Id, 2);
                 result.BoundaryEdgeDropOk = result.BoundaryEdgeDropOk &&
-                    left.TabVisibleForTest(reverseBoundary) &&
-                    !right.HasBoundaryRolloverForTest(reverseBoundary, true) &&
-                    right.HasDragSourceVisualForTest(reverseSource);
-                StickyNoteTabsForm.EndDragSession(reverseSource);
+                    left.TabVisibleForTest(reverseBoundary.Id) &&
+                    !right.HasBoundaryRolloverForTest(reverseBoundary.Id, true) &&
+                    right.HasDragSourceVisualForTest(reverseSource.Id);
+                StickyNoteTabsForm.EndDragSession(reverseSource.Id);
             }
             int fullOverlap = StickyNoteTabsForm.PetOverlapForWidth(192);
             int doubleOverlap = StickyNoteTabsForm.PetOverlapForWidth(384);
@@ -1722,28 +2205,82 @@ namespace PennyPet
             result.VectorIconColorOk = ink.ToArgb() != Color.Black.ToArgb() &&
                 ink.GetBrightness() < paper.GetBrightness();
             using (StickyNoteTabControl tab = new StickyNoteTabControl(
-                restoredNote, StickyTabSide.Left,
+                SideTabSnapshot.FromData(restoredNote), StickyTabSide.Left,
                 delegate(string noteId) { },
-                delegate(string noteId) { }))
+                delegate(string noteId) { }, SideTabPhysicalMetrics.ForDpi(96)))
                 result.DeleteCommandOk = tab.HasDeleteCommand;
             result.ZOrderPolicyOk =
                 StickyNoteWindowRules.ShouldKeepSideTabsTopMost(false) &&
-                StickyNoteWindowRules.ShouldKeepSideTabsTopMost(true);
+                !StickyNoteWindowRules.ShouldKeepSideTabsTopMost(true);
             const int layoutNoteCount = 14;
-            int layoutLeftCount = StickyNoteTabsForm.CalculateLeftCount(
-                layoutNoteCount, 208, workArea);
-            Rectangle shortWorkArea = new Rectangle(0, 0, 1920, 280);
-            int shortLeftCount = StickyNoteTabsForm.CalculateLeftCount(
-                layoutNoteCount, 208,
-                shortWorkArea);
+            int balancedLeft = StickyNoteTabsForm.CalculateLeftCount(
+                layoutNoteCount);
             result.LayoutInvalidationOk =
-                StickyNoteTabsForm.IsLayoutSplitCurrent(layoutLeftCount,
-                    layoutNoteCount - layoutLeftCount, 208, workArea) &&
-                !StickyNoteTabsForm.IsLayoutSplitCurrent(layoutLeftCount,
-                    layoutNoteCount - layoutLeftCount, 208, shortWorkArea) &&
-                StickyNoteTabsForm.IsLayoutSplitCurrent(shortLeftCount,
-                    layoutNoteCount - shortLeftCount, 208, shortWorkArea);
+                StickyNoteTabsForm.IsLayoutSplitCurrent(balancedLeft,
+                    layoutNoteCount - balancedLeft) &&
+                !StickyNoteTabsForm.IsLayoutSplitCurrent(balancedLeft + 1,
+                    layoutNoteCount - balancedLeft - 1) &&
+                typeof(StickyNoteTabsForm).GetMethod(
+                    "CalculateLeftCount",
+                    BindingFlags.Static | BindingFlags.NonPublic,
+                    null, new Type[] { typeof(int) }, null) != null &&
+                typeof(StickyNoteTabsForm).GetMethod(
+                    "PreferredLeftCapacity") == null;
+            result.LayoutInvalidationOk &= RunSideTabPhysicalProjectionChecks();
             return result;
+        }
+
+        private static bool RunSideTabPhysicalProjectionChecks()
+        {
+            List<SideTabSnapshot> notes = new List<SideTabSnapshot>();
+            for (int index = 0; index < 3; index++)
+                notes.Add(SideTabSnapshot.FromData(new StickyNoteData()));
+            using (StickyNoteTabsForm tabs = new StickyNoteTabsForm(
+                StickyTabSide.Left, delegate(string id) { }))
+            {
+                tabs.Location = new Point(-32000, -32000);
+                tabs.Opacity = 0;
+                tabs.SetNotes(notes);
+                tabs.Hide();
+                Control first = tabs.Controls[0];
+                // Exercise repeated live control projection, not just constants.
+                for (int round = 0; round < 20; round++)
+                foreach (int dpi in new[] { 96, 120, 144, 192, 96 })
+                {
+                    SideTabPhysicalMetrics metrics = SideTabPhysicalMetrics.ForDpi(dpi);
+                    tabs.ApplyPhysicalMetrics(metrics);
+                    int row = metrics.Height + metrics.Gap;
+                    if (tabs.AutoScaleMode != AutoScaleMode.None ||
+                        tabs.ClientSize != new Size(metrics.Width,
+                            3 * row - metrics.Gap) ||
+                        !Object.ReferenceEquals(first, tabs.Controls[0])) return false;
+                    foreach (Control control in tabs.Controls)
+                    {
+                        StickyNoteTabControl tab = control as StickyNoteTabControl;
+                        if (tab == null || tab.Bounds != new Rectangle(
+                            0, tab.ListIndex * row, metrics.Width, metrics.Height))
+                            return false;
+                        if (tab.Font.Unit != GraphicsUnit.Pixel ||
+                            Math.Abs(tab.Font.Size - 8.5F * dpi / 72F) > 0.001F ||
+                            tab.Font.Style != FontStyle.Bold) return false;
+                        Font sameDpiFont = tab.Font;
+                        tab.ApplyPhysicalMetrics(SideTabPhysicalMetrics.ForDpi(dpi));
+                        if (!Object.ReferenceEquals(sameDpiFont, tab.Font)) return false;
+                    }
+                    if (StickyNoteTabsForm.CalculateDropIndex(row * 2, 3, metrics) != 2 ||
+                        StickyNoteTabsForm.PreviewTargetTop(1, -1, 1, metrics) !=
+                            row + metrics.PreviewInsertionGap) return false;
+                    tabs.ShowDropPreviewForTest(notes[0].NoteId, 2);
+                    if (!tabs.HasDropPreviewForTest) return false;
+                    SideTabPhysicalMetrics next = SideTabPhysicalMetrics.ForDpi(
+                        dpi == 192 ? 96 : 192);
+                    tabs.ApplyPhysicalMetrics(next);
+                    if (tabs.HasDropPreviewForTest || tabs.Controls.Count != 3 ||
+                        tabs.ClientSize != new Size(next.Width,
+                            3 * (next.Height + next.Gap) - next.Gap)) return false;
+                }
+            }
+            return true;
         }
 
         private sealed class StickyWindowPolicyCheckResult
@@ -1753,6 +2290,9 @@ namespace PennyPet
             internal bool SoftPaletteOk;
             internal bool FullWidthNormalizationOk;
             internal bool ManagerMarqueeBatchDeleteOk;
+            internal bool ManagerSortingOk;
+            internal bool ManagerImportPreviewOk;
+            internal bool ManagerResponsiveLayoutOk;
             internal bool NativeSnapDisabledOk;
             internal bool SteadyDockGuideOk;
             internal bool OrdinaryLinkDetectionOk;
@@ -1791,12 +2331,169 @@ namespace PennyPet
                     "中文ｃｔｒｌＥｎｇｌｉｓｈ１２３") ==
                     "中文ctrlEnglish123";
             using (StickyNotesManagerForm manager = new StickyNotesManagerForm(
-                delegate { return repository.GetAll(); }, delegate { },
-                delegate(StickyNoteData note) { },
-                delegate(StickyNoteData note) { },
-                delegate(StickyNoteData note) { }))
+                 delegate { return repository.GetAll(); },
+                 new StickyNotesManagerCommands()))
+            {
+                manager.StartPosition = FormStartPosition.Manual;
+                manager.Location = new Point(-32000, -32000);
+                manager.Opacity = 0D;
+                manager.Show();
+                bool defaultLayout = manager.HasNonOverlappingLayoutForTest &&
+                    manager.ImportActionMatchesModeForTest;
+                manager.ResizeToMinimumForTest();
+                result.ManagerResponsiveLayoutOk = defaultLayout &&
+                    manager.HasNonOverlappingLayoutForTest &&
+                    manager.ImportActionMatchesModeForTest;
                 result.ManagerMarqueeBatchDeleteOk =
                     manager.SupportsMarqueeBatchDelete;
+            }
+            StickyNoteData sortAlpha = new StickyNoteData
+            {
+                Id = "manager-sort-alpha",
+                Title = "Alpha",
+                ModifiedUtcTicks = 100
+            };
+            StickyNoteData sortBeta = new StickyNoteData
+            {
+                Id = "manager-sort-beta",
+                Title = "Beta",
+                IsTodoList = true,
+                ModifiedUtcTicks = 200,
+                ReminderUtcTicks = DateTime.UtcNow.AddHours(2).Ticks
+            };
+            StickyNoteData sortGamma = new StickyNoteData
+            {
+                Id = "manager-sort-gamma",
+                Title = "Gamma",
+                IsSchedule = true,
+                ModifiedUtcTicks = 300,
+                ReminderUtcTicks = DateTime.UtcNow.AddHours(1).Ticks
+            };
+            List<StickyNoteData> sortNotes = new List<StickyNoteData>
+                { sortGamma, sortAlpha, sortBeta };
+            using (StickyNotesManagerForm manager = new StickyNotesManagerForm(
+                delegate { return sortNotes; },
+                new StickyNotesManagerCommands()))
+            {
+                manager.RefreshForTest();
+                manager.SortColumnForTest(0);
+                List<string> nameAsc = manager.DisplayedTitlesForTest();
+                manager.SortColumnForTest(0);
+                List<string> nameDesc = manager.DisplayedTitlesForTest();
+                manager.SortColumnForTest(1);
+                List<string> statusAsc = manager.DisplayedTitlesForTest();
+                manager.SortColumnForTest(2);
+                List<string> reminderAsc = manager.DisplayedTitlesForTest();
+                manager.SortColumnForTest(3);
+                List<string> modifiedAsc = manager.DisplayedTitlesForTest();
+                result.ManagerSortingOk =
+                    nameAsc.Count == 3 && nameAsc[0] == "Alpha" &&
+                    nameAsc[2] == "Gamma" && nameDesc[0] == "Gamma" &&
+                    nameDesc[2] == "Alpha" &&
+                    statusAsc[0] == "Alpha" && statusAsc[1] == "Beta" &&
+                    statusAsc[2] == "Gamma" &&
+                    reminderAsc[0] == "Gamma" &&
+                    reminderAsc[1] == "Beta" &&
+                    reminderAsc[2] == "Alpha" &&
+                    modifiedAsc[0] == "Alpha" &&
+                    modifiedAsc[2] == "Gamma" &&
+                    manager.SortIndicatorForTest(3).EndsWith("▲",
+                        StringComparison.Ordinal);
+            }
+            StickyNoteData previewCurrent = new StickyNoteData
+            {
+                Id = "manager-preview-current",
+                Title = "当前版本",
+                Text = "current"
+            };
+            StickyNoteData previewConflict = previewCurrent.CloneForPersistence();
+            previewConflict.Text = "imported";
+            StickyNoteData previewNew = new StickyNoteData
+            {
+                Id = "manager-preview-new",
+                Title = "待导入",
+                Text = "new"
+            };
+            StickyNoteData previewExisting = new StickyNoteData
+            {
+                Id = "manager-preview-existing",
+                Title = "已存在",
+                Text = "same"
+            };
+            StickyNoteData previewExistingBackup =
+                previewExisting.CloneForPersistence();
+            List<StickyNoteData> previewCurrentNotes =
+                new List<StickyNoteData> { previewCurrent, previewExisting };
+            List<StickyNoteData> previewImportedNotes =
+                new List<StickyNoteData> { previewConflict, previewNew,
+                    previewExistingBackup };
+            StickyImportMergeResult previewPlan =
+                StickyImportMergePlanner.Calculate(previewCurrentNotes,
+                    previewImportedNotes);
+            int previewDeleteCalls = 0;
+            using (StickyNotesManagerForm manager = new StickyNotesManagerForm(
+                delegate { return previewCurrentNotes; },
+                new StickyNotesManagerCommands
+                {
+                    PrepareImport = delegate
+                    {
+                        return new StickyNotesImportPreview(previewPlan,
+                            previewImportedNotes);
+                    },
+                    ConfirmImport = delegate { return false; },
+                    DeleteNote = delegate { previewDeleteCalls++; }
+                 }))
+            {
+                manager.StartPosition = FormStartPosition.Manual;
+                manager.Location = new Point(-32000, -32000);
+                manager.Opacity = 0D;
+                manager.Show();
+                manager.BeginImportPreviewForTest(
+                    new StickyNotesImportPreview(previewPlan,
+                        previewImportedNotes));
+                manager.ResizeToMinimumForTest();
+                result.ManagerResponsiveLayoutOk =
+                    result.ManagerResponsiveLayoutOk &&
+                    manager.HasNonOverlappingLayoutForTest &&
+                    manager.ImportActionMatchesModeForTest;
+                List<string> previewBeforeDelete =
+                    manager.DisplayedTitlesForTest();
+                manager.SelectAllForTest();
+                manager.DeleteKeyForTest();
+                List<string> previewAfterDelete =
+                    manager.DisplayedTitlesForTest();
+                manager.SortColumnForTest(0);
+                List<string> previewTitles = manager.DisplayedTitlesForTest();
+                manager.SortColumnForTest(1);
+                List<string> previewStatuses = manager.DisplayedStatusesForTest();
+                manager.SearchForTest("待导入");
+                List<string> searchedPreview = manager.DisplayedTitlesForTest();
+                manager.SearchForTest(String.Empty);
+                manager.CancelImportPreviewForTest();
+                result.ManagerResponsiveLayoutOk =
+                    result.ManagerResponsiveLayoutOk &&
+                    manager.HasNonOverlappingLayoutForTest &&
+                    manager.ImportActionMatchesModeForTest;
+                List<string> afterCancel = manager.DisplayedTitlesForTest();
+                result.ManagerImportPreviewOk =
+                    !manager.IsImportPreviewForTest &&
+                    previewPlan.AddedCount == 2 &&
+                    previewPlan.ConflictCount == 1 &&
+                    previewDeleteCalls == 0 &&
+                    previewBeforeDelete.Count == previewAfterDelete.Count &&
+                    previewTitles.Count == 3 &&
+                    previewTitles.Contains("待导入") &&
+                    previewTitles.Contains("当前版本") &&
+                    previewStatuses.Count == 3 &&
+                    previewStatuses[0] == "待导入" &&
+                    previewStatuses[1] == "已存在" &&
+                    previewStatuses[2] == "冲突副本" &&
+                    searchedPreview.Count == 1 &&
+                    searchedPreview[0] == "待导入" &&
+                    afterCancel.Count == 2 &&
+                    previewCurrentNotes.Count == 2 &&
+                    previewCurrentNotes[0].Text == "current";
+            }
             long styleWithMaximize = 0x00040000L | 0x00010000L;
             result.NativeSnapDisabledOk =
                 StickyNoteWindow.RemoveMaximizeStyle(styleWithMaximize) ==
@@ -1865,21 +2562,26 @@ namespace PennyPet
                 PetForm.DueReminderBubbleFontSizePoints(100) -
                 KeyboardOverlayForm.TextFontSizePoints(100)) < 0.2F;
             result.DueBubbleReplacementOk =
-                PetReminderCoordinator.ShouldReplaceBubble(
-                    true, false, false, false) &&
-                PetReminderCoordinator.ShouldReplaceBubble(
-                    true, false, true, false) &&
-                PetReminderCoordinator.ShouldReplaceBubble(
-                    true, false, false, true) &&
-                PetReminderCoordinator.ShouldReplaceBubble(
-                    false, false, false, false);
+                !PetMessagePolicy.ShouldReplace(PetMessageKind.ReminderDue,
+                    PetMessageKind.Feedback, false) &&
+                PetMessagePolicy.ShouldReplace(PetMessageKind.ReminderDue,
+                    PetMessageKind.ReminderDue, false) &&
+                PetMessagePolicy.ShouldReplace(PetMessageKind.ReminderDue,
+                    PetMessageKind.DailyGreeting, true) &&
+                PetMessagePolicy.ShouldReplace(PetMessageKind.Hover,
+                    PetMessageKind.Feedback, false) &&
+                !PetMessagePolicy.ShouldReplace(PetMessageKind.ReminderDue,
+                    PetMessageKind.DailyGreeting, false);
             result.PreAlertBubbleProtectionOk =
-                !PetReminderCoordinator.ShouldReplaceBubble(
-                    false, true, false, false) &&
-                PetReminderCoordinator.ShouldReplaceBubble(
-                    false, true, true, false) &&
-                PetReminderCoordinator.ShouldReplaceBubble(
-                    false, true, false, true);
+                !PetMessagePolicy.ShouldReplace(
+                    PetMessageKind.ReminderPreAlert,
+                    PetMessageKind.Feedback, false) &&
+                PetMessagePolicy.ShouldReplace(
+                    PetMessageKind.ReminderPreAlert,
+                    PetMessageKind.ReminderDue, false) &&
+                PetMessagePolicy.ShouldReplace(
+                    PetMessageKind.ReminderPreAlert,
+                    PetMessageKind.Feedback, true);
             ReminderItem expired = new ReminderItem(
                 DateTime.UtcNow.AddMinutes(-1), "已错过");
             ReminderItem future = new ReminderItem(
@@ -1899,7 +2601,8 @@ namespace PennyPet
             internal bool TextScaleChoicesOk;
             internal bool ShortcutAndRepeatOk;
             internal bool HeldKeyStableOk;
-            internal bool OwnProcessIsolationOk;
+            internal bool HookCapturePolicyOk;
+            internal bool OwnProcessEligibilityOk;
             internal bool PrivacyGenerationOk;
             internal bool FocusSnapshotIdentityOk;
             internal bool AdaptiveContrastOk;
@@ -1949,10 +2652,16 @@ namespace PennyPet
             result.HeldKeyStableOk =
                 GlobalKeyboardActivity.ShouldPublishKeyDown(false) &&
                 !GlobalKeyboardActivity.ShouldPublishKeyDown(true);
-            result.OwnProcessIsolationOk =
-                !GlobalKeyboardActivity.ShouldPublishKey(false, 42, 42) &&
-                GlobalKeyboardActivity.ShouldPublishKey(false, 42, 43) &&
-                !GlobalKeyboardActivity.ShouldPublishKey(true, 42, 43);
+            result.HookCapturePolicyOk =
+                GlobalKeyboardActivity.ShouldPublishKey(false) &&
+                !GlobalKeyboardActivity.ShouldPublishKey(true);
+            result.OwnProcessEligibilityOk =
+                !PetKeyboardPrivacyPolicy.ShouldSuppressOwnApplicationInput(
+                    false, false) &&
+                !PetKeyboardPrivacyPolicy.ShouldSuppressOwnApplicationInput(
+                    true, true) &&
+                PetKeyboardPrivacyPolicy.ShouldSuppressOwnApplicationInput(
+                    true, false);
             result.PrivacyGenerationOk = PetForm.IsCurrentPrivacyScan(12, 12) &&
                 !PetForm.IsCurrentPrivacyScan(12, 13);
             KeyboardFocusSnapshot captured = new KeyboardFocusSnapshot(
@@ -1989,7 +2698,8 @@ namespace PennyPet
             internal bool GuitarFailureProbabilityReducedOk;
             internal bool ManualRandomPoolOk;
             internal bool ManualSpecialProbabilityReducedOk;
-            internal bool ManualCooldownOk;
+            internal bool ManualFullCycleGuardOk;
+            internal bool PokeBurstOk;
             internal bool ClickDragThresholdOk;
         }
 
@@ -2077,14 +2787,14 @@ namespace PennyPet
                 manualRow = next;
             }
             result.ManualRandomPoolOk = manualNoImmediateRepeat &&
-                manualRows.Count == 7 &&
+                manualRows.Count == 6 &&
                 PetAnimationController.IsManualAnimationRow(0) &&
                 PetAnimationController.IsManualAnimationRow(4) &&
                 PetAnimationController.IsManualAnimationRow(5) &&
                 PetAnimationController.IsManualAnimationRow(6) &&
                 PetAnimationController.IsManualAnimationRow(7) &&
                 PetAnimationController.IsManualAnimationRow(8) &&
-                PetAnimationController.IsManualAnimationRow(9) &&
+                !PetAnimationController.IsManualAnimationRow(9) &&
                 !PetAnimationController.IsManualAnimationRow(1) &&
                 !PetAnimationController.IsManualAnimationRow(2) &&
                 !PetAnimationController.IsManualAnimationRow(3);
@@ -2102,24 +2812,62 @@ namespace PennyPet
                 if (selected == 8) manualSecondThought++;
             }
             result.ManualSpecialProbabilityReducedOk =
-                manualFirstThought >= 1700 && manualFirstThought <= 2300 &&
-                manualFailedGuitar >= 1700 && manualFailedGuitar <= 2300 &&
-                manualSecondThought >= 1700 && manualSecondThought <= 2300;
-            DateTime now = DateTime.UtcNow;
-            result.ManualCooldownOk =
-                PetAnimationController.ManualAnimationCooldownMilliseconds == 600 &&
-                PetAnimationController.ManualAnimationClickReady(
-                    now, DateTime.MinValue) &&
-                !PetAnimationController.ManualAnimationClickReady(
-                    now, now.AddMilliseconds(600)) &&
-                PetAnimationController.ManualAnimationClickReady(
-                    now.AddMilliseconds(600), now.AddMilliseconds(600));
+                manualFirstThought >= 2200 && manualFirstThought <= 2900 &&
+                manualFailedGuitar >= 2200 && manualFailedGuitar <= 2900 &&
+                manualSecondThought >= 2200 && manualSecondThought <= 2900;
+            PetAnimationController interaction =
+                new PetAnimationController();
+            bool firstOrdinary = interaction.TryStartOrdinaryPoke(4);
+            bool blockedOrdinary = interaction.TryStartOrdinaryPoke(6);
+            bool easterOverride = interaction.TryStartEasterEgg(5);
+            interaction.CompleteInteractionAnimation();
+            bool nextCycle = interaction.TryStartOrdinaryPoke(6);
+            result.ManualFullCycleGuardOk = firstOrdinary &&
+                !blockedOrdinary && easterOverride &&
+                interaction.InteractionAnimationRow == 6 && nextCycle;
+            DateTime burstStart = new DateTime(2035, 1, 1, 0, 0, 0,
+                DateTimeKind.Utc);
+            PetPokeBurstTracker burst = new PetPokeBurstTracker();
+            bool earlyTrigger = false;
+            for (int poke = 1; poke < PetPokeBurstTracker.TargetCount; poke++)
+                earlyTrigger |= burst.RegisterPoke(
+                    burstStart.AddMilliseconds((poke - 1) * 100));
+            bool targetTrigger = burst.RegisterPoke(
+                burstStart.AddMilliseconds(4900));
+            bool repeatedTrigger = burst.RegisterPoke(
+                burstStart.AddMilliseconds(5000));
+            PetPokeBurstTracker resetBurst = new PetPokeBurstTracker();
+            for (int poke = 1; poke < PetPokeBurstTracker.TargetCount; poke++)
+                resetBurst.RegisterPoke(
+                    burstStart.AddMilliseconds((poke - 1) * 100));
+            bool afterPause = resetBurst.RegisterPoke(
+                burstStart.AddMilliseconds(5201));
+            result.PokeBurstOk = !earlyTrigger && targetTrigger &&
+                !repeatedTrigger && !afterPause;
             result.ClickDragThresholdOk =
                 !PetAnimationController.MovementStartsDrag(5, 0) &&
                 !PetAnimationController.MovementStartsDrag(4, 4) &&
                 PetAnimationController.MovementStartsDrag(6, 0) &&
                 PetAnimationController.MovementStartsDrag(5, 4);
             return result;
+        }
+
+        private sealed class SequenceRandom : Random
+        {
+            private readonly int[] _values;
+            private int _index;
+
+            internal SequenceRandom(params int[] values)
+            {
+                _values = values ?? new int[0];
+            }
+
+            public override int Next(int maxValue)
+            {
+                if (maxValue <= 0) return 0;
+                int value = _index < _values.Length ? _values[_index++] : 0;
+                return (value & Int32.MaxValue) % maxValue;
+            }
         }
 
         private sealed class BubbleCheckResult
@@ -2131,11 +2879,558 @@ namespace PennyPet
             internal bool DragSuppressionOk;
             internal bool SilentModeOk;
             internal bool PositionMathOk;
+            internal bool SingleMessageKindOk;
+            internal bool ReplacementClosesOldFormOk;
+            internal bool ProtectedMessageOk;
+            internal bool DeferredMessageSemanticsOk;
+            internal bool PendingRetryOk;
+            internal bool SmallTalkFeedbackLifecycleOk;
+            internal bool ReminderPriorityRegressionOk;
+            internal bool SingleRestoreAfterCloseOk;
+            internal bool AdaptiveSizingOk;
+            internal bool UpdateTextRelayoutOk;
+            internal bool DailyFirstPokeOk;
+            internal bool DailyRejectedRetryOk;
+            internal bool DailyGreetingRequestOk;
+            internal bool EasterEggRequestOk;
+            internal bool MinimumReadableOk;
+            internal bool ReadabilityBypassOk;
+            internal bool SmallTalkRequestOk;
+            internal bool SmallTalkCoordinatorCooldownOk;
+            internal bool SmallTalkCoordinatorRejectedRetryOk;
+            internal bool SmallTalkCoordinatorSilentModeOk;
+            internal bool SmallTalkCoordinatorReminderRetryOk;
+            internal bool SolarTermOk;
+            internal bool DailyContentPreferencesOk;
+            internal bool CuratedCatalogOk;
+            internal bool DailySelectorBudgetOk;
+            internal bool DailyBriefingBudgetOk;
+            internal bool SentenceEndingPolicyOk;
+            internal bool DailyBriefingCoordinatorOk;
+            internal bool DailyBriefingRejectedRetryOk;
+            internal bool DailyBriefingSameDaySwitchOk;
+            internal bool AlmanacCalculatorOk;
+            internal bool AlmanacSemanticOk;
+            internal bool AlmanacWordingOk;
+        }
+
+        private sealed class WeatherCheckResult
+        {
+            internal bool ForecastFixtureParsingOk;
+            internal bool ForecastRequestShapeOk;
+            internal bool GeocodingRequestAndSelectionOk;
+            internal bool NoStartupRequestOk;
+            internal bool SameDayCacheAndInFlightOk;
+            internal bool BoundedCacheInvalidationOk;
+            internal bool FailureCooldownOk;
+            internal bool MeaningAndWordingOk;
+            internal bool DailyCoordinatorWeatherOk;
+            internal bool DailyCoordinatorFailureFallbackOk;
+            internal bool DailyCoordinatorInFlightOk;
+            internal bool DailyCoordinatorPreferenceSnapshotOk;
+            internal bool RejectedBubbleReusesForecastOk;
+            internal bool LocationDialogLayoutOk;
+        }
+
+        private sealed class WeatherFixtureHandler : HttpMessageHandler
+        {
+            private readonly string _forecastJson;
+            private readonly bool _failForecast;
+
+            internal WeatherFixtureHandler(string forecastJson,
+                bool failForecast)
+            {
+                _forecastJson = forecastJson;
+                _failForecast = failForecast;
+            }
+
+            internal int RequestCount;
+            internal int ForecastCount;
+            internal int GeocodingCount;
+
+            protected override Task<HttpResponseMessage> SendAsync(
+                HttpRequestMessage request,
+                CancellationToken cancellationToken)
+            {
+                Interlocked.Increment(ref RequestCount);
+                if (request.RequestUri.Host.StartsWith("geocoding-api.",
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    Interlocked.Increment(ref GeocodingCount);
+                    return Task.FromResult(JsonResponse(
+                        "{\"results\":[{\"name\":\"武汉\"," +
+                        "\"admin1\":\"湖北\",\"country\":\"中国\"," +
+                        "\"latitude\":30.5928,\"longitude\":114.3055," +
+                        "\"timezone\":\"Asia/Shanghai\"}]}"));
+                }
+                Interlocked.Increment(ref ForecastCount);
+                if (_failForecast)
+                    return Task.FromResult(new HttpResponseMessage(
+                        System.Net.HttpStatusCode.ServiceUnavailable));
+                return Task.FromResult(JsonResponse(_forecastJson));
+            }
+
+            private static HttpResponseMessage JsonResponse(string json)
+            {
+                HttpResponseMessage response = new HttpResponseMessage(
+                    System.Net.HttpStatusCode.OK);
+                response.Content = new StringContent(json, Encoding.UTF8,
+                    "application/json");
+                return response;
+            }
+        }
+
+        private static WeatherCheckResult RunWeatherChecks()
+        {
+            WeatherCheckResult result = new WeatherCheckResult();
+            string fixture = ReadWeatherFixture("weather-rain-later.json");
+
+            DateTime date = new DateTime(2026, 9, 1);
+            DateTimeOffset cityNow = new DateTimeOffset(2026, 9, 1, 8, 0, 0,
+                TimeSpan.FromHours(8));
+            WeatherForecastWindow parsed = new OpenMeteoForecastParser()
+                .Parse(fixture, cityNow);
+            result.ForecastFixtureParsingOk = parsed.Yesterday != null &&
+                parsed.Today != null && parsed.Tomorrow != null &&
+                parsed.Today.MinimumTemperatureC == 22D &&
+                parsed.Today.MaximumTemperatureC == 27D &&
+                Math.Abs(parsed.Today.TotalPrecipitationMm - 4.2D) < 0.001D &&
+                parsed.Today.MaximumPrecipitationProbability == 85D &&
+                parsed.Today.FirstLikelyPrecipitationHour == 16 &&
+                parsed.Today.LastLikelyPrecipitationHour == 16 &&
+                parsed.Today.LikelyPrecipitationHours == 1;
+
+            WeatherLocation location;
+            WeatherLocation.TryCreate("武汉", "湖北", "中国", 30.5928,
+                114.3055, "Asia/Shanghai", out location);
+            using (PetWeatherSource dialogSource = new PetWeatherSource())
+            using (WeatherLocationDialog dialog =
+                new WeatherLocationDialog(dialogSource))
+                result.LocationDialogLayoutOk =
+                    dialog.UsesCompactFormattedResultsForTest(location);
+            string forecastUrl = Uri.UnescapeDataString(
+                OpenMeteoForecastClient.BuildUri(location).AbsoluteUri);
+            result.ForecastRequestShapeOk = forecastUrl.StartsWith(
+                    OpenMeteoForecastClient.Endpoint,
+                    StringComparison.Ordinal) &&
+                forecastUrl.Contains("hourly=" + String.Join(",",
+                    OpenMeteoForecastClient.HourlyVariables)) &&
+                OpenMeteoForecastClient.HourlyVariables.Length == 8 &&
+                forecastUrl.Contains("past_days=1") &&
+                forecastUrl.Contains("forecast_days=2") &&
+                forecastUrl.Contains("timezone=Asia/Shanghai") &&
+                forecastUrl.Contains("temperature_unit=celsius") &&
+                forecastUrl.Contains("wind_speed_unit=kmh") &&
+                forecastUrl.Contains("precipitation_unit=mm") &&
+                forecastUrl.IndexOf("apikey", StringComparison.OrdinalIgnoreCase)
+                    < 0;
+
+            DateTimeOffset handlerClock = new DateTimeOffset(2026, 9, 1, 0, 0, 0,
+                TimeSpan.Zero);
+            WeatherFixtureHandler handler = new WeatherFixtureHandler(
+                fixture, false);
+            using (PetWeatherSource source = new PetWeatherSource(
+                new HttpClient(handler), delegate { return handlerClock; }))
+            {
+                result.NoStartupRequestOk = handler.RequestCount == 0;
+                IReadOnlyList<WeatherLocation> locations = source
+                    .SearchLocationsAsync("武汉").GetAwaiter().GetResult();
+                result.GeocodingRequestAndSelectionOk =
+                    handler.GeocodingCount == 1 && locations.Count == 1 &&
+                    locations[0].DisplayName == "武汉 · 湖北 · 中国" &&
+                    locations[0].Timezone == "Asia/Shanghai" &&
+                    OpenMeteoGeocodingClient.BuildUri("武汉").Query.Contains(
+                        "count=5") &&
+                    OpenMeteoGeocodingClient.BuildUri("武汉").Query.Contains(
+                        "language=zh") &&
+                    OpenMeteoGeocodingClient.BuildUri("武汉").Query.Contains(
+                        "format=json") &&
+                    OpenMeteoGeocodingClient.BuildUri("武汉").Query.IndexOf(
+                        "apikey", StringComparison.OrdinalIgnoreCase) < 0;
+                Task<WeatherForecastWindow> first = source.GetForecastAsync(
+                    location);
+                Task<WeatherForecastWindow> concurrent =
+                    source.GetForecastAsync(location);
+                WeatherForecastWindow firstValue = first.GetAwaiter()
+                    .GetResult();
+                WeatherForecastWindow cached = source.GetForecastAsync(
+                    location).GetAwaiter().GetResult();
+                result.SameDayCacheAndInFlightOk =
+                    Object.ReferenceEquals(first, concurrent) &&
+                    Object.ReferenceEquals(firstValue, cached) &&
+                    handler.ForecastCount == 1 &&
+                    source.ForecastRequestCountForTest == 1;
+                handlerClock = new DateTimeOffset(2026, 9, 1, 16, 0, 0,
+                    TimeSpan.Zero);
+                source.GetForecastAsync(location).GetAwaiter().GetResult();
+                bool refetchedAfterCityDayChange = handler.ForecastCount == 2;
+                source.GetForecastAsync(location).GetAwaiter().GetResult();
+                bool reusedAfterCityDayChange = handler.ForecastCount == 2;
+                source.InvalidateCache();
+                source.GetForecastAsync(location).GetAwaiter().GetResult();
+                result.BoundedCacheInvalidationOk =
+                    refetchedAfterCityDayChange &&
+                    reusedAfterCityDayChange && handler.ForecastCount == 3;
+            }
+
+            WeatherFixtureHandler failing = new WeatherFixtureHandler(
+                fixture, true);
+            using (PetWeatherSource source = new PetWeatherSource(
+                new HttpClient(failing), delegate
+                {
+                    return new DateTimeOffset(2026, 9, 1, 0, 0, 0,
+                        TimeSpan.Zero);
+                }))
+            {
+                WeatherForecastWindow failed = source.GetForecastAsync(
+                    location).GetAwaiter().GetResult();
+                WeatherForecastWindow cooledDown = source.GetForecastAsync(
+                    location).GetAwaiter().GetResult();
+                result.FailureCooldownOk = failed == null &&
+                    cooledDown == null && failing.ForecastCount == 1;
+            }
+
+            string[] fixtureNames =
+            {
+                "weather-clear.json", "weather-rain-later.json",
+                "weather-cooling.json", "weather-rain-cooling.json",
+                "weather-windy.json", "weather-snow.json"
+            };
+            WeatherMeaning?[] expectedMeanings =
+            {
+                null, WeatherMeaning.RainLater, WeatherMeaning.Cooling,
+                WeatherMeaning.RainAndCooling, WeatherMeaning.Windy,
+                WeatherMeaning.Snow
+            };
+            bool meaningsOk = true;
+            for (int i = 0; i < fixtureNames.Length; i++)
+            {
+                WeatherForecastWindow window = new OpenMeteoForecastParser()
+                    .Parse(ReadWeatherFixture(fixtureNames[i]), cityNow);
+                meaningsOk &= WeatherMeaningRules.Select(window) ==
+                    expectedMeanings[i];
+            }
+            foreach (WeatherMeaning meaning in Enum.GetValues(
+                typeof(WeatherMeaning)))
+            {
+                HashSet<string> variants = new HashSet<string>();
+                for (int day = 0; day < 365; day++)
+                {
+                    WeatherDailySelection selected =
+                        WeatherWordingCatalog.Select(meaning,
+                            date.AddDays(day), location.StableKey);
+                    variants.Add(selected.Text);
+                    meaningsOk &= selected.Text == WeatherWordingCatalog
+                        .Select(meaning, date.AddDays(day),
+                            location.StableKey).Text &&
+                        selected.Text.Length <= 60;
+                }
+                int required = meaning == WeatherMeaning.RainLater ||
+                    meaning == WeatherMeaning.Cooling ||
+                    meaning == WeatherMeaning.Windy ||
+                    meaning == WeatherMeaning.Hot ? 5 : 3;
+                meaningsOk &= variants.Count >= required;
+            }
+            result.MeaningAndWordingOk = meaningsOk;
+
+            WeatherForecastWindow rainLater = new OpenMeteoForecastParser()
+                .Parse(fixture, cityNow);
+            string lastDate = String.Empty;
+            string shownText = null;
+            int dailyForecastCalls = 0;
+            int dailyShowCount = 0;
+            PetDailyContentCoordinator daily =
+                new PetDailyContentCoordinator(
+                    delegate { return lastDate; },
+                    delegate { return false; }, delegate { return true; },
+                    delegate { return false; },
+                    delegate { return true; },
+                    delegate { return true; },
+                    delegate { return location; },
+                    delegate
+                    {
+                        dailyForecastCalls++;
+                        return Task.FromResult(rainLater);
+                    },
+                    delegate { return ZodiacSign.None; },
+                    delegate { return 0; },
+                    delegate { return 0; },
+                    delegate(string text)
+                    {
+                        dailyShowCount++;
+                        shownText = text;
+                        return true;
+                    },
+                    delegate(string value) { lastDate = value; });
+            bool weatherShown = RunDaily(daily,
+                new DateTimeOffset(date, TimeSpan.FromHours(8)));
+            string expectedWeather = WeatherWordingCatalog.Select(
+                WeatherMeaning.RainLater, date, location.StableKey).Text;
+            result.DailyCoordinatorWeatherOk = weatherShown &&
+                dailyForecastCalls == 1 && dailyShowCount == 1 &&
+                shownText.Contains(expectedWeather) && lastDate == "20260901";
+
+            lastDate = String.Empty;
+            shownText = null;
+            dailyForecastCalls = 0;
+            PetDailyContentCoordinator unavailable =
+                new PetDailyContentCoordinator(
+                    delegate { return lastDate; },
+                    delegate { return false; }, delegate { return true; },
+                    delegate { return false; },
+                    delegate { return true; },
+                    delegate { return true; },
+                    delegate { return location; },
+                    delegate
+                    {
+                        dailyForecastCalls++;
+                        return Task.FromResult<WeatherForecastWindow>(null);
+                    },
+                    delegate { return ZodiacSign.None; },
+                    delegate { return 0; },
+                    delegate { return 0; },
+                    delegate(string text)
+                    {
+                        shownText = text;
+                        return true;
+                    },
+                    delegate(string value) { lastDate = value; });
+            bool fallbackShown = RunDaily(unavailable,
+                new DateTimeOffset(date, TimeSpan.FromHours(8)));
+            result.DailyCoordinatorFailureFallbackOk = fallbackShown &&
+                dailyForecastCalls == 1 &&
+                !String.IsNullOrWhiteSpace(shownText) &&
+                !shownText.Contains(expectedWeather) &&
+                lastDate == "20260901";
+
+            result.DailyCoordinatorInFlightOk = Task.Run(delegate
+            {
+                string pendingDate = String.Empty;
+                int pendingFetches = 0;
+                int pendingShows = 0;
+                TaskCompletionSource<WeatherForecastWindow> pending =
+                    new TaskCompletionSource<WeatherForecastWindow>();
+                PetDailyContentCoordinator pendingDaily =
+                    new PetDailyContentCoordinator(
+                        delegate { return pendingDate; },
+                        delegate { return false; },
+                        delegate { return true; },
+                        delegate { return false; },
+                        delegate { return true; },
+                        delegate { return true; },
+                        delegate { return location; },
+                        delegate
+                        {
+                            pendingFetches++;
+                            return pending.Task;
+                        },
+                        delegate { return ZodiacSign.None; },
+                        delegate { return 0; },
+                        delegate { return 0; },
+                        delegate { pendingShows++; return true; },
+                        delegate(string value) { pendingDate = value; });
+                DateTimeOffset pendingNow = new DateTimeOffset(date,
+                    TimeSpan.FromHours(8));
+                Task<bool> firstAttempt = pendingDaily.HandlePetPokedAsync(
+                    pendingNow);
+                Task<bool> secondAttempt = pendingDaily.HandlePetPokedAsync(
+                    pendingNow.AddMinutes(1));
+                bool secondConsumed = secondAttempt.GetAwaiter().GetResult();
+                pending.SetResult(rainLater);
+                bool firstShown = firstAttempt.GetAwaiter().GetResult();
+                return secondConsumed && firstShown && pendingFetches == 1 &&
+                    pendingShows == 1 && pendingDate == "20260901";
+            }).GetAwaiter().GetResult();
+
+            result.DailyCoordinatorPreferenceSnapshotOk = Task.Run(delegate
+            {
+                int birthdayMonth = date.Month;
+                int birthdayDay = date.Day;
+                int birthdayReads = 0;
+                string snapshotText = null;
+                TaskCompletionSource<WeatherForecastWindow> pending =
+                    new TaskCompletionSource<WeatherForecastWindow>();
+                PetDailyContentCoordinator snapshotDaily =
+                    new PetDailyContentCoordinator(
+                        delegate { return String.Empty; },
+                        delegate { return false; },
+                        delegate { return true; },
+                        delegate { return false; },
+                        delegate { return false; },
+                        delegate { return true; },
+                        delegate { return location; },
+                        delegate { return pending.Task; },
+                        delegate { return ZodiacSign.None; },
+                        delegate
+                        {
+                            birthdayReads++;
+                            return birthdayMonth;
+                        },
+                        delegate
+                        {
+                            birthdayReads++;
+                            return birthdayDay;
+                        },
+                        delegate(string text)
+                        {
+                            snapshotText = text;
+                            return true;
+                        },
+                        delegate { });
+                DateTimeOffset snapshotNow = new DateTimeOffset(date,
+                    TimeSpan.FromHours(8));
+                Task<bool> attempt = snapshotDaily.HandlePetPokedAsync(
+                    snapshotNow);
+                birthdayMonth = 1;
+                birthdayDay = 1;
+                pending.SetResult(rainLater);
+                bool shown = attempt.GetAwaiter().GetResult();
+                DailyLineEntry expected = PetBirthdayWordingCatalog.Select(
+                    PetBirthdayKind.User, date);
+                return shown && birthdayReads == 2 && expected != null &&
+                    snapshotText != null && snapshotText.Contains(expected.Text);
+            }).GetAwaiter().GetResult();
+
+            result.RejectedBubbleReusesForecastOk = Task.Run(delegate
+            {
+                WeatherFixtureHandler retryHandler =
+                    new WeatherFixtureHandler(fixture, false);
+                using (PetWeatherSource retrySource = new PetWeatherSource(
+                    new HttpClient(retryHandler), delegate
+                    {
+                        return new DateTimeOffset(2026, 9, 1, 0, 0, 0,
+                            TimeSpan.Zero);
+                    }))
+                {
+                    string retryDate = String.Empty;
+                    bool accept = false;
+                    int attempts = 0;
+                    PetDailyContentCoordinator retryDaily =
+                        new PetDailyContentCoordinator(
+                            delegate { return retryDate; },
+                            delegate { return false; },
+                            delegate { return true; },
+                            delegate { return false; },
+                            delegate { return true; },
+                            delegate { return true; },
+                            delegate { return location; },
+                            delegate(WeatherLocation target)
+                            {
+                                return retrySource.GetForecastAsync(target);
+                            },
+                            delegate { return ZodiacSign.None; },
+                            delegate { return 0; },
+                            delegate { return 0; },
+                            delegate { attempts++; return accept; },
+                            delegate(string value) { retryDate = value; });
+                    DateTimeOffset retryNow = new DateTimeOffset(date,
+                        TimeSpan.FromHours(8));
+                    bool rejected = !RunDaily(retryDaily, retryNow);
+                    accept = true;
+                    bool accepted = RunDaily(retryDaily,
+                        retryNow.AddMinutes(1));
+                    return rejected && accepted && attempts == 2 &&
+                        retryHandler.ForecastCount == 1 &&
+                        retryDate == "20260901";
+                }
+            }).GetAwaiter().GetResult();
+            return result;
+        }
+
+        private static string ReadWeatherFixture(string fileName)
+        {
+            string resourceName = "PennyPet.Tests.Fixtures." + fileName;
+            using (Stream stream = Assembly.GetExecutingAssembly()
+                .GetManifestResourceStream(resourceName))
+            {
+                if (stream == null)
+                    throw new InvalidOperationException(
+                        "Missing weather fixture: " + resourceName);
+                using (StreamReader reader = new StreamReader(stream,
+                    Encoding.UTF8)) return reader.ReadToEnd();
+            }
         }
 
         private static BubbleCheckResult RunBubbleChecks()
         {
             BubbleCheckResult result = new BubbleCheckResult();
+            DateTime smallTalkStart = new DateTime(2035, 1, 1, 0, 0, 0,
+                DateTimeKind.Utc);
+            bool smallTalkSilent = false;
+            int smallTalkShowCount = 0;
+            string firstSmallTalk = null;
+            string secondSmallTalk = null;
+            PetSmallTalkCoordinator smallTalk = new PetSmallTalkCoordinator(
+                delegate { return smallTalkSilent; },
+                delegate(string text)
+                {
+                    smallTalkShowCount++;
+                    if (firstSmallTalk == null) firstSmallTalk = text;
+                    else secondSmallTalk = text;
+                    return true;
+                }, null, new SequenceRandom(0, 0, 0, 1));
+            bool firstSmallTalkShown = smallTalk.HandlePetPoked(
+                smallTalkStart);
+            bool gapBlocked = !smallTalk.HandlePetPoked(
+                smallTalkStart.AddMilliseconds(
+                    PetSmallTalkPolicy.SuccessfulGapMilliseconds - 1));
+            bool gapElapsed = smallTalk.HandlePetPoked(
+                smallTalkStart.AddMilliseconds(
+                    PetSmallTalkPolicy.SuccessfulGapMilliseconds));
+            result.SmallTalkCoordinatorCooldownOk = firstSmallTalkShown &&
+                gapBlocked && gapElapsed &&
+                smallTalkShowCount == 2 && firstSmallTalk != secondSmallTalk;
+
+            int rejectedShowCount = 0;
+            PetSmallTalkCoordinator rejectedSmallTalk =
+                new PetSmallTalkCoordinator(delegate { return false; },
+                    delegate
+                    {
+                        rejectedShowCount++;
+                        return rejectedShowCount > 1;
+                    }, null, new SequenceRandom(0, 0, 0, 0));
+            bool rejectedFirst = !rejectedSmallTalk.HandlePetPoked(
+                smallTalkStart);
+            bool rejectedRetry = rejectedSmallTalk.HandlePetPoked(
+                smallTalkStart.AddMilliseconds(1));
+            result.SmallTalkCoordinatorRejectedRetryOk = rejectedFirst &&
+                rejectedRetry && rejectedShowCount == 2;
+
+            int silentShowCount = 0;
+            smallTalkSilent = true;
+            PetSmallTalkCoordinator silentSmallTalk =
+                new PetSmallTalkCoordinator(
+                    delegate { return smallTalkSilent; },
+                    delegate
+                    {
+                        silentShowCount++;
+                        return true;
+                    }, null, new SequenceRandom(0, 0));
+            bool silentBlocked = !silentSmallTalk.HandlePetPoked(
+                smallTalkStart);
+            smallTalkSilent = false;
+            bool silentRetry = silentSmallTalk.HandlePetPoked(
+                smallTalkStart.AddMilliseconds(1));
+            result.SmallTalkCoordinatorSilentModeOk = silentBlocked &&
+                silentRetry && silentShowCount == 1;
+
+            bool reminderDue = true;
+            int reminderRejectedCount = 0;
+            PetSmallTalkCoordinator reminderRejectedSmallTalk =
+                new PetSmallTalkCoordinator(delegate { return false; },
+                    delegate
+                    {
+                        reminderRejectedCount++;
+                        return !reminderDue;
+                    }, null, new SequenceRandom(0, 0, 0, 0));
+            bool reminderRejected = !reminderRejectedSmallTalk.HandlePetPoked(
+                smallTalkStart);
+            reminderDue = false;
+            bool afterReminderShown = reminderRejectedSmallTalk.HandlePetPoked(
+                smallTalkStart.AddMilliseconds(1));
+            result.SmallTalkCoordinatorReminderRetryOk = reminderRejected &&
+                afterReminderShown && reminderRejectedCount == 2;
+
             using (SpeechBubbleForm bubble = new SpeechBubbleForm("初始", 0))
             using (SpeechBubbleForm styled = new SpeechBubbleForm(
                 "样式提醒", 0, "Microsoft YaHei UI", 24F))
@@ -2168,15 +3463,694 @@ namespace PennyPet
             result.SilentModeOk =
                 !PetForm.ShouldShowHoverBubble(true, false, false, true) &&
                 PetForm.ShouldShowHoverBubble(true, false, false, false) &&
-                PetForm.ShouldSuppressDailyBubble(true, false) &&
-                !PetForm.ShouldSuppressDailyBubble(true, true) &&
-                !PetForm.ShouldSuppressDailyBubble(false, false);
+                PetMessagePolicy.ShouldSuppress(
+                    PetMessageKind.DailyGreeting, true) &&
+                PetMessagePolicy.ShouldSuppress(
+                    PetMessageKind.Discovery, true) &&
+                !PetMessagePolicy.ShouldSuppress(
+                    PetMessageKind.Feedback, true) &&
+                !PetMessagePolicy.ShouldSuppress(
+                    PetMessageKind.ReminderDue, true);
             Point position = SpeechBubbleForm.CalculateNearLocation(
                 new Rectangle(1400, 800, 192, 208), new Size(330, 138),
                 new Rectangle(0, 0, 1920, 1080));
             result.PositionMathOk = position.X > 1000 && position.Y > 500 &&
                 position != Point.Empty;
+            bool dragging = false;
+            bool exiting = false;
+            int restoreCount = 0;
+            int closeCount = 0;
+            DateTime bubbleNow = DateTime.UtcNow;
+            using (Form owner = new Form())
+            using (PetBubbleCoordinator coordinator = new PetBubbleCoordinator(
+                owner, delegate { return dragging; },
+                delegate { return exiting; },
+                delegate(PetMessageKind kind) { closeCount++; },
+                delegate { restoreCount++; },
+                delegate { return bubbleNow; }))
+            {
+                IntPtr ownerHandle = owner.Handle;
+                PetBubbleRequest firstRequest = PetBubbleRequest.Feedback(
+                    "第一条", KeyboardOverlayForm.TextFontFamilyName, 18F);
+                coordinator.Show(firstRequest);
+                SpeechBubbleForm first = coordinator.CurrentBubbleForTest;
+                result.SingleMessageKindOk = coordinator.CurrentKind ==
+                    PetMessageKind.Feedback &&
+                    coordinator.CurrentRequestForTest.Kind ==
+                        PetMessageKind.Feedback;
+                bubbleNow = bubbleNow.AddMilliseconds(1500);
+                coordinator.Show(PetBubbleRequest.Feedback("第二条",
+                    KeyboardOverlayForm.TextFontFamilyName, 18F));
+                Application.DoEvents();
+                result.ReplacementClosesOldFormOk = first.IsDisposed &&
+                    coordinator.CurrentRequestForTest.Text == "第二条" &&
+                    closeCount == 1;
+                coordinator.Show(PetBubbleRequest.ReminderPreAlert(
+                    "提醒倒计时", KeyboardOverlayForm.TextFontFamilyName,
+                    18F));
+                SpeechBubbleForm protectedBubble =
+                    coordinator.CurrentBubbleForTest;
+                bool feedbackAccepted = coordinator.Show(
+                    PetBubbleRequest.Feedback("不能覆盖",
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                result.ProtectedMessageOk = !feedbackAccepted &&
+                    ReferenceEquals(protectedBubble,
+                        coordinator.CurrentBubbleForTest) &&
+                    !protectedBubble.IsDisposed;
+                coordinator.CloseCurrent(true);
+                coordinator.Show(PetBubbleRequest.DailyGreeting(
+                    "早上好～", KeyboardOverlayForm.TextFontFamilyName,
+                    18F));
+                bool smallTalkBlocked = !coordinator.Show(
+                    PetBubbleRequest.SmallTalk("需要我帮什么忙吗？",
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                bubbleNow = bubbleNow.AddMilliseconds(3000);
+                bool smallTalkAllowed = coordinator.Show(
+                    PetBubbleRequest.SmallTalk("怎么啦？",
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                result.MinimumReadableOk = smallTalkBlocked &&
+                    smallTalkAllowed &&
+                    coordinator.CurrentKind == PetMessageKind.SmallTalk;
+                coordinator.CloseCurrent(true);
+                dragging = true;
+                coordinator.Show(PetBubbleRequest.Feedback(
+                    "拖拽后显示", "Microsoft YaHei UI", 19F));
+                bool queued = coordinator.PendingCountForTest == 1 &&
+                    !coordinator.HasCurrent;
+                dragging = false;
+                coordinator.ShowNextPending();
+                PetBubbleRequest restored = coordinator.CurrentRequestForTest;
+                result.DeferredMessageSemanticsOk = queued && restored != null &&
+                    restored.Kind == PetMessageKind.Feedback &&
+                    restored.Text == "拖拽后显示" &&
+                    restored.AutoCloseMilliseconds ==
+                        BubbleReadingDurationRules.AutoCloseMilliseconds(
+                            "拖拽后显示") &&
+                    restored.DeferWhileDragging &&
+                    Math.Abs(restored.FontSizePoints - 19F) < 0.2F;
+                coordinator.CurrentBubbleForTest.Close();
+                Application.DoEvents();
+                Application.DoEvents();
+                result.SingleRestoreAfterCloseOk = restoreCount == 1 &&
+                    !coordinator.HasCurrent;
+            }
+            DateTime pendingNow = DateTime.UtcNow;
+            bool pendingDragging = true;
+            using (Form pendingOwner = new Form())
+            using (PetBubbleCoordinator pending = new PetBubbleCoordinator(
+                pendingOwner, delegate { return pendingDragging; },
+                delegate { return false; }, delegate { }, delegate { },
+                delegate { return pendingNow; }))
+            {
+                IntPtr pendingOwnerHandle = pendingOwner.Handle;
+                pending.Show(PetBubbleRequest.Feedback("稍后反馈",
+                    KeyboardOverlayForm.TextFontFamilyName, 18F));
+                pending.Show(PetBubbleRequest.DailyGreeting("早上好～",
+                    KeyboardOverlayForm.TextFontFamilyName, 18F));
+                pendingDragging = false;
+                pending.ShowNextPending();
+                bool minimumRetained = pending.PendingCountForTest == 1 &&
+                    pending.CurrentKind == PetMessageKind.DailyGreeting;
+                pending.ShowNextPending();
+                bool retryNotDuplicated = pending.PendingCountForTest == 1;
+                pendingNow = pendingNow.AddMilliseconds(
+                    BubbleReadingDurationRules.MinimumReadableMilliseconds(
+                        "早上好～") + 1);
+                pending.ShowNextPending();
+                bool minimumEventuallyShown = pending.PendingCountForTest == 0 &&
+                    pending.CurrentKind == PetMessageKind.Feedback;
+                pending.CloseCurrent(true);
+
+                pendingDragging = true;
+                pending.Show(PetBubbleRequest.Feedback("提醒后反馈",
+                    KeyboardOverlayForm.TextFontFamilyName, 18F));
+                pending.Show(PetBubbleRequest.ReminderDue("提醒到了",
+                    KeyboardOverlayForm.TextFontFamilyName, 18F));
+                pendingDragging = false;
+                pending.ShowNextPending();
+                bool policyRetained = pending.PendingCountForTest == 1 &&
+                    pending.CurrentKind == PetMessageKind.ReminderDue;
+                pending.CurrentBubbleForTest.Close();
+                Application.DoEvents();
+                Application.DoEvents();
+                bool policyEventuallyShown = pending.PendingCountForTest == 0 &&
+                    pending.CurrentKind == PetMessageKind.Feedback;
+                result.PendingRetryOk = minimumRetained &&
+                    retryNotDuplicated && minimumEventuallyShown &&
+                    policyRetained && policyEventuallyShown;
+            }
+            DateTime lifecycleNow = DateTime.UtcNow;
+            using (Form lifecycleOwner = new Form())
+            using (PetBubbleCoordinator lifecycle = new PetBubbleCoordinator(
+                lifecycleOwner, delegate { return false; },
+                delegate { return false; }, delegate { }, delegate { },
+                delegate { return lifecycleNow; }))
+            {
+                IntPtr lifecycleOwnerHandle = lifecycleOwner.Handle;
+                const string smallTalkText = "怎么啦？";
+                lifecycle.Show(PetBubbleRequest.SmallTalk(smallTalkText,
+                    KeyboardOverlayForm.TextFontFamilyName, 18F));
+                bool feedbackBlocked = !lifecycle.Show(
+                    PetBubbleRequest.Feedback("设置完成",
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                lifecycleNow = lifecycleNow.AddMilliseconds(
+                    BubbleReadingDurationRules.MinimumReadableMilliseconds(
+                        smallTalkText) + 1);
+                bool feedbackAllowed = lifecycle.Show(
+                    PetBubbleRequest.Feedback("设置完成",
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                lifecycle.CloseCurrent(true);
+                lifecycle.Show(PetBubbleRequest.SmallTalk(smallTalkText,
+                    KeyboardOverlayForm.TextFontFamilyName, 18F));
+                lifecycleNow = lifecycleNow.AddMilliseconds(
+                    BubbleReadingDurationRules.MinimumReadableMilliseconds(
+                        smallTalkText) + 1);
+                bool hoverBlocked = !lifecycle.Show(PetBubbleRequest.Hover(
+                    "今天想做什么？",
+                    KeyboardOverlayForm.TextFontFamilyName, 18F));
+                result.SmallTalkFeedbackLifecycleOk = feedbackBlocked &&
+                    feedbackAllowed && hoverBlocked;
+
+                bool reminderFromSmallTalk = lifecycle.Show(
+                    PetBubbleRequest.ReminderDue("提醒一",
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                bool feedbackCannotReplaceDue = !lifecycle.Show(
+                    PetBubbleRequest.Feedback("不能覆盖",
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                lifecycle.CloseCurrent(true);
+                lifecycle.Show(PetBubbleRequest.DailyGreeting("下午好～",
+                    KeyboardOverlayForm.TextFontFamilyName, 18F));
+                bool reminderFromDaily = lifecycle.Show(
+                    PetBubbleRequest.ReminderDue("提醒二",
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                lifecycle.CloseCurrent(true);
+                lifecycle.Show(PetBubbleRequest.EasterEgg(
+                    KeyboardOverlayForm.TextFontFamilyName, 18F));
+                bool preAlertFromEaster = lifecycle.Show(
+                    PetBubbleRequest.ReminderPreAlert("提醒倒计时",
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                lifecycle.CloseCurrent(true);
+                lifecycle.Show(PetBubbleRequest.EasterEgg(
+                    KeyboardOverlayForm.TextFontFamilyName, 18F));
+                bool reminderFromEaster = lifecycle.Show(
+                    PetBubbleRequest.ReminderDue("提醒三",
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                result.ReminderPriorityRegressionOk =
+                    reminderFromSmallTalk && feedbackCannotReplaceDue &&
+                    reminderFromDaily && preAlertFromEaster &&
+                    reminderFromEaster;
+            }
+            DateTime bypassNow = DateTime.UtcNow;
+            using (Form bypassOwner = new Form())
+            using (PetBubbleCoordinator bypass = new PetBubbleCoordinator(
+                bypassOwner, delegate { return false; },
+                delegate { return false; }, delegate { },
+                delegate { }, delegate { return bypassNow; }))
+            {
+                bypass.Show(PetBubbleRequest.DailyGreeting(
+                    "早上好～", KeyboardOverlayForm.TextFontFamilyName,
+                    18F));
+                bool smallTalkBlocked = !bypass.Show(
+                    PetBubbleRequest.SmallTalk("需要我帮什么忙吗？",
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                bool easterAccepted = bypass.Show(
+                    PetBubbleRequest.EasterEgg(
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                bypass.CloseCurrent(true);
+                bypass.Show(PetBubbleRequest.DailyGreeting(
+                    "早上好～", KeyboardOverlayForm.TextFontFamilyName,
+                    18F));
+                bool reminderAccepted = bypass.Show(
+                    PetBubbleRequest.ReminderDue("提醒到了",
+                        KeyboardOverlayForm.TextFontFamilyName, 18F));
+                result.ReadabilityBypassOk = smallTalkBlocked &&
+                    easterAccepted && reminderAccepted &&
+                    bypass.CurrentKind == PetMessageKind.ReminderDue;
+            }
+            using (SpeechBubbleForm empty = new SpeechBubbleForm("", 0))
+            using (SpeechBubbleForm shortChinese = new SpeechBubbleForm(
+                "嗯。", 0))
+            using (SpeechBubbleForm greeting = new SpeechBubbleForm(
+                "早上好～", 0))
+            using (SpeechBubbleForm medium = new SpeechBubbleForm(
+                "今天想要做些什么呢？", 0))
+            using (SpeechBubbleForm english = new SpeechBubbleForm(
+                "What would you like to work on today?", 0))
+            using (SpeechBubbleForm countdown = new SpeechBubbleForm(
+                "提醒倒计时 19 秒", 0))
+            using (SpeechBubbleForm multiline = new SpeechBubbleForm(
+                "第一行提醒\n第二行提醒\n第三行提醒", 0))
+            using (SpeechBubbleForm veryLong = new SpeechBubbleForm(
+                new String('长', 300), 0))
+            {
+                SpeechBubbleForm[] samples = new SpeechBubbleForm[]
+                {
+                    empty, shortChinese, greeting, medium, english,
+                    countdown, multiline, veryLong
+                };
+                bool valid = true;
+                foreach (SpeechBubbleForm sample in samples)
+                {
+                    valid &= sample.Width >=
+                        SpeechBubbleForm.MinimumBubbleSize.Width &&
+                        sample.Height >=
+                            SpeechBubbleForm.MinimumBubbleSize.Height &&
+                        sample.Width <=
+                            SpeechBubbleForm.MaximumBubbleSize.Width &&
+                        sample.Height <=
+                            SpeechBubbleForm.MaximumBubbleSize.Height;
+                }
+                result.AdaptiveSizingOk = valid &&
+                    shortChinese.Width * shortChinese.Height <
+                        medium.Width * medium.Height &&
+                    multiline.Height > shortChinese.Height &&
+                    veryLong.Width ==
+                        SpeechBubbleForm.MaximumBubbleSize.Width &&
+                    veryLong.Height <=
+                        SpeechBubbleForm.MaximumBubbleSize.Height;
+                Size shortSize = shortChinese.ClientSize;
+                shortChinese.UpdateText(new String('长', 300));
+                Size longSize = shortChinese.ClientSize;
+                shortChinese.UpdateText("嗯。");
+                result.UpdateTextRelayoutOk = longSize != shortSize &&
+                    shortChinese.ClientSize == shortSize;
+            }
+            string lastBriefingDate = String.Empty;
+            bool silent = false;
+            bool acceptGreeting = true;
+            bool dailyContentEnabled = true;
+            bool solarTermEnabled = true;
+            ZodiacSign zodiacSign = ZodiacSign.None;
+            int greetingCount = 0;
+            int recordCount = 0;
+            string greetingText = null;
+            PetDailyContentCoordinator daily =
+                new PetDailyContentCoordinator(
+                    delegate { return lastBriefingDate; },
+                    delegate { return silent; },
+                    delegate { return dailyContentEnabled; },
+                    delegate { return solarTermEnabled; },
+                    delegate { return true; },
+                    delegate { return false; },
+                    delegate { return null; },
+                    delegate
+                    {
+                        return Task.FromResult<WeatherForecastWindow>(null);
+                    },
+                    delegate { return zodiacSign; },
+                    delegate { return 0; },
+                    delegate { return 0; },
+                    delegate(string text)
+                    {
+                        greetingCount++;
+                        greetingText = text;
+                        return acceptGreeting;
+                    },
+                    delegate(string date)
+                    {
+                        recordCount++;
+                        lastBriefingDate = date;
+                    });
+            DateTimeOffset morning = new DateTimeOffset(2035, 6, 15, 8, 30, 0,
+                TimeSpan.FromHours(8));
+            bool firstPoke = RunDaily(daily, morning);
+            bool secondPoke = RunDaily(daily, morning.AddHours(1));
+            lastBriefingDate = "20350614";
+            bool nextDay = RunDaily(daily, morning.AddHours(6.5));
+            result.DailyFirstPokeOk = firstPoke && !secondPoke && nextDay &&
+                greetingCount == 2 && recordCount == 2 &&
+                greetingText.StartsWith("下午好，今天过得怎么样",
+                    StringComparison.Ordinal) &&
+                lastBriefingDate == "20350615";
+            lastBriefingDate = String.Empty;
+            greetingCount = 0;
+            recordCount = 0;
+            silent = true;
+            bool silentPoke = RunDaily(daily, morning);
+            silent = false;
+            acceptGreeting = false;
+            bool rejectedPoke = RunDaily(daily, morning);
+            acceptGreeting = true;
+            bool retriedPoke = RunDaily(daily, morning);
+            result.DailyRejectedRetryOk = !silentPoke && !rejectedPoke &&
+                retriedPoke && greetingCount == 2 && recordCount == 1 &&
+                lastBriefingDate == "20350615";
+            lastBriefingDate = String.Empty;
+            greetingCount = 0;
+            recordCount = 0;
+            dailyContentEnabled = false;
+            bool disabledPoke = RunDaily(daily, morning);
+            dailyContentEnabled = true;
+            bool enabledLaterPoke = RunDaily(daily, morning);
+            bool enabledSameDayPoke = RunDaily(daily,
+                morning.AddHours(1));
+            lastBriefingDate = String.Empty;
+            greetingCount = 0;
+            recordCount = 0;
+            solarTermEnabled = false;
+            DateTimeOffset whiteDewDate = new DateTimeOffset(
+                2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(8));
+            bool solarOffPoke = RunDaily(daily, whiteDewDate);
+            bool plainGreeting = greetingText.IndexOf("白露",
+                StringComparison.Ordinal) < 0;
+            solarTermEnabled = true;
+            bool solarEnabledSameDayPoke = RunDaily(daily,
+                whiteDewDate.AddHours(1));
+            lastBriefingDate = String.Empty;
+            bool solarOnPoke = RunDaily(daily, whiteDewDate);
+            result.DailyContentPreferencesOk = !disabledPoke &&
+                enabledLaterPoke && !enabledSameDayPoke && solarOffPoke &&
+                plainGreeting && !solarEnabledSameDayPoke && solarOnPoke &&
+                greetingText.IndexOf("今天是白露",
+                    StringComparison.Ordinal) >= 0;
+
+            DailyLineEntry[] curatedEntries =
+                CuratedDailyLineCatalog.GetEntries();
+            HashSet<string> curatedIds = new HashSet<string>();
+            HashSet<string> curatedTexts = new HashSet<string>();
+            bool curatedCatalogValid = curatedEntries.Length == 96;
+            foreach (DailyLineEntry entry in curatedEntries)
+                curatedCatalogValid &=
+                    !String.IsNullOrWhiteSpace(entry.Id) &&
+                    !String.IsNullOrWhiteSpace(entry.Text) &&
+                    curatedIds.Add(entry.Id) && curatedTexts.Add(entry.Text);
+            bool zodiacCatalogValid = ZodiacDailyCatalog.GetEntries(
+                ZodiacSign.None).Length == 0;
+            HashSet<string> zodiacIds = new HashSet<string>();
+            for (int value = (int)ZodiacSign.Aries;
+                value <= (int)ZodiacSign.Pisces; value++)
+            {
+                DailyLineEntry[] entries = ZodiacDailyCatalog.GetEntries(
+                    (ZodiacSign)value);
+                HashSet<string> uniqueTexts = new HashSet<string>();
+                zodiacCatalogValid &= entries.Length == 6;
+                foreach (DailyLineEntry entry in entries)
+                    zodiacCatalogValid &=
+                        !String.IsNullOrWhiteSpace(entry.Id) &&
+                        !String.IsNullOrWhiteSpace(entry.Text) &&
+                        zodiacIds.Add(entry.Id) &&
+                        uniqueTexts.Add(entry.Text);
+            }
+            result.CuratedCatalogOk = curatedCatalogValid &&
+                curatedIds.Count == 96 && curatedTexts.Count == 96 &&
+                zodiacCatalogValid && zodiacIds.Count == 72;
+
+            DateTimeOffset briefingDate = new DateTimeOffset(2026, 9, 3,
+                12, 0, 0, TimeSpan.FromHours(8));
+            DailyLineEntry selectedCurated = CuratedDailyLineSelector.Select(
+                briefingDate);
+            DailyLineEntry selectedScorpio = ZodiacDailySelector.Select(
+                ZodiacSign.Scorpio, briefingDate);
+            bool deterministic = selectedCurated != null &&
+                selectedScorpio != null && selectedCurated.Id ==
+                    CuratedDailyLineSelector.Select(briefingDate).Id &&
+                selectedScorpio.Id == ZodiacDailySelector.Select(
+                    ZodiacSign.Scorpio, briefingDate).Id;
+            DateTimeOffset rangeStart = new DateTimeOffset(2026, 1, 1,
+                12, 0, 0, TimeSpan.FromHours(8));
+            bool eligibilityBounded = true;
+            for (int value = (int)ZodiacSign.Aries;
+                value <= (int)ZodiacSign.Pisces; value++)
+            {
+                int eligibleDays = 0;
+                for (int day = 0; day < 3650; day++)
+                    if (ZodiacDailySelector.Select((ZodiacSign)value,
+                        rangeStart.AddDays(day)) != null) eligibleDays++;
+                double percent = eligibleDays * 100D / 3650D;
+                eligibilityBounded &= percent >= 10D && percent <= 20D;
+            }
+            DateTimeOffset sameInstant = new DateTimeOffset(2026, 9, 1,
+                16, 30, 0, TimeSpan.Zero);
+            bool selectedInCatalog = false;
+            foreach (DailyLineEntry entry in ZodiacDailyCatalog.GetEntries(
+                ZodiacSign.Scorpio))
+                selectedInCatalog |= entry.Id == selectedScorpio.Id;
+            result.DailySelectorBudgetOk = deterministic &&
+                eligibilityBounded &&
+                ZodiacDailySelector.Select(ZodiacSign.None, briefingDate) ==
+                    null && ZodiacDailySelector.Select((ZodiacSign)999,
+                        briefingDate) == null &&
+                selectedInCatalog &&
+                CuratedDailyLineSelector.Select(sameInstant.ToOffset(
+                    TimeSpan.FromHours(8))).Id !=
+                CuratedDailyLineSelector.Select(sameInstant.ToOffset(
+                    TimeSpan.FromHours(-8))).Id;
+
+            AlmanacDayInfo actualAlmanacDay = AlmanacCalculator.Calculate(
+                briefingDate);
+            AlmanacDailySelection actualAlmanac = actualAlmanacDay == null
+                ? null : AlmanacDailySelector.Select(actualAlmanacDay,
+                    briefingDate);
+            result.AlmanacCalculatorOk = AlmanacCalculator.Sect == 1 &&
+                actualAlmanacDay != null &&
+                actualAlmanacDay.Year == briefingDate.Year &&
+                actualAlmanacDay.Month == briefingDate.Month &&
+                actualAlmanacDay.Day == briefingDate.Day &&
+                actualAlmanacDay.Yi.Count > 0 &&
+                actualAlmanacDay.Ji.Count > 0;
+            AlmanacDailySelection dedupedSocial =
+                AlmanacDailySelector.Select(new AlmanacDayInfo(2026, 9, 3,
+                    new[] { "会友", "会亲友" }, new string[0]),
+                    briefingDate);
+            AlmanacDailySelection conflictedOuting =
+                AlmanacDailySelector.Select(new AlmanacDayInfo(2026, 9, 3,
+                    new[] { "出行" }, new[] { "出行" }), briefingDate);
+            AlmanacDailySelection restricted = AlmanacDailySelector.Select(
+                new AlmanacDayInfo(2026, 9, 3,
+                    new[] { "求医", "纳财", "祭祀", "动土" },
+                    new string[0]), briefingDate);
+            result.AlmanacSemanticOk = dedupedSocial != null &&
+                dedupedSocial.Topic == AlmanacTopic.Social &&
+                conflictedOuting == null && restricted == null;
+            HashSet<string> tidyVariants = new HashSet<string>();
+            bool wordingStable = true;
+            for (int day = 0; day < 730; day++)
+            {
+                DateTimeOffset date = rangeStart.AddDays(day);
+                AlmanacDayInfo tidyDay = new AlmanacDayInfo(date.Year,
+                    date.Month, date.Day, new[] { "扫舍" }, new string[0]);
+                AlmanacDailySelection first = AlmanacDailySelector.Select(
+                    tidyDay, date);
+                AlmanacDailySelection retry = AlmanacDailySelector.Select(
+                    tidyDay, date);
+                wordingStable &= first != null && retry != null &&
+                    first.VariantId == retry.VariantId &&
+                    first.Text == retry.Text &&
+                    !first.Text.Contains("今天一定") &&
+                    !first.Text.Contains("必须") &&
+                    !first.Text.Contains("千万不要") &&
+                    !first.Text.Contains("绝对不能") &&
+                    !first.Text.Contains("\n") &&
+                    !first.Text.Contains("。") &&
+                    !first.Text.Contains("！") &&
+                    !first.Text.Contains("？");
+                if (first != null) tidyVariants.Add(first.VariantId);
+            }
+            result.AlmanacWordingOk = wordingStable &&
+                tidyVariants.Count >= 5;
+
+            SolarTermInfo? whiteDew = SolarTermCalculator.FindForLocalDate(
+                new DateTimeOffset(2026, 9, 7, 12, 0, 0,
+                    TimeSpan.FromHours(8)));
+            SolarTermInfo? nonTerm = SolarTermCalculator.FindForLocalDate(
+                new DateTimeOffset(2026, 9, 6, 12, 0, 0,
+                    TimeSpan.FromHours(8)));
+            result.SolarTermOk = whiteDew.HasValue &&
+                whiteDew.Value.Term == SolarTerm.WhiteDew &&
+                whiteDew.Value.ChineseName == "白露" &&
+                whiteDew.Value.LongitudeDegrees == 165 &&
+                !nonTerm.HasValue;
+            WeatherDailySelection weatherText = new WeatherDailySelection(
+                WeatherMeaning.Windy, "WEATHER-WINDY-TEST",
+                "今天风比较大，出门注意一下");
+            AlmanacDailySelection almanacText = new AlmanacDailySelection(
+                AlmanacTopic.MovingHome, "入宅", true, "MOVING-TEST",
+                "F-TEST", "W-TEST",
+                "传统日历今天提到搬家，没计划的话看看就好");
+            DailyBriefingContent caseA = new DailyBriefingContent(whiteDew,
+                null, almanacText, selectedCurated, selectedScorpio);
+            DailyBriefingContent caseB = new DailyBriefingContent(whiteDew,
+                null, null, selectedCurated, selectedScorpio);
+            DailyBriefingContent caseC = new DailyBriefingContent(null,
+                null, almanacText, selectedCurated, selectedScorpio);
+            DailyBriefingContent caseD = new DailyBriefingContent(null,
+                null, null, selectedCurated, null);
+            DailyBriefingContent caseE = new DailyBriefingContent(null,
+                null, null, selectedCurated, selectedScorpio);
+            DailyBriefingContent solarWeatherAlmanac =
+                new DailyBriefingContent(whiteDew, weatherText, almanacText,
+                    selectedCurated, selectedScorpio);
+            DailyBriefingContent weatherAlmanac =
+                new DailyBriefingContent(null, weatherText, almanacText,
+                    selectedCurated, selectedScorpio);
+            DailyBriefingContent weatherOnly = new DailyBriefingContent(null,
+                weatherText, null, selectedCurated, selectedScorpio);
+            DateTime briefingLocalDate = briefingDate.Date;
+            DailyBriefingSentence[] solarWeatherSentences =
+                DailyBriefingComposer.SelectSentences(DayPart.Afternoon,
+                    solarWeatherAlmanac);
+            DailyBriefingSentence[] weatherOnlySentences =
+                DailyBriefingComposer.SelectSentences(DayPart.Afternoon,
+                    weatherOnly);
+            result.DailyBriefingBudgetOk = whiteDew.HasValue &&
+                solarWeatherSentences.Length == 3 &&
+                solarWeatherSentences[1].Kind ==
+                    PetSentenceContentKind.Solar &&
+                solarWeatherSentences[2].Kind ==
+                    PetSentenceContentKind.Weather &&
+                weatherOnlySentences.Length == 2 &&
+                weatherOnlySentences[1].Kind ==
+                    PetSentenceContentKind.Weather &&
+                DailyBriefingComposer.Compose(DayPart.Afternoon,
+                    briefingLocalDate, caseA).Split('\n').Length <= 3 &&
+                DailyBriefingComposer.Compose(DayPart.Afternoon,
+                    briefingLocalDate, caseB).Split('\n').Length <= 3 &&
+                DailyBriefingComposer.Compose(DayPart.Afternoon,
+                    briefingLocalDate, caseC).Split('\n').Length <= 3 &&
+                DailyBriefingComposer.Compose(DayPart.Afternoon,
+                    briefingLocalDate, caseD).Split('\n').Length <= 3 &&
+                DailyBriefingComposer.Compose(DayPart.Afternoon,
+                    briefingLocalDate, caseE).Split('\n').Length <= 3 &&
+                DailyBriefingComposer.SelectSupplementary(caseA).Length <= 2 &&
+                DailyBriefingComposer.SelectSupplementary(caseB).Length <= 2 &&
+                DailyBriefingComposer.SelectSupplementary(caseC).Length <= 2 &&
+                DailyBriefingComposer.SelectSupplementary(caseD).Length <= 2 &&
+                DailyBriefingComposer.SelectSupplementary(caseE).Length <= 2;
+            result.DailyBriefingBudgetOk = result.DailyBriefingBudgetOk &&
+                DailyBriefingComposer.SelectSupplementary(
+                    solarWeatherAlmanac).Length <= 2 &&
+                DailyBriefingComposer.SelectSupplementary(
+                    weatherAlmanac).Length <= 2 &&
+                DailyBriefingComposer.SelectSupplementary(
+                    weatherOnly).Length <= 2;
+            PetSentenceEndingContext endingContext =
+                new PetSentenceEndingContext(PetSentenceRole.Closing,
+                    PetSentenceIntent.Gentle,
+                    PetSentenceContentKind.Almanac,
+                    "ALMANAC-BATH-03", briefingLocalDate);
+            string ending = PetSentenceEndingPolicy.Apply(
+                "传统日历今天也说到沐浴", endingContext);
+            result.SentenceEndingPolicyOk =
+                ending == "传统日历今天也说到沐浴啦～" &&
+                ending == PetSentenceEndingPolicy.Apply(
+                    "传统日历今天也说到沐浴", endingContext) &&
+                PetSentenceEndingPolicy.Apply(
+                    "忙完早点洗个澡，剩下的明天再管",
+                    new PetSentenceEndingContext(PetSentenceRole.Middle,
+                        PetSentenceIntent.Gentle,
+                        PetSentenceContentKind.Almanac, "BATH-MIDDLE",
+                        briefingLocalDate)) ==
+                    "忙完早点洗个澡，剩下的明天再管。" &&
+                PetSentenceEndingPolicy.ApplyEnding("今天辛苦了", "啦～") ==
+                    "今天辛苦啦～";
+
+            lastBriefingDate = String.Empty;
+            silent = false;
+            dailyContentEnabled = true;
+            solarTermEnabled = false;
+            zodiacSign = ZodiacSign.Scorpio;
+            acceptGreeting = true;
+            greetingCount = 0;
+            recordCount = 0;
+            bool zodiacShown = RunDaily(daily, briefingDate);
+            string expectedZodiacText = DailyBriefingComposer.Compose(
+                DailyContentRules.ResolveDayPart(briefingDate),
+                briefingDate.Date,
+                new DailyBriefingContent(null,
+                    null, actualAlmanac, selectedCurated, selectedScorpio));
+            bool zodiacTextOk = greetingText == expectedZodiacText &&
+                recordCount == 1;
+            zodiacSign = ZodiacSign.Pisces;
+            bool changedSignSameDay = RunDaily(daily,
+                briefingDate.AddHours(1));
+            result.DailyBriefingSameDaySwitchOk = zodiacShown &&
+                !changedSignSameDay && recordCount == 1;
+
+            lastBriefingDate = String.Empty;
+            solarTermEnabled = true;
+            zodiacSign = ZodiacSign.Scorpio;
+            greetingCount = 0;
+            recordCount = 0;
+            bool solarZodiacShown = RunDaily(daily, whiteDewDate);
+            AlmanacDayInfo whiteDewAlmanacDay = AlmanacCalculator.Calculate(
+                whiteDewDate);
+            AlmanacDailySelection whiteDewAlmanac = whiteDewAlmanacDay == null
+                ? null : AlmanacDailySelector.Select(whiteDewAlmanacDay,
+                    whiteDewDate);
+            string solarZodiacExpected = DailyBriefingComposer.Compose(
+                DailyContentRules.ResolveDayPart(whiteDewDate),
+                whiteDewDate.Date,
+                new DailyBriefingContent(whiteDew,
+                    null, whiteDewAlmanac,
+                    CuratedDailyLineSelector.Select(whiteDewDate),
+                    ZodiacDailySelector.Select(ZodiacSign.Scorpio,
+                        whiteDewDate)));
+            result.DailyBriefingCoordinatorOk = zodiacTextOk &&
+                solarZodiacShown && greetingText == solarZodiacExpected &&
+                recordCount == 1;
+
+            lastBriefingDate = String.Empty;
+            solarTermEnabled = false;
+            acceptGreeting = false;
+            greetingCount = 0;
+            recordCount = 0;
+            bool zodiacRejected = !RunDaily(daily, briefingDate);
+            string rejectedZodiacText = greetingText;
+            acceptGreeting = true;
+            bool zodiacRetried = RunDaily(daily,
+                briefingDate.AddMinutes(1));
+            result.DailyBriefingRejectedRetryOk = zodiacRejected &&
+                zodiacRetried &&
+                greetingCount == 2 && recordCount == 1 &&
+                greetingText == rejectedZodiacText;
+            PetBubbleRequest dailyRequest = PetBubbleRequest.DailyGreeting(
+                "早上好", KeyboardOverlayForm.TextFontFamilyName, 15F);
+            result.DailyGreetingRequestOk = dailyRequest.Kind ==
+                PetMessageKind.DailyGreeting &&
+                dailyRequest.AutoCloseMilliseconds ==
+                    BubbleReadingDurationRules.AutoCloseMilliseconds(
+                        "早上好") &&
+                !dailyRequest.DeferWhileDragging;
+            PetBubbleRequest easterEggRequest = PetBubbleRequest.EasterEgg(
+                KeyboardOverlayForm.TextFontFamilyName, 15F);
+            result.EasterEggRequestOk = easterEggRequest.Kind ==
+                PetMessageKind.EasterEgg &&
+                easterEggRequest.Text == "你在整我是不是。" &&
+                !easterEggRequest.DeferWhileDragging &&
+                easterEggRequest.AutoCloseMilliseconds == 2800 &&
+                easterEggRequest.MinimumReadableMilliseconds == 1000 &&
+                !easterEggRequest.ClosesOnMouseDown &&
+                !PetMessagePolicy.ShouldReplace(PetMessageKind.ReminderDue,
+                    PetMessageKind.EasterEgg, false) &&
+                !PetMessagePolicy.ShouldReplace(
+                    PetMessageKind.ReminderPreAlert,
+                    PetMessageKind.EasterEgg, false) &&
+                !PetMessagePolicy.ShouldReplace(PetMessageKind.EasterEgg,
+                    PetMessageKind.DailyGreeting, false) &&
+                !PetMessagePolicy.ShouldReplace(PetMessageKind.EasterEgg,
+                    PetMessageKind.Feedback, false) &&
+                PetMessagePolicy.ShouldReplace(PetMessageKind.DailyGreeting,
+                    PetMessageKind.EasterEgg, false);
+            PetBubbleRequest smallTalkRequest = PetBubbleRequest.SmallTalk(
+                "怎么啦？", KeyboardOverlayForm.TextFontFamilyName, 15F);
+            result.SmallTalkRequestOk = smallTalkRequest.Kind ==
+                PetMessageKind.SmallTalk &&
+                smallTalkRequest.MinimumReadableMilliseconds ==
+                    BubbleReadingDurationRules.MinimumReadableMilliseconds(
+                        "怎么啦？") &&
+                smallTalkRequest.AutoCloseMilliseconds ==
+                    BubbleReadingDurationRules.AutoCloseMilliseconds(
+                        "怎么啦？") &&
+                PetMessagePolicy.ShouldSuppress(
+                    PetMessageKind.SmallTalk, true);
             return result;
+        }
+
+        private static bool RunDaily(PetDailyContentCoordinator coordinator,
+            DateTimeOffset localNow)
+        {
+            return coordinator.HandlePetPokedAsync(localNow).GetAwaiter()
+                .GetResult();
         }
 
         private sealed class WindowShellCheckResult
@@ -2184,8 +4158,10 @@ namespace PennyPet
             internal bool StartupDefaultOk;
             internal bool StartupLoadingReadinessGateOk;
             internal bool StickyUiHostOk;
-            internal StickyCanaryCheckResult StickyCanary;
+            internal StickyHostedCheckResult StickyHosted;
             internal bool ScaleRangeOk;
+            internal bool DailyContentSettingsUiOk;
+            internal bool ZodiacPreferenceSettingsUiOk;
             internal bool ReverseReminderStepOk;
             internal bool PinActionTextOk;
             internal bool TodoPinActionTextOk;
@@ -2194,9 +4170,23 @@ namespace PennyPet
             internal bool StickyResizePaintingOk;
             internal StickyReminderWindowCheckResult ReminderChecks;
             internal StickyTodoWindowCheckResult TodoChecks;
+            internal bool PersonaRuntimeCatalogOk;
+            internal bool SolarTermAttachmentOk;
+            internal bool PersonaLyricAnimationOk;
+            internal bool SmallTalkAnimationProtectionOk;
+            internal bool SolarPreservePlumbingOk;
+            internal bool DisplayTopologyRuntimeOk;
+            internal bool StickyContentApplySeparationOk;
+            internal bool NativePlacementOk;
+            internal bool NativeDisplayAbiOk;
+            internal bool V11PreferredOk;
+            internal bool TemporaryRehomeOk;
+            internal bool DockPlanMailboxOk;
+            internal bool DockTopologyReprojectOk;
+            internal bool DockZOrderOk;
         }
 
-        private sealed class StickyCanaryCheckResult
+        private sealed class StickyHostedCheckResult
         {
             internal bool LifecycleOk;
             internal bool PerNoteSequenceOk;
@@ -2210,6 +4200,936 @@ namespace PennyPet
             internal bool HostedMiddleSplitOk;
             internal bool HostedThreeNoteInsertionOk;
             internal bool DockRestoreOk;
+            internal bool HostedSetBoundsAtomicOk;
+        }
+
+        private static bool RunPersonaRuntimeCatalogCheck()
+        {
+            List<PetPersonaEntry> all = new List<PetPersonaEntry>();
+            all.AddRange(PetPersonaRuntimeCatalog.SmallTalkLoopable);
+            all.AddRange(PetPersonaRuntimeCatalog.SmallTalkMeaningful);
+            all.AddRange(PetPersonaRuntimeCatalog.DaypartMeaningful);
+            if (all.Count == 0) return false;
+            Dictionary<string, string> idToBody =
+                new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (PetPersonaEntry entry in all)
+            {
+                if (entry == null || !entry.Approved) return false;
+                if (String.IsNullOrWhiteSpace(entry.StableContentId) ||
+                    String.IsNullOrWhiteSpace(entry.CanonicalBody))
+                    return false;
+                string existingBody;
+                if (idToBody.TryGetValue(entry.StableContentId,
+                    out existingBody))
+                {
+                    if (!String.Equals(existingBody, entry.CanonicalBody,
+                        StringComparison.Ordinal)) return false;
+                }
+                else idToBody[entry.StableContentId] = entry.CanonicalBody;
+                if (entry.EligibleContexts == 0) return false;
+                if (entry.RepeatClass != PetPersonaRepeatClass.Loopable &&
+                    entry.RepeatClass != PetPersonaRepeatClass.Meaningful)
+                    return false;
+                if (entry.ContextClass != PetPersonaContextClass.ContextFree &&
+                    entry.ContextClass != PetPersonaContextClass.Contextual)
+                    return false;
+                if ((int)entry.Intent < (int)PetSentenceIntent.Statement ||
+                    (int)entry.Intent > (int)PetSentenceIntent.Serious)
+                    return false;
+                if ((int)entry.Category <
+                        (int)PetPersonaCategory.General ||
+                    (int)entry.Category >
+                        (int)PetPersonaCategory.Inspiration)
+                    return false;
+            }
+            PetPersonaEntry noonMeal = FindPersonaEntry(
+                PetPersonaRuntimeCatalog.DaypartMeaningful, "PENNY-000004");
+            PetPersonaEntry question = FindPersonaEntry(
+                PetPersonaRuntimeCatalog.SmallTalkLoopable, "PENNY-000002");
+            PetPersonaEntry songEnding = FindPersonaEntry(
+                PetPersonaRuntimeCatalog.SmallTalkMeaningful, "PENNY-000007");
+            PetPersonaEntry inspiration = FindPersonaEntry(
+                PetPersonaRuntimeCatalog.SmallTalkMeaningful, "PENNY-000019");
+            PetPersonaEntry legacyLoop = FindPersonaEntry(
+                PetPersonaRuntimeCatalog.SmallTalkLoopable,
+                "SMALLTALK-LOOP-IN");
+            PetPersonaEntry legacyMeal = FindPersonaEntry(
+                PetPersonaRuntimeCatalog.SmallTalkMeaningful,
+                "MEANINGFUL-MEAL");
+            PetPersonaEntry lyricSong = FindPersonaEntry(
+                PetPersonaRuntimeCatalog.SmallTalkMeaningful, "PENNY-000005");
+            PetPersonaEntry legacyEn = FindPersonaEntry(
+                PetPersonaRuntimeCatalog.SmallTalkLoopable,
+                "SMALLTALK-LOOP-EN");
+            return PetPersonaRuntimeCatalog.SmallTalkLoopable.Length == 11 &&
+                PetPersonaRuntimeCatalog.SmallTalkMeaningful.Length == 20 &&
+                noonMeal != null &&
+                (noonMeal.EligibleContexts & PetPersonaContext.Noon) != 0 &&
+                (noonMeal.EligibleContexts & PetPersonaContext.SmallTalk) == 0 &&
+                FindPersonaEntry(PetPersonaRuntimeCatalog.SmallTalkMeaningful,
+                    "PENNY-000004") == null &&
+                question != null && question.PreserveEnding &&
+                String.Equals(question.CanonicalBody, "嗯？",
+                    StringComparison.Ordinal) &&
+                FindPersonaEntry(
+                    PetPersonaRuntimeCatalog.SmallTalkMeaningful,
+                    "PENNY-000006").CanonicalBody.EndsWith("。",
+                        StringComparison.Ordinal) &&
+                FindPersonaEntry(
+                    PetPersonaRuntimeCatalog.SmallTalkMeaningful,
+                    "PENNY-000008").CanonicalBody.EndsWith("。",
+                        StringComparison.Ordinal) &&
+                FindPersonaEntry(
+                    PetPersonaRuntimeCatalog.SmallTalkMeaningful,
+                    "PENNY-000017").CanonicalBody.EndsWith("。",
+                        StringComparison.Ordinal) &&
+                FindPersonaEntry(
+                    PetPersonaRuntimeCatalog.SmallTalkMeaningful,
+                    "PENNY-000019").CanonicalBody.EndsWith("。",
+                        StringComparison.Ordinal) &&
+                FindPersonaEntry(
+                    PetPersonaRuntimeCatalog.SmallTalkMeaningful,
+                    "PENNY-000020").CanonicalBody.EndsWith("。",
+                        StringComparison.Ordinal) &&
+                legacyLoop != null &&
+                legacyMeal != null &&
+                lyricSong != null && lyricSong.PreserveEnding &&
+                String.Equals(lyricSong.CanonicalBody,
+                    "我们现在还在一起会是怎样~", StringComparison.Ordinal) &&
+                legacyEn != null && legacyEn.PreserveEnding &&
+                String.Equals(legacyEn.CanonicalBody, "嗯？",
+                    StringComparison.Ordinal) &&
+                ContainsPersonaBody(PetPersonaRuntimeCatalog.SmallTalkLoopable,
+                    "嗯？") &&
+                songEnding != null && songEnding.PreserveEnding &&
+                songEnding.CanonicalBody.EndsWith("~",
+                    StringComparison.Ordinal) &&
+                inspiration != null &&
+                inspiration.Category == PetPersonaCategory.Inspiration;
+        }
+
+        private static PetPersonaEntry FindPersonaEntry(
+            IList<PetPersonaEntry> entries, string stableContentId)
+        {
+            if (entries == null) return null;
+            foreach (PetPersonaEntry entry in entries)
+                if (entry != null && String.Equals(
+                    entry.StableContentId, stableContentId,
+                    StringComparison.Ordinal))
+                    return entry;
+            return null;
+        }
+
+        private static bool ContainsPersonaBody(
+            IList<PetPersonaEntry> entries, string body)
+        {
+            if (entries == null) return false;
+            foreach (PetPersonaEntry entry in entries)
+                if (entry != null && String.Equals(entry.CanonicalBody, body,
+                    StringComparison.Ordinal))
+                    return true;
+            return false;
+        }
+
+        private static bool RunSolarTermAttachmentCheck()
+        {
+            if (PetSolarTermAttachmentCatalog.Count != 5) return false;
+            string[][] expected = new string[][]
+            {
+                new string[] { "春分", "PENNY-000013",
+                    "春天最适合热聊，祝大家都有一个被爱包围的春分。" },
+                new string[] { "大寒", "PENNY-000014", "大寒节气记得多保暖。" },
+                new string[] { "小寒", "PENNY-000015", "祝大家小寒安康喜乐。" },
+                new string[] { "冬至", "PENNY-000016", "冬至平安喜乐。" },
+                new string[] { "大雪", "PENNY-000018",
+                    "大雪，沉淀成成果的时刻，身心都要继续保暖。" }
+            };
+            foreach (string[] item in expected)
+            {
+                PetSolarTermAttachment value;
+                if (!PetSolarTermAttachmentCatalog.TryGet(item[0],
+                    out value)) return false;
+                if (!String.Equals(value.StableContentId, item[1],
+                    StringComparison.Ordinal)) return false;
+                if (!String.Equals(value.Text, item[2],
+                    StringComparison.Ordinal)) return false;
+            }
+            PetSolarTermAttachment unknown;
+            return !PetSolarTermAttachmentCatalog.TryGet("立春",
+                out unknown);
+        }
+
+        private static bool RunPersonaLyricAnimationCheck()
+        {
+            PetPersonaEntry song = FindPersonaEntry(
+                PetPersonaRuntimeCatalog.SmallTalkMeaningful, "PENNY-000005");
+            PetPersonaEntry fly = FindPersonaEntry(
+                PetPersonaRuntimeCatalog.SmallTalkMeaningful, "PENNY-000007");
+            if (song == null || fly == null) return false;
+            return song.AnimationKind == PetPersonaAnimationKind.Guitar &&
+                fly.AnimationKind == PetPersonaAnimationKind.Guitar &&
+                PetAnimationController.WaitingRow == 6;
+        }
+
+        private static bool RunSmallTalkAnimationProtectionCheck()
+        {
+            foreach (PetPersonaEntry entry in
+                PetPersonaRuntimeCatalog.SmallTalkLoopable)
+                if (entry == null ||
+                    entry.AnimationKind != PetPersonaAnimationKind.Hover)
+                    return false;
+            PetAnimationController controller = new PetAnimationController();
+            if (!controller.TryStartOrdinaryPoke(
+                PetAnimationController.HoverRow, true)) return false;
+            controller.CancelInteractionAnimation();
+            if (controller.InteractionAnimationKind ==
+                PetInteractionAnimationKind.None) return false;
+            controller.CompleteInteractionAnimation();
+            controller.CancelInteractionAnimation();
+            return controller.InteractionAnimationKind ==
+                PetInteractionAnimationKind.None;
+        }
+
+        private static bool RunSolarPreservePlumbingCheck()
+        {
+            DailyBriefingSentence preserved = new DailyBriefingSentence(
+                "大寒节气记得多保暖。", PetSentenceContentKind.Solar,
+                PetSentenceIntent.Gentle, "PENNY-000014", true);
+            string first = DailyBriefingComposer.ComposeSentences(
+                new DateTime(2026, 9, 3),
+                new DailyBriefingSentence[] { preserved });
+            string second = DailyBriefingComposer.ComposeSentences(
+                new DateTime(2026, 12, 21),
+                new DailyBriefingSentence[] { preserved });
+            bool preservedStable = first == "大寒节气记得多保暖。" &&
+                second == first;
+
+            DailyBriefingSentence normal = new DailyBriefingSentence(
+                "今天是什么日子", PetSentenceContentKind.Solar,
+                PetSentenceIntent.Gentle, "X-NORMAL", false);
+            string ending = DailyBriefingComposer.ComposeSentences(
+                new DateTime(2026, 9, 3),
+                new DailyBriefingSentence[] { normal });
+            bool normalUsesEnding = ending != "今天是什么日子" &&
+                (ending.EndsWith("。", StringComparison.Ordinal) ||
+                    ending.EndsWith("喔～", StringComparison.Ordinal) ||
+                    ending.EndsWith("哦～", StringComparison.Ordinal));
+
+            DailyBriefingSentence en = new DailyBriefingSentence(
+                "嗯？", PetSentenceContentKind.SmallTalk,
+                PetSentenceIntent.Question, "PENNY-000002", true);
+            string enOutput = DailyBriefingComposer.ComposeSentences(
+                new DateTime(2026, 9, 3),
+                new DailyBriefingSentence[] { en });
+            DailyBriefingSentence lyric = new DailyBriefingSentence(
+                "我们现在还在一起会是怎样~", PetSentenceContentKind.SmallTalk,
+                PetSentenceIntent.Statement, "PENNY-000005", true);
+            string lyricOutput = DailyBriefingComposer.ComposeSentences(
+                new DateTime(2026, 9, 3),
+                new DailyBriefingSentence[] { lyric });
+            return preservedStable && normalUsesEnding &&
+                enOutput == "嗯？" && lyricOutput ==
+                    "我们现在还在一起会是怎样~";
+        }
+
+        private static bool RunDisplayTopologyRuntimeCheck()
+        {
+            DisplayTargetIdentity target1 = FakeTarget("mdp:fake-1");
+            DisplayTargetIdentity target2 = FakeTarget("mdp:fake-2");
+            DisplayTargetIdentity target3 = FakeTarget("mdp:fake-3");
+            DisplaySurfaceSnapshot surface1 = FakeSurface(1, 0, true,
+                1080, 1032, target1);
+            DisplaySurfaceSnapshot surface2 = FakeSurface(2, 1920, false,
+                1080, 1032, target2);
+            DisplaySurfaceSnapshot surface3 = FakeSurface(3, 3840, false,
+                1080, 1032, target3);
+            DisplayTopologySnapshot two = new DisplayTopologySnapshot(0,
+                new[] { surface1, surface2 });
+            DisplayTopologySnapshot three = new DisplayTopologySnapshot(0,
+                new[] { surface1, surface2, surface3 });
+            DisplayTopologySnapshot reordered = new DisplayTopologySnapshot(0,
+                new[] { surface2, surface1 });
+            DisplaySurfaceSnapshot shifted2 = FakeSurface(2, 1920, false,
+                1080, 932, target2);
+            DisplayTopologySnapshot workShifted = new DisplayTopologySnapshot(0,
+                new[] { FakeSurface(1, 0, true, 1080, 932, target1) });
+            DisplayTopologySnapshot one = new DisplayTopologySnapshot(0,
+                new[] { surface1 });
+
+            int captures = 0;
+            DisplayTopologySnapshot current = two;
+            DisplayTopologySnapshot lastEventSnapshot = null;
+            long lastEventGeneration = -1;
+            int changeEventCount = 0;
+            bool initialGenerationZero = false;
+            bool sameSnapshotUnchanged = false;
+            bool addedSurface = false;
+            bool removedMany = false;
+            bool reorderIgnored = false;
+            bool workAreaChanged = false;
+            bool rapidHintsOneSettledCapture = false;
+            using (DisplayTopologyRuntime runtime =
+                new DisplayTopologyRuntime(delegate
+                {
+                    captures++;
+                    return current;
+                }))
+            {
+                runtime.TopologyChanged += delegate(string reason,
+                    DisplayTopologySnapshot snapshot)
+                {
+                    lastEventSnapshot = snapshot;
+                    lastEventGeneration = snapshot == null
+                        ? -1 : snapshot.Generation;
+                    changeEventCount++;
+                };
+                runtime.CaptureInitial();
+                initialGenerationZero =
+                    runtime.Generation == 0 && runtime.Current != null &&
+                    runtime.Current.Generation == 0 &&
+                    Object.ReferenceEquals(runtime.Current,
+                        lastEventSnapshot) &&
+                    captures == 1;
+
+                runtime.NotifyPotentialChange("same");
+                runtime.FlushPendingForTest();
+                sameSnapshotUnchanged =
+                    runtime.Generation == 0 && captures == 2;
+
+                current = reordered;
+                runtime.NotifyPotentialChange("reorder");
+                runtime.FlushPendingForTest();
+                reorderIgnored = runtime.Generation == 0 &&
+                    captures == 3;
+
+                current = three;
+                runtime.NotifyPotentialChange("added");
+                runtime.FlushPendingForTest();
+                addedSurface = runtime.Generation == 1 &&
+                    runtime.Current.Generation == 1 &&
+                    Object.ReferenceEquals(runtime.Current,
+                        lastEventSnapshot) &&
+                    lastEventGeneration == 1 &&
+                    captures == 4;
+
+                current = one;
+                runtime.NotifyPotentialChange("removed");
+                runtime.FlushPendingForTest();
+                removedMany = runtime.Generation == 2 &&
+                    runtime.Current.Generation == 2 &&
+                    lastEventGeneration == 2 &&
+                    captures == 5;
+
+                current = workShifted;
+                runtime.NotifyPotentialChange("workarea");
+                runtime.FlushPendingForTest();
+                workAreaChanged = runtime.Generation == 3 &&
+                    runtime.Current.Generation == 3 &&
+                    lastEventGeneration == 3 &&
+                    captures == 6;
+            }
+            // initial + added + removed + workarea = 4 published snapshots;
+            // "same" and "reorder" publish nothing.
+            bool eventSnapshotsMatchGeneration = changeEventCount == 4;
+
+            int burstCaptures = 0;
+            using (DisplayTopologyRuntime burst =
+                new DisplayTopologyRuntime(delegate
+                {
+                    burstCaptures++;
+                    return two;
+                }))
+            {
+                burst.CaptureInitial();
+                for (int index = 0; index < 20; index++)
+                    burst.NotifyPotentialChange("hint-" + index);
+                burst.FlushPendingForTest();
+                rapidHintsOneSettledCapture =
+                    burstCaptures == 2 && burst.Generation == 0;
+            }
+            return initialGenerationZero && sameSnapshotUnchanged &&
+                addedSurface && removedMany && reorderIgnored &&
+                workAreaChanged && eventSnapshotsMatchGeneration &&
+                rapidHintsOneSettledCapture;
+        }
+
+        private static DisplayTargetIdentity FakeTarget(string key)
+        {
+            return new DisplayTargetIdentity(key, true, String.Empty,
+                "fake", 0, 0, 0);
+        }
+
+        private static DisplaySurfaceSnapshot FakeSurface(int index,
+            int left, bool primary, int height, int workHeight,
+            DisplayTargetIdentity target)
+        {
+            return new DisplaySurfaceSnapshot("surface-" + index,
+                "\\\\.\\DISPLAY" + index,
+                new PhysicalRect(left, 0, 1920, height),
+                new PhysicalRect(left, 0, 1920, workHeight),
+                primary, 0, new[] { target });
+        }
+
+        private static bool RunStickySnapshotSeparationCheck()
+        {
+            StickyNoteData source = new StickyNoteData();
+            source.Id = "separation-source";
+            source.Title = "新标题";
+            source.Text = "新正文";
+            source.X = 100;
+            source.Y = 200;
+            source.Width = 320;
+            source.Height = 300;
+            source.DisplayId = "\\\\.\\DISPLAY1";
+            source.LocalLogicalX = 10;
+            source.LocalLogicalY = 20;
+            source.LocalLogicalWidth = 320;
+            source.LocalLogicalHeight = 300;
+            StickyNoteUiSnapshot snapshot =
+                StickyNoteUiSnapshot.FromData(source);
+
+            StickyNoteData target = new StickyNoteData();
+            target.X = 999;
+            target.Y = 888;
+            target.Width = 123;
+            target.Height = 456;
+            target.DisplayId = "OLD-DISPLAY";
+            target.LocalLogicalX = 7;
+            target.LocalLogicalY = 8;
+            target.LocalLogicalWidth = 123;
+            target.LocalLogicalHeight = 456;
+            snapshot.ApplyContentTo(target);
+            bool contentOnly = target.Title == "新标题" &&
+                target.Text == "新正文" &&
+                target.Id != "separation-source" &&
+                target.X == 999 && target.Y == 888 &&
+                target.Width == 123 && target.Height == 456 &&
+                target.DisplayId == "OLD-DISPLAY" &&
+                target.LocalLogicalX == 7 &&
+                target.LocalLogicalY == 8 &&
+                target.LocalLogicalWidth == 123 &&
+                target.LocalLogicalHeight == 456;
+
+            snapshot.ApplyTo(target);
+            bool fullApply = target.Id == "separation-source" &&
+                target.X == 100 && target.Y == 200 &&
+                target.Width == 320 && target.Height == 300 &&
+                target.DisplayId == "\\\\.\\DISPLAY1" &&
+                target.LocalLogicalX == 10 &&
+                target.LocalLogicalY == 20 &&
+                target.LocalLogicalWidth == 320 &&
+                target.LocalLogicalHeight == 300;
+
+            WindowFacts facts = new WindowFacts("sep-note", "mdp:sep",
+                "\\\\.\\DISPLAY2",
+                new PhysicalRect(1920, 0, 640, 600), 144, 3, 5);
+            bool factsImmutable = true;
+            foreach (System.Reflection.PropertyInfo property in
+                typeof(WindowFacts).GetProperties())
+                if (property.CanWrite) factsImmutable = false;
+            bool eventCarrierImmutable = true;
+            foreach (System.Reflection.PropertyInfo property in
+                typeof(StickyUiEvent).GetProperties())
+                if (property.CanWrite) eventCarrierImmutable = false;
+            return contentOnly && fullApply && factsImmutable &&
+                eventCarrierImmutable && facts.Scale == 1.5 &&
+                facts.WindowId == "sep-note";
+        }
+
+        // DRT-5 pure placement contract: the logical rect is projected with a
+        // long-arithmetic rounding policy, the tolerance gate drives the one
+        // corrective placement, and a Schedule keeps its 320x360 logical size
+        // from spawn time (never 300 first).
+        private static bool RunNativePlacementCheck()
+        {
+            PhysicalRect projected = DisplayGeometry.ProjectLocalRect(
+                new LogicalRect
+                {
+                    X = 100,
+                    Y = 50,
+                    Width = 320,
+                    Height = 300
+                }, 1920, 0, 1.5);
+            bool projectionOk = projected.Left == 1920 + 150 &&
+                projected.Top == 75 &&
+                projected.Width == 480 && projected.Height == 450;
+
+            PhysicalRect requested = new PhysicalRect(100, 200, 480, 450);
+            bool toleranceOk =
+                DisplayGeometry.IsWithinPlacementTolerance(requested,
+                    new PhysicalRect(102, 202, 480, 450), 2) &&
+                !DisplayGeometry.IsWithinPlacementTolerance(requested,
+                    new PhysicalRect(103, 200, 480, 450), 2) &&
+                !DisplayGeometry.IsWithinPlacementTolerance(requested,
+                    new PhysicalRect(100, 200, 483, 450), 2);
+
+            bool toleranceConstantOk =
+                WindowsWindowPlacementExecutor.PlacementTolerancePixels == 2;
+
+            // Centered spawn policy: a Schedule keeps its 320x360 logical
+            // size and lands in the WorkArea center (never beside the pet).
+            StickyCanonicalPlacement schedule =
+                StickySpawnPolicy.PlanCenteredSpawn("\\\\.\\DISPLAY1",
+                    new PhysicalRect(0, 0, 1920, 1040), 0, 0, 1.0,
+                    320, 360);
+            bool scheduleCenteredOk = schedule.LocalWidth == 320 &&
+                schedule.LocalHeight == 360 &&
+                schedule.PhysicalLeft == 800 &&
+                schedule.PhysicalTop == 340;
+            StickyCanonicalPlacement scaled = StickySpawnPolicy.
+                PlanCenteredSpawn("\\\\.\\DISPLAY1",
+                    new PhysicalRect(0, 0, 1920, 1040), 0, 0, 2.0,
+                    320, 300);
+            bool scaledCenteredOk = scaled.LocalWidth == 320 &&
+                scaled.LocalHeight == 300 &&
+                scaled.PhysicalWidth == 640 &&
+                scaled.PhysicalLeft == 640 &&
+                scaled.PhysicalTop == 220;
+
+            return projectionOk && toleranceOk && toleranceConstantOk &&
+                scheduleCenteredOk && scaledCenteredOk;
+        }
+
+        // DRT-6 v11 contract: codec round-trips the durable preferred fields,
+        // only user-gesture reasons may commit a preference, and a v10 note
+        // migrates its display-local rect into a durable target key without
+        // overwriting an existing preference.
+        private static bool RunV11PreferredCheck()
+        {
+            StickyNoteData source = new StickyNoteData
+            {
+                Id = "v11-check",
+                PreferredDisplayTargetKey = "mdp:home",
+                PreferredLocalLogicalX = -10,
+                PreferredLocalLogicalY = 30,
+                PreferredLocalLogicalWidth = 320,
+                PreferredLocalLogicalHeight = 300
+            };
+            string line = StickyNoteCodec.SerializeLine(source);
+            bool headerAndFields =
+                line.StartsWith("11|", StringComparison.Ordinal) &&
+                line.Split('|').Length ==
+                    StickyNoteCodec.CurrentFieldCount;
+            StickyNoteData parsed = StickyNoteCodec.ParseLine(line);
+            bool roundTrip = parsed != null &&
+                parsed.PreferredDisplayTargetKey == "mdp:home" &&
+                parsed.PreferredLocalLogicalX == -10 &&
+                parsed.PreferredLocalLogicalWidth == 320;
+
+            bool reasonGuard =
+                StickyPlacementRules.CanCommitPreferred(
+                    PlacementReason.UserMoveCommit) &&
+                StickyPlacementRules.CanCommitPreferred(
+                    PlacementReason.UserResizeCommit) &&
+                StickyPlacementRules.CanCommitPreferred(
+                    PlacementReason.Spawn) &&
+                !StickyPlacementRules.CanCommitPreferred(
+                    PlacementReason.Restore) &&
+                !StickyPlacementRules.CanCommitPreferred(
+                    PlacementReason.DockLiveFollower) &&
+                !StickyPlacementRules.CanCommitPreferred(
+                    PlacementReason.TemporaryRehome);
+
+            StickyNoteData v10 = new StickyNoteData
+            {
+                Id = "v10-check",
+                DisplayId = "\\\\.\\DISPLAY2",
+                LocalLogicalX = 5,
+                LocalLogicalY = 6,
+                LocalLogicalWidth = 320,
+                LocalLogicalHeight = 300
+            };
+            DisplayTopologySnapshot topology =
+                new DisplayTopologySnapshot(0, new[]
+                {
+                    FakeSurface(2, 1920, false, 1080, 1032,
+                        FakeTarget("mdp:fake-2"))
+                });
+            bool migrated = StickyPlacementRules.MigrateV10Preferred(
+                v10, topology) &&
+                v10.PreferredDisplayTargetKey == "mdp:fake-2" &&
+                v10.PreferredLocalLogicalX == 5 &&
+                v10.PreferredLocalLogicalWidth == 320;
+
+            return headerAndFields && roundTrip && reasonGuard && migrated;
+        }
+
+        // DRT-7 state machine: a temporary rehome preserves Effective facts,
+        // a user placement commit ends it and blocks a later pull-back, and a
+        // fresh rehome resets the intent window.
+        private static bool RunTemporaryRehomeCheck()
+        {
+            StickyPlacementRuntime runtime = new StickyPlacementRuntime();
+            runtime.TryUpdateEffective("rehome-note",
+                new WindowFacts("rehome-note", "mdp:b", "\\\\.\\DISPLAY2",
+                    new PhysicalRect(1920, 0, 640, 600), 192, 4, 5));
+            runtime.MarkTemporaryRehome("rehome-note",
+                "preferred-display-missing");
+            bool marked = runtime.IsTemporaryRehome("rehome-note") &&
+                !runtime.UserMovedSinceRehome("rehome-note") &&
+                runtime.TemporaryReason("rehome-note") ==
+                    "preferred-display-missing";
+
+            runtime.TryUpdateEffective("rehome-note",
+                new WindowFacts("rehome-note", "mdp:fallback",
+                    "\\\\.\\DISPLAY1", new PhysicalRect(0, 0, 640, 600),
+                    96, 4, 6));
+            bool factsUpdatePreservesFlags =
+                runtime.IsTemporaryRehome("rehome-note") &&
+                runtime.GetEffective("rehome-note").Dpi == 96;
+
+            runtime.MarkUserPlacementCommit("rehome-note");
+            bool userMovedEndsRehome =
+                !runtime.IsTemporaryRehome("rehome-note") &&
+                runtime.UserMovedSinceRehome("rehome-note");
+
+            runtime.MarkTemporaryRehome("rehome-note", "again");
+            bool newRehomeResetsIntent =
+                runtime.IsTemporaryRehome("rehome-note") &&
+                !runtime.UserMovedSinceRehome("rehome-note");
+
+            runtime.MarkReturnedToPreferred("rehome-note");
+            bool returnedClearsFlags =
+                !runtime.IsTemporaryRehome("rehome-note") &&
+                !runtime.UserMovedSinceRehome("rehome-note");
+
+            return marked && factsUpdatePreservesFlags &&
+                userMovedEndsRehome && newRehomeResetsIntent &&
+                returnedClearsFlags;
+        }
+
+        // DRT-9 mailbox contract: live frames are latest-wins, but a final
+        // mouse-up plan and its queued flag remain owned until final apply.
+        private static bool RunDockPlanMailboxCheck()
+        {
+            DockPlanMailbox mailbox = new DockPlanMailbox();
+            lock (mailbox.Gate)
+            {
+                mailbox.Current = new DockPlacementPlan(3,
+                    mailbox.NextSequence(), "source", "surface-1", 96,
+                    new[]
+                    {
+                        new DockWindowTarget("a",
+                            new PhysicalRect(10, 20, 320, 300))
+                    });
+                mailbox.ApplyQueued = true;
+            }
+            lock (mailbox.Gate)
+            {
+                mailbox.Current = new DockPlacementPlan(3,
+                    mailbox.NextSequence(), "source", "surface-1", 96,
+                    new[]
+                    {
+                        new DockWindowTarget("b",
+                            new PhysicalRect(30, 40, 320, 300))
+                    });
+            }
+            DockPlacementPlan taken = mailbox.TakeLatest();
+            bool latestWins = taken != null &&
+                taken.PlanSequence == 2 &&
+                taken.WindowTargets.Count == 1 &&
+                taken.WindowTargets[0].NoteId == "b" &&
+                mailbox.Current == null &&
+                !mailbox.ApplyQueued;
+
+            DockPlacementPlan finalPlan = new DockPlacementPlan(3,
+                mailbox.NextSequence(), "source", "surface-1", 96,
+                new[]
+                {
+                    new DockWindowTarget("a",
+                        new PhysicalRect(50, 60, 320, 300)),
+                    new DockWindowTarget("b",
+                        new PhysicalRect(370, 60, 320, 300))
+                });
+            mailbox.ReplaceWithFinal(finalPlan);
+            DockPlacementPlan liveTake = mailbox.TakeLatest();
+            bool finalBarrierHolds = liveTake == null &&
+                object.ReferenceEquals(mailbox.Current, finalPlan) &&
+                mailbox.ApplyQueued &&
+                object.ReferenceEquals(
+                    mailbox.TakeFinal(finalPlan.PlanSequence), finalPlan) &&
+                object.ReferenceEquals(mailbox.Current, finalPlan) &&
+                mailbox.ApplyQueued;
+            mailbox.CompleteFinal(finalPlan.PlanSequence);
+            finalBarrierHolds = finalBarrierHolds &&
+                mailbox.Current == null && !mailbox.ApplyQueued &&
+                mailbox.FinalPlanSequence == 0;
+
+            StickyNoteData snapshotSource = new StickyNoteData
+            {
+                Title = "content-only",
+                Visible = true,
+                AlwaysOnTop = true,
+                X = 120,
+                Y = 240,
+                Width = 360,
+                Height = 480,
+                DisplayId = "legacy-display",
+                LocalLogicalWidth = 360,
+                LocalLogicalHeight = 480,
+                PreferredDisplayTargetKey = "preferred-target",
+                PreferredLocalLogicalWidth = 360,
+                PreferredLocalLogicalHeight = 480
+            };
+            StickyNoteUiSnapshot contentOnly =
+                StickyNoteUiSnapshot.FromContentData(snapshotSource);
+            bool contentSnapshotIsNarrow =
+                contentOnly.NoteId == snapshotSource.Id &&
+                contentOnly.Title == "content-only" &&
+                contentOnly.Visible && contentOnly.AlwaysOnTop &&
+                contentOnly.X == 0 && contentOnly.Y == 0 &&
+                contentOnly.Width == 0 && contentOnly.Height == 0 &&
+                contentOnly.DisplayId == String.Empty &&
+                contentOnly.LocalLogicalWidth == 0 &&
+                contentOnly.LocalLogicalHeight == 0 &&
+                contentOnly.PreferredDisplayTargetKey == String.Empty &&
+                contentOnly.PreferredLocalLogicalWidth == 0 &&
+                contentOnly.PreferredLocalLogicalHeight == 0;
+
+            bool planImmutable = true;
+            foreach (System.Reflection.PropertyInfo property in
+                typeof(DockPlacementPlan).GetProperties())
+                if (property.CanWrite) planImmutable = false;
+            bool batchResultImmutable = true;
+            foreach (System.Reflection.PropertyInfo property in
+                typeof(DockBatchResult).GetProperties())
+                if (property.CanWrite) batchResultImmutable = false;
+            foreach (System.Reflection.PropertyInfo property in
+                typeof(DockBatchMemberResult).GetProperties())
+                if (property.CanWrite) batchResultImmutable = false;
+            return latestWins && finalBarrierHolds && contentSnapshotIsNarrow &&
+                planImmutable && batchResultImmutable;
+        }
+
+        // DISPLAYCONFIG_TARGET_DEVICE_NAME is a wire ABI passed directly to
+        // DisplayConfigGetDeviceInfo.  Verify field widths and offsets so a
+        // future harmless-looking managed refactor cannot corrupt monitor
+        // identity reads on mixed-DPI topologies.
+        private static bool RunNativeDisplayAbiCheck()
+        {
+            return Marshal.SizeOf(typeof(DisplayConfigTargetDeviceName)) == 420 &&
+                Marshal.OffsetOf(typeof(DisplayConfigTargetDeviceName),
+                    "EdidManufactureId").ToInt32() == 28 &&
+                Marshal.OffsetOf(typeof(DisplayConfigTargetDeviceName),
+                    "EdidProductCodeId").ToInt32() == 30 &&
+                Marshal.OffsetOf(typeof(DisplayConfigTargetDeviceName),
+                    "ConnectorInstance").ToInt32() == 32 &&
+                Marshal.OffsetOf(typeof(DisplayConfigTargetDeviceName),
+                    "MonitorFriendlyDeviceName").ToInt32() == 36 &&
+                Marshal.OffsetOf(typeof(DisplayConfigTargetDeviceName),
+                    "MonitorDevicePath").ToInt32() == 164;
+        }
+
+        private static bool RunDockTopologyReprojectCheck()
+        {
+            DisplaySurfaceSnapshot surface = new DisplaySurfaceSnapshot(
+                "surface-hotplug", "\\\\.\\DISPLAY9",
+                new PhysicalRect(-1920, 0, 1920, 1080),
+                new PhysicalRect(-1920, 0, 1920, 1040), false, 0,
+                new[]
+                {
+                    new DisplayTargetIdentity("mdp:hotplug", true,
+                        "path", "Hotplug", 0, 0, 0)
+                });
+            DockGroupLogicalState group = new DockGroupLogicalState(
+                new LogicalPoint { X = 10, Y = 20 }, new[]
+                {
+                    new DockLogicalMember("a", 320, 300),
+                    new DockLogicalMember("b", 320, 400)
+                });
+            DockPlacementPlan plan = DockPlacementPlanner.PlanReproject(
+                new DockGroupReprojectPlan(7, 11, "surface-hotplug",
+                    group, true), surface, 192);
+
+            StickyNoteData reprojA = new StickyNoteData();
+            reprojA.Id = "reproj-a";
+            reprojA.LocalLogicalX = 10;
+            reprojA.LocalLogicalY = 20;
+            reprojA.LocalLogicalWidth = 320;
+            reprojA.LocalLogicalHeight = 300;
+            reprojA.PreferredLocalLogicalX = 900;
+            reprojA.PreferredLocalLogicalY = 800;
+            reprojA.PreferredLocalLogicalWidth = 500;
+            reprojA.PreferredLocalLogicalHeight = 600;
+            StickyNoteData reprojB = new StickyNoteData();
+            reprojB.Id = "reproj-b";
+            reprojB.LocalLogicalX = 10;
+            reprojB.LocalLogicalY = 320;
+            reprojB.LocalLogicalWidth = 320;
+            reprojB.LocalLogicalHeight = 360;
+            reprojB.PreferredLocalLogicalX = 900;
+            reprojB.PreferredLocalLogicalY = 1400;
+            reprojB.PreferredLocalLogicalWidth = 500;
+            reprojB.PreferredLocalLogicalHeight = 700;
+            List<StickyNoteData> reprojGroup =
+                new List<StickyNoteData> { reprojA, reprojB };
+
+            DockGroupLogicalState runtimeState;
+            bool runtimeOk = PetForm.TryBuildDockTopologyLogicalState(
+                reprojGroup, DockTopologyReprojectReason.CurrentRuntimeRepair,
+                out runtimeState) &&
+                runtimeState.RootAnchor.X == 10 &&
+                runtimeState.RootAnchor.Y == 20 &&
+                runtimeState.Members[0].Width == 320 &&
+                runtimeState.Members[0].Height == 300 &&
+                runtimeState.Members[1].Width == 320 &&
+                runtimeState.Members[1].Height == 360;
+
+            DockGroupLogicalState returnState;
+            bool returnOk = PetForm.TryBuildDockTopologyLogicalState(
+                reprojGroup, DockTopologyReprojectReason.PreferredReturn,
+                out returnState) &&
+                returnState.RootAnchor.X == 900 &&
+                returnState.RootAnchor.Y == 800 &&
+                returnState.Members[0].Width == 500 &&
+                returnState.Members[0].Height == 600 &&
+                returnState.Members[1].Width == 500 &&
+                returnState.Members[1].Height == 700;
+
+            DockGroupLogicalState rehomeState;
+            bool rehomeOk = PetForm.TryBuildDockTopologyLogicalState(
+                reprojGroup, DockTopologyReprojectReason.TemporaryRehome,
+                out rehomeState) &&
+                rehomeState.Members[0].Width == 500 &&
+                rehomeState.Members[0].Height == 600 &&
+                rehomeState.Members[1].Width == 500 &&
+                rehomeState.Members[1].Height == 700;
+
+            StickyNoteData badLocalA = new StickyNoteData();
+            badLocalA.Id = "reproj-bad-local-a";
+            badLocalA.LocalLogicalWidth = 0;
+            badLocalA.LocalLogicalHeight = 0;
+            badLocalA.PreferredLocalLogicalWidth = 500;
+            badLocalA.PreferredLocalLogicalHeight = 600;
+            StickyNoteData badLocalB = new StickyNoteData();
+            badLocalB.Id = "reproj-bad-local-b";
+            badLocalB.LocalLogicalWidth = 0;
+            badLocalB.LocalLogicalHeight = 0;
+            badLocalB.PreferredLocalLogicalWidth = 500;
+            badLocalB.PreferredLocalLogicalHeight = 700;
+            DockGroupLogicalState rejectedLocal;
+            bool localRejected =
+                !PetForm.TryBuildDockTopologyLogicalState(
+                    new List<StickyNoteData> { badLocalA, badLocalB },
+                    DockTopologyReprojectReason.CurrentRuntimeRepair,
+                    out rejectedLocal) && rejectedLocal == null;
+
+            StickyNoteData badPrefA = new StickyNoteData();
+            badPrefA.Id = "reproj-bad-pref-a";
+            badPrefA.LocalLogicalWidth = 320;
+            badPrefA.LocalLogicalHeight = 300;
+            badPrefA.PreferredLocalLogicalWidth = 0;
+            badPrefA.PreferredLocalLogicalHeight = 0;
+            StickyNoteData badPrefB = new StickyNoteData();
+            badPrefB.Id = "reproj-bad-pref-b";
+            badPrefB.LocalLogicalWidth = 320;
+            badPrefB.LocalLogicalHeight = 360;
+            badPrefB.PreferredLocalLogicalWidth = 0;
+            badPrefB.PreferredLocalLogicalHeight = 0;
+            DockGroupLogicalState rejectedPreferred;
+            bool preferredRejected =
+                !PetForm.TryBuildDockTopologyLogicalState(
+                    new List<StickyNoteData> { badPrefA, badPrefB },
+                    DockTopologyReprojectReason.PreferredReturn,
+                    out rejectedPreferred) && rejectedPreferred == null;
+
+            bool reasonOwnedGeometry = runtimeOk && returnOk && rehomeOk &&
+                localRejected && preferredRejected;
+
+            return plan.TopologyGeneration == 7 &&
+                plan.PlanSequence == 11 &&
+                plan.SourceNoteId == String.Empty &&
+                plan.TargetDpi == 192 &&
+                plan.WindowTargets.Count == 2 &&
+                plan.WindowTargets[0].PhysicalBounds.Width == 640 &&
+                plan.WindowTargets[0].PhysicalBounds.Bottom ==
+                    plan.WindowTargets[1].PhysicalBounds.Top &&
+                reasonOwnedGeometry;
+        }
+
+        // Z-order band contract: the pure raise sequence preserves membership
+        // and puts the source last for root/middle/tail drags, and the typed
+        // command factory rejects duplicates, missing source and short groups.
+        private static bool RunDockZOrderCheck()
+        {
+            string[] order;
+
+            bool rootSource =
+                StickyUiHost.TryBuildDockDragRaiseOrder(
+                    new[] { "a", "b", "c" }, "a", out order) &&
+                order.Length == 3 &&
+                order[0] == "c" && order[1] == "b" && order[2] == "a";
+
+            bool middleSource =
+                StickyUiHost.TryBuildDockDragRaiseOrder(
+                    new[] { "a", "b", "c" }, "b", out order) &&
+                order.Length == 3 &&
+                order[0] == "c" && order[1] == "a" && order[2] == "b";
+
+            bool tailSource =
+                StickyUiHost.TryBuildDockDragRaiseOrder(
+                    new[] { "a", "b", "c" }, "c", out order) &&
+                order.Length == 3 &&
+                order[0] == "b" && order[1] == "a" && order[2] == "c";
+
+            bool duplicateRejected =
+                !StickyUiHost.TryBuildDockDragRaiseOrder(
+                    new[] { "a", "b", "b" }, "a", out order) &&
+                order == null;
+
+            bool missingSourceRejected =
+                !StickyUiHost.TryBuildDockDragRaiseOrder(
+                    new[] { "a", "b" }, "x", out order) &&
+                order == null;
+
+            bool shortGroupRejected =
+                !StickyUiHost.TryBuildDockDragRaiseOrder(
+                    new[] { "a" }, "a", out order) &&
+                order == null;
+
+            DisplayTopologySnapshot topology =
+                new DisplayTopologySnapshot(0, new[]
+                {
+                    FakeSurface(1, 0, true, 1080, 1032,
+                        FakeTarget("mdp:zorder"))
+                });
+            bool factoryRejectsDuplicate = false;
+            try
+            {
+                StickyUiCommand.RaiseDockGroupForDrag(
+                    new[] { "a", "a" }, "a", topology, 1);
+            }
+            catch (ArgumentException)
+            {
+                factoryRejectsDuplicate = true;
+            }
+            bool factoryRejectsMissingSource = false;
+            try
+            {
+                StickyUiCommand.RaiseDockGroupForDrag(
+                    new[] { "a", "b" }, "x", topology, 1);
+            }
+            catch (ArgumentException)
+            {
+                factoryRejectsMissingSource = true;
+            }
+            bool factoryPreserves = false;
+            StickyUiCommand command = StickyUiCommand.RaiseDockGroupForDrag(
+                new[] { "a", "b", "c" }, "b", topology, 7);
+            factoryPreserves =
+                command.Kind == StickyUiCommandKind.RaiseDockGroupForDrag &&
+                command.NoteId == "b" &&
+                command.DockNoteIds != null &&
+                command.DockNoteIds.Length == 3 &&
+                command.DockNoteIds[0] == "a" &&
+                command.DockNoteIds[2] == "c" &&
+                command.InteractionEpoch == 7 &&
+                command.Topology != null;
+
+            return rootSource && middleSource && tailSource &&
+                duplicateRejected && missingSourceRejected &&
+                shortGroupRejected && factoryRejectsDuplicate &&
+                factoryRejectsMissingSource && factoryPreserves;
         }
 
         private static WindowShellCheckResult RunWindowShellChecks(
@@ -2277,7 +5197,34 @@ namespace PennyPet
                     shutdownCompleted && afterShutdown != null &&
                     afterShutdown.Status == StickyUiCommandStatus.NotAccepted;
             }
-            result.StickyCanary = RunStickyCanaryLifecycleCheck();
+            result.StickyHosted = RunStickyHostedLifecycleCheck();
+            result.PersonaRuntimeCatalogOk =
+                RunPersonaRuntimeCatalogCheck();
+            result.SolarTermAttachmentOk =
+                RunSolarTermAttachmentCheck();
+            result.PersonaLyricAnimationOk =
+                RunPersonaLyricAnimationCheck();
+            result.SmallTalkAnimationProtectionOk =
+                RunSmallTalkAnimationProtectionCheck();
+            result.SolarPreservePlumbingOk =
+                RunSolarPreservePlumbingCheck();
+            result.DisplayTopologyRuntimeOk =
+                RunDisplayTopologyRuntimeCheck();
+            result.StickyContentApplySeparationOk =
+                RunStickySnapshotSeparationCheck();
+            result.NativePlacementOk =
+                RunNativePlacementCheck();
+            result.NativeDisplayAbiOk = RunNativeDisplayAbiCheck();
+            result.V11PreferredOk =
+                RunV11PreferredCheck();
+            result.TemporaryRehomeOk =
+                RunTemporaryRehomeCheck();
+            result.DockPlanMailboxOk =
+                RunDockPlanMailboxCheck();
+            result.DockTopologyReprojectOk =
+                RunDockTopologyReprojectCheck();
+            result.DockZOrderOk =
+                RunDockZOrderCheck();
             result.ScaleRangeOk =
                 PetForm.NormalizeScalePercent(47) == 50 &&
                 PetForm.NormalizeScalePercent(104) == 100 &&
@@ -2285,6 +5232,98 @@ namespace PennyPet
                 PetForm.NormalizeScalePercent(207) == 200 &&
                 PetForm.ScaledPetSize(50) == new Size(96, 104) &&
                 PetForm.ScaledPetSize(200) == new Size(384, 416);
+            WeatherLocation testWeatherLocation;
+            WeatherLocation.TryCreate("武汉", "湖北", "中国", 30.5928,
+                114.3055, "Asia/Shanghai", out testWeatherLocation);
+            using (PetWeatherSource weatherSource = new PetWeatherSource())
+            using (DailyContentSettingsForm dailySettings =
+                new DailyContentSettingsForm(false, true, true, true,
+                    testWeatherLocation, ZodiacSign.Scorpio, 0, 0,
+                    weatherSource))
+            using (DailyContentSettingsForm unsetDailySettings =
+                new DailyContentSettingsForm(true, true, true, false, null,
+                    ZodiacSign.None, 0, 0, weatherSource))
+            {
+                PetSettingsData stored = new PetSettingsData
+                {
+                    DailyContentEnabled = false,
+                    SolarTermEnabled = true,
+                    AlmanacEnabled = true,
+                    WeatherEnabled = true,
+                    WeatherLocationName = "武汉",
+                    WeatherLocationAdmin1 = "湖北",
+                    WeatherLocationCountry = "中国",
+                    WeatherLatitude = 30.5928,
+                    WeatherLongitude = 114.3055,
+                    WeatherTimezone = "Asia/Shanghai",
+                    ZodiacSign = ZodiacSign.Scorpio
+                };
+                result.DailyContentSettingsUiOk =
+                    !dailySettings.DailyContentEnabled &&
+                    dailySettings.SolarTermEnabled &&
+                    dailySettings.AlmanacEnabled &&
+                    !dailySettings.SolarTermControlEnabledForTest &&
+                    !dailySettings.AlmanacControlEnabledForTest &&
+                    !dailySettings.WeatherControlEnabledForTest &&
+                    !dailySettings.WeatherLocationButtonEnabledForTest;
+                result.ZodiacPreferenceSettingsUiOk =
+                    !dailySettings.ZodiacControlEnabledForTest &&
+                    dailySettings.SelectedZodiacSign == ZodiacSign.Scorpio &&
+                    dailySettings.ZodiacDisplayNameForTest == "天蝎座" &&
+                    unsetDailySettings.ZodiacDisplayNameForTest ==
+                        "暂未设置";
+                dailySettings.SetZodiacSignForTest(ZodiacSign.Pisces);
+                bool canceled = dailySettings.ApplyIfAccepted(stored,
+                    DialogResult.Cancel);
+                bool cancelKeepsStored = !canceled &&
+                    stored.ZodiacSign == ZodiacSign.Scorpio;
+                dailySettings.SetDailyContentEnabledForTest(true);
+                dailySettings.SetAlmanacEnabledForTest(false);
+                bool accepted = dailySettings.ApplyIfAccepted(stored,
+                    DialogResult.OK);
+                unsetDailySettings.SetWeatherEnabledForTest(true);
+                bool missingCityRejected = !unsetDailySettings
+                    .ApplyIfAccepted(new PetSettingsData(), DialogResult.OK);
+                result.DailyContentSettingsUiOk =
+                    result.DailyContentSettingsUiOk &&
+                    dailySettings.DailyContentEnabled &&
+                    dailySettings.SolarTermEnabled &&
+                    dailySettings.SolarTermControlEnabledForTest &&
+                    dailySettings.AlmanacControlEnabledForTest &&
+                    !dailySettings.AlmanacEnabled &&
+                    dailySettings.WeatherControlEnabledForTest &&
+                    dailySettings.WeatherLocationButtonEnabledForTest &&
+                    stored.WeatherEnabled &&
+                    stored.WeatherLocationName == "武汉" &&
+                    stored.WeatherTimezone == "Asia/Shanghai" &&
+                    !stored.AlmanacEnabled &&
+                    missingCityRejected;
+                result.ZodiacPreferenceSettingsUiOk =
+                    result.ZodiacPreferenceSettingsUiOk &&
+                    cancelKeepsStored && accepted &&
+                    dailySettings.ZodiacControlEnabledForTest &&
+                    dailySettings.ZodiacDisplayNameForTest == "双鱼座" &&
+                    stored.DailyContentEnabled &&
+                    stored.SolarTermEnabled &&
+                    stored.ZodiacSign == ZodiacSign.Pisces;
+            }
+            int dailyMenuClicks = 0;
+            PetContextMenuCommands menuCommands =
+                new PetContextMenuCommands();
+            menuCommands.ShowDailyContentSettings =
+                delegate { dailyMenuClicks++; };
+            using (PetContextMenu contextMenu = new PetContextMenu(
+                "Penny", false, false, false, menuCommands))
+            {
+                contextMenu.DailyContentItem.PerformClick();
+                result.DailyContentSettingsUiOk =
+                    result.DailyContentSettingsUiOk &&
+                    contextMenu.DailyContentItem.Text == "个性化每日内容…" &&
+                    contextMenu.Menu.Items.IndexOf(
+                        contextMenu.DailyContentItem) <
+                    contextMenu.Menu.Items.IndexOf(contextMenu.ScaleItem) &&
+                    dailyMenuClicks == 1;
+            }
             result.ReverseReminderStepOk =
                 ReverseStepDateTimePicker.ReverseVirtualKey(0x26) == 0x28 &&
                 ReverseStepDateTimePicker.ReverseVirtualKey(0x28) == 0x26;
@@ -2310,9 +5349,9 @@ namespace PennyPet
             return result;
         }
 
-        private static StickyCanaryCheckResult RunStickyCanaryLifecycleCheck()
+        private static StickyHostedCheckResult RunStickyHostedLifecycleCheck()
         {
-            StickyCanaryCheckResult check = new StickyCanaryCheckResult();
+            StickyHostedCheckResult check = new StickyHostedCheckResult();
             int petThread = Thread.CurrentThread.ManagedThreadId;
             int eventThread = 0;
             StickyUiEvent lastEvent = null;
@@ -2320,6 +5359,8 @@ namespace PennyPet
                 StringComparer.OrdinalIgnoreCase);
             HashSet<StickyUiEventKind> eventKinds =
                 new HashSet<StickyUiEventKind>();
+            bool setBoundsInFlight = false;
+            bool setBoundsLeakedHeaderDrag = false;
             SynchronizationContext petContext =
                 new WindowsFormsSynchronizationContext();
             StickyNoteData canonical = new StickyNoteData();
@@ -2371,7 +5412,7 @@ namespace PennyPet
             using (StickyUiHost host = new StickyUiHost())
             {
                 host.Start();
-                host.ConfigureCanary(delegate(StickyUiEvent value)
+                host.Configure(delegate(StickyUiEvent value)
                 {
                     eventThread = Thread.CurrentThread.ManagedThreadId;
                     lastEvent = value;
@@ -2379,6 +5420,11 @@ namespace PennyPet
                     {
                         eventNoteIds.Add(value.NoteId);
                         eventKinds.Add(value.Kind);
+                        if (value.Kind == StickyUiEventKind.HeaderDragMoved &&
+                            setBoundsInFlight &&
+                            String.Equals(value.NoteId, canonical.Id,
+                                StringComparison.OrdinalIgnoreCase))
+                            setBoundsLeakedHeaderDrag = true;
                     }
                 }, petContext);
                 StickyUiCommandResult created = PostStickyCommandAndWait(host,
@@ -2470,6 +5516,54 @@ namespace PennyPet
                             hostedLayout[1].X, hostedLayout[1].Y,
                             hostedLayout[1].Width, hostedLayout[1].Height)),
                     petContext);
+
+                // Focused regression: a programmatic SetBounds must be atomic.
+                // It must not leak HeaderDragMoved, and its result must carry a
+                // strictly newer sequence with the final geometry immediately
+                // (mixed-width merge normalizes width without a self-heal wait).
+                List<Rectangle> mixedWidthLayout =
+                    PetForm.CalculateUnifiedDockLayout(new Size[]
+                    {
+                        new Size(320, 300), new Size(420, 420)
+                    }, 80, 140, 320);
+                StickyUiCommandResult mixedRoot =
+                    PostStickyCommandAndWait(host,
+                        new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                            second.Id, false, null, new StickyUiBounds(
+                                mixedWidthLayout[0].X,
+                                mixedWidthLayout[0].Y,
+                                mixedWidthLayout[0].Width,
+                                mixedWidthLayout[0].Height)),
+                        petContext);
+                long canonicalBaseline = sourceDocked == null
+                    ? 0 : sourceDocked.Sequence;
+                long secondBaseline = targetDocked == null
+                    ? 0 : targetDocked.Sequence;
+                setBoundsInFlight = true;
+                StickyUiCommandResult mixedSource =
+                    PostStickyCommandAndWait(host,
+                        new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                            canonical.Id, false, null, new StickyUiBounds(
+                                mixedWidthLayout[1].X,
+                                mixedWidthLayout[1].Y,
+                                mixedWidthLayout[1].Width,
+                                mixedWidthLayout[1].Height)),
+                        petContext);
+                setBoundsInFlight = false;
+                bool staleCannotOverwrite =
+                    !PetForm.ShouldApplyHostedSequence(
+                        canonicalBaseline, mixedSource.Sequence) &&
+                    PetForm.ShouldApplyHostedSequence(mixedSource.Sequence,
+                        canonicalBaseline);
+                check.HostedSetBoundsAtomicOk =
+                    mixedRoot != null && mixedSource != null &&
+                    mixedRoot.Status == StickyUiCommandStatus.Handled &&
+                    mixedSource.Status == StickyUiCommandStatus.Handled &&
+                    mixedRoot.Snapshot.Width == 320 &&
+                    mixedSource.Snapshot.Width == 320 &&
+                    mixedSource.Sequence > canonicalBaseline &&
+                    mixedRoot.Sequence > secondBaseline &&
+                    staleCannotOverwrite && !setBoundsLeakedHeaderDrag;
                 Dictionary<string, DockWindowFacts> moveFacts =
                     new Dictionary<string, DockWindowFacts>(
                         StringComparer.OrdinalIgnoreCase)
@@ -2583,6 +5677,27 @@ namespace PennyPet
                         targetDividerResized.Snapshot.Height ==
                         sourceDividerResized.Snapshot.Y;
 
+                // Reopen geometry must be screen-independent: the divider
+                // fixture can exceed a small CI virtual work area, so compact
+                // bounds are applied right before hide and the reopen must
+                // preserve exactly those bounds (hide -> reopen == no drift).
+                List<Rectangle> compactLayout =
+                    PetForm.CalculateUnifiedDockLayout(new Size[]
+                    {
+                        new Size(420, 230), new Size(420, 230)
+                    }, 80, 140, 420);
+                PostStickyCommandAndWait(host,
+                    new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                        second.Id, false, null, new StickyUiBounds(
+                            compactLayout[0].X, compactLayout[0].Y,
+                            compactLayout[0].Width,
+                            compactLayout[0].Height)), petContext);
+                PostStickyCommandAndWait(host,
+                    new StickyUiCommand(StickyUiCommandKind.SetBounds,
+                        canonical.Id, false, null, new StickyUiBounds(
+                            compactLayout[1].X, compactLayout[1].Y,
+                            compactLayout[1].Width,
+                            compactLayout[1].Height)), petContext);
                 StickyUiCommandResult targetHidden = PostStickyCommandAndWait(
                     host, new StickyUiCommand(StickyUiCommandKind.Hide,
                         second.Id, false), petContext);
@@ -2600,7 +5715,7 @@ namespace PennyPet
                     !sourceHidden.Snapshot.Visible &&
                     targetShown.Snapshot.Visible && sourceShown.Snapshot.Visible &&
                     targetShown.Snapshot.X == 80 &&
-                    sourceShown.Snapshot.Y == 640;
+                    sourceShown.Snapshot.Y == 370;
 
                 StickyUiCommandResult thirdPositioned =
                     PostStickyCommandAndWait(host,
@@ -2820,8 +5935,7 @@ namespace PennyPet
                     targetDocked.Status == StickyUiCommandStatus.Handled &&
                     sourceDocked.Status == StickyUiCommandStatus.Handled &&
                     targetDocked.Snapshot.X == hostedLayout[0].X &&
-                    sourceDocked.Snapshot.Y == hostedLayout[1].Y &&
-                    eventKinds.Contains(StickyUiEventKind.HeaderDragMoved);
+                    sourceDocked.Snapshot.Y == hostedLayout[1].Y;
                 check.LifecycleOk = detachedOwnership && hidden != null &&
                     hidden.Status == StickyUiCommandStatus.Handled &&
                     hidden.Snapshot != null && !hidden.Snapshot.Visible &&
@@ -3025,6 +6139,12 @@ namespace PennyPet
                     dockChecks.Geometry.DividerMovesFollowingChainOk) + ",\n" +
                 "  \"sticky_internal_divider_independent_range_ok\": " + Bool(
                     dockChecks.Geometry.DividerIndependentRangeOk) + ",\n" +
+                "  \"sticky_internal_divider_preserves_downstream_heights_ok\": " +
+                    Bool(dockChecks.Geometry
+                        .DividerPreservesDownstreamHeightsOk) + ",\n" +
+                "  \"sticky_hosted_divider_stable_live_targets_ok\": " +
+                    Bool(dockChecks.Geometry
+                        .DividerLiveSessionTargetsOk) + ",\n" +
                 "  \"sticky_long_group_coordinate_guard_ok\": " + Bool(
                     dockChecks.Geometry.LongCoordinateGuardOk) + ",\n" +
                 "  \"sticky_root_close_collapses_group_ok\": " + Bool(
@@ -3059,10 +6179,18 @@ namespace PennyPet
                     settingsChecks.BackupRecoveryOk) + ",\n" +
                 "  \"settings_failure_dirty_retry_ok\": " + Bool(
                     settingsChecks.FailureDirtyRetryOk) + ",\n" +
+                "  \"daily_briefing_date_persistence_ok\": " + Bool(
+                    settingsChecks.DailyBriefingDatePersistenceOk) + ",\n" +
                 "  \"multiple_reminders_per_note_ok\": " + Bool(
                     reminderCoordinatorChecks.MultipleLinkedReminderOk) + ",\n" +
                 "  \"sticky_note_persistence_ok\": " + Bool(
                     stickyChecks.PersistenceOk) + ",\n" +
+                "  \"sticky_import_merge_commit_ok\": " + Bool(
+                    stickyChecks.ImportMergeCommitOk) + ",\n" +
+                "  \"sticky_full_restore_commit_ok\": " + Bool(
+                    stickyChecks.FullRestoreCommitOk) + ",\n" +
+                "  \"sticky_current_backup_strict_round_trip_ok\": " + Bool(
+                    stickyChecks.CurrentBackupRoundTripOk) + ",\n" +
                 "  \"sticky_pin_action_text_ok\": " + Bool(
                     shellChecks.PinActionTextOk) + ",\n" +
                 "  \"todo_sticky_pin_action_text_ok\": " + Bool(
@@ -3085,6 +6213,35 @@ namespace PennyPet
                     compatibilityChecks.VersionFourMigrationOk) + ",\n" +
                 "  \"ancient_cache_display_repair_ok\": " + Bool(
                     compatibilityChecks.AncientCacheDisplayRepairOk) + ",\n" +
+                "  \"sticky_future_primary_blocks_startup_ok\": " + Bool(
+                    compatibilityChecks.FuturePrimaryBlocksStartupOk) + ",\n" +
+                "  \"sticky_future_schema_classification_ok\": " + Bool(
+                    compatibilityChecks.FutureFailureClassificationOk) + ",\n" +
+                "  \"sticky_future_schema_never_salvages_ok\": " + Bool(
+                    compatibilityChecks.FutureNoSalvageOk) + ",\n" +
+                "  \"sticky_future_primary_does_not_fallback_to_older_backup_ok\": " +
+                    Bool(compatibilityChecks.FutureOlderBackupNotLoadedOk) +
+                    ",\n" +
+                "  \"sticky_future_repository_read_only_ok\": " + Bool(
+                    compatibilityChecks.FutureRepositoryReadOnlyOk) + ",\n" +
+                "  \"sticky_future_sync_save_rejected_ok\": " + Bool(
+                    compatibilityChecks.FutureSyncSaveRejectedOk) + ",\n" +
+                "  \"sticky_future_async_save_rejected_ok\": " + Bool(
+                    compatibilityChecks.FutureAsyncSaveRejectedOk) + ",\n" +
+                "  \"sticky_future_mutations_rejected_ok\": " + Bool(
+                    compatibilityChecks.FutureMutationsRejectedOk) + ",\n" +
+                "  \"sticky_future_primary_sha256_unchanged_ok\": " + Bool(
+                    compatibilityChecks.FuturePrimaryBytesUnchangedOk) + ",\n" +
+                "  \"sticky_future_backup_sha256_unchanged_ok\": " + Bool(
+                    compatibilityChecks.FutureBackupBytesUnchangedOk) + ",\n" +
+                "  \"sticky_future_creates_no_recovery_artifacts_ok\": " + Bool(
+                    compatibilityChecks.FutureNoRecoveryArtifactsOk) + ",\n" +
+                "  \"sticky_historical_startup_matrix_ok\": " + Bool(
+                    compatibilityChecks.HistoricalStartupMatrixOk) + ",\n" +
+                "  \"sticky_current_schema_startup_round_trip_ok\": " + Bool(
+                    compatibilityChecks.CurrentStartupRoundTripOk) + ",\n" +
+                "  \"sticky_future_schema_user_message_ok\": " + Bool(
+                    compatibilityChecks.FutureUserMessageOk) + ",\n" +
                 "  \"todo_persistence_ok\": " + Bool(
                     stickyChecks.TodoOk) + ",\n" +
                 "  \"schedule_persistence_ok\": " + Bool(
@@ -3218,7 +6375,16 @@ namespace PennyPet
                 "  \"sixth_reminder_blocked\": " + Bool(
                     settingsChecks.SixthReminderBlocked) + ",\n" +
                 "  \"reminder_memory_ok\": " + Bool(
-                    settingsChecks.ReminderMemoryOk) + ",\n";
+                    settingsChecks.ReminderMemoryOk) + ",\n" +
+                "  \"daily_content_preferences_persistence_and_legacy_defaults_ok\": " +
+                    Bool(settingsChecks
+                        .DailyContentPreferencesPersistenceOk) + ",\n" +
+                "  \"zodiac_preference_persistence_and_legacy_default_ok\": " +
+                    Bool(settingsChecks.ZodiacPreferencePersistenceOk) +
+                    ",\n" +
+                "  \"weather_preference_persistence_and_legacy_default_ok\": " +
+                    Bool(settingsChecks.WeatherPreferencePersistenceOk) +
+                    ",\n";
         }
 
         private static string BuildScheduleAndExpiredReminderReportFields(
@@ -3309,10 +6475,18 @@ namespace PennyPet
                     windowPolicyChecks.SteadyDockGuideOk) + ",\n" +
                 "  \"manager_marquee_batch_delete_ok\": " + Bool(
                     windowPolicyChecks.ManagerMarqueeBatchDeleteOk) + ",\n" +
+                "  \"manager_sorting_ok\": " + Bool(
+                    windowPolicyChecks.ManagerSortingOk) + ",\n" +
+                "  \"manager_import_preview_ok\": " + Bool(
+                    windowPolicyChecks.ManagerImportPreviewOk) + ",\n" +
+                "  \"manager_responsive_layout_ok\": " + Bool(
+                    windowPolicyChecks.ManagerResponsiveLayoutOk) + ",\n" +
                 "  \"held_key_overlay_stays_constant_ok\": " + Bool(
                     keyboardOverlayChecks.HeldKeyStableOk) + ",\n" +
-                "  \"own_process_hook_isolation_ok\": " + Bool(
-                    keyboardOverlayChecks.OwnProcessIsolationOk) + ",\n" +
+                "  \"keyboard_hook_captures_own_process_ok\": " + Bool(
+                    keyboardOverlayChecks.HookCapturePolicyOk) + ",\n" +
+                "  \"own_process_sticky_eligibility_ok\": " + Bool(
+                    keyboardOverlayChecks.OwnProcessEligibilityOk) + ",\n" +
                 "  \"ime_animation_guard_ok\": " + Bool(
                     editorChecks.ImeAnimationGuardOk) + ",\n" +
                 "  \"ime_autosave_guard_ok\": " + Bool(
@@ -3324,6 +6498,8 @@ namespace PennyPet
                     stickyChecks.FailureDirtyRetryOk) + ",\n" +
                 "  \"sticky_generation_monotonic_ok\": " + Bool(
                     stickyChecks.GenerationMonotonicOk) + ",\n" +
+                "  \"sticky_pending_save_wait_bounded_ok\": " + Bool(
+                    stickyChecks.PendingSaveWaitBoundedOk) + ",\n" +
                 "  \"failed_load_never_overwrites_ok\": " + Bool(
                     compatibilityChecks.FailedLoadNeverOverwritesOk) + ",\n" +
                 "  \"sticky_backup_recovery_allows_create_ok\": " + Bool(
@@ -3336,33 +6512,63 @@ namespace PennyPet
                     shellChecks.StartupDefaultOk) + ",\n" +
                 "  \"sticky_ui_host_ok\": " + Bool(
                     shellChecks.StickyUiHostOk) + ",\n" +
-                "  \"sticky_canary_lifecycle_ok\": " + Bool(
-                    shellChecks.StickyCanary.LifecycleOk) + ",\n" +
+                "  \"sticky_hosted_lifecycle_ok\": " + Bool(
+                    shellChecks.StickyHosted.LifecycleOk) + ",\n" +
                 "  \"sticky_hosted_sequence_rejection_ok\": " + Bool(
-                    shellChecks.StickyCanary.PerNoteSequenceOk) + ",\n" +
+                    shellChecks.StickyHosted.PerNoteSequenceOk) + ",\n" +
                 "  \"sticky_hosted_close_all_batch_ok\": " + Bool(
-                    shellChecks.StickyCanary.CloseAllBatchOk) + ",\n" +
+                    shellChecks.StickyHosted.CloseAllBatchOk) + ",\n" +
                 "  \"sticky_hosted_two_note_dock_effect_ok\": " + Bool(
-                    shellChecks.StickyCanary.HostedDockEffectOk) + ",\n" +
+                    shellChecks.StickyHosted.HostedDockEffectOk) + ",\n" +
                 "  \"sticky_hosted_group_move_ok\": " + Bool(
-                    shellChecks.StickyCanary.HostedGroupMoveOk) + ",\n" +
+                    shellChecks.StickyHosted.HostedGroupMoveOk) + ",\n" +
                 "  \"sticky_hosted_topmost_ok\": " + Bool(
-                    shellChecks.StickyCanary.HostedTopMostOk) + ",\n" +
+                    shellChecks.StickyHosted.HostedTopMostOk) + ",\n" +
                 "  \"sticky_hosted_horizontal_resize_ok\": " + Bool(
-                    shellChecks.StickyCanary.HostedHorizontalResizeOk) +
+                    shellChecks.StickyHosted.HostedHorizontalResizeOk) +
                     ",\n" +
                 "  \"sticky_hosted_divider_resize_ok\": " + Bool(
-                    shellChecks.StickyCanary.HostedDividerResizeOk) +
+                    shellChecks.StickyHosted.HostedDividerResizeOk) +
                     ",\n" +
                 "  \"sticky_hosted_hide_reopen_ok\": " + Bool(
-                    shellChecks.StickyCanary.HostedHideReopenOk) + ",\n" +
+                    shellChecks.StickyHosted.HostedHideReopenOk) + ",\n" +
                 "  \"sticky_hosted_middle_split_ok\": " + Bool(
-                    shellChecks.StickyCanary.HostedMiddleSplitOk) + ",\n" +
+                    shellChecks.StickyHosted.HostedMiddleSplitOk) + ",\n" +
                 "  \"sticky_hosted_three_note_insertion_ok\": " + Bool(
-                    shellChecks.StickyCanary.HostedThreeNoteInsertionOk) +
+                    shellChecks.StickyHosted.HostedThreeNoteInsertionOk) +
                     ",\n" +
                 "  \"sticky_hosted_dock_restore_ok\": " + Bool(
-                    shellChecks.StickyCanary.DockRestoreOk) + ",\n" +
+                    shellChecks.StickyHosted.DockRestoreOk) + ",\n" +
+                "  \"sticky_hosted_setbounds_atomic_ok\": " + Bool(
+                    shellChecks.StickyHosted.HostedSetBoundsAtomicOk) + ",\n" +
+                "  \"persona_runtime_catalog_ok\": " + Bool(
+                    shellChecks.PersonaRuntimeCatalogOk) + ",\n" +
+                "  \"solar_term_attachment_ok\": " + Bool(
+                    shellChecks.SolarTermAttachmentOk) + ",\n" +
+                "  \"persona_lyric_animation_ok\": " + Bool(
+                    shellChecks.PersonaLyricAnimationOk) + ",\n" +
+                "  \"persona_smalltalk_animation_protection_ok\": " + Bool(
+                    shellChecks.SmallTalkAnimationProtectionOk) + ",\n" +
+                "  \"solar_preserve_plumbing_ok\": " + Bool(
+                    shellChecks.SolarPreservePlumbingOk) + ",\n" +
+                "  \"display_topology_runtime_ok\": " + Bool(
+                    shellChecks.DisplayTopologyRuntimeOk) + ",\n" +
+                "  \"sticky_content_apply_separation_ok\": " + Bool(
+                    shellChecks.StickyContentApplySeparationOk) + ",\n" +
+                "  \"native_placement_ok\": " + Bool(
+                    shellChecks.NativePlacementOk) + ",\n" +
+                "  \"native_display_abi_ok\": " + Bool(
+                    shellChecks.NativeDisplayAbiOk) + ",\n" +
+                "  \"v11_preferred_ok\": " + Bool(
+                    shellChecks.V11PreferredOk) + ",\n" +
+                "  \"temporary_rehome_ok\": " + Bool(
+                    shellChecks.TemporaryRehomeOk) + ",\n" +
+                "  \"dock_plan_mailbox_ok\": " + Bool(
+                    shellChecks.DockPlanMailboxOk) + ",\n" +
+                "  \"dock_topology_reproject_ok\": " + Bool(
+                    shellChecks.DockTopologyReprojectOk) + ",\n" +
+                "  \"dock_zorder_ok\": " + Bool(
+                    shellChecks.DockZOrderOk) + ",\n" +
                 "  \"keyboard_hook_opt_in_and_default_off_ok\": " + Bool(
                     keyboardOverlayChecks.HookOptInDefaultOk) + ",\n" +
                 "  \"keyboard_privacy_notice_persistence_ok\": " + Bool(
@@ -3388,7 +6594,7 @@ namespace PennyPet
                     reminderCoordinatorChecks.DueBubblePersistentOk) + ",\n" +
                 "  \"due_reminder_bubble_uses_own_size_ok\": " + Bool(
                     reminderCoordinatorChecks.DueBubbleUsesOwnSizeOk) + ",\n" +
-                "  \"due_reminder_bubble_replaced_by_later_feedback_ok\": " +
+                "  \"due_reminder_bubble_blocks_lower_priority_messages_ok\": " +
                     Bool(reminderCoordinatorChecks.DueBubbleReplacementOk) +
                     ",\n" +
                 "  \"prealert_countdown_bubble_not_replaced_by_note_feedback_ok\": " +
@@ -3443,7 +6649,8 @@ namespace PennyPet
             SettingsPersistenceCheckResult settingsChecks,
             AnimationCheckResult animationChecks,
             WindowShellCheckResult shellChecks,
-            KeyboardOverlayCheckResult keyboardOverlayChecks)
+            KeyboardOverlayCheckResult keyboardOverlayChecks,
+            WeatherCheckResult weatherChecks)
         {
             return
                 "  \"hover_bubble_copy_ok\": " + Bool(
@@ -3463,18 +6670,124 @@ namespace PennyPet
                 "  \"silent_mode_daily_bubbles_suppressed_ok\": " + Bool(
                     bubbleChecks.SilentModeOk) + ",\n" +
                 "  \"silent_mode_reminder_bubbles_preserved_ok\": " + Bool(
-                    !PetForm.ShouldSuppressDailyBubble(true, true)) + ",\n" +
+                    !PetMessagePolicy.ShouldSuppress(
+                        PetMessageKind.ReminderDue, true)) + ",\n" +
                 "  \"manual_animation_random_pool_excludes_running_rows_ok\": " + Bool(
                     animationChecks.ManualRandomPoolOk) + ",\n" +
                 "  \"manual_special_animation_probability_reduced_ok\": " + Bool(
                     animationChecks.ManualSpecialProbabilityReducedOk) +
                     ",\n" +
-                "  \"manual_animation_cooldown_600ms_ok\": " + Bool(
-                    animationChecks.ManualCooldownOk) + ",\n" +
+                "  \"manual_animation_full_cycle_guard_ok\": " + Bool(
+                    animationChecks.ManualFullCycleGuardOk) + ",\n" +
+                "  \"poke_burst_fifty_once_until_pause_ok\": " + Bool(
+                    animationChecks.PokeBurstOk) + ",\n" +
                 "  \"left_click_drag_threshold_ok\": " + Bool(
                     animationChecks.ClickDragThresholdOk) + ",\n" +
                 "  \"bubble_position_math_ok\": " + Bool(
                     bubbleChecks.PositionMathOk) + ",\n" +
+                "  \"bubble_single_message_kind_ok\": " + Bool(
+                    bubbleChecks.SingleMessageKindOk) + ",\n" +
+                "  \"bubble_replacement_closes_old_form_ok\": " + Bool(
+                    bubbleChecks.ReplacementClosesOldFormOk) + ",\n" +
+                "  \"bubble_protected_message_ok\": " + Bool(
+                    bubbleChecks.ProtectedMessageOk) + ",\n" +
+                "  \"bubble_deferred_message_semantics_ok\": " + Bool(
+                    bubbleChecks.DeferredMessageSemanticsOk) + ",\n" +
+                "  \"bubble_pending_retry_without_loss_or_duplication_ok\": " +
+                    Bool(bubbleChecks.PendingRetryOk) + ",\n" +
+                "  \"smalltalk_feedback_minimum_readable_lifecycle_ok\": " +
+                    Bool(bubbleChecks.SmallTalkFeedbackLifecycleOk) +
+                    ",\n" +
+                "  \"bubble_reminder_priority_regression_ok\": " + Bool(
+                    bubbleChecks.ReminderPriorityRegressionOk) + ",\n" +
+                "  \"bubble_single_restore_after_close_ok\": " + Bool(
+                    bubbleChecks.SingleRestoreAfterCloseOk) + ",\n" +
+                "  \"bubble_adaptive_sizing_ok\": " + Bool(
+                    bubbleChecks.AdaptiveSizingOk) + ",\n" +
+                "  \"bubble_update_text_relayout_ok\": " + Bool(
+                    bubbleChecks.UpdateTextRelayoutOk) + ",\n" +
+                "  \"daily_content_first_poke_once_ok\": " + Bool(
+                    bubbleChecks.DailyFirstPokeOk) + ",\n" +
+                "  \"daily_content_rejected_retry_ok\": " + Bool(
+                    bubbleChecks.DailyRejectedRetryOk) + ",\n" +
+                "  \"daily_greeting_typed_request_ok\": " + Bool(
+                    bubbleChecks.DailyGreetingRequestOk) + ",\n" +
+                "  \"poke_easter_egg_typed_request_and_priority_ok\": " + Bool(
+                    bubbleChecks.EasterEggRequestOk) + ",\n" +
+                "  \"bubble_minimum_readable_dwell_ok\": " + Bool(
+                    bubbleChecks.MinimumReadableOk) + ",\n" +
+                "  \"bubble_readability_priority_bypass_ok\": " + Bool(
+                    bubbleChecks.ReadabilityBypassOk) + ",\n" +
+                "  \"smalltalk_typed_request_and_silent_mode_ok\": " + Bool(
+                    bubbleChecks.SmallTalkRequestOk) + ",\n" +
+                "  \"smalltalk_coordinator_cooldown_and_rotation_ok\": " + Bool(
+                    bubbleChecks.SmallTalkCoordinatorCooldownOk) + ",\n" +
+                "  \"smalltalk_coordinator_rejected_show_retry_ok\": " + Bool(
+                    bubbleChecks.SmallTalkCoordinatorRejectedRetryOk) +
+                    ",\n" +
+                "  \"smalltalk_coordinator_silent_mode_retry_ok\": " + Bool(
+                    bubbleChecks.SmallTalkCoordinatorSilentModeOk) + ",\n" +
+                "  \"smalltalk_coordinator_reminder_reject_retry_ok\": " + Bool(
+                    bubbleChecks.SmallTalkCoordinatorReminderRetryOk) +
+                    ",\n" +
+                "  \"solar_term_daily_greeting_fact_ok\": " + Bool(
+                    bubbleChecks.SolarTermOk) + ",\n" +
+                "  \"daily_content_preference_flow_ok\": " + Bool(
+                    bubbleChecks.DailyContentPreferencesOk) + ",\n" +
+                "  \"daily_line_catalogs_complete_unique_ok\": " + Bool(
+                    bubbleChecks.CuratedCatalogOk) + ",\n" +
+                "  \"daily_selectors_deterministic_budgeted_ok\": " +
+                    Bool(bubbleChecks.DailySelectorBudgetOk) + ",\n" +
+                "  \"daily_briefing_supplementary_budget_ok\": " + Bool(
+                    bubbleChecks.DailyBriefingBudgetOk) + ",\n" +
+                "  \"sentence_ending_policy_ok\": " + Bool(
+                    bubbleChecks.SentenceEndingPolicyOk) + ",\n" +
+                "  \"daily_briefing_coordinator_integration_ok\": " + Bool(
+                    bubbleChecks.DailyBriefingCoordinatorOk) + ",\n" +
+                "  \"daily_briefing_rejected_show_retry_ok\": " + Bool(
+                    bubbleChecks.DailyBriefingRejectedRetryOk) + ",\n" +
+                "  \"daily_briefing_same_day_sign_switch_ok\": " + Bool(
+                    bubbleChecks.DailyBriefingSameDaySwitchOk) + ",\n" +
+                "  \"almanac_calculator_dependency_and_sect_ok\": " + Bool(
+                    bubbleChecks.AlmanacCalculatorOk) + ",\n" +
+                "  \"almanac_semantic_whitelist_conflict_ok\": " + Bool(
+                    bubbleChecks.AlmanacSemanticOk) + ",\n" +
+                "  \"almanac_wording_deterministic_variation_ok\": " + Bool(
+                    bubbleChecks.AlmanacWordingOk) + ",\n" +
+                "  \"daily_content_settings_ui_and_menu_ok\": " + Bool(
+                    shellChecks.DailyContentSettingsUiOk) + ",\n" +
+                "  \"weather_fixture_parser_ok\": " + Bool(
+                    weatherChecks.ForecastFixtureParsingOk) + ",\n" +
+                "  \"weather_forecast_request_shape_ok\": " + Bool(
+                    weatherChecks.ForecastRequestShapeOk) + ",\n" +
+                "  \"weather_geocoding_explicit_search_ok\": " + Bool(
+                    weatherChecks.GeocodingRequestAndSelectionOk) + ",\n" +
+                "  \"weather_zero_startup_requests_ok\": " + Bool(
+                    weatherChecks.NoStartupRequestOk) + ",\n" +
+                "  \"weather_same_day_cache_and_inflight_ok\": " + Bool(
+                    weatherChecks.SameDayCacheAndInFlightOk) + ",\n" +
+                "  \"weather_bounded_cache_invalidation_ok\": " + Bool(
+                    weatherChecks.BoundedCacheInvalidationOk) + ",\n" +
+                "  \"weather_failure_cooldown_ok\": " + Bool(
+                    weatherChecks.FailureCooldownOk) + ",\n" +
+                "  \"weather_meaning_and_wording_ok\": " + Bool(
+                    weatherChecks.MeaningAndWordingOk) + ",\n" +
+                "  \"weather_daily_coordinator_integration_ok\": " + Bool(
+                    weatherChecks.DailyCoordinatorWeatherOk) + ",\n" +
+                "  \"weather_failure_daily_fallback_ok\": " + Bool(
+                    weatherChecks.DailyCoordinatorFailureFallbackOk) +
+                    ",\n" +
+                "  \"weather_daily_inflight_coalescing_ok\": " + Bool(
+                    weatherChecks.DailyCoordinatorInFlightOk) + ",\n" +
+                "  \"daily_content_async_preference_snapshot_ok\": " + Bool(
+                    weatherChecks.DailyCoordinatorPreferenceSnapshotOk) +
+                    ",\n" +
+                "  \"weather_rejected_bubble_reuses_forecast_ok\": " + Bool(
+                    weatherChecks.RejectedBubbleReusesForecastOk) + ",\n" +
+                "  \"weather_location_dialog_compact_formatting_ok\": " +
+                    Bool(weatherChecks.LocationDialogLayoutOk) + ",\n" +
+                "  \"zodiac_preference_settings_ui_ok\": " + Bool(
+                    shellChecks.ZodiacPreferenceSettingsUiOk) + ",\n" +
                 "  \"scale_50_to_200_step_10_ok\": " + Bool(
                     shellChecks.ScaleRangeOk) + ",\n" +
                 "  \"keyboard_text_scale_choices_ok\": " + Bool(
@@ -3507,6 +6820,7 @@ namespace PennyPet
         {
             try
             {
+                RunDisplayResolverConsistencyCheck();
                 ArtResourceCheckResult artChecks = RunArtResourceChecks();
                 SettingsPersistenceCheckResult settingsChecks =
                     RunSettingsPersistenceChecks(outputPath);
@@ -3517,6 +6831,7 @@ namespace PennyPet
                 AnimationCheckResult animationChecks =
                     RunAnimationChecks(artChecks.AnimationCycleDurations);
                 BubbleCheckResult bubbleChecks = RunBubbleChecks();
+                WeatherCheckResult weatherChecks = RunWeatherChecks();
                 StickyEditorCheckResult editorChecks = RunStickyEditorChecks();
                 StickyPersistenceCheckResult stickyChecks =
                     RunStickyPersistenceChecks(outputPath);
@@ -3562,7 +6877,8 @@ namespace PennyPet
                         reminderCoordinatorChecks) +
                     BuildBubbleManualKeyboardReportFields(bubbleChecks,
                         reminderCoordinatorChecks, settingsChecks,
-                        animationChecks, shellChecks, keyboardOverlayChecks) +
+                        animationChecks, shellChecks, keyboardOverlayChecks,
+                        weatherChecks) +
                     BuildStaticReportTail();
                 bool ok = EndCheckCollection();
                 string json = "{\n" +
@@ -3570,6 +6886,20 @@ namespace PennyPet
                 string parent = Path.GetDirectoryName(Path.GetFullPath(outputPath));
                 if (!String.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
                 File.WriteAllText(outputPath, json, new UTF8Encoding(false));
+                if (!ok)
+                {
+                    // Diagnostic-only CI evidence: surface the exact failing
+                    // modular fields on the runner console. No test semantics
+                    // change; this only makes CI failures diagnosable.
+                    List<string> falseFields = new List<string>();
+                    foreach (System.Text.RegularExpressions.Match match in
+                        System.Text.RegularExpressions.Regex.Matches(json,
+                            "\"(\\w+)\":\\s*false"))
+                        falseFields.Add(match.Groups[1].Value);
+                    Console.Error.WriteLine(
+                        "MODULAR FALSE FIELDS: " +
+                        String.Join(", ", falseFields));
+                }
             }
             catch (Exception ex)
             {
@@ -3578,7 +6908,31 @@ namespace PennyPet
                 File.WriteAllText(outputPath,
                     "{\"ok\":false,\"error\":\"" + message + "\"}",
                     new UTF8Encoding(false));
+                Console.Error.WriteLine("MODULAR ERROR: " + message);
             }
+        }
+
+        // A broken DisplayId -> metrics resolver silently mis-places restored
+        // stickies on the wrong monitor. Verify that resolving by device id
+        // agrees with the point/rect resolver for the primary monitor so a
+        // regression fails loudly instead of landing notes on the wrong screen.
+        private static void RunDisplayResolverConsistencyCheck()
+        {
+            WindowsDisplayMetrics primary =
+                WindowsDisplayResolver.ResolvePhysicalRect(0, 0, 1, 1);
+            if (primary == null) return; // headless: nothing to validate
+            WindowsDisplayMetrics byDisplay =
+                WindowsDisplayResolver.ResolveDisplay(primary.DisplayId);
+            if (byDisplay == null)
+                throw new InvalidOperationException(
+                    "ResolveDisplay could not resolve primary monitor '" +
+                    primary.DisplayId + "'.");
+            if (byDisplay.Scale != primary.Scale ||
+                byDisplay.PhysicalLeft != primary.PhysicalLeft ||
+                byDisplay.PhysicalTop != primary.PhysicalTop)
+                throw new InvalidOperationException(
+                    "ResolveDisplay metrics differ from ResolvePhysicalRect " +
+                    "for monitor '" + primary.DisplayId + "'.");
         }
     }
 }

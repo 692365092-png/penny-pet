@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Globalization;
 using System.Text;
 
 namespace PennyPet
@@ -32,6 +33,7 @@ namespace PennyPet
                 string value = line.Substring(separator + 1);
                 int intValue;
                 long longValue;
+                double doubleValue;
                 bool recognized = false;
                 if (key == "HasLocation")
                 {
@@ -46,6 +48,23 @@ namespace PennyPet
                 else if (key == "Y" && Int32.TryParse(value, out intValue))
                 {
                     settings.Y = intValue;
+                    recognized = true;
+                }
+                else if (key == "PetPreferredTargetKeyBase64")
+                {
+                    settings.PetPreferredTargetKey = DecodeText(value);
+                    recognized = true;
+                }
+                else if (key == "PetPreferredLocalLogicalX" &&
+                    Int32.TryParse(value, out intValue))
+                {
+                    settings.PetPreferredLocalLogicalX = intValue;
+                    recognized = true;
+                }
+                else if (key == "PetPreferredLocalLogicalY" &&
+                    Int32.TryParse(value, out intValue))
+                {
+                    settings.PetPreferredLocalLogicalY = intValue;
                     recognized = true;
                 }
                 else if (key == "StartupPreferenceInitialized")
@@ -80,6 +99,104 @@ namespace PennyPet
                 else if (key == "SilentMode")
                 {
                     settings.SilentMode = value == "1";
+                    recognized = true;
+                }
+                else if (key == "DailyContentEnabled")
+                {
+                    settings.DailyContentEnabled = value != "0";
+                    recognized = true;
+                }
+                else if (key == "SolarTermEnabled")
+                {
+                    settings.SolarTermEnabled = value != "0";
+                    recognized = true;
+                }
+                else if (key == "AlmanacEnabled")
+                {
+                    settings.AlmanacEnabled = value != "0";
+                    recognized = true;
+                }
+                else if (key == "WeatherEnabled")
+                {
+                    settings.WeatherEnabled = value == "1";
+                    recognized = true;
+                }
+                else if (key == "WeatherLocationNameBase64")
+                {
+                    settings.WeatherLocationName = DecodeText(value);
+                    recognized = true;
+                }
+                else if (key == "WeatherLocationAdmin1Base64")
+                {
+                    settings.WeatherLocationAdmin1 = DecodeText(value);
+                    recognized = true;
+                }
+                else if (key == "WeatherLocationCountryBase64")
+                {
+                    settings.WeatherLocationCountry = DecodeText(value);
+                    recognized = true;
+                }
+                else if (key == "WeatherLatitude" && Double.TryParse(value,
+                    NumberStyles.Float, CultureInfo.InvariantCulture,
+                    out doubleValue))
+                {
+                    settings.WeatherLatitude = doubleValue;
+                    recognized = true;
+                }
+                else if (key == "WeatherLongitude" && Double.TryParse(value,
+                    NumberStyles.Float, CultureInfo.InvariantCulture,
+                    out doubleValue))
+                {
+                    settings.WeatherLongitude = doubleValue;
+                    recognized = true;
+                }
+                else if (key == "WeatherTimezoneBase64")
+                {
+                    settings.WeatherTimezone = DecodeText(value);
+                    recognized = true;
+                }
+                else if (key == "ZodiacSign")
+                {
+                    settings.ZodiacSign = Int32.TryParse(value, out intValue)
+                        ? PetSettingRules.NormalizeZodiacSign(
+                            (ZodiacSign)intValue)
+                        : ZodiacSign.None;
+                    recognized = true;
+                }
+                else if (key == "UserBirthdayMonth" &&
+                    Int32.TryParse(value, out intValue))
+                {
+                    settings.UserBirthdayMonth = intValue;
+                    recognized = true;
+                }
+                else if (key == "UserBirthdayDay" &&
+                    Int32.TryParse(value, out intValue))
+                {
+                    settings.UserBirthdayDay = intValue;
+                    recognized = true;
+                }
+                else if (key == "LastDailyBriefingDate")
+                {
+                    settings.LastDailyBriefingDate =
+                        DailyContentRules.NormalizeDateKey(value);
+                    recognized = true;
+                }
+                else if (key == "DailyLedgerDate")
+                {
+                    settings.DailyLedgerDate =
+                        DailyContentRules.NormalizeDateKey(value);
+                    recognized = true;
+                }
+                else if (key == "DailyLedgerDaypartsMask" &&
+                    Int32.TryParse(value, out intValue))
+                {
+                    settings.DailyLedgerDaypartsMask = Math.Max(0, intValue);
+                    recognized = true;
+                }
+                else if (key == "DailyLedgerUsedMeaningfulIds")
+                {
+                    settings.DailyLedgerUsedMeaningfulIds =
+                        value ?? String.Empty;
                     recognized = true;
                 }
                 else if (key == "KeyOverlayScalePercent" &&
@@ -146,6 +263,13 @@ namespace PennyPet
             if (settings.Reminders.Count == 0)
                 AddLoadedReminder(settings, legacyTicks, legacyText, null,
                     0, false);
+            WeatherLocation ignoredLocation;
+            if (!WeatherLocation.TryCreate(settings.WeatherLocationName,
+                settings.WeatherLocationAdmin1,
+                settings.WeatherLocationCountry, settings.WeatherLatitude,
+                settings.WeatherLongitude, settings.WeatherTimezone,
+                out ignoredLocation))
+                settings.WeatherEnabled = false;
             return settings;
         }
 
@@ -156,6 +280,14 @@ namespace PennyPet
             lines.Add("HasLocation=" + (settings.HasLocation ? "1" : "0"));
             lines.Add("X=" + settings.X);
             lines.Add("Y=" + settings.Y);
+            lines.Add("PetPreferredTargetKeyBase64=" +
+                EncodeText(settings.PetPreferredTargetKey));
+
+            lines.Add("PetPreferredLocalLogicalX=" +
+                settings.PetPreferredLocalLogicalX);
+
+            lines.Add("PetPreferredLocalLogicalY=" +
+                settings.PetPreferredLocalLogicalY);
             lines.Add("StartupPreferenceInitialized=" +
                 (settings.StartupPreferenceInitialized ? "1" : "0"));
             lines.Add("StartWithWindows=" +
@@ -167,6 +299,38 @@ namespace PennyPet
             lines.Add("KeyboardPrivacyNoticeAccepted=" +
                 (settings.KeyboardPrivacyNoticeAccepted ? "1" : "0"));
             lines.Add("SilentMode=" + (settings.SilentMode ? "1" : "0"));
+            lines.Add("DailyContentEnabled=" +
+                (settings.DailyContentEnabled ? "1" : "0"));
+            lines.Add("SolarTermEnabled=" +
+                (settings.SolarTermEnabled ? "1" : "0"));
+            lines.Add("AlmanacEnabled=" +
+                (settings.AlmanacEnabled ? "1" : "0"));
+            lines.Add("WeatherEnabled=" +
+                (settings.WeatherEnabled ? "1" : "0"));
+            lines.Add("WeatherLocationNameBase64=" +
+                EncodeText(settings.WeatherLocationName));
+            lines.Add("WeatherLocationAdmin1Base64=" +
+                EncodeText(settings.WeatherLocationAdmin1));
+            lines.Add("WeatherLocationCountryBase64=" +
+                EncodeText(settings.WeatherLocationCountry));
+            lines.Add("WeatherLatitude=" + settings.WeatherLatitude
+                .ToString("R", CultureInfo.InvariantCulture));
+            lines.Add("WeatherLongitude=" + settings.WeatherLongitude
+                .ToString("R", CultureInfo.InvariantCulture));
+            lines.Add("WeatherTimezoneBase64=" +
+                EncodeText(settings.WeatherTimezone));
+            lines.Add("ZodiacSign=" + (int)PetSettingRules
+                .NormalizeZodiacSign(settings.ZodiacSign));
+            lines.Add("UserBirthdayMonth=" + settings.UserBirthdayMonth);
+            lines.Add("UserBirthdayDay=" + settings.UserBirthdayDay);
+            lines.Add("LastDailyBriefingDate=" + DailyContentRules
+                .NormalizeDateKey(settings.LastDailyBriefingDate));
+            lines.Add("DailyLedgerDate=" + DailyContentRules
+                .NormalizeDateKey(settings.DailyLedgerDate));
+            lines.Add("DailyLedgerDaypartsMask=" + Math.Max(0,
+                settings.DailyLedgerDaypartsMask));
+            lines.Add("DailyLedgerUsedMeaningfulIds=" +
+                (settings.DailyLedgerUsedMeaningfulIds ?? String.Empty));
             lines.Add("KeyOverlayScalePercent=" + PetSettingRules
                 .NormalizeKeyboardTextScalePercent(
                     settings.KeyOverlayScalePercent));
