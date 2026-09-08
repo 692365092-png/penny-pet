@@ -1792,6 +1792,7 @@ namespace PennyPet
         {
             _activeHostedDockResizeFacts = null;
             _activeHostedDockResizeSourceId = null;
+            _activeHostedDockDividerMailbox = null;
         }
 
         private void ClearHostedDockResizeSessionIfMember(string noteId)
@@ -1807,36 +1808,238 @@ namespace PennyPet
 
         private void CompleteHostedStickyDockDivider(StickyUiEvent value)
         {
-            try
+            if (value == null || value.Snapshot == null ||
+                !_hostedRuntime.CanApplySequence(value.NoteId,
+                    value.Sequence))
             {
-                if (value == null || value.Snapshot == null ||
-                    !_hostedRuntime.CanApplySequence(value.NoteId,
-                        value.Sequence)) return;
-                bool accepted = ResizeHostedStickyDockDivider(value.NoteId,
-                    value.Height);
+                ClearHostedDockResizeSession();
+                return;
+            }
+            List<DockWindowTarget> finalTargets;
+            int finalTop;
+            int finalHeight;
+            if (!TryBuildFinalDividerBatch(value, out finalTargets,
+                out finalTop, out finalHeight))
+            {
+                // Structural failure: group changed or the transient resize
+                // session is gone. Settle the source snapshot only.
                 DisplayDiagnostics.Trace("DockDividerCompleted",
                     "note=" + value.NoteId +
                     " height=" + value.Height +
-                    " accepted=" + accepted +
+                    " accepted=false" +
                     " seq=" + value.Sequence);
-                if (!accepted)
+                ApplyHostedStickySnapshot(value.Snapshot, value.Sequence);
+                ClearHostedDockResizeSession();
+                return;
+            }
+            DisplayDiagnostics.Trace("DockDividerCompleted",
+                "note=" + value.NoteId +
+                " height=" + finalHeight +
+                " top=" + finalTop +
+                " accepted=true" +
+                " followers=" + finalTargets.Count +
+                " seq=" + value.Sequence);
+            StickyNoteData sourceCanonical = _notes.Find(value.NoteId);
+            if (sourceCanonical == null)
+            {
+                ClearHostedDockResizeSession();
+                return;
+            }
+            if (finalTargets.Count == 0)
+            {
+                CommitDividerFinal(value, sourceCanonical, finalTop,
+                    finalHeight, null);
+                ClearHostedDockResizeSession();
+                return;
+            }
+            DisplayTopologySnapshot topology = CurrentTopologySnapshot();
+            DockDividerFollowerMailbox mailbox =
+                _activeHostedDockDividerMailbox;
+            if (topology == null || mailbox == null)
+            {
+                CommitDividerFinal(value, sourceCanonical, finalTop,
+                    finalHeight, null);
+                ClearHostedDockResizeSession();
+                return;
+            }
+            mailbox.QueueFinal(new DockDividerFollowerBatch(
+                topology.Generation, finalTargets));
+            _stickyUiHost.PostFinalDividerBatch(mailbox,
+                delegate(StickyUiCommandResult result)
                 {
-                    ApplyHostedStickySnapshot(value.Snapshot,
-                        value.Sequence);
+                    OnDividerFinalBatchApplied(value, mailbox, topology,
+                        finalTop, finalHeight, 0, result);
+                }, _petUiContext);
+        }
+
+        // Final re-anchored layout: the settled tail is stacked from the
+        // source's FINAL actual physical rect, never from the stale resize
+        // start snapshot. Follower heights/widths stay as captured at start.
+        private bool TryBuildFinalDividerBatch(StickyUiEvent value,
+            out List<DockWindowTarget> targets, out int finalTop,
+            out int finalHeight)
+        {
+            targets = new List<DockWindowTarget>();
+            finalTop = value.Snapshot.Y;
+            finalHeight = Math.Max(1, value.Height);
+            if (_activeHostedDockResizeFacts == null ||
+                !String.Equals(_activeHostedDockResizeSourceId,
+                    value.NoteId, StringComparison.OrdinalIgnoreCase))
+                return false;
+            StickyNoteData source = _notes.Find(value.NoteId);
+            if (source == null) return false;
+            List<StickyNoteData> ordered = BuildDockChainOrder(source);
+            if (!MatchesHostedDockResizeSession(ordered)) return false;
+            int sourceIndex = -1;
+            List<DockRect> startBounds = new List<DockRect>();
+            for (int index = 0;
+                index < _activeHostedDockResizeFacts.Count; index++)
+            {
+                DockWindowFacts facts = _activeHostedDockResizeFacts[index];
+                startBounds.Add(new DockRect(facts.X, facts.Y,
+                    facts.Width, facts.Height));
+                if (String.Equals(facts.NoteId, value.NoteId,
+                    StringComparison.OrdinalIgnoreCase)) sourceIndex = index;
+            }
+            if (sourceIndex < 0) return false;
+            List<DockRect> layout =
+                StickyDockGeometry.CalculateDockDividerFinalTargets(
+                    startBounds, sourceIndex, finalTop, finalHeight);
+            for (int index = 0; index < layout.Count; index++)
+            {
+                DockRect bounds = layout[index];
+                DockWindowFacts facts =
+                    _activeHostedDockResizeFacts[sourceIndex + index + 1];
+                targets.Add(new DockWindowTarget(facts.NoteId,
+                    new PhysicalRect(bounds.Left, bounds.Top,
+                        bounds.Width, bounds.Height)));
+            }
+            return true;
+        }
+
+        private void OnDividerFinalBatchApplied(StickyUiEvent value,
+            DockDividerFollowerMailbox mailbox,
+            DisplayTopologySnapshot expectedTopology,
+            int finalTop, int finalHeight, int correctionAttempt,
+            StickyUiCommandResult result)
+        {
+            // A newer gesture owns a different mailbox instance; a late
+            // callback from the previous gesture must never commit stale
+            // geometry or clear the new transient session.
+            if (!ReferenceEquals(_activeHostedDockDividerMailbox, mailbox))
+                return;
+            StickyNoteData sourceCanonical = _notes.Find(value.NoteId);
+            if (sourceCanonical == null)
+            {
+                ClearHostedDockResizeSession();
+                return;
+            }
+            DockBatchResult batch = result != null &&
+                result.Status == StickyUiCommandStatus.Handled
+                    ? result.DockBatchResult : null;
+            if (batch == null || !IsTopologyCurrent(expectedTopology))
+            {
+                // The native final apply failed or went stale. Never strand:
+                // settle the source snapshot plus last-known follower facts.
+                DisplayDiagnostics.Trace("DockDividerFinalRejected",
+                    "note=" + value.NoteId +
+                    " status=" + (result == null ? "null" :
+                        result.Status.ToString()));
+                CommitDividerFinal(value, sourceCanonical, finalTop,
+                    finalHeight, null);
+                ClearHostedDockResizeSession();
+                return;
+            }
+            List<PhysicalRect> followerRects = new List<PhysicalRect>();
+            foreach (DockBatchMemberResult member in batch.Members)
+                if (member != null && member.Facts != null)
+                    followerRects.Add(member.Facts.PhysicalBounds);
+            bool seamExact = followerRects.Count == batch.Members.Count &&
+                StickyDockGeometry.DividerStackSeamIsExact(
+                    finalTop, finalHeight, followerRects, 2);
+            if (!seamExact && correctionAttempt == 0)
+            {
+                List<DockWindowTarget> corrected;
+                if (TryBuildCorrectedDividerBatch(value, expectedTopology,
+                    finalTop, finalHeight, followerRects, out corrected))
+                {
+                    // One bounded correction re-anchored to the ACTUAL
+                    // captured facts. The session stays alive until it
+                    // resolves; no further retry after this attempt.
+                    mailbox.QueueFinal(new DockDividerFollowerBatch(
+                        expectedTopology.Generation, corrected));
+                    _stickyUiHost.PostFinalDividerBatch(mailbox,
+                        delegate(StickyUiCommandResult second)
+                        {
+                            OnDividerFinalBatchApplied(value, mailbox,
+                                expectedTopology, finalTop, finalHeight,
+                                1, second);
+                        }, _petUiContext);
                     return;
                 }
-                StickyNoteData canonical = _notes.Find(value.NoteId);
-                if (canonical == null) return;
-                value.Snapshot.ApplyTo(canonical);
-                // value.Height is a physical actual/proposed HWND height; the
-                // canonical height must not go through a 220..700 logical
-                // clamp again.
-                canonical.Height = Math.Max(1, value.Height);
+            }
+            if (!seamExact)
+                DisplayDiagnostics.Trace("DockDividerSeamVerifyFailed",
+                    "note=" + value.NoteId +
+                    " attempt=" + correctionAttempt);
+            CommitDividerFinal(value, sourceCanonical, finalTop,
+                finalHeight, batch);
+            ClearHostedDockResizeSession();
+        }
+
+        // Re-anchor the correction to the actual captured rects (top/width/
+        // height as measured), never to the stale start snapshot.
+        private bool TryBuildCorrectedDividerBatch(StickyUiEvent value,
+            DisplayTopologySnapshot topology, int finalTop, int finalHeight,
+            IList<PhysicalRect> actualRects,
+            out List<DockWindowTarget> targets)
+        {
+            targets = new List<DockWindowTarget>();
+            if (_activeHostedDockResizeFacts == null ||
+                actualRects == null || actualRects.Count == 0) return false;
+            int sourceIndex = -1;
+            for (int index = 0;
+                index < _activeHostedDockResizeFacts.Count; index++)
+                if (String.Equals(_activeHostedDockResizeFacts[index].NoteId,
+                    value.NoteId, StringComparison.OrdinalIgnoreCase))
+                    sourceIndex = index;
+            int expectedFollowers = _activeHostedDockResizeFacts.Count -
+                sourceIndex - 1;
+            if (sourceIndex < 0 ||
+                actualRects.Count != expectedFollowers) return false;
+            int bottom = finalTop + Math.Max(1, finalHeight);
+            for (int index = 0; index < actualRects.Count; index++)
+            {
+                DockWindowFacts facts =
+                    _activeHostedDockResizeFacts[sourceIndex + index + 1];
+                PhysicalRect actual = actualRects[index];
+                targets.Add(new DockWindowTarget(facts.NoteId,
+                    new PhysicalRect(actual.Left, bottom,
+                        actual.Width, actual.Height)));
+                bottom += Math.Max(1, actual.Height);
+            }
+            return true;
+        }
+
+        private void CommitDividerFinal(StickyUiEvent value,
+            StickyNoteData sourceCanonical, int finalTop, int finalHeight,
+            DockBatchResult batch)
+        {
+            if (sourceCanonical == null) return;
+            _synchronizingDockLayout = true;
+            try
+            {
+                value.Snapshot.ApplyTo(sourceCanonical);
+                // value.Height is the physical final HWND height; canonical
+                // must not pass through a second 220..700 logical clamp.
+                sourceCanonical.Height = Math.Max(1, finalHeight);
+                if (batch != null)
+                    ApplyDividerBatchCanonical(batch, false);
                 _hostedRuntime.RecordSequence(value.NoteId, value.Sequence);
                 _notes.SaveAsync();
-                RefreshMenuText();
             }
-            finally { ClearHostedDockResizeSession(); }
+            finally { _synchronizingDockLayout = false; }
+            RefreshMenuText();
         }
 
         internal static bool ShouldApplyHostedSequence(long sequence,

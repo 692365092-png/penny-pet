@@ -825,15 +825,18 @@ namespace PennyPet.Tests
         public void StickyUiRegistry_CloseAllPreflightsImeAndSuppressesEvents()
         {
             string host = ReadSource("StickyUiHost.cs");
-            int preflight = host.IndexOf(
+            string closeAll = Between(host,
+                "private StickyUiCommandResult CloseAllSessions()",
+                "private StickyUiCommandResult ApplyLatestDockPlan");
+            int preflight = closeAll.IndexOf(
                 "session.IsImeCompositionActive",
                 StringComparison.Ordinal);
-            int batch = host.IndexOf("session.SetEventsSuppressed(true)",
+            int batch = closeAll.IndexOf("session.SetEventsSuppressed(true)",
                 StringComparison.Ordinal);
 
             Assert.IsTrue(preflight >= 0 && batch > preflight &&
-                host.Contains("session.FlushAndCaptureFinal()") &&
-                host.Contains("StickyUiFinalSnapshot"),
+                closeAll.Contains("session.FlushAndCaptureFinal()") &&
+                closeAll.Contains("StickyUiFinalSnapshot"),
                 "CloseAll must preflight every IME before a quiet final batch.");
         }
 
@@ -1143,7 +1146,7 @@ namespace PennyPet.Tests
                 "Features/StickyNotes/PetStickyDockCoordinator.cs");
             string liveResize = Between(dockCoordinator,
                 "private bool ResizeHostedStickyDockDivider",
-                "private bool MatchesHostedDockResizeSession");
+                "private void OnDividerLiveBatchApplied");
             string progress = Between(windowCoordinator,
                 "if (value.Kind == StickyUiEventKind.DockDividerResizing)",
                 "if (value.Kind == StickyUiEventKind.DockDividerResizeCompleted)");
@@ -1157,18 +1160,23 @@ namespace PennyPet.Tests
                 "Native sizing must publish an explicit divider lifecycle.");
             Assert.IsTrue(liveResize.Contains(
                     "CalculateDockMemberResizeTargets") &&
-                liveResize.Contains("ApplyDockTargets(changed, sourceNoteId)") &&
+                liveResize.Contains("QueueLive") &&
+                liveResize.Contains("PostLatestDividerBatch") &&
                 !liveResize.Contains("LayoutDockChain") &&
-                !liveResize.Contains("RefreshDockResizeRoles"),
-                "Live ticks must move only changed followers from stable facts.");
+                !liveResize.Contains("RefreshDockResizeRoles") &&
+                !liveResize.Contains("SaveAsync") &&
+                !liveResize.Contains("ApplyDockCanonicalFromPhysical"),
+                "Live ticks must coalesce follower frames through the latest-wins divider mailbox without writing canonical state.");
             Assert.IsFalse(progress.Contains("SaveAsync") ||
                 progress.Contains("RefreshDockResizeRoles"),
                 "Live progress must not save or refresh resize roles.");
             Assert.IsTrue(windowCoordinator.Contains(
                 "CompleteHostedStickyDockDivider(value)") &&
-                windowCoordinator.Contains("finally { ClearHostedDockResizeSession(); }") &&
+                windowCoordinator.Contains("PostFinalDividerBatch") &&
+                windowCoordinator.Contains("DividerStackSeamIsExact") &&
+                windowCoordinator.Contains("ClearHostedDockResizeSession()") &&
                 windowCoordinator.Contains("_notes.SaveAsync();"),
-                "Completion must save once and clear the transient session.");
+                "Completion must post one re-anchored final batch, verify the seam, save once, and clear the session only after it resolves.");
         }
 
         [TestMethod]

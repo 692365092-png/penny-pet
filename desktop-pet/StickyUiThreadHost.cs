@@ -79,6 +79,20 @@ namespace PennyPet
                 completed, completionContext);
         }
 
+        // Narrow latest-wins dispatch for one divider follower batch. Same
+        // deferred mailbox shape as PostDockPlan, dedicated to the divider
+        // resize lifecycle, not a generic scheduler.
+        internal void PostDividerBatch(DockDividerFollowerMailbox mailbox,
+            Func<DockDividerFollowerMailbox, StickyUiCommandResult> handler,
+            Action<StickyUiCommandResult> completed,
+            SynchronizationContext completionContext)
+        {
+            if (mailbox == null)
+                throw new ArgumentNullException(nameof(mailbox));
+            PostToDispatcher(delegate { return handler(mailbox); },
+                completed, completionContext);
+        }
+
         private void PostToDispatcher(
             Func<StickyUiCommandResult> invoke,
             Action<StickyUiCommandResult> completed,

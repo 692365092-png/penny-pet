@@ -101,6 +101,123 @@ namespace PennyPet
             }, completed, completionContext);
         }
 
+        // Divider-resize analogs of the live/final Dock plan entries. Same
+        // deferred mailbox shape, dedicated to the vertical divider lifecycle.
+        internal void PostLatestDividerBatch(DockDividerFollowerMailbox mailbox,
+            Action<StickyUiCommandResult> completed,
+            SynchronizationContext completionContext)
+        {
+            if (mailbox == null)
+                throw new ArgumentNullException(nameof(mailbox));
+            _threadHost.PostDividerBatch(mailbox,
+                ApplyLatestDividerBatch, completed, completionContext);
+        }
+
+        internal void PostFinalDividerBatch(DockDividerFollowerMailbox mailbox,
+            Action<StickyUiCommandResult> completed,
+            SynchronizationContext completionContext)
+        {
+            if (mailbox == null)
+                throw new ArgumentNullException(nameof(mailbox));
+            _threadHost.PostDividerBatch(mailbox,
+                ApplyFinalDividerBatch, completed, completionContext);
+        }
+
+        private StickyUiCommandResult ApplyLatestDividerBatch(
+            DockDividerFollowerMailbox mailbox)
+        {
+            DockDividerFollowerBatch batch = mailbox == null
+                ? null : mailbox.TakeLatest();
+            if (batch == null || batch.Targets.Count == 0)
+                return StickyUiCommandResult.Handled();
+            return ApplyDividerBatch(batch);
+        }
+
+        private StickyUiCommandResult ApplyFinalDividerBatch(
+            DockDividerFollowerMailbox mailbox)
+        {
+            DockDividerFollowerBatch batch = mailbox == null
+                ? null : mailbox.TakeFinal();
+            if (batch == null || batch.Targets.Count == 0)
+                return StickyUiCommandResult.NotHandled();
+            try
+            {
+                return ApplyDividerBatch(batch);
+            }
+            finally
+            {
+                mailbox.CompleteFinal();
+            }
+        }
+
+        // One deferred divider apply: stale-gate on the host-owned topology
+        // generation, move every follower with the typed SetBounds effect in
+        // a single dispatcher frame, then return the actual captured facts so
+        // the Pet side can verify the settled seam.
+        private StickyUiCommandResult ApplyDividerBatch(
+            DockDividerFollowerBatch batch)
+        {
+            if (batch == null || batch.Targets.Count == 0)
+                return StickyUiCommandResult.NotHandled();
+            DisplayTopologySnapshot topology;
+            lock (_configurationGate) topology = _currentTopology;
+            if (topology == null ||
+                batch.TopologyGeneration != topology.Generation)
+            {
+                DisplayDiagnostics.Trace("DockDividerBatchStale",
+                    "batchGeneration=" + batch.TopologyGeneration +
+                    " currentGeneration=" +
+                    (topology == null ? -1 : topology.Generation));
+                return StickyUiCommandResult.NotHandled();
+            }
+            List<StickyWindowSession> sessions =
+                new List<StickyWindowSession>();
+            HashSet<string> ids = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+            foreach (DockWindowTarget target in batch.Targets)
+            {
+                if (target == null || !ids.Add(target.NoteId))
+                    return StickyUiCommandResult.NotHandled();
+                StickyWindowSession session;
+                if (!TryGetSession(target.NoteId, out session) ||
+                    session.PlacementHwnd == IntPtr.Zero)
+                    return StickyUiCommandResult.NotHandled();
+                sessions.Add(session);
+            }
+            foreach (StickyWindowSession session in sessions)
+                if (!session.AdoptTopology(topology))
+                    return StickyUiCommandResult.NotHandled();
+            foreach (StickyWindowSession session in sessions)
+                session.SetEventsSuppressed(true);
+            try
+            {
+                List<DockBatchMemberResult> members =
+                    new List<DockBatchMemberResult>();
+                for (int index = 0; index < batch.Targets.Count; index++)
+                {
+                    PhysicalRect rect = batch.Targets[index].PhysicalBounds;
+                    StickyUiCommandResult bounds = sessions[index].SetBounds(
+                        new StickyUiBounds(rect.Left, rect.Top,
+                            rect.Width, rect.Height));
+                    if (bounds.Status != StickyUiCommandStatus.Handled)
+                        return StickyUiCommandResult.NotHandled();
+                    DockBatchMemberResult member =
+                        sessions[index].CaptureDockMember(topology);
+                    if (member == null || member.Facts == null)
+                        return StickyUiCommandResult.NotHandled();
+                    members.Add(member);
+                }
+                return StickyUiCommandResult.Handled(new DockBatchResult(
+                    0, batch.TopologyGeneration, String.Empty, 0,
+                    members, 0));
+            }
+            finally
+            {
+                foreach (StickyWindowSession session in sessions)
+                    session.SetEventsSuppressed(false);
+            }
+        }
+
         // Host-owned current topology truth for the Dock stale gate and for
         // actual-facts capture. Pet publishes every settled snapshot here.
         internal void SetCurrentTopology(DisplayTopologySnapshot snapshot)

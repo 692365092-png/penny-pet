@@ -133,6 +133,48 @@ namespace PennyPet
             return targets;
         }
 
+        // Final divider settlement: re-anchor the whole tail to the source's
+        // FINAL actual physical rect. The live delta-only path deliberately
+        // ignores source-top drift during WM_SIZING; this exact pass repairs
+        // that drift so the settled stack is always seamed top-to-bottom.
+        internal static List<DockRect> CalculateDockDividerFinalTargets(
+            IList<DockRect> startBounds, int sourceIndex,
+            int finalSourceTop, int finalSourceHeight)
+        {
+            List<DockRect> targets = new List<DockRect>();
+            if (startBounds == null || sourceIndex < 0 ||
+                sourceIndex >= startBounds.Count) return targets;
+            int bottom = finalSourceTop + Math.Max(1, finalSourceHeight);
+            for (int index = sourceIndex + 1;
+                index < startBounds.Count; index++)
+            {
+                DockRect start = startBounds[index];
+                targets.Add(new DockRect(start.Left, bottom,
+                    start.Width, start.Height));
+                bottom += Math.Max(1, start.Height);
+            }
+            return targets;
+        }
+
+        // Settled-stack seam invariant: every follower top must equal the
+        // previous member's bottom within a bounded native tolerance.
+        internal static bool DividerStackSeamIsExact(
+            int sourceTop, int sourceHeight,
+            IList<PhysicalRect> followerRects, int tolerance)
+        {
+            if (followerRects == null) return true;
+            int bottom = sourceTop + Math.Max(1, sourceHeight);
+            int safeTolerance = Math.Max(0, tolerance);
+            foreach (PhysicalRect rect in followerRects)
+            {
+                if (!rect.IsValid) return false;
+                if (Math.Abs(rect.Top - bottom) > safeTolerance)
+                    return false;
+                bottom = rect.Bottom;
+            }
+            return true;
+        }
+
         internal static List<DockRect> CalculateDockMemberResizeTargets(
             IList<DockRect> startBounds, int sourceIndex,
             int requestedSourceHeight, out int sourceHeight)
