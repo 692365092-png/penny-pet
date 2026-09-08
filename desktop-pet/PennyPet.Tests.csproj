@@ -12,6 +12,7 @@
     <Compile Include="Tests\**\*.cs" />
     <!-- Exercise the actual platform-neutral protocol/runtime implementations. -->
     <Compile Include="Features\StickyNotes\StickyHostedRuntime.cs" />
+    <Compile Include="Features\StickyNotes\StickyPlacementRuntime.cs" />
     <Compile Include="Features\StickyNotes\StickyUiCommand.cs" />
     <ProjectReference Include="PennyPet.Core.csproj" />
   </ItemGroup>

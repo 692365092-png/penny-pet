@@ -310,7 +310,13 @@ namespace PennyPet
                     "StickySessionEnsured",
                     "note=" + command.NoteId + " created=0");
 
-                return existing.CurrentResult();
+                StickyUiCommandResult current =
+                    existing.CurrentResult();
+
+                return StickyUiCommandResult.SessionEnsured(
+                    current.Snapshot,
+                    current.Sequence,
+                    false);
             }
 
             StickyWindowSession session =
@@ -335,7 +341,13 @@ namespace PennyPet
                     "note=" + command.NoteId + " created=1");
 
                 // No Show(), no placement, no focus.
-                return session.CurrentResult();
+                StickyUiCommandResult current =
+                    session.CurrentResult();
+
+                return StickyUiCommandResult.SessionEnsured(
+                    current.Snapshot,
+                    current.Sequence,
+                    true);
             }
             catch
             {

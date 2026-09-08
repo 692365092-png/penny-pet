@@ -826,6 +826,16 @@ namespace PennyPet
                         StringComparison.OrdinalIgnoreCase) ||
                     !_hostedRuntime.CanApplySequence(member.NoteId,
                         member.WindowSequence)) return false;
+                if (!_placementRuntime.CanAcceptEffective(
+                    member.NoteId,
+                    member.Facts))
+                {
+                    DisplayDiagnostics.Trace(
+                        "EffectiveAcceptanceRejected",
+                        "consumer=DockTopologyResult note=" +
+                        member.NoteId);
+                    return false;
+                }
                 candidates.Add(new DockCommitCandidate(member, canonical,
                     null));
             }
@@ -839,8 +849,10 @@ namespace PennyPet
                     member.Snapshot.AlwaysOnTop;
                 ApplyHostedStickyFactsGeometry(candidate.Canonical,
                     member.Facts, snapshot);
-                _placementRuntime.TryUpdateEffective(member.NoteId,
-                    member.Facts);
+                if (!_placementRuntime.TryUpdateEffective(member.NoteId,
+                    member.Facts))
+                    throw new InvalidOperationException(
+                        "Dock topology Effective acceptance changed after preflight.");
                 _hostedRuntime.RecordSequence(member.NoteId,
                     member.WindowSequence);
             }
@@ -1447,12 +1459,21 @@ namespace PennyPet
                     result.Sequence)) return false;
             StickyNoteData canonical = _notes.Find(noteId);
             if (canonical == null) return false;
+            if (!_placementRuntime.CanAcceptEffective(noteId, result.Facts))
+            {
+                DisplayDiagnostics.Trace(
+                    "EffectiveAcceptanceRejected",
+                    "consumer=Reproject note=" + noteId);
+                return false;
+            }
             result.Snapshot.ApplyContentTo(canonical);
             canonical.Visible = result.Snapshot.Visible;
             canonical.AlwaysOnTop = result.Snapshot.AlwaysOnTop;
             ApplyHostedStickyFactsGeometry(canonical, result.Facts,
                 result.Topology);
-            _placementRuntime.TryUpdateEffective(noteId, result.Facts);
+            if (!_placementRuntime.TryUpdateEffective(noteId, result.Facts))
+                throw new InvalidOperationException(
+                    "Reproject Effective acceptance changed after preflight.");
             _hostedRuntime.RecordSequence(noteId, result.Sequence);
             _notes.SaveAsync();
             RefreshMenuText();
@@ -1588,8 +1609,10 @@ namespace PennyPet
                 canonical.AlwaysOnTop = member.Snapshot.AlwaysOnTop;
                 ApplyHostedStickyFactsGeometry(canonical, member.Facts,
                     expectedTopology);
-                _placementRuntime.TryUpdateEffective(member.NoteId,
-                    member.Facts);
+                if (!_placementRuntime.TryUpdateEffective(member.NoteId,
+                    member.Facts))
+                    throw new InvalidOperationException(
+                        "Dock durable Effective acceptance changed after preflight.");
                 _hostedRuntime.RecordSequence(member.NoteId,
                     member.WindowSequence);
                 LogicalRect local = candidate.Preference.LocalLogicalRect;
@@ -1701,6 +1724,13 @@ namespace PennyPet
                     !preference.IsValid)
                 {
                     rejection = "final batch preference unavailable";
+                    return false;
+                }
+                if (!_placementRuntime.CanAcceptEffective(
+                    member.NoteId,
+                    member.Facts))
+                {
+                    rejection = "final batch effective facts rejected";
                     return false;
                 }
                 candidates.Add(new DockCommitCandidate(member, canonical,
@@ -1820,6 +1850,7 @@ namespace PennyPet
                     if (String.IsNullOrEmpty(noteId)) continue;
                     ClearHostedDockResizeSessionIfMember(noteId);
                     _hostedRuntime.RemoveNote(noteId);
+                    _placementRuntime.InvalidateEffective(noteId);
                     _renderedFirstRenderNoteIds.Remove(noteId);
                     _expectedFirstRenderNoteIds.Remove(noteId);
                     StickyNoteData note = _notes.Find(noteId);
@@ -1913,6 +1944,8 @@ namespace PennyPet
                                 finalSnapshot.Snapshot,
                                 finalSnapshot.Sequence, false);
                             _hostedRuntime.RemoveNote(finalSnapshot.NoteId);
+                            _placementRuntime.InvalidateEffective(
+                                finalSnapshot.NoteId);
                         }
                     ClearHostedDockResizeSession();
                     completed(result);
@@ -2239,6 +2272,15 @@ namespace PennyPet
                         }
                         else
                         {
+                            if (result.SessionCreated)
+                            {
+                                _placementRuntime.InvalidateEffective(
+                                    memberCopy.Id);
+                                DisplayDiagnostics.Trace(
+                                    "StickyEffectiveInvalidated",
+                                    "reason=session-created note=" +
+                                    memberCopy.Id);
+                            }
                             _hostedRuntime.SynchronizeSessionLease(
                                 memberCopy.Id, result.Sequence);
                         }
@@ -2461,6 +2503,7 @@ namespace PennyPet
                 foreach (string noteId in ids)
                 {
                     _hostedRuntime.RemoveNote(noteId);
+                    _placementRuntime.InvalidateEffective(noteId);
                     StickyNoteData canonical = _notes.Find(noteId);
                     if (canonical != null) canonical.Visible = false;
                     PostHostedStickyCommand(StickyUiCommand.Close(noteId),

@@ -21,23 +21,73 @@ namespace PennyPet
                 ? state.Effective : null;
         }
 
+        // Read-only acceptance preflight. It mirrors the monotonic rule of
+        // TryUpdateEffective without mutating runtime state, so geometry
+        // consumers can validate a whole set before writing anything.
+        internal bool CanAcceptEffective(
+            string noteId,
+            WindowFacts facts)
+        {
+            if (String.IsNullOrWhiteSpace(noteId) ||
+                facts == null)
+                return false;
+
+            NotePlacementState state;
+            if (!_states.TryGetValue(noteId, out state) ||
+                state == null ||
+                state.Effective == null)
+                return true;
+
+            WindowFacts current = state.Effective;
+
+            if (facts.TopologyGeneration <
+                current.TopologyGeneration)
+                return false;
+
+            if (facts.TopologyGeneration ==
+                    current.TopologyGeneration &&
+                facts.WindowSequence <=
+                    current.WindowSequence)
+                return false;
+
+            return true;
+        }
+
         internal bool TryUpdateEffective(string noteId, WindowFacts facts)
         {
-            if (String.IsNullOrWhiteSpace(noteId) || facts == null) return false;
+            if (!CanAcceptEffective(noteId, facts)) return false;
             NotePlacementState state;
-            if (!_states.TryGetValue(noteId, out state))
-            {
-                _states[noteId] = new NotePlacementState(facts, false,
-                    false, String.Empty);
-                return true;
-            }
-            WindowFacts current = state.Effective;
-            if (current != null && (facts.TopologyGeneration < current.TopologyGeneration ||
-                (facts.TopologyGeneration == current.TopologyGeneration &&
-                 facts.WindowSequence <= current.WindowSequence))) return false;
+            _states.TryGetValue(noteId, out state);
             _states[noteId] = new NotePlacementState(facts,
-                state.IsTemporaryRehome, state.UserMovedSinceRehome,
-                state.TemporaryReason);
+                state != null && state.IsTemporaryRehome,
+                state != null && state.UserMovedSinceRehome,
+                state == null ? String.Empty : state.TemporaryReason);
+            return true;
+        }
+
+        // WindowSequence is monotonic only within one StickyWindowSession.
+        // When that HWND/session is known to be gone, invalidate its Effective
+        // watermark without erasing temporary-rehome intent bookkeeping.
+        internal bool InvalidateEffective(
+            string noteId)
+        {
+            if (String.IsNullOrWhiteSpace(noteId))
+                return false;
+
+            NotePlacementState state;
+
+            if (!_states.TryGetValue(noteId, out state) ||
+                state == null ||
+                state.Effective == null)
+                return false;
+
+            _states[noteId] =
+                new NotePlacementState(
+                    null,
+                    state.IsTemporaryRehome,
+                    state.UserMovedSinceRehome,
+                    state.TemporaryReason);
+
             return true;
         }
 

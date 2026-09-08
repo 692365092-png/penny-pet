@@ -109,6 +109,18 @@ namespace PennyPet
             internal DockWindowFacts RuntimeFacts { get; private set; }
         }
 
+        private sealed class DockLiveBatchCandidate
+        {
+            internal DockLiveBatchCandidate(DockBatchMemberResult member,
+                StickyNoteData canonical)
+            {
+                Member = member;
+                Canonical = canonical;
+            }
+            internal DockBatchMemberResult Member { get; private set; }
+            internal StickyNoteData Canonical { get; private set; }
+        }
+
         // A Dock interaction is allowed to advance only after every expected
         // HWND has yielded exact current-generation facts.  Validate the
         // whole barrier before updating Pet-side mirrors.
@@ -135,6 +147,7 @@ namespace PennyPet
                 StringComparer.OrdinalIgnoreCase);
             List<DockFactsBarrierCandidate> candidates =
                 new List<DockFactsBarrierCandidate>();
+            WindowFacts acceptedSourceFacts = null;
             foreach (DockBatchMemberResult member in batch.Members)
             {
                 StickyNoteData canonical = member == null ? null :
@@ -153,11 +166,24 @@ namespace PennyPet
                     member.Snapshot.AlwaysOnTop);
                 if (runtimeFacts == null) return false;
                 if (String.Equals(member.NoteId, sourceNoteId,
-                    StringComparison.OrdinalIgnoreCase)) sourceFacts = member.Facts;
+                    StringComparison.OrdinalIgnoreCase))
+                    acceptedSourceFacts = member.Facts;
+                if (!_placementRuntime.CanAcceptEffective(
+                    member.NoteId,
+                    member.Facts))
+                {
+                    DisplayDiagnostics.Trace(
+                        "EffectiveAcceptanceRejected",
+                        "consumer=DockFactsBarrier note=" +
+                        member.NoteId);
+                    return false;
+                }
                 candidates.Add(new DockFactsBarrierCandidate(member, canonical,
                     runtimeFacts));
             }
-            if (actual.Count != expected.Count || sourceFacts == null) return false;
+            if (actual.Count != expected.Count ||
+                acceptedSourceFacts == null) return false;
+            sourceFacts = acceptedSourceFacts;
             if (resetOriginalFacts)
             {
                 _activeDockOriginalFacts.Clear();
@@ -172,7 +198,9 @@ namespace PennyPet
                 ApplyHostedStickyFactsGeometry(candidate.Canonical, member.Facts,
                     topology);
                 if (!_placementRuntime.TryUpdateEffective(member.NoteId,
-                    member.Facts)) return false;
+                    member.Facts))
+                    throw new InvalidOperationException(
+                        "Effective acceptance changed after DockFactsBarrier preflight.");
                 _hostedRuntime.RecordSequence(member.NoteId,
                     member.WindowSequence);
                 _activeDockCurrentFacts[member.NoteId] = candidate.RuntimeFacts;
@@ -739,28 +767,47 @@ namespace PennyPet
                 _displayTopologyRuntime.Current.Generation !=
                     batch.TopologyGeneration) return;
             if (batch.PlanSequence < _lastAppliedDockPlanSequence) return;
-            _lastAppliedDockPlanSequence = batch.PlanSequence;
             DisplayTopologySnapshot topology =
                 _displayTopologyRuntime.Current;
+            HashSet<string> seen = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+            List<DockLiveBatchCandidate> candidates =
+                new List<DockLiveBatchCandidate>();
             foreach (DockBatchMemberResult member in batch.Members)
             {
                 if (member == null || member.Snapshot == null ||
                     member.Facts == null || member.WindowSequence !=
                     member.Facts.WindowSequence || member.Facts.TopologyGeneration !=
                     batch.TopologyGeneration || !String.Equals(member.NoteId,
-                    member.Facts.WindowId, StringComparison.OrdinalIgnoreCase))
-                    continue;
+                    member.Facts.WindowId, StringComparison.OrdinalIgnoreCase) ||
+                    !seen.Add(member.NoteId)) return;
                 if (!_hostedRuntime.CanApplySequence(member.NoteId,
-                    member.WindowSequence)) continue;
+                    member.WindowSequence)) return;
                 StickyNoteData canonical = _notes.Find(member.NoteId);
-                if (canonical == null) continue;
-                member.Snapshot.ApplyContentTo(canonical);
-                canonical.Visible = member.Snapshot.Visible;
-                canonical.AlwaysOnTop = member.Snapshot.AlwaysOnTop;
-                ApplyHostedStickyFactsGeometry(canonical, member.Facts,
+                if (canonical == null) return;
+                if (!_placementRuntime.CanAcceptEffective(member.NoteId,
+                    member.Facts))
+                {
+                    DisplayDiagnostics.Trace(
+                        "EffectiveAcceptanceRejected",
+                        "consumer=LiveDockBatch note=" + member.NoteId);
+                    return;
+                }
+                candidates.Add(new DockLiveBatchCandidate(member, canonical));
+            }
+            _lastAppliedDockPlanSequence = batch.PlanSequence;
+            foreach (DockLiveBatchCandidate candidate in candidates)
+            {
+                DockBatchMemberResult member = candidate.Member;
+                member.Snapshot.ApplyContentTo(candidate.Canonical);
+                candidate.Canonical.Visible = member.Snapshot.Visible;
+                candidate.Canonical.AlwaysOnTop = member.Snapshot.AlwaysOnTop;
+                ApplyHostedStickyFactsGeometry(candidate.Canonical, member.Facts,
                     topology);
-                _placementRuntime.TryUpdateEffective(member.NoteId,
-                    member.Facts);
+                if (!_placementRuntime.TryUpdateEffective(member.NoteId,
+                    member.Facts))
+                    throw new InvalidOperationException(
+                        "Live Dock Effective acceptance changed after preflight.");
                 _hostedRuntime.RecordSequence(member.NoteId,
                     member.WindowSequence);
             }

@@ -779,7 +779,8 @@ namespace PennyPet
             StickyUiFinalSnapshot[] finalSnapshots, int ownerThreadId,
             WindowFacts facts = null,
             DisplayTopologySnapshot topology = null,
-            DockBatchResult dockBatchResult = null)
+            DockBatchResult dockBatchResult = null,
+            bool sessionCreated = false)
         {
             Status = status;
             Error = error ?? String.Empty;
@@ -790,6 +791,7 @@ namespace PennyPet
             Facts = facts;
             Topology = topology;
             DockBatchResult = dockBatchResult;
+            SessionCreated = sessionCreated;
         }
 
         internal StickyUiCommandStatus Status { get; private set; }
@@ -801,6 +803,11 @@ namespace PennyPet
         internal WindowFacts Facts { get; private set; }
         internal DisplayTopologySnapshot Topology { get; private set; }
         internal DockBatchResult DockBatchResult { get; private set; }
+
+        // Runtime-only EnsureSession acknowledgement: true only when the host
+        // created a brand-new StickyWindowSession for this command. It is never
+        // persisted and never derives from a stored sequence.
+        internal bool SessionCreated { get; private set; }
 
         internal static StickyUiCommandResult Handled()
         {
@@ -837,6 +844,16 @@ namespace PennyPet
             return new StickyUiCommandResult(StickyUiCommandStatus.Handled,
                 String.Empty, null, 0, null, ThreadingThreadId(),
                 null, null, dockBatchResult);
+        }
+
+        internal static StickyUiCommandResult SessionEnsured(
+            StickyNoteUiSnapshot snapshot,
+            long sequence,
+            bool sessionCreated)
+        {
+            return new StickyUiCommandResult(StickyUiCommandStatus.Handled,
+                String.Empty, snapshot, sequence, null, ThreadingThreadId(),
+                null, null, null, sessionCreated);
         }
 
         internal static StickyUiCommandResult NotHandled()

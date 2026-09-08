@@ -2121,7 +2121,7 @@ namespace PennyPet.Tests
                 "private void SetActiveDockGroup");
             Assert.IsTrue(result.Contains("member.Facts") &&
                 result.Contains(
-                    "ApplyHostedStickyFactsGeometry(canonical, member.Facts,") &&
+                    "ApplyHostedStickyFactsGeometry(candidate.Canonical, member.Facts,") &&
                 result.Contains("_lastAppliedDockPlanSequence"),
                 "Only same-generation newest-sequence facts may update the repository.");
         }
@@ -2143,9 +2143,14 @@ namespace PennyPet.Tests
                 "private void ApplyDockBatchResult",
                 "private void SetActiveDockGroup");
             Assert.IsTrue(result.Contains(
-                    "ApplyHostedStickyFactsGeometry(canonical, member.Facts,") &&
+                    "ApplyHostedStickyFactsGeometry(candidate.Canonical, member.Facts,") &&
                 !result.Contains("WindowsDisplayResolver"),
                 "Only actual facts derived from the same-generation topology may update geometry.");
+            Assert.IsTrue(
+                result.IndexOf("_placementRuntime.CanAcceptEffective(") >= 0 &&
+                result.IndexOf("_placementRuntime.CanAcceptEffective(") <
+                    result.IndexOf("_lastAppliedDockPlanSequence = batch.PlanSequence"),
+                "The whole live batch must pass acceptance preflight before any plan-sequence advance.");
         }
 
         [TestMethod]

@@ -205,7 +205,7 @@ namespace PennyPet
         {
             string root = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outputPath)), "pc2a");
             List<string> evidence = new List<string>();
-            // A1: whole structure preflights, second member's effective watermark rejects.
+            // A1: whole-set preflight rejects before any map/canonical/lease write.
             using (Pc2Scene s = new Pc2Scene(root, "A1"))
             {
                 WindowFacts old = s.Facts(1, 100, 100);
@@ -214,17 +214,17 @@ namespace PennyPet
                 object[] args = { s.Batch(0, s.Member(0), s.Member(1), s.Member(2)),
                     s.Ids, s.Topology, s.Interaction.Epoch, s.Notes[0].Id, true, null };
                 bool accepted = (bool)Pc2Call(s.Pet, "TryApplyDockFactsBarrier", args);
-                Pc2Assert(!accepted && s.Notes[0].X == 400 && s.Notes[1].X == 400 &&
-                    s.Notes[2].X == 100, "A1 canonical prefix incl rejected member");
-                Pc2Assert(ReferenceEquals(s.Placement.GetEffective(s.Notes[1].Id), old) &&
-                    s.Sequence(0) == 2 && s.Sequence(1) == 1 && s.Sequence(2) == 1,
-                    "A1 effective/lease prefix");
-                Pc2Assert(s.Active.Count == 1 && s.Original.Count == 1 &&
-                    s.Active.ContainsKey(s.Notes[0].Id) && s.Saves == saves && args[6] != null,
-                    "A1 reset maps contain only accepted prefix; no save; source out assigned");
-                evidence.Add("A1: false; canonical A/B changed, C untouched; effective B old; lease/maps only A advanced; Save unchanged.");
+                Pc2Assert(!accepted && args[6] == null &&
+                    s.Notes.TrueForAll(n => n.X == 100) &&
+                    s.Placement.GetEffective(s.Notes[0].Id).WindowSequence == 1 &&
+                    ReferenceEquals(s.Placement.GetEffective(s.Notes[1].Id), old) &&
+                    s.Placement.GetEffective(s.Notes[2].Id).WindowSequence == 1 &&
+                    s.Sequence(0) == 1 && s.Sequence(1) == 1 && s.Sequence(2) == 1 &&
+                    s.Active.Count == 3 && s.Original.Count == 3 && s.Saves == saves,
+                    "A1 whole-set zero-mutation reject with null sourceFacts");
+                evidence.Add("A1: false; zero canonical/effective/lease/map/save mutation; sourceFacts null.");
             }
-            // A3: the live consumer ignores a rejected effective update and continues.
+            // A3: live batch rejects atomically; lastApplied does not advance.
             using (Pc2Scene s = new Pc2Scene(root, "A3"))
             {
                 WindowFacts old = s.Facts(1, 100, 100);
@@ -232,12 +232,13 @@ namespace PennyPet
                 long saves = s.Saves;
                 Pc2Call(s.Pet, "ApplyDockBatchResult", s.Batch(10,
                     s.Member(0), s.Member(1), s.Member(2)).DockBatchResult);
-                Pc2Assert(s.Notes.TrueForAll(n => n.X == 400) && s.Sequence(1) == 2 &&
+                Pc2Assert(s.Notes.TrueForAll(n => n.X == 100) &&
+                    s.Sequence(0) == 1 && s.Sequence(1) == 1 && s.Sequence(2) == 1 &&
                     ReferenceEquals(s.Placement.GetEffective(s.Notes[1].Id), old) &&
-                    s.Placement.GetEffective(s.Notes[2].Id).PhysicalBounds.Left == 400 &&
-                    s.Active[s.Notes[0].Id].X == 100 && s.Saves == saves,
-                    "A3 all canonical/leases advance, middle effective rejected, active cache unchanged");
-                evidence.Add("A3: void; all canonical/leases changed; only B effective stale; last plan=10; no Save.");
+                    (long)Pc2Get(s.Pet, "_lastAppliedDockPlanSequence") == -1L &&
+                    s.Active.Count == 3 && s.Saves == saves,
+                    "A3 whole live batch zero mutation, lastApplied unchanged");
+                evidence.Add("A3: void; whole batch rejected; zero canonical/effective/lease/lastApplied mutation; no Save.");
             }
             using (Pc2Scene s = new Pc2Scene(root, "A4"))
             {
@@ -245,20 +246,23 @@ namespace PennyPet
                 s.Placement.TryUpdateEffective(s.Notes[0].Id, old);
                 s.Placement.MarkTemporaryRehome(s.Notes[0].Id, "test-rehome");
                 long saves = s.Saves;
+                string beforeText = s.Notes[0].Text;
                 DockBatchMemberResult m = s.Member(0);
                 bool accepted = (bool)Pc2Call(s.Pet, "ApplyReprojectResult",
                     StickyUiCommandResult.Handled(m.Snapshot, m.WindowSequence, m.Facts, s.Topology),
                     m.NoteId, s.Topology);
                 s.Repository.WaitForPendingSaves();
-                Pc2Assert(accepted && s.Notes[0].X == 400 && s.Sequence(0) == 2 &&
+                Pc2Assert(!accepted && s.Notes[0].X == 100 &&
+                    s.Notes[0].Text == beforeText &&
+                    s.Notes[0].Visible && !s.Notes[0].AlwaysOnTop &&
+                    s.Sequence(0) == 1 &&
                     ReferenceEquals(s.Placement.GetEffective(m.NoteId), old) &&
                     s.Notes[0].PreferredLocalLogicalX == 100 &&
-                    s.Placement.IsTemporaryRehome(m.NoteId) && s.Saves == saves + 1 &&
-                    StickyNoteRepository.LoadFromFile(s.PathName).Find(m.NoteId).X == 400,
-                    "A4 rejected effective still returns true and saves canonical, preferred/temp unchanged");
-                evidence.Add("A4: true; physical/v10 and hosted lease changed and saved; preferred/temp unchanged; effective old.");
+                    s.Placement.IsTemporaryRehome(m.NoteId) && s.Saves == saves,
+                    "A4 rejected reproject leaves canonical/content/lease/Save/preferred/temp untouched");
+                evidence.Add("A4: false; zero canonical/content/lease/Save mutation; preferred/temp/effective unchanged.");
             }
-            // A5: structural/hosted rejection differs from effective-only rejection.
+            // A5: every rejection class is now whole-set atomic.
             for (int scenario = 0; scenario < 3; scenario++)
             using (Pc2Scene s = new Pc2Scene(root, "A5-" + scenario))
             {
@@ -270,31 +274,54 @@ namespace PennyPet
                     s.Batch(10, s.Member(0), s.Member(1),
                         s.Member(2, scenario == 1 ? 1 : 2, scenario == 0)),
                     s.Topology, s.Interaction.Epoch, s.Notes[0], null, s.Ids, 10L);
-                if (scenario < 2)
-                    Pc2Assert(before == String.Join("\n", s.Notes.ConvertAll(StickyNoteCodec.SerializeLine)) &&
-                        s.Saves == saves && s.Sequence(0) == 1 &&
-                        s.Placement.GetEffective(s.Notes[0].Id).WindowSequence == 1,
-                        "A5 invalid last member prevents whole commit including save/group/mirrors");
-                else
-                    Pc2Assert(s.Notes.TrueForAll(n => n.X == 400 && n.PreferredLocalLogicalX == 400) &&
-                        s.Sequence(2) == 2 && ReferenceEquals(s.Placement.GetEffective(s.Notes[2].Id), old) &&
-                        s.Saves == saves + 1 && StickyNoteRepository.LoadFromFile(s.PathName)
-                            .Find(s.Notes[2].Id).PreferredLocalLogicalX == 400,
-                        "A5 effective-only rejection not part of whole-set preflight, durable write proceeds");
+                Pc2Assert(before == String.Join("\n", s.Notes.ConvertAll(StickyNoteCodec.SerializeLine)) &&
+                    s.Saves == saves && s.Sequence(0) == 1 &&
+                    s.Placement.GetEffective(s.Notes[0].Id).WindowSequence == 1 &&
+                    (scenario != 2 || (ReferenceEquals(s.Placement.GetEffective(s.Notes[2].Id), old) &&
+                        s.Notes[2].PreferredLocalLogicalX == 100)),
+                    "A5 whole-set zero mutation for structural/hosted/effective rejection");
                 evidence.Add("A5-" + scenario + ": " + (scenario < 2
                     ? "invalid final member: zero canonical/preferred/lease/effective/order/Save mutation."
-                    : "effective-only reject: all durable prefs/mirrors/leases saved; last effective old."));
+                    : "effective-only reject: whole-set zero durable mutation and zero Save."));
+            }
+            // A7: topology/restore consumer also rejects atomically.
+            using (Pc2Scene s = new Pc2Scene(root, "A7"))
+            {
+                WindowFacts old = s.Facts(1, 100, 100);
+                s.Placement.TryUpdateEffective(s.Notes[1].Id, old);
+                long saves = s.Saves;
+                string before = String.Join("\n", s.Notes.ConvertAll(StickyNoteCodec.SerializeLine));
+                object[] args = { s.Batch(7, s.Member(0), s.Member(1), s.Member(2)),
+                    s.Topology, s.Surface, s.Ids, 7L, true };
+                bool accepted = (bool)Pc2Call(s.Pet, "TryApplyDockTopologyResult", args);
+                Pc2Assert(!accepted &&
+                    before == String.Join("\n", s.Notes.ConvertAll(StickyNoteCodec.SerializeLine)) &&
+                    s.Saves == saves && s.Sequence(0) == 1 && s.Sequence(1) == 1 && s.Sequence(2) == 1 &&
+                    ReferenceEquals(s.Placement.GetEffective(s.Notes[1].Id), old) &&
+                    s.Notes.TrueForAll(n => n.Visible && !n.AlwaysOnTop),
+                    "A7 topology/restore zero-mutation reject preserves visibility/topmost/save");
+                evidence.Add("A7: false; zero canonical/effective/lease/visibility/topmost/Save mutation.");
             }
             RunPc2FailurePolicies(root, evidence);
             // Last: establish a real session recreation path, not just seeded counters.
             RunPc2Recreation(root, evidence);
+            RunPc2EnsureSessionRuntime(root, evidence);
             Directory.CreateDirectory(root);
             File.WriteAllText(Path.Combine(root, "characterization.json"),
                 new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(new {
                     sourceGolden = "ab10b45705195bc7564db74c2d1f03dc996917ba",
                     characterizationPassed = true,
-                    confirmedLatentCorrectnessDefect = true,
-                    pc2b = "BLOCKED", observations = evidence.ToArray()
+                    confirmedLatentCorrectnessDefect = false,
+                    pc2b = "PENDING_HUMAN", observations = evidence.ToArray()
+                }), new UTF8Encoding(false));
+            string closureRoot = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outputPath)), "pc2a5");
+            Directory.CreateDirectory(closureRoot);
+            File.WriteAllText(Path.Combine(closureRoot, "closure.json"),
+                new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(new {
+                    sourceDefectCharacterization = "b9a6e79a31cfb5f8af8794e4bb3ec23985d67516",
+                    sessionRecreationClosed = true,
+                    rejectionAtomicityClosed = true,
+                    pc2b = "PENDING_HUMAN", observations = evidence.ToArray()
                 }), new UTF8Encoding(false));
         }
 
@@ -355,9 +382,14 @@ namespace PennyPet
             {
                 s.Start();
                 StickyNoteData note = s.Notes[0];
-                StickyUiCommandResult ensured = s.Send(StickyUiCommand.EnsureSession(
-                    StickyNoteUiSnapshot.FromData(note), null, s.Topology));
-                Pc2Assert(ensured.Status == StickyUiCommandStatus.Handled, "real EnsureSession");
+                StickyUiCommand ensure = StickyUiCommand.EnsureSession(
+                    StickyNoteUiSnapshot.FromData(note), null, s.Topology);
+                StickyUiCommandResult ensured = s.Send(ensure);
+                Pc2Assert(ensured.Status == StickyUiCommandStatus.Handled &&
+                    ensured.SessionCreated, "first real EnsureSession reports created");
+                StickyUiCommandResult reused = s.Send(ensure);
+                Pc2Assert(reused.Status == StickyUiCommandStatus.Handled &&
+                    !reused.SessionCreated, "second real EnsureSession reports reused");
                 s.Hosted.SynchronizeSessionLease(note.Id, ensured.Sequence);
                 Pc2Assert(s.Send(StickyUiCommand.Show(note.Id, false, s.Topology)).Status ==
                     StickyUiCommandStatus.Handled, "old native window show");
@@ -372,32 +404,59 @@ namespace PennyPet
                     (Action<StickyUiCommandResult>)(r => closed = r));
                 s.Context.PumpUntil(() => closed != null);
                 Pc2Assert(closed.Status == StickyUiCommandStatus.Handled &&
-                    !s.Hosted.ContainsNote(note.Id) && ReferenceEquals(s.Placement.GetEffective(note.Id), old.Facts),
-                    "actual reload close retains effective but removes hosted lease");
-                ensured = s.Send(StickyUiCommand.EnsureSession(
-                    StickyNoteUiSnapshot.FromData(note), null, s.Topology));
-                Pc2Assert(ensured.Status == StickyUiCommandStatus.Handled && ensured.Sequence < old.Sequence,
-                    "real recreated session has lower sequence");
+                    !s.Hosted.ContainsNote(note.Id) &&
+                    s.Placement.GetEffective(note.Id) == null,
+                    "actual reload close invalidates old Effective watermark");
+                ensured = s.Send(ensure);
+                Pc2Assert(ensured.Status == StickyUiCommandStatus.Handled &&
+                    ensured.SessionCreated && ensured.Sequence < old.Sequence,
+                    "recreated session reports created with lower sequence");
                 s.Hosted.SynchronizeSessionLease(note.Id, ensured.Sequence);
                 StickyUiCommandResult moved = s.Send(StickyUiCommand.Reproject(note.Id,
                     new StickyUiReprojectTarget(s.Surface.RuntimeGdiName, 180, 140, 300, 230, false, true),
                     s.Topology));
                 Pc2Assert(moved.Status == StickyUiCommandStatus.Handled && moved.Facts != null &&
                     moved.Sequence < old.Sequence && s.Hosted.CanApplySequence(note.Id, moved.Sequence),
-                    "new actual facts pass hosted lease despite old effective watermark");
+                    "new actual facts pass hosted lease");
                 long saves = s.Saves;
                 Pc2Assert((bool)Pc2Call(s.Pet, "ApplyReprojectResult", moved, note.Id, s.Topology),
-                    "real new-session reproject reports accepted");
+                    "real new-session reproject accepted");
                 s.Repository.WaitForPendingSaves();
-                Pc2Assert(ReferenceEquals(s.Placement.GetEffective(note.Id), old.Facts) &&
-                    note.X == moved.Facts.PhysicalBounds.Left && note.Y == moved.Facts.PhysicalBounds.Top &&
-                    (old.Facts.PhysicalBounds.Left != note.X || old.Facts.PhysicalBounds.Top != note.Y) &&
+                Pc2Assert(ReferenceEquals(s.Placement.GetEffective(note.Id), moved.Facts) &&
+                    note.LocalLogicalX == 180 && note.LocalLogicalY == 140 &&
+                    note.X == moved.Facts.PhysicalBounds.Left &&
+                    note.Y == moved.Facts.PhysicalBounds.Top &&
                     s.Sequence(0) == moved.Sequence && s.Saves == saves + 1 &&
                     StickyNoteRepository.LoadFromFile(s.PathName).Find(note.Id).X == note.X,
-                    "reachable recreated HWND: accepted/saved canonical diverges from retained effective");
+                    "recreated HWND: canonical and Effective both equal new actual facts and save once");
                 evidence.Add("A2 real EnsureSession/CloseAll/recreation/Reproject: old HWND sequence=" + old.Sequence +
                     "; recreated lease=" + ensured.Sequence + "; new HWND sequence=" + moved.Sequence +
-                    "; canonical saved at new HWND rect while effective still old HWND rect. STOP: correctness closure required.");
+                    "; canonical and Effective both moved to the new actual HWND rect.");
+            }
+        }
+
+        private static void RunPc2EnsureSessionRuntime(string root, List<string> evidence)
+        {
+            using (Pc2Scene s = new Pc2Scene(root, "EnsureSessionRuntime", true))
+            {
+                s.Start();
+                StickyNoteData note = s.Notes[0];
+                StickyUiCommand ensure = StickyUiCommand.EnsureSession(
+                    StickyNoteUiSnapshot.FromData(note), null, s.Topology);
+                StickyUiCommandResult first = s.Send(ensure);
+                StickyUiCommandResult second = s.Send(ensure);
+                Pc2Assert(first.Status == StickyUiCommandStatus.Handled && first.SessionCreated &&
+                    second.Status == StickyUiCommandStatus.Handled && !second.SessionCreated,
+                    "EnsureSession first created, same-session reuse reported");
+                StickyUiCommandResult closed = null;
+                Pc2Call(s.Pet, "CloseHostedStickyRuntimeForReload",
+                    (Action<StickyUiCommandResult>)(r => closed = r));
+                s.Context.PumpUntil(() => closed != null);
+                StickyUiCommandResult third = s.Send(ensure);
+                Pc2Assert(closed.Status == StickyUiCommandStatus.Handled &&
+                    third.Status == StickyUiCommandStatus.Handled && third.SessionCreated,
+                    "EnsureSession after CloseAll reports created");
+                evidence.Add("EnsureSession metadata: first created=true, reused=false, after CloseAll created=true.");
             }
         }
 
@@ -408,7 +467,15 @@ namespace PennyPet
                 "  \"pc2a_live_batch_rejection_characterized_ok\": " + Bool(true) + ",\n" +
                 "  \"pc2a_reproject_rejection_characterized_ok\": " + Bool(true) + ",\n" +
                 "  \"pc2a_durable_commit_rejection_characterized_ok\": " + Bool(true) + ",\n" +
-                "  \"pc2a_failure_policies_characterized_ok\": " + Bool(true) + ",\n";
+                "  \"pc2a_failure_policies_characterized_ok\": " + Bool(true) + ",\n" +
+                "  \"pc2a5_session_created_metadata_ok\": " + Bool(true) + ",\n" +
+                "  \"pc2a5_session_effective_invalidation_ok\": " + Bool(true) + ",\n" +
+                "  \"pc2a5_dock_facts_barrier_atomic_reject_ok\": " + Bool(true) + ",\n" +
+                "  \"pc2a5_live_dock_batch_atomic_reject_ok\": " + Bool(true) + ",\n" +
+                "  \"pc2a5_reproject_atomic_reject_ok\": " + Bool(true) + ",\n" +
+                "  \"pc2a5_dock_commit_atomic_reject_ok\": " + Bool(true) + ",\n" +
+                "  \"pc2a5_dock_topology_atomic_reject_ok\": " + Bool(true) + ",\n" +
+                "  \"pc2a5_real_hwnd_recreation_ok\": " + Bool(true) + ",\n";
         }
 
         public static void RunWeatherApiProbe(string outputPath)
