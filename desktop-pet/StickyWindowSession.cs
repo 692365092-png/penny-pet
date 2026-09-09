@@ -1074,7 +1074,7 @@ namespace PennyPet
         private void TraceWindowFacts(WindowFacts facts,
             StickyNoteUiSnapshot snapshot)
         {
-            if (facts == null) return;
+            if (!DisplayDiagnostics.Enabled || facts == null) return;
             string oldScale = snapshot != null &&
                 snapshot.LocalLogicalWidth > 0 && snapshot.X != 0
                     ? ((double)snapshot.X /

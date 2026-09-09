@@ -34,7 +34,7 @@ namespace PennyPet
             bool flag, StickyNoteUiSnapshot snapshot = null,
             StickyUiBounds bounds = null,
             StickyUiDockResizeRole dockResizeRole = null,
-            ReminderItem[] reminders = null,
+            IEnumerable<ReminderItem> reminders = null,
             DisplayTopologySnapshot topology = null,
             StickyUiReprojectTarget reprojectTarget = null,
             string[] dockNoteIds = null,
@@ -66,7 +66,7 @@ namespace PennyPet
                 throw new ArgumentNullException(nameof(snapshot));
             return new StickyUiCommand(StickyUiCommandKind.Create,
                 snapshot.NoteId, focusEditor, snapshot, null, null,
-                CopyReminders(reminders), topology, reprojectTarget);
+                reminders, topology, reprojectTarget);
         }
 
         internal static StickyUiCommand EnsureSession(
@@ -84,7 +84,7 @@ namespace PennyPet
                 snapshot,
                 null,
                 null,
-                CopyReminders(reminders),
+                reminders,
                 topology);
         }
 
@@ -92,7 +92,7 @@ namespace PennyPet
             IEnumerable<ReminderItem> reminders)
         {
             return new StickyUiCommand(StickyUiCommandKind.UpdateReminders,
-                noteId, false, null, null, null, CopyReminders(reminders));
+                noteId, false, null, null, null, reminders);
         }
 
         internal static StickyUiCommand Show(string noteId, bool focusEditor,
@@ -283,12 +283,9 @@ namespace PennyPet
                 foreach (ReminderItem source in reminders)
                 {
                     if (source == null) continue;
-                    copy.Add(new ReminderItem(
-                        source.DeadlineUtc,
-                        source.Text,
-                        source.SourceNoteId,
-                        source.FontSizeTwips / 20F,
-                        source.PreAlertEnabled));
+                    // ReminderItem is immutable; only the collection needs
+                    // ownership isolation when crossing the STA boundary.
+                    copy.Add(source);
                     if (copy.Count >= 5) break;
                 }
             }

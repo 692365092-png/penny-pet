@@ -807,10 +807,13 @@ namespace PennyPet.Tests
         public void DockCommitRejectsGenerationMismatch()
         {
             string validation = DockCommitValidationSource();
+            // The classifier owns member identity, generation and sequence
+            // validation; its behavior is exercised by protocol tests.
             Assert.IsTrue(validation.Contains(
                     "batch.TopologyGeneration != expectedTopology.Generation") &&
                 validation.Contains(
-                    "member.Facts.TopologyGeneration !="));
+                    "WindowFactsVersionRules.Classify(member.NoteId,") &&
+                validation.Contains("WindowFactsVersionDisposition.Current"));
         }
 
         [TestMethod]

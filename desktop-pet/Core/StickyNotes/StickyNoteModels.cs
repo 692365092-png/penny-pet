@@ -34,6 +34,22 @@ namespace PennyPet
 
     internal static class StickyNoteWindowRules
     {
+        internal static bool AnyVisibleNoteOverlaps(
+            IReadOnlyList<StickyNoteData> notes, DockRect bounds)
+        {
+            for (int index = 0; index < notes.Count; index++)
+            {
+                StickyNoteData note = notes[index];
+                if (note == null || !note.Visible ||
+                    note.Width <= 0 || note.Height <= 0) continue;
+                if (bounds.Left < note.X + note.Width &&
+                    note.X < bounds.Right &&
+                    bounds.Top < note.Y + note.Height &&
+                    note.Y < bounds.Bottom) return true;
+            }
+            return false;
+        }
+
         internal static bool ShouldKeepSideTabsTopMost(
             bool overlapsVisibleSticky)
         {

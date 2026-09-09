@@ -1,0 +1,15 @@
+Test run for /workspace/scratch/06864a1deece/penny-baseline/desktop-pet/bin/Release/net8.0/PennyPet.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+Unhandled exception. System.NullReferenceException: Object reference not set to an instance of an object.
+   at Microsoft.VisualStudio.TestPlatform.CrossPlatEngine.TestEngine.ShouldRunInProcess(String runsettings, Boolean isParallelEnabled, Boolean isDataCollectorEnabled, List`1 testHostProviders) in /_/src/Microsoft.TestPlatform.CrossPlatEngine/TestEngine.cs:line 625
+   at Microsoft.VisualStudio.TestPlatform.CrossPlatEngine.TestEngine.GetExecutionManager(IRequestData requestData, TestRunCriteria testRunCriteria, IDictionary`2 sourceToSourceDetailMap, IWarningLogger warningLogger) in /_/src/Microsoft.TestPlatform.CrossPlatEngine/TestEngine.cs:line 216
+   at Microsoft.VisualStudio.TestPlatform.Client.TestPlatform.CreateTestRunRequest(IRequestData requestData, TestRunCriteria testRunCriteria, TestPlatformOptions options, Dictionary`2 sourceToSourceDetailMap, IWarningLogger warningLogger) in /_/src/Microsoft.TestPlatform.Client/TestPlatform.cs:line 112
+   at Microsoft.VisualStudio.TestPlatform.CommandLine.TestPlatformHelpers.TestRequestManager.RunTests(IRequestData requestData, TestRunCriteria testRunCriteria, ITestRunEventsRegistrar testRunEventsRegistrar, TestPlatformOptions options, Dictionary`2 sourceToSourceDetailMap) in /_/src/vstest.console/TestPlatformHelpers/TestRequestManager.cs:line 1239
+   at Microsoft.VisualStudio.TestPlatform.CommandLine.TestPlatformHelpers.TestRequestManager.RunTests(TestRunRequestPayload testRunRequestPayload, ITestHostLauncher3 testHostLauncher, ITestRunEventsRegistrar testRunEventsRegistrar, ProtocolConfig protocolConfig) in /_/src/vstest.console/TestPlatformHelpers/TestRequestManager.cs:line 374
+   at Microsoft.VisualStudio.TestPlatform.CommandLine.Processors.RunTestsArgumentExecutor.RunTests(String runSettings) in /_/src/vstest.console/Processors/RunTestsArgumentProcessor.cs:line 177
+   at Microsoft.VisualStudio.TestPlatform.CommandLine.Processors.RunTestsArgumentExecutor.Execute() in /_/src/vstest.console/Processors/RunTestsArgumentProcessor.cs:line 158
+   at Microsoft.VisualStudio.TestPlatform.CommandLine.Executor.ExecuteArgumentProcessor(IArgumentProcessor processor, Int32& exitCode) in /_/src/vstest.console/CommandLine/Executor.cs:line 391
+   at Microsoft.VisualStudio.TestPlatform.CommandLine.Executor.Execute(String[] args) in /_/src/vstest.console/CommandLine/Executor.cs:line 190
+   at Microsoft.VisualStudio.TestPlatform.CommandLine.Program.Main(String[] args) in /_/src/vstest.console/Program.cs:line 22

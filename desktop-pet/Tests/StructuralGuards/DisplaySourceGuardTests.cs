@@ -205,25 +205,6 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void Drt7_UserCommitBlocksReturnButReturnRestores()
-        {
-            string runtime = ReadSource(
-                "Features/StickyNotes/StickyPlacementRuntime.cs");
-
-            Assert.IsTrue(runtime.Contains("MarkUserPlacementCommit(") &&
-                runtime.Contains("MarkReturnedToPreferred(") &&
-                runtime.Contains("MarkTemporaryRehome("),
-                "The runtime must model temporary, user-moved and returned states.");
-            string commit = Between(runtime,
-                "internal void MarkUserPlacementCommit(string noteId)",
-                "internal void MarkReturnedToPreferred(string noteId)");
-            Assert.IsTrue(commit.Contains(
-                    "userMoved = state.IsTemporaryRehome") &&
-                commit.Contains("state.UserMovedSinceRehome"),
-                "A commit during a temporary stay must record user intent.");
-        }
-
-        [TestMethod]
         public void ReprojectRuntimeTransitionRequiresAppliedResult()
         {
             string coordinator = ReadSource(

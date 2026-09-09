@@ -6,6 +6,64 @@ namespace PennyPet.Tests
     [TestClass]
     public sealed class StickyPlacementRuntimeTests
     {
+        [TestMethod]
+        public void AcceptedFacts_PreserveIntentAndPreviouslyReturnedFacts()
+        {
+            StickyPlacementRuntime runtime = new StickyPlacementRuntime();
+            WindowFacts first = Facts(1, 1);
+            Assert.IsTrue(runtime.TryUpdateEffective("n-1", first));
+            runtime.MarkTemporaryRehome("n-1", "display-missing");
+            Assert.IsTrue(runtime.TryUpdateEffective("n-1", Facts(1, 2)));
+            Assert.AreEqual(1L, first.WindowSequence);
+            Assert.AreEqual(2L, runtime.GetEffective("n-1").WindowSequence);
+            Assert.IsTrue(runtime.IsTemporaryRehome("n-1"));
+            Assert.AreEqual("display-missing", runtime.TemporaryReason("n-1"));
+            runtime.MarkUserPlacementCommit("n-1");
+            Assert.IsFalse(runtime.IsTemporaryRehome("n-1"));
+            Assert.IsTrue(runtime.UserMovedSinceRehome("n-1"));
+            Assert.IsTrue(runtime.TryUpdateEffective("n-1", Facts(1, 3)));
+            Assert.IsTrue(runtime.UserMovedSinceRehome("n-1"));
+            runtime.MarkReturnedToPreferred("n-1");
+            Assert.IsFalse(runtime.UserMovedSinceRehome("n-1"));
+            Assert.AreEqual(3L, runtime.GetEffective("n-1").WindowSequence);
+        }
+
+        [TestMethod]
+        public void RejectedFacts_LeaveEveryPlacementFieldUnchanged()
+        {
+            StickyPlacementRuntime runtime = new StickyPlacementRuntime();
+            WindowFacts first = Facts(2, 8);
+            Assert.IsTrue(runtime.TryUpdateEffective("n-1", first));
+            runtime.MarkTemporaryRehome("n-1", "display-missing");
+            Assert.IsFalse(runtime.CanAcceptEffective("n-1", Facts(1, 99)));
+            Assert.IsFalse(runtime.TryUpdateEffective("n-1", Facts(1, 99)));
+            Assert.IsFalse(runtime.TryUpdateEffective("n-1", Facts(2, 8)));
+            Assert.AreSame(first, runtime.GetEffective("n-1"));
+            Assert.AreEqual(1, runtime.Count);
+            Assert.IsTrue(runtime.IsTemporaryRehome("n-1"));
+            Assert.IsFalse(runtime.UserMovedSinceRehome("n-1"));
+            Assert.AreEqual("display-missing", runtime.TemporaryReason("n-1"));
+        }
+
+        [TestMethod]
+        public void Drt7_UserCommitBlocksReturnButReturnRestores()
+        {
+            StickyPlacementRuntime runtime = new StickyPlacementRuntime();
+            runtime.MarkTemporaryRehome("n-1", "display-missing");
+            runtime.MarkUserPlacementCommit("n-1");
+            Assert.IsFalse(runtime.IsTemporaryRehome("n-1"));
+            Assert.IsTrue(runtime.UserMovedSinceRehome("n-1"));
+            runtime.MarkUserPlacementCommit("n-1");
+            Assert.IsTrue(runtime.UserMovedSinceRehome("n-1"));
+            runtime.MarkTemporaryRehome("n-1", "display-missing-again");
+            Assert.IsTrue(runtime.IsTemporaryRehome("n-1"));
+            Assert.IsFalse(runtime.UserMovedSinceRehome("n-1"));
+            runtime.MarkReturnedToPreferred("n-1");
+            Assert.IsFalse(runtime.IsTemporaryRehome("n-1"));
+            Assert.IsFalse(runtime.UserMovedSinceRehome("n-1"));
+            Assert.AreEqual(String.Empty, runtime.TemporaryReason("n-1"));
+        }
+
         private static WindowFacts Facts(long generation, long sequence)
         {
             return new WindowFacts("n-1", "target-key", "\\\\.\\DISPLAY1",
