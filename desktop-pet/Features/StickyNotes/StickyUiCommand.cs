@@ -662,17 +662,19 @@ namespace PennyPet
         }
 
         internal static StickyUiEvent HorizontalResize(
-            StickyNoteUiSnapshot snapshot, long sequence, int left, int width)
+            StickyNoteUiSnapshot snapshot, long sequence, int left, int width,
+            WindowFacts facts = null, DisplayTopologySnapshot topology = null)
         {
             if (snapshot == null)
                 throw new ArgumentNullException(nameof(snapshot));
             return new StickyUiEvent(
                 StickyUiEventKind.DockHorizontalResizing, snapshot.NoteId,
-                snapshot, false, sequence, null, left, width);
+                snapshot, false, sequence, null, left, width, 0, facts, topology);
         }
 
         internal static StickyUiEvent DividerResize(StickyUiEventKind kind,
-            StickyNoteUiSnapshot snapshot, long sequence, int height)
+            StickyNoteUiSnapshot snapshot, long sequence, int height,
+            WindowFacts facts = null, DisplayTopologySnapshot topology = null)
         {
             if (snapshot == null)
                 throw new ArgumentNullException(nameof(snapshot));
@@ -681,7 +683,7 @@ namespace PennyPet
                 kind != StickyUiEventKind.DockDividerResizeCompleted)
                 throw new ArgumentOutOfRangeException(nameof(kind));
             return new StickyUiEvent(kind, snapshot.NoteId, snapshot, false,
-                sequence, null, 0, 0, height);
+                sequence, null, 0, 0, height, facts, topology);
         }
 
         internal StickyUiEventKind Kind { get; private set; }
@@ -708,18 +710,23 @@ namespace PennyPet
     internal sealed class StickyUiFinalSnapshot
     {
         internal StickyUiFinalSnapshot(StickyNoteUiSnapshot snapshot,
-            long sequence)
+            long sequence, WindowFacts facts = null,
+            DisplayTopologySnapshot topology = null)
         {
             if (snapshot == null)
                 throw new ArgumentNullException(nameof(snapshot));
             NoteId = snapshot.NoteId;
             Snapshot = snapshot;
             Sequence = sequence;
+            Facts = facts;
+            Topology = topology;
         }
 
         internal string NoteId { get; private set; }
         internal StickyNoteUiSnapshot Snapshot { get; private set; }
         internal long Sequence { get; private set; }
+        internal WindowFacts Facts { get; private set; }
+        internal DisplayTopologySnapshot Topology { get; private set; }
     }
 
     // Detached actual-facts result for one window inside a native Dock batch

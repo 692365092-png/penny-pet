@@ -391,7 +391,8 @@ namespace PennyPet
                 Pc2Assert(reused.Status == StickyUiCommandStatus.Handled &&
                     !reused.SessionCreated, "second real EnsureSession reports reused");
                 s.Hosted.SynchronizeSessionLease(note.Id, ensured.Sequence);
-                Pc2Assert(s.Send(StickyUiCommand.Show(note.Id, false, s.Topology)).Status ==
+                Pc2Assert(s.Send(StickyUiCommand.Show(note.Id, false, s.Topology,
+                    StickyPlacementRecovery.SelectForShow(note, s.Topology))).Status ==
                     StickyUiCommandStatus.Handled, "old native window show");
                 StickyUiCommandResult old = null;
                 for (int i = 0; i < 30; i++)

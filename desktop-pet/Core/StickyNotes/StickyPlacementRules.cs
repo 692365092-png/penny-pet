@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace PennyPet
 {
@@ -22,6 +23,54 @@ namespace PennyPet
 
     internal static class StickyPlacementRules
     {
+        internal static bool TryGetLogicalFacts(WindowFacts facts,
+            DisplayTopologySnapshot capturedTopology, out LogicalRect logical)
+        {
+            logical = new LogicalRect();
+            if (facts == null || capturedTopology == null ||
+                facts.TopologyGeneration != capturedTopology.Generation) return false;
+            DisplaySurfaceSnapshot surface = capturedTopology.FindByTargetKey(
+                facts.ActiveTargetKey) ?? capturedTopology.FindByRuntimeGdiName(facts.RuntimeGdiName);
+            if (surface == null) return false;
+            LogicalPoint point = DisplayGeometry.PhysicalToLocal(
+                facts.PhysicalBounds.Left, facts.PhysicalBounds.Top,
+                surface.Bounds.Left, surface.Bounds.Top, facts.Scale);
+            logical = new LogicalRect { X = point.X, Y = point.Y,
+                Width = DisplayGeometry.PhysicalLengthToLogical(facts.PhysicalBounds.Width, facts.Scale),
+                Height = DisplayGeometry.PhysicalLengthToLogical(facts.PhysicalBounds.Height, facts.Scale) };
+            return logical.Width > 0 && logical.Height > 0;
+        }
+
+        // No persisted note enters the live planner. Every member contributes
+        // actual pixels interpreted with that HWND's own DPI.
+        internal static bool TryBuildLiveDockState(IList<WindowFacts> orderedFacts,
+            WindowFacts source, DisplayTopologySnapshot topology, out DockGroupLogicalState state)
+        {
+            state = null;
+            LogicalRect sourceLocal;
+            if (orderedFacts == null || orderedFacts.Count == 0 ||
+                !TryGetLogicalFacts(source, topology, out sourceLocal)) return false;
+            List<DockLogicalMember> members = new List<DockLogicalMember>(orderedFacts.Count);
+            int sourceIndex = -1;
+            int rootY = sourceLocal.Y;
+            foreach (WindowFacts facts in orderedFacts)
+            {
+                if (facts == null || facts.TopologyGeneration != topology.Generation) return false;
+                int height = DisplayGeometry.PhysicalLengthToLogical(facts.PhysicalBounds.Height, facts.Scale);
+                if (height <= 0 || String.IsNullOrWhiteSpace(facts.WindowId)) return false;
+                if (String.Equals(facts.WindowId, source.WindowId, StringComparison.OrdinalIgnoreCase))
+                    sourceIndex = members.Count;
+                else if (sourceIndex < 0) rootY -= height;
+                members.Add(new DockLogicalMember(facts.WindowId, sourceLocal.Width, height));
+            }
+            if (sourceIndex < 0) return false;
+            try {
+                state = new DockGroupLogicalState(new LogicalPoint { X = sourceLocal.X, Y = rootY }, members);
+                return true;
+            }
+            catch (ArgumentException) { return false; }
+        }
+
         internal static bool CanCommitPreferred(PlacementReason reason)
         {
             switch (reason)
@@ -75,7 +124,8 @@ namespace PennyPet
             out WindowPlacementPreference preference)
         {
             preference = null;
-            if (facts == null || topology == null) return false;
+            if (facts == null || topology == null ||
+                facts.TopologyGeneration != topology.Generation) return false;
             DisplaySurfaceSnapshot surface =
                 topology.FindByTargetKey(facts.ActiveTargetKey);
             if (surface == null)

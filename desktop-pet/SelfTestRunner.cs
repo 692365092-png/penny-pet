@@ -1274,12 +1274,24 @@ namespace PennyPet
                 .PrepareStickyExpandAndTileTargets(new StickyNoteData[] {
                     new StickyNoteData(), new StickyNoteData() },
                     new Rectangle(-1920, 0, 1920, 1040), 1.0);
+            bool planningPreservedActual = expandA.X == -5000 &&
+                expandB.Width == 420 && expandC.Height == 260;
+            // This persistence fixture supplies successful actual responses.
+            // Native application is covered by RunStickyHostedLifecycleCheck.
+            foreach (DockLayoutTarget target in expandTargets)
+            {
+                StickyNoteData note = expandRepository.Find(target.NoteId);
+                note.X = target.X;
+                note.Y = target.Y;
+                note.Width = target.Width;
+                note.Height = target.Height;
+            }
             expandRepository.SaveToFile(expandPath);
             StickyNoteRepository restoredExpandRepository =
                 StickyNoteRepository.LoadFromFile(expandPath);
             List<StickyNoteData> restoredExpanded =
                 restoredExpandRepository.GetAll();
-            result.ExpandAndTileRoundTripOk =
+            result.ExpandAndTileRoundTripOk = planningPreservedActual &&
                 expandRuntime.ContainsNote(expandA.Id) &&
                 expandTargets.Count == 3 &&
                 expandTargets.Exists(delegate(DockLayoutTarget target)
@@ -4958,10 +4970,23 @@ namespace PennyPet
             List<StickyNoteData> reprojGroup =
                 new List<StickyNoteData> { reprojA, reprojB };
 
+            DisplayTopologySnapshot captureTopology = new DisplayTopologySnapshot(7, new[] { surface });
+            StickyPlacementRuntime captureRuntime = new StickyPlacementRuntime();
+            captureRuntime.TryUpdateEffective(reprojA.Id,
+                new WindowFacts(reprojA.Id, String.Empty, surface.RuntimeGdiName,
+                    new PhysicalRect(surface.Bounds.Left + 20, surface.Bounds.Top + 40, 640, 600), 192, 7, 1),
+                captureTopology);
+            captureRuntime.TryUpdateEffective(reprojB.Id,
+                new WindowFacts(reprojB.Id, String.Empty, surface.RuntimeGdiName,
+                    new PhysicalRect(surface.Bounds.Left + 20, surface.Bounds.Top + 640, 640, 720), 192, 7, 1),
+                captureTopology);
+            // Legacy dimensions deliberately contradict accepted actual facts.
+            reprojA.LocalLogicalHeight = 1;
+            reprojB.LocalLogicalHeight = 999;
             DockGroupLogicalState runtimeState;
             bool runtimeOk = PetForm.TryBuildDockTopologyLogicalState(
                 reprojGroup, DockTopologyReprojectReason.CurrentRuntimeRepair,
-                out runtimeState) &&
+                out runtimeState, captureRuntime) &&
                 runtimeState.RootAnchor.X == 10 &&
                 runtimeState.RootAnchor.Y == 20 &&
                 runtimeState.Members[0].Width == 320 &&
@@ -5481,9 +5506,9 @@ namespace PennyPet
                             new StickyUiBounds(100, 400, 320, 300)),
                         petContext);
                 DockWindowFacts targetFacts = targetPositioned == null ? null :
-                    DockWindowFacts.FromSnapshot(targetPositioned.Snapshot);
+                    HostedDockFacts(targetPositioned);
                 DockWindowFacts sourceFacts = sourcePositioned == null ? null :
-                    DockWindowFacts.FromSnapshot(sourcePositioned.Snapshot);
+                    HostedDockFacts(sourcePositioned);
                 bool dockHit = sourceFacts != null && targetFacts != null &&
                     PetForm.CanDockBelow(new Rectangle(sourceFacts.X,
                         sourceFacts.Y, sourceFacts.Width, sourceFacts.Height),
@@ -5553,8 +5578,8 @@ namespace PennyPet
                     mixedRoot != null && mixedSource != null &&
                     mixedRoot.Status == StickyUiCommandStatus.Handled &&
                     mixedSource.Status == StickyUiCommandStatus.Handled &&
-                    mixedRoot.Snapshot.Width == 320 &&
-                    mixedSource.Snapshot.Width == 320 &&
+                    mixedRoot.Facts.PhysicalBounds.Width == 320 &&
+                    mixedSource.Facts.PhysicalBounds.Width == 320 &&
                     mixedSource.Sequence > canonicalBaseline &&
                     mixedRoot.Sequence > secondBaseline &&
                     staleCannotOverwrite && !setBoundsLeakedHeaderDrag;
@@ -5562,10 +5587,8 @@ namespace PennyPet
                     new Dictionary<string, DockWindowFacts>(
                         StringComparer.OrdinalIgnoreCase)
                     {
-                        { second.Id, DockWindowFacts.FromSnapshot(
-                            targetDocked.Snapshot) },
-                        { canonical.Id, DockWindowFacts.FromSnapshot(
-                            sourceDocked.Snapshot) }
+                        { second.Id, HostedDockFacts(targetDocked) },
+                        { canonical.Id, HostedDockFacts(sourceDocked) }
                     };
                 DockWindowFacts movedRoot = new DockWindowFacts(second.Id,
                     160, 140, 320, 300, true, false);
@@ -5585,10 +5608,10 @@ namespace PennyPet
                             moveTargets[1].X, moveTargets[1].Y,
                             moveTargets[1].Width, moveTargets[1].Height)),
                     petContext);
-                check.HostedGroupMoveOk = targetMoved.Snapshot.X == 160 &&
-                    targetMoved.Snapshot.Y == 140 &&
-                    sourceMoved.Snapshot.X == 160 &&
-                    sourceMoved.Snapshot.Y == 440;
+                check.HostedGroupMoveOk = targetMoved.Facts.PhysicalBounds.Left == 160 &&
+                    targetMoved.Facts.PhysicalBounds.Top == 140 &&
+                    sourceMoved.Facts.PhysicalBounds.Left == 160 &&
+                    sourceMoved.Facts.PhysicalBounds.Top == 440;
 
                 StickyUiCommandResult targetPinned = PostStickyCommandAndWait(
                     host, new StickyUiCommand(
@@ -5638,16 +5661,16 @@ namespace PennyPet
                 check.HostedHorizontalResizeOk =
                     targetRole.Status == StickyUiCommandStatus.Handled &&
                     sourceRole.Status == StickyUiCommandStatus.Handled &&
-                    targetResized.Snapshot.X == 80 &&
-                    sourceResized.Snapshot.X == 80 &&
-                    targetResized.Snapshot.Width == 420 &&
-                    sourceResized.Snapshot.Width == 420;
+                    targetResized.Facts.PhysicalBounds.Left == 80 &&
+                    sourceResized.Facts.PhysicalBounds.Left == 80 &&
+                    targetResized.Facts.PhysicalBounds.Width == 420 &&
+                    sourceResized.Facts.PhysicalBounds.Width == 420;
 
                 DockWindowFacts twoUpperRequested = new DockWindowFacts(
                     second.Id, 80, 140, 420, 500, true, true);
                 List<DockLayoutTarget> twoDividerTargets =
                     PetForm.CalculateDockDividerTargets(twoUpperRequested,
-                        DockWindowFacts.FromSnapshot(sourceResized.Snapshot));
+                        HostedDockFacts(sourceResized));
                 StickyUiCommandResult targetDividerResized =
                     PostStickyCommandAndWait(host,
                         new StickyUiCommand(StickyUiCommandKind.SetBounds,
@@ -5665,11 +5688,11 @@ namespace PennyPet
                                 twoDividerTargets[1].Width,
                                 twoDividerTargets[1].Height)), petContext);
                 bool twoDividerOk =
-                    targetDividerResized.Snapshot.Height == 500 &&
-                    sourceDividerResized.Snapshot.Height == 230 &&
-                    targetDividerResized.Snapshot.Y +
-                        targetDividerResized.Snapshot.Height ==
-                        sourceDividerResized.Snapshot.Y;
+                    targetDividerResized.Facts.PhysicalBounds.Height == 500 &&
+                    sourceDividerResized.Facts.PhysicalBounds.Height == 230 &&
+                    targetDividerResized.Facts.PhysicalBounds.Top +
+                        targetDividerResized.Facts.PhysicalBounds.Height ==
+                        sourceDividerResized.Facts.PhysicalBounds.Top;
 
                 // Reopen geometry must be screen-independent: the divider
                 // fixture can exceed a small CI virtual work area, so compact
@@ -5708,8 +5731,8 @@ namespace PennyPet
                     !targetHidden.Snapshot.Visible &&
                     !sourceHidden.Snapshot.Visible &&
                     targetShown.Snapshot.Visible && sourceShown.Snapshot.Visible &&
-                    targetShown.Snapshot.X == 80 &&
-                    sourceShown.Snapshot.Y == 370;
+                    targetShown.Facts.PhysicalBounds.Left == 80 &&
+                    sourceShown.Facts.PhysicalBounds.Top == 370;
 
                 StickyUiCommandResult thirdPositioned =
                     PostStickyCommandAndWait(host,
@@ -5754,8 +5777,8 @@ namespace PennyPet
                     threeOrder[2].Id == canonical.Id &&
                     third.DockParentId == second.Id &&
                     canonical.DockParentId == third.Id &&
-                    thirdInserted.Snapshot.Y == 440 &&
-                    sourceInserted.Snapshot.Y == 740;
+                    thirdInserted.Facts.PhysicalBounds.Top == 440 &&
+                    sourceInserted.Facts.PhysicalBounds.Top == 740;
                 StickyUiCommandResult targetThreeRole =
                     PostStickyCommandAndWait(host,
                         new StickyUiCommand(
@@ -5778,13 +5801,13 @@ namespace PennyPet
                     PetForm.CalculateDockDividerTargets(
                         new DockWindowFacts(second.Id, 80, 140, 420, 500,
                             true, true),
-                        DockWindowFacts.FromSnapshot(thirdInserted.Snapshot));
+                        HostedDockFacts(thirdInserted));
                 List<Rectangle> firstDividerLayout =
                     PetForm.CalculateUnifiedDockLayout(new Size[]
                     {
                         new Size(420, firstDivider[0].Height),
                         new Size(420, firstDivider[1].Height),
-                        new Size(420, sourceInserted.Snapshot.Height)
+                        new Size(420, sourceInserted.Facts.PhysicalBounds.Height)
                     }, 80, 140, 420);
                 StickyUiCommandResult firstUpper = PostStickyCommandAndWait(
                     host, new StickyUiCommand(StickyUiCommandKind.SetBounds,
@@ -5806,13 +5829,13 @@ namespace PennyPet
                 List<DockLayoutTarget> secondDivider =
                     PetForm.CalculateDockDividerTargets(
                         new DockWindowFacts(third.Id, 80,
-                            firstLower.Snapshot.Y, 420, 500,
+                            firstLower.Facts.PhysicalBounds.Top, 420, 500,
                             true, true),
-                        DockWindowFacts.FromSnapshot(firstTrailing.Snapshot));
+                        HostedDockFacts(firstTrailing));
                 StickyUiCommandResult secondUpper = PostStickyCommandAndWait(
                     host, new StickyUiCommand(StickyUiCommandKind.SetBounds,
                         third.Id, false, null, new StickyUiBounds(80,
-                            firstLower.Snapshot.Y,
+                            firstLower.Facts.PhysicalBounds.Top,
                             420, secondDivider[0].Height)), petContext);
                 StickyUiCommandResult secondLower = PostStickyCommandAndWait(
                     host, new StickyUiCommand(StickyUiCommandKind.SetBounds,
@@ -5823,27 +5846,27 @@ namespace PennyPet
                     PetForm.CalculateDockDividerTargets(
                         new DockWindowFacts(second.Id, 80, 140, 420, 50,
                             true, true),
-                        DockWindowFacts.FromSnapshot(firstLower.Snapshot));
+                        HostedDockFacts(firstLower));
                 List<DockLayoutTarget> dividerMaximum =
                     PetForm.CalculateDockDividerTargets(
                         new DockWindowFacts(second.Id, 80, 140, 420, 900,
                             true, true),
-                        DockWindowFacts.FromSnapshot(firstLower.Snapshot));
+                        HostedDockFacts(firstLower));
                 check.HostedDividerResizeOk = twoDividerOk &&
                     targetThreeRole.Status == StickyUiCommandStatus.Handled &&
                     thirdThreeRole.Status == StickyUiCommandStatus.Handled &&
                     sourceThreeRole.Status == StickyUiCommandStatus.Handled &&
-                    firstUpper.Snapshot.Height == 500 &&
-                    firstLower.Snapshot.Height == 300 &&
-                    firstUpper.Snapshot.Y + firstUpper.Snapshot.Height ==
-                        firstLower.Snapshot.Y &&
-                    firstTrailing.Snapshot.Height == 300 &&
-                    firstLower.Snapshot.Y + firstLower.Snapshot.Height ==
-                        firstTrailing.Snapshot.Y &&
-                    secondUpper.Snapshot.Height == 500 &&
-                    secondLower.Snapshot.Height == 300 &&
-                    secondUpper.Snapshot.Y + secondUpper.Snapshot.Height ==
-                        secondLower.Snapshot.Y &&
+                    firstUpper.Facts.PhysicalBounds.Height == 500 &&
+                    firstLower.Facts.PhysicalBounds.Height == 300 &&
+                    firstUpper.Facts.PhysicalBounds.Top + firstUpper.Facts.PhysicalBounds.Height ==
+                        firstLower.Facts.PhysicalBounds.Top &&
+                    firstTrailing.Facts.PhysicalBounds.Height == 300 &&
+                    firstLower.Facts.PhysicalBounds.Top + firstLower.Facts.PhysicalBounds.Height ==
+                        firstTrailing.Facts.PhysicalBounds.Top &&
+                    secondUpper.Facts.PhysicalBounds.Height == 500 &&
+                    secondLower.Facts.PhysicalBounds.Height == 300 &&
+                    secondUpper.Facts.PhysicalBounds.Top + secondUpper.Facts.PhysicalBounds.Height ==
+                        secondLower.Facts.PhysicalBounds.Top &&
                     dividerMinimum[0].Height == 220 &&
                     dividerMinimum[1].Height == 300 &&
                     dividerMaximum[0].Height == 700 &&
@@ -5851,8 +5874,7 @@ namespace PennyPet
                     !eventKinds.Contains(
                         StickyUiEventKind.DockDividerResizing);
                 check.DockRestoreOk = VerifyHostedDockPersistence(
-                    firstUpper.Snapshot, secondUpper.Snapshot,
-                    secondLower.Snapshot);
+                    firstUpper, secondUpper, secondLower);
 
                 List<StickyNoteData> splitRemainder =
                     StickyDockOperations.ExtractSingleDockMember(
@@ -5880,8 +5902,8 @@ namespace PennyPet
                     splitRemainder[1].Id == canonical.Id &&
                     canonical.DockParentId == second.Id &&
                     String.IsNullOrEmpty(third.DockGroupId) &&
-                    sourceAfterSplit.Snapshot.Y == 440 &&
-                    thirdAfterSplit.Snapshot.X == 600;
+                    sourceAfterSplit.Facts.PhysicalBounds.Top == 440 &&
+                    thirdAfterSplit.Facts.PhysicalBounds.Left == 600;
                 StickyUiCommandResult closed = PostStickyCommandAndWait(host,
                     new StickyUiCommand(StickyUiCommandKind.CloseAll,
                         String.Empty, false), petContext);
@@ -5908,28 +5930,26 @@ namespace PennyPet
                     targetAfterSplit != null &&
                     finalSource.Sequence > sourceAfterSplit.Sequence &&
                     finalTarget.Sequence > targetAfterSplit.Sequence &&
-                    finalSource.Snapshot.Y == 440 &&
-                    finalTarget.Snapshot.Y == 140;
-                StickyNoteData staleProbe = sourceDocked.Snapshot
-                    .CreateWorkingCopy();
+                    finalSource.Facts.PhysicalBounds.Top == 440 &&
+                    finalTarget.Facts.PhysicalBounds.Top == 140;
+                WindowFacts staleProbe = sourceDocked.Facts;
                 long appliedSequence = sourceDocked.Sequence;
                 if (PetForm.ShouldApplyHostedSequence(reopened.Sequence,
-                    appliedSequence)) detached.ApplyTo(staleProbe);
+                    appliedSequence)) staleProbe = reopened.Facts;
                 check.PerNoteSequenceOk =
                     PetForm.ShouldApplyHostedSequence(sourceDocked.Sequence,
                         reopened.Sequence) &&
                     !PetForm.ShouldApplyHostedSequence(reopened.Sequence,
                         appliedSequence) &&
-                    staleProbe.X == sourceDocked.Snapshot.X &&
-                    staleProbe.Y == sourceDocked.Snapshot.Y;
+                    Object.ReferenceEquals(staleProbe, sourceDocked.Facts);
                 check.HostedDockEffectOk = dockHit && dockOrder.Count == 2 &&
                     dockOrder[0].Id == second.Id &&
                     dockOrder[1].DockParentId == second.Id &&
                     targetDocked != null && sourceDocked != null &&
                     targetDocked.Status == StickyUiCommandStatus.Handled &&
                     sourceDocked.Status == StickyUiCommandStatus.Handled &&
-                    targetDocked.Snapshot.X == hostedLayout[0].X &&
-                    sourceDocked.Snapshot.Y == hostedLayout[1].Y;
+                    targetDocked.Facts.PhysicalBounds.Left == hostedLayout[0].X &&
+                    sourceDocked.Facts.PhysicalBounds.Top == hostedLayout[1].Y;
                 check.LifecycleOk = detachedOwnership && hidden != null &&
                     hidden.Status == StickyUiCommandStatus.Handled &&
                     hidden.Snapshot != null && !hidden.Snapshot.Visible &&
@@ -5968,8 +5988,15 @@ namespace PennyPet
             return check;
         }
 
+        private static DockWindowFacts HostedDockFacts(StickyUiCommandResult result)
+        {
+            return result == null || result.Snapshot == null ? null :
+                DockWindowFacts.FromWindowFacts(result.Facts,
+                    result.Snapshot.Visible, result.Snapshot.AlwaysOnTop);
+        }
+
         private static bool VerifyHostedDockPersistence(
-            params StickyNoteUiSnapshot[] snapshots)
+            params StickyUiCommandResult[] results)
         {
             string path = Path.Combine(Path.GetTempPath(),
                 "penny-hosted-dock-" + Guid.NewGuid().ToString("N") + ".dat");
@@ -5978,14 +6005,22 @@ namespace PennyPet
                 StickyNoteRepository repository =
                     StickyNoteRepository.LoadFromFile(path);
                 List<StickyNoteData> stored = new List<StickyNoteData>();
-                if (snapshots == null || snapshots.Length < 2) return false;
-                foreach (StickyNoteUiSnapshot snapshot in snapshots)
+                if (results == null || results.Length < 2) return false;
+                foreach (StickyUiCommandResult result in results)
                 {
-                    if (snapshot == null) return false;
+                    if (result == null || result.Snapshot == null || result.Facts == null)
+                        return false;
+                    StickyNoteUiSnapshot snapshot = result.Snapshot;
+                    PhysicalRect actual = result.Facts.PhysicalBounds;
                     StickyNoteData note = repository.Create(String.Empty,
-                        new Point(snapshot.X, snapshot.Y));
+                        new Point(actual.Left, actual.Top));
                     if (note == null) return false;
-                    snapshot.ApplyTo(note);
+                    snapshot.ApplyContentTo(note);
+                    note.Id = snapshot.NoteId;
+                    note.X = actual.Left;
+                    note.Y = actual.Top;
+                    note.Width = actual.Width;
+                    note.Height = actual.Height;
                     stored.Add(note);
                 }
                 StickyDockGroups.ApplyOrderedGroup(stored);
@@ -5996,14 +6031,14 @@ namespace PennyPet
                     stored[stored.Count - 1].Id);
                 List<StickyNoteData> order = StickyDockGroups.GetOrderedGroup(
                     reopened.GetAll(), member);
-                if (order.Count != snapshots.Length) return false;
+                if (order.Count != results.Length) return false;
                 for (int index = 0; index < order.Count; index++)
                 {
-                    if (order[index].Id != snapshots[index].NoteId ||
-                        order[index].X != snapshots[index].X ||
-                        order[index].Y != snapshots[index].Y ||
-                        order[index].Width != snapshots[index].Width ||
-                        order[index].Height != snapshots[index].Height ||
+                    if (order[index].Id != results[index].Snapshot.NoteId ||
+                        order[index].X != results[index].Facts.PhysicalBounds.Left ||
+                        order[index].Y != results[index].Facts.PhysicalBounds.Top ||
+                        order[index].Width != results[index].Facts.PhysicalBounds.Width ||
+                        order[index].Height != results[index].Facts.PhysicalBounds.Height ||
                         (index > 0 && order[index].DockParentId !=
                             order[index - 1].Id)) return false;
                 }

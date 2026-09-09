@@ -29,7 +29,7 @@ namespace PennyPet
                         if (result != null && result.Status ==
                             StickyUiCommandStatus.Handled)
                             ApplyHostedStickySnapshot(result.Snapshot,
-                                result.Sequence, false);
+                                result.Sequence, false, result.Facts, result.Topology);
                         else ReportHostedStickyCommandFailure(
                             "sticky-hosted-dock-topmost", result);
                     });
@@ -198,7 +198,7 @@ namespace PennyPet
                 ApplyHostedStickyFactsGeometry(candidate.Canonical, member.Facts,
                     topology);
                 if (!_placementRuntime.TryUpdateEffective(member.NoteId,
-                    member.Facts))
+                    member.Facts, topology))
                     throw new InvalidOperationException(
                         "Effective acceptance changed after DockFactsBarrier preflight.");
                 _hostedRuntime.RecordSequence(member.NoteId,
@@ -230,7 +230,6 @@ namespace PennyPet
                     effective.TopologyGeneration == topology.Generation)
                     runtimeFacts = DockWindowFacts.FromWindowFacts(effective,
                         note.Visible, note.AlwaysOnTop);
-                if (runtimeFacts == null) runtimeFacts = DockWindowFacts.FromData(note);
                 if (runtimeFacts != null) result[noteId] = runtimeFacts;
             }
             return result;
@@ -472,43 +471,14 @@ namespace PennyPet
                     sourceFacts.ActiveTargetKey);
             if (surface == null) return null;
 
-            List<StickyNoteData> ordered = BuildDockChainOrder(seed);
-            int sourceIndex = ordered.FindIndex(delegate(StickyNoteData note)
-            {
-                return String.Equals(note.Id, sourceFacts.WindowId,
-                    StringComparison.OrdinalIgnoreCase);
-            });
-            if (sourceIndex < 0) return null;
-
-            // Dock has one width. Derive it from the source HWND facts so a
-            // stale or previously mixed-DPI member width cannot fracture the
-            // group or become a second geometry authority.
-            int unifiedLogicalWidth =
-                DisplayGeometry.PhysicalLengthToLogical(
-                    sourceFacts.PhysicalBounds.Width, sourceFacts.Scale);
-            if (unifiedLogicalWidth <= 0) return null;
-
-            List<DockLogicalMember> members =
-                new List<DockLogicalMember>(ordered.Count);
-            foreach (StickyNoteData member in ordered)
-            {
-                if (member.LocalLogicalWidth <= 0 ||
-                    member.LocalLogicalHeight <= 0) return null;
-                members.Add(new DockLogicalMember(member.Id,
-                    unifiedLogicalWidth,
-                    member.LocalLogicalHeight));
-            }
-
-            LogicalPoint sourceLocal = DisplayGeometry.PhysicalToLocal(
-                sourceFacts.PhysicalBounds.Left,
-                sourceFacts.PhysicalBounds.Top,
-                surface.Bounds.Left, surface.Bounds.Top, sourceFacts.Scale);
-            int rootX = sourceLocal.X;
-            int rootY = sourceLocal.Y;
-            for (int index = 0; index < sourceIndex; index++)
-                rootY -= ordered[index].LocalLogicalHeight;
-            DockGroupLogicalState group = new DockGroupLogicalState(
-                new LogicalPoint { X = rootX, Y = rootY }, members);
+            List<WindowFacts> orderedFacts = new List<WindowFacts>();
+            foreach (StickyNoteData member in BuildDockChainOrder(seed))
+                orderedFacts.Add(String.Equals(member.Id, sourceFacts.WindowId,
+                    StringComparison.OrdinalIgnoreCase) ? sourceFacts :
+                    _placementRuntime.GetEffective(member.Id));
+            DockGroupLogicalState group;
+            if (!StickyPlacementRules.TryBuildLiveDockState(orderedFacts,
+                sourceFacts, topology, out group)) return null;
 
             DockPlacementPlan plan;
             try
@@ -586,11 +556,11 @@ namespace PennyPet
                 StickyNoteData existingChild =
                     _notes.Find(target.ExistingChildNoteId);
                 if (existingChild != null)
-                    ShowTransientDockPulse(CalculateDockVisualSeamPhysical(
-                        DockWindowFacts.FromData(tailData)),
+                    ShowTransientDockPulse(CalculateDockVisualSeam(
+                        GetHostedDockFacts(tailData)),
                         Color.FromArgb(32, 160, 255));
-                ShowTransientDockPulse(CalculateDockVisualSeamPhysical(
-                    DockWindowFacts.FromData(parent)),
+                ShowTransientDockPulse(CalculateDockVisualSeam(
+                    GetHostedDockFacts(parent)),
                     Color.FromArgb(32, 160, 255));
             }
             ClearDockPreview();
@@ -677,38 +647,6 @@ namespace PennyPet
                 _dockPlanMailbox.Current = null;
                 _dockPlanMailbox.ApplyQueued = false;
                 _dockPlanMailbox.FinalPlanSequence = 0;
-            }
-        }
-
-        // P1-C: write one consistent canonical + compatibility placement from
-        // the explicit physical bounds, never a bare X/Y/Width/Height that
-        // waits for an async WPF snapshot to backfill the DisplayId/local.
-        private static void ApplyDockCanonicalFromPhysical(StickyNoteData note,
-            DockLayoutTarget target)
-        {
-            if (note == null || target == null) return;
-            note.X = target.X;
-            note.Y = target.Y;
-            note.Width = target.Width;
-            note.Height = target.Height;
-            note.Visible = target.Visible;
-            note.AlwaysOnTop = target.TopMost;
-            WindowsDisplayMetrics metrics =
-                WindowsDisplayResolver.ResolvePhysicalRect(
-                    target.X, target.Y,
-                    target.X + target.Width, target.Y + target.Height);
-            if (metrics != null)
-            {
-                StickyCanonicalPlacement placement =
-                    StickyPlacementMath.FromPhysicalRect(
-                        metrics.DisplayId, metrics.PhysicalLeft,
-                        metrics.PhysicalTop, metrics.Scale,
-                        target.X, target.Y, target.Width, target.Height);
-                note.DisplayId = placement.DisplayId;
-                note.LocalLogicalX = placement.LocalX;
-                note.LocalLogicalY = placement.LocalY;
-                note.LocalLogicalWidth = placement.LocalWidth;
-                note.LocalLogicalHeight = placement.LocalHeight;
             }
         }
 
@@ -805,7 +743,7 @@ namespace PennyPet
                 ApplyHostedStickyFactsGeometry(candidate.Canonical, member.Facts,
                     topology);
                 if (!_placementRuntime.TryUpdateEffective(member.NoteId,
-                    member.Facts))
+                    member.Facts, topology))
                     throw new InvalidOperationException(
                         "Live Dock Effective acceptance changed after preflight.");
                 _hostedRuntime.RecordSequence(member.NoteId,
@@ -821,6 +759,12 @@ namespace PennyPet
                 if (note != null) _activeDockGroupIds.Add(note.Id);
         }
 
+        private DockWindowFacts GetHostedDockFacts(StickyNoteData note)
+        {
+            return note == null ? null : DockWindowFacts.FromWindowFacts(
+                _placementRuntime.GetEffective(note.Id), note.Visible, note.AlwaysOnTop);
+        }
+
         private Dictionary<string, DockWindowFacts>
             CaptureDockFacts(IEnumerable<string> noteIds)
         {
@@ -832,7 +776,8 @@ namespace PennyPet
             {
                 StickyNoteData note = _notes.Find(noteId);
                 if (note == null) continue;
-                facts[noteId] = DockWindowFacts.FromData(note);
+                DockWindowFacts actual = GetHostedDockFacts(note);
+                if (actual != null) facts[noteId] = actual;
             }
             return facts;
         }
@@ -945,8 +890,7 @@ namespace PennyPet
                 if (note == null || !note.Visible) continue;
                 DockWindowFacts facts;
                 if (factsById == null ||
-                    !factsById.TryGetValue(note.Id, out facts))
-                    facts = DockWindowFacts.FromData(note);
+                    !factsById.TryGetValue(note.Id, out facts) || facts == null) return;
                 visibleFacts.Add(facts);
                 sizes.Add(new Size(facts.Width, facts.Height));
             }
@@ -964,8 +908,8 @@ namespace PennyPet
             ApplyDockTargets(targets, alreadyAppliedNoteId);
         }
 
-        // Hosted effect edge: canonical data is updated first; this boundary
-        // schedules the typed Window effect on the Sticky STA.
+        // Desired targets cross the STA boundary; only acknowledged actual
+        // facts advance runtime geometry and its persistence mirrors.
         private void ApplyDockTargets(IEnumerable<DockLayoutTarget> targets,
             string alreadyAppliedNoteId)
         {
@@ -981,7 +925,8 @@ namespace PennyPet
             StickyNoteData note = _notes.Find(target.NoteId);
             if (note == null) return;
             bool dividerSession = _activeHostedDockResizeSourceId != null;
-            ApplyDockCanonicalFromPhysical(note, target);
+            note.Visible = target.Visible;
+            note.AlwaysOnTop = target.TopMost;
             if (String.Equals(target.NoteId, alreadyAppliedNoteId,
                 StringComparison.OrdinalIgnoreCase)) return;
             if (!IsHostedSticky(note)) return;
@@ -1006,7 +951,7 @@ namespace PennyPet
                     if (result != null && result.Status ==
                         StickyUiCommandStatus.Handled)
                         ApplyHostedStickySnapshot(result.Snapshot,
-                            result.Sequence, false);
+                            result.Sequence, false, result.Facts, result.Topology);
                     else
                     {
                         ClearHostedDockResizeSessionIfMember(target.NoteId);
@@ -1065,9 +1010,8 @@ namespace PennyPet
                 if (note != null && note.Visible && seen.Add(note.Id))
                 {
                     DockWindowFacts facts;
-                    heights.Add(factsById != null &&
-                        factsById.TryGetValue(note.Id, out facts)
-                            ? facts.Height : note.Height);
+                    if (factsById == null || !factsById.TryGetValue(note.Id, out facts)) return false;
+                    heights.Add(facts.Height);
                 }
             }
             foreach (StickyNoteData note in BuildDockChainOrder(sourceSeed))
@@ -1075,17 +1019,14 @@ namespace PennyPet
                 if (note != null && note.Visible && seen.Add(note.Id))
                 {
                     DockWindowFacts facts;
-                    heights.Add(factsById != null &&
-                        factsById.TryGetValue(note.Id, out facts)
-                            ? facts.Height : note.Height);
+                    if (factsById == null || !factsById.TryGetValue(note.Id, out facts)) return false;
+                    heights.Add(facts.Height);
                 }
             }
             DockWindowFacts rootFacts;
-            return StickyDockOperations.IsDockCoordinateRangeSafe(
-                factsById != null && factsById.TryGetValue(
-                    targetOrder[0].Id, out rootFacts)
-                    ? rootFacts.Y : targetOrder[0].Y,
-                heights, DockCoordinateSafetyLimit);
+            return factsById != null && factsById.TryGetValue(targetOrder[0].Id, out rootFacts) &&
+                StickyDockOperations.IsDockCoordinateRangeSafe(rootFacts.Y,
+                    heights, DockCoordinateSafetyLimit);
         }
 
         private void NormalizeDockComponent(StickyNoteData seed)
@@ -1155,9 +1096,10 @@ namespace PennyPet
             foreach (StickyNoteData note in ordered)
             {
                 if (note == null || !note.Visible) continue;
-                startFacts.Add(String.Equals(note.Id, snapshot.NoteId,
-                    StringComparison.OrdinalIgnoreCase)
-                    ? snapshot : DockWindowFacts.FromData(note));
+                DockWindowFacts actual = String.Equals(note.Id, snapshot.NoteId,
+                    StringComparison.OrdinalIgnoreCase) ? snapshot : GetHostedDockFacts(note);
+                if (actual == null) return false;
+                startFacts.Add(actual);
             }
             if (startFacts.Count != ordered.Count) return false;
             _activeHostedDockResizeSourceId = snapshot.NoteId;
@@ -1278,7 +1220,7 @@ namespace PennyPet
                 ApplyHostedStickyFactsGeometry(canonical, member.Facts,
                     topology);
                 if (!_placementRuntime.TryUpdateEffective(member.NoteId,
-                    member.Facts))
+                    member.Facts, topology))
                     throw new InvalidOperationException(
                         "Divider Effective acceptance changed after preflight.");
                 _hostedRuntime.RecordSequence(member.NoteId,
@@ -1530,7 +1472,7 @@ namespace PennyPet
             DockWindowFacts parentFacts;
             Rectangle seam = factsById != null &&
                 factsById.TryGetValue(source.DockParentId, out parentFacts)
-                ? CalculateDockVisualSeamPhysical(parentFacts) :
+                ? CalculateDockVisualSeam(parentFacts) :
                 Rectangle.Empty;
             if (seam.IsEmpty) return;
             _splitGuideIndicator = new DockPulseIndicatorForm(
@@ -1546,7 +1488,7 @@ namespace PennyPet
             DockWindowFacts parentFacts;
             Rectangle seam = factsById != null &&
                 factsById.TryGetValue(source.DockParentId, out parentFacts)
-                ? CalculateDockVisualSeamPhysical(parentFacts) :
+                ? CalculateDockVisualSeam(parentFacts) :
                 Rectangle.Empty;
             if (!seam.IsEmpty) _splitGuideIndicator.UpdateSeam(seam);
         }
@@ -1583,7 +1525,7 @@ namespace PennyPet
             if (factsById != null && factsById.TryGetValue(parent.Id,
                 out parentFacts))
                 _dockPreviewIndicator.ShowSeam(
-                    CalculateDockVisualSeamPhysical(parentFacts));
+                    CalculateDockVisualSeam(parentFacts));
         }
 
         internal static Rectangle CalculateDockVisualSeam(
@@ -1591,19 +1533,6 @@ namespace PennyPet
         {
             return facts == null ? Rectangle.Empty : new Rectangle(facts.X,
                 facts.Y + facts.Height - 3, facts.Width, 6);
-        }
-
-        private Rectangle CalculateDockVisualSeamPhysical(
-            DockWindowFacts facts)
-        {
-            Rectangle seam = CalculateDockVisualSeam(facts);
-            if (seam.IsEmpty) return seam;
-            double scale = DeviceDpi / 96.0;
-            return new Rectangle(
-                (int)Math.Round(seam.X * scale),
-                (int)Math.Round(seam.Y * scale),
-                Math.Max(1, (int)Math.Round(seam.Width * scale)),
-                Math.Max(1, (int)Math.Round(seam.Height * scale)));
         }
 
         private DockTarget FindDockTarget(StickyNoteData source,
@@ -1819,7 +1748,7 @@ namespace PennyPet
                         return;
                     }
                     ApplyHostedStickySnapshot(result.Snapshot,
-                        result.Sequence, false);
+                        result.Sequence, false, result.Facts, result.Topology);
                     _hostedRuntime.RemoveNote(noteId);
                     StickyNoteData canonical = _notes.Find(noteId);
                     if (canonical != null)
