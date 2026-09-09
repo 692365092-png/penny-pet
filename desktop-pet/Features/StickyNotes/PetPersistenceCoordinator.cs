@@ -124,7 +124,7 @@ namespace PennyPet
                 PersistenceResult result = _notes.ExportSnapshot(dialog.FileName);
                 if (result.Succeeded)
                 {
-                    ShowBubble("已导出 " + _notes.GetAll().Count +
+                    ShowBubble("已导出 " + _notes.Count +
                         " 张便利贴。");
                     return;
                 }

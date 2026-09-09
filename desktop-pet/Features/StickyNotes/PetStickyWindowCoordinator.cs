@@ -1358,7 +1358,7 @@ namespace PennyPet
 
         private void TraceHostedWindowFacts(StickyUiEvent value)
         {
-            if (value.Facts == null) return;
+            if (!DisplayDiagnostics.Enabled || value.Facts == null) return;
             WindowFacts facts = value.Facts;
             DisplayDiagnostics.Trace("WindowFacts",
                 "note=" + facts.WindowId + " topology=" +
@@ -1701,14 +1701,9 @@ namespace PennyPet
                         member.WindowSequence, member.Facts,
                         expectedTopology, expectedTopology.Generation) !=
                         WindowFactsVersionDisposition.Current ||
-                    member.Facts.TopologyGeneration !=
-                        expectedTopology.Generation ||
-                    member.Facts.WindowSequence != member.WindowSequence ||
                     member.Facts.Dpi != batch.TargetDpi ||
                     !String.Equals(member.Facts.RuntimeGdiName,
                         targetSurface.RuntimeGdiName,
-                        StringComparison.OrdinalIgnoreCase) ||
-                    !String.Equals(member.Facts.WindowId, member.NoteId,
                         StringComparison.OrdinalIgnoreCase) ||
                     !_hostedRuntime.CanApplySequence(member.NoteId,
                         member.WindowSequence))
@@ -3096,15 +3091,9 @@ namespace PennyPet
         {
             if (tabs == null || tabs.IsDisposed || !tabs.Visible) return false;
             Rectangle stripBounds = tabs.Bounds;
-            foreach (StickyNoteData note in _notes.GetAll())
-            {
-                if (note == null || !note.Visible) continue;
-                if (note.Width <= 0 || note.Height <= 0) continue;
-                Rectangle noteBounds = new Rectangle(note.X, note.Y,
-                    note.Width, note.Height);
-                if (stripBounds.IntersectsWith(noteBounds)) return true;
-            }
-            return false;
+            return StickyNoteWindowRules.AnyVisibleNoteOverlaps(
+                _notes.InStorageOrder, new DockRect(stripBounds.Left,
+                    stripBounds.Top, stripBounds.Width, stripBounds.Height));
         }
 
         private void ApplyNoteTabZOrder()

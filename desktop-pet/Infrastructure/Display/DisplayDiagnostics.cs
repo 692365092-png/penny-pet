@@ -2,9 +2,8 @@ using System;
 
 namespace PennyPet
 {
-    // Lightweight structured display-event trace. Development builds keep it
-    // on by default so topology evidence is captured during hand-testing; set
-    // PENNY_DISPLAY_TRACE=0 to silence it in production-like runs.
+    // Detailed display/window tracing is opt-in with PENNY_DISPLAY_TRACE=1.
+    // Fatal and non-fatal error reporting remains independent of this switch.
     internal static class DisplayDiagnostics
     {
         internal static readonly bool Enabled = IsEnabled();
@@ -21,7 +20,7 @@ namespace PennyPet
         {
             string value = Environment.GetEnvironmentVariable(
                 "PENNY_DISPLAY_TRACE");
-            return !String.Equals(value, "0", StringComparison.Ordinal);
+            return String.Equals(value, "1", StringComparison.Ordinal);
         }
     }
 }

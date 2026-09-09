@@ -32,13 +32,8 @@ namespace PennyPet
                 facts == null)
                 return false;
 
-            NotePlacementState state;
-            if (!_states.TryGetValue(noteId, out state) ||
-                state == null ||
-                state.Effective == null)
-                return true;
-
-            WindowFacts current = state.Effective;
+            WindowFacts current = GetEffective(noteId);
+            if (current == null) return true;
 
             if (facts.TopologyGeneration <
                 current.TopologyGeneration)
@@ -56,12 +51,7 @@ namespace PennyPet
         internal bool TryUpdateEffective(string noteId, WindowFacts facts)
         {
             if (!CanAcceptEffective(noteId, facts)) return false;
-            NotePlacementState state;
-            _states.TryGetValue(noteId, out state);
-            _states[noteId] = new NotePlacementState(facts,
-                state != null && state.IsTemporaryRehome,
-                state != null && state.UserMovedSinceRehome,
-                state == null ? String.Empty : state.TemporaryReason);
+            GetOrCreateState(noteId).Effective = facts;
             return true;
         }
 
@@ -77,16 +67,10 @@ namespace PennyPet
             NotePlacementState state;
 
             if (!_states.TryGetValue(noteId, out state) ||
-                state == null ||
                 state.Effective == null)
                 return false;
 
-            _states[noteId] =
-                new NotePlacementState(
-                    null,
-                    state.IsTemporaryRehome,
-                    state.UserMovedSinceRehome,
-                    state.TemporaryReason);
+            state.Effective = null;
 
             return true;
         }
@@ -120,11 +104,10 @@ namespace PennyPet
         internal void MarkTemporaryRehome(string noteId, string reason)
         {
             if (String.IsNullOrEmpty(noteId)) return;
-            NotePlacementState state;
-            _states.TryGetValue(noteId, out state);
-            _states[noteId] = new NotePlacementState(
-                state == null ? null : state.Effective,
-                true, false, reason ?? String.Empty);
+            NotePlacementState state = GetOrCreateState(noteId);
+            state.IsTemporaryRehome = true;
+            state.UserMovedSinceRehome = false;
+            state.TemporaryReason = reason ?? String.Empty;
         }
 
         // A user placement commit ends any temporary rehome. When the commit
@@ -135,10 +118,10 @@ namespace PennyPet
             if (String.IsNullOrEmpty(noteId)) return;
             NotePlacementState state;
             if (!_states.TryGetValue(noteId, out state)) return;
-            bool userMoved = state.IsTemporaryRehome ||
+            state.UserMovedSinceRehome = state.IsTemporaryRehome ||
                 state.UserMovedSinceRehome;
-            _states[noteId] = new NotePlacementState(state.Effective,
-                false, userMoved, String.Empty);
+            state.IsTemporaryRehome = false;
+            state.TemporaryReason = String.Empty;
         }
 
         internal void MarkReturnedToPreferred(string noteId)
@@ -151,8 +134,9 @@ namespace PennyPet
             if (String.IsNullOrEmpty(noteId)) return;
             NotePlacementState state;
             if (!_states.TryGetValue(noteId, out state)) return;
-            _states[noteId] = new NotePlacementState(state.Effective,
-                false, false, String.Empty);
+            state.IsTemporaryRehome = false;
+            state.UserMovedSinceRehome = false;
+            state.TemporaryReason = String.Empty;
         }
 
         internal void Remove(string noteId)
@@ -168,22 +152,25 @@ namespace PennyPet
 
         internal int Count { get { return _states.Count; } }
 
+        private NotePlacementState GetOrCreateState(string noteId)
+        {
+            NotePlacementState state;
+            if (!_states.TryGetValue(noteId, out state))
+            {
+                state = new NotePlacementState();
+                _states.Add(noteId, state);
+            }
+            return state;
+        }
+
+        // Private Pet-STA state never crosses threads. Published WindowFacts
+        // remain immutable; accepting a new value need not clone this owner.
         private sealed class NotePlacementState
         {
-            internal NotePlacementState(WindowFacts effective,
-                bool isTemporaryRehome, bool userMovedSinceRehome,
-                string temporaryReason)
-            {
-                Effective = effective;
-                IsTemporaryRehome = isTemporaryRehome;
-                UserMovedSinceRehome = userMovedSinceRehome;
-                TemporaryReason = temporaryReason ?? String.Empty;
-            }
-
-            internal WindowFacts Effective { get; private set; }
-            internal bool IsTemporaryRehome { get; private set; }
-            internal bool UserMovedSinceRehome { get; private set; }
-            internal string TemporaryReason { get; private set; }
+            internal WindowFacts Effective;
+            internal bool IsTemporaryRehome;
+            internal bool UserMovedSinceRehome;
+            internal string TemporaryReason = String.Empty;
         }
     }
 }
