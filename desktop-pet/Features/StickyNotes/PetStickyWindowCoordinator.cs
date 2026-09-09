@@ -1009,7 +1009,7 @@ namespace PennyPet
                 StickyNoteUiSnapshot.FromData(note);
             StickyUiCommand command = StickyUiCommand.Create(
                 createSnapshot, focusEditor, _reminders.GetItems(), topology,
-                rehomeTarget);
+                rehomeTarget, StickyPlacementRecovery.SelectForShow(note, topology));
             PostHostedStickyCommand(command,
                 delegate(StickyUiCommandResult result)
                 {
@@ -1091,7 +1091,7 @@ namespace PennyPet
                 return true;
             }
             PostHostedStickyCommand(StickyUiCommand.Show(noteId,
-                focusEditor, topology),
+                focusEditor, topology, StickyPlacementRecovery.SelectForShow(note, topology)),
                 delegate(StickyUiCommandResult result)
                 {
                     if (result != null &&

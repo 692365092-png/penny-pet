@@ -24,7 +24,8 @@ namespace PennyPet
         private DisplayTopologySnapshot _topology;
 
         internal StickyWindowSession(StickyNoteUiSnapshot snapshot,
-            Action<StickyWindowSession, StickyUiEvent> eventHandler)
+            Action<StickyWindowSession, StickyUiEvent> eventHandler,
+            WindowPlacementPlan initialPlacement = null)
         {
             if (snapshot == null)
                 throw new ArgumentNullException(nameof(snapshot));
@@ -34,7 +35,8 @@ namespace PennyPet
             // Hosted windows never derive desktop placement from WPF Left/Top;
             // the native placement executor owns the real HWND geometry.
             _window = new StickyNoteWindow(snapshot.CreateWorkingCopy(),
-                false, false, true);
+                false, false, true, initialPlacement == null
+                    ? new LogicalRect() : initialPlacement.Logical);
             _placementExecutor = new WindowsWindowPlacementExecutor(
                 _window);
             WireEvents();
@@ -55,10 +57,10 @@ namespace PennyPet
         }
 
         internal StickyUiCommandResult Show(bool edit,
-            DisplayTopologySnapshot topology)
+            DisplayTopologySnapshot topology, WindowPlacementPlan placement)
         {
             _topology = topology ?? _topology;
-            if (TryShowAtPhysicalBounds(edit))
+            if (TryShowAtPhysicalBounds(edit, placement))
             {
                 if (!edit) EmitSnapshot(StickyUiEventKind.SnapshotChanged);
                 return CurrentResult();
@@ -75,24 +77,9 @@ namespace PennyPet
             return CurrentResult();
         }
 
-        private bool TryShowAtPhysicalBounds(bool edit)
+        private bool TryShowAtPhysicalBounds(bool edit, WindowPlacementPlan plan)
         {
-            if (!IsAvailable) return false;
-            StickyNoteData data = _window.Data;
-            // Only the canonical standalone path uses the native placement
-            // executor. A dock member is repositioned by the owner via
-            // SetBounds in the same batch, so its geometry stays untouched.
-            bool hasCanonical =
-                !String.IsNullOrWhiteSpace(data.DisplayId) &&
-                data.LocalLogicalWidth > 0 && data.LocalLogicalHeight > 0;
-            bool hasPreferred =
-                !String.IsNullOrWhiteSpace(data.PreferredDisplayTargetKey) &&
-                data.PreferredLocalLogicalWidth > 0 &&
-                data.PreferredLocalLogicalHeight > 0;
-            if ((!hasCanonical && !hasPreferred) ||
-                !String.IsNullOrEmpty(data.DockGroupId)) return false;
-            NativePlacementPlan plan = ResolvePlacementPlan(data);
-            if (plan == null) return false;
+            if (!IsAvailable || plan == null) return false;
             // Suppress the intermediate BoundsChanged echo raised while the
             // HWND is placed, so the transient position can never leak a
             // corrupt canonical placement before the final rect lands.
@@ -110,7 +97,7 @@ namespace PennyPet
         //   target work area -> GetDpiForWindow -> project preferred logical
         //   rect to physical pixels -> SetWindowPos exact rect -> Show ->
         //   capture actual facts -> at most one corrective placement.
-        private bool PlaceAtNativeBounds(NativePlacementPlan plan, bool edit)
+        private bool PlaceAtNativeBounds(WindowPlacementPlan plan, bool edit)
         {
             StickyNoteData data = _window.Data;
             data.Visible = true;
@@ -169,102 +156,6 @@ namespace PennyPet
                 facts.PhysicalBounds.Left + "," + facts.PhysicalBounds.Top +
                 "," + facts.PhysicalBounds.Width + "," +
                 facts.PhysicalBounds.Height + ") dpi=" + facts.Dpi);
-        }
-
-        // Resolve the v10 DisplayId + LocalLogicalRect against the currently
-        // live topology, preferring the v11 durable target key first. When
-        // neither resolves the persisted physical compatibility rect is used
-        // as a visible fallback; no rehome policy is applied yet.
-        private NativePlacementPlan ResolvePlacementPlan(
-            StickyNoteData data)
-        {
-            DisplayTopologySnapshot topology = _topology;
-            DisplaySurfaceSnapshot surface = null;
-            LogicalRect preferred = new LogicalRect();
-            if (topology != null &&
-                !String.IsNullOrWhiteSpace(data.PreferredDisplayTargetKey) &&
-                data.PreferredLocalLogicalWidth > 0 &&
-                data.PreferredLocalLogicalHeight > 0)
-            {
-                surface = topology.FindByTargetKey(
-                    data.PreferredDisplayTargetKey);
-                if (surface != null)
-                {
-                    preferred.X = data.PreferredLocalLogicalX;
-                    preferred.Y = data.PreferredLocalLogicalY;
-                    preferred.Width = data.PreferredLocalLogicalWidth;
-                    preferred.Height = data.PreferredLocalLogicalHeight;
-                }
-            }
-            if (surface == null && topology != null)
-            {
-                surface = topology.FindByRuntimeGdiName(
-                    data.DisplayId ?? String.Empty);
-                if (surface != null)
-                {
-                    preferred.X = data.LocalLogicalX;
-                    preferred.Y = data.LocalLogicalY;
-                    preferred.Width = data.LocalLogicalWidth;
-                    preferred.Height = data.LocalLogicalHeight;
-                }
-            }
-            if (surface != null)
-            {
-                return NativePlacementPlan.Preferred(topology, surface,
-                    preferred);
-            }
-
-            if (data.Width > 0 && data.Height > 0)
-            {
-                System.Drawing.Rectangle persisted =
-                    new System.Drawing.Rectangle(
-                        data.X, data.Y, data.Width, data.Height);
-                // Without a Pet-owned topology this session cannot place the
-                // note authoritatively; the legacy ShowRestored path owns the
-                // visibility fallback instead of a second topology capture.
-                if (topology == null) return null;
-                PhysicalRect fallback = new PhysicalRect(
-                    persisted.Left, persisted.Top,
-                    persisted.Width, persisted.Height);
-                DisplaySurfaceSnapshot nearest =
-                    FindSurfaceWithLargestIntersection(topology, fallback);
-                if (nearest == null) nearest = topology.PrimaryOrFirst();
-                int left = Math.Max(nearest.WorkArea.Left,
-                    Math.Min(persisted.Left, nearest.WorkArea.Left +
-                        nearest.WorkArea.Width - persisted.Width));
-                int top = Math.Max(nearest.WorkArea.Top,
-                    Math.Min(persisted.Top, nearest.WorkArea.Top +
-                        nearest.WorkArea.Height - persisted.Height));
-                return NativePlacementPlan.Physical(topology,
-                    nearest.WorkArea,
-                    new PhysicalRect(left, top, persisted.Width,
-                        persisted.Height));
-            }
-            return null;
-        }
-
-        private static DisplaySurfaceSnapshot FindSurfaceWithLargestIntersection(
-            DisplayTopologySnapshot topology, PhysicalRect rect)
-        {
-            if (topology == null) return null;
-            DisplaySurfaceSnapshot best = null;
-            long bestArea = 0;
-            foreach (DisplaySurfaceSnapshot surface in topology.Surfaces)
-            {
-                long overlapWidth = Math.Max(0L,
-                    (long)Math.Min(surface.Bounds.Right, rect.Right) -
-                    Math.Max(surface.Bounds.Left, rect.Left));
-                long overlapHeight = Math.Max(0L,
-                    (long)Math.Min(surface.Bounds.Bottom, rect.Bottom) -
-                    Math.Max(surface.Bounds.Top, rect.Top));
-                long area = overlapWidth * overlapHeight;
-                if (area > bestArea)
-                {
-                    bestArea = area;
-                    best = surface;
-                }
-            }
-            return best;
         }
 
         internal StickyUiCommandResult Hide()
@@ -1160,59 +1051,5 @@ namespace PennyPet
             _eventHandler(this, value);
         }
 
-        // Immutable placement intent resolved for one show: either the v10
-        // preferred display-local logical rect (projected with the real HWND
-        // DPI) or a persisted physical fallback when the saved display is gone.
-        private sealed class NativePlacementPlan
-        {
-            private NativePlacementPlan(DisplayTopologySnapshot topology,
-                DisplaySurfaceSnapshot surface, LogicalRect preferredLocal,
-                PhysicalRect workArea, PhysicalRect physicalFallback)
-            {
-                Topology = topology;
-                Surface = surface;
-                PreferredLocal = preferredLocal;
-                WorkArea = workArea;
-                PhysicalFallback = physicalFallback;
-            }
-
-            internal DisplayTopologySnapshot Topology { get; private set; }
-            internal DisplaySurfaceSnapshot Surface { get; private set; }
-            internal LogicalRect PreferredLocal { get; private set; }
-            internal PhysicalRect WorkArea { get; private set; }
-            internal PhysicalRect PhysicalFallback { get; private set; }
-
-            internal static NativePlacementPlan Preferred(
-                DisplayTopologySnapshot topology,
-                DisplaySurfaceSnapshot surface, LogicalRect preferredLocal)
-            {
-                return new NativePlacementPlan(topology, surface,
-                    preferredLocal, surface.WorkArea,
-                    new PhysicalRect());
-            }
-
-            internal static NativePlacementPlan Physical(
-                DisplayTopologySnapshot topology,
-                PhysicalRect workArea, PhysicalRect physicalFallback)
-            {
-                return new NativePlacementPlan(topology, null,
-                    new LogicalRect(), workArea, physicalFallback);
-            }
-
-            internal static NativePlacementPlan Physical(
-                DisplayTopologySnapshot topology, PhysicalRect physicalFallback)
-            {
-                return Physical(topology, new PhysicalRect(),
-                    physicalFallback);
-            }
-
-            internal PhysicalRect Resolve(int dpi)
-            {
-                if (Surface == null) return PhysicalFallback;
-                double scale = dpi > 0 ? dpi / 96.0 : 1.0;
-                return DisplayGeometry.ProjectLocalRect(PreferredLocal,
-                    Surface.Bounds.Left, Surface.Bounds.Top, scale);
-            }
-        }
     }
 }

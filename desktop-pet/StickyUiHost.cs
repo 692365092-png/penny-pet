@@ -301,7 +301,7 @@ namespace PennyPet
                         return EnsureSession(command);
                     case StickyUiCommandKind.Show:
                         return TryGetSession(command.NoteId, out session)
-                            ? session.Show(command.Flag, command.Topology)
+                            ? session.Show(command.Flag, command.Topology, command.Placement)
                             : StickyUiCommandResult.NotHandled();
                     case StickyUiCommandKind.Hide:
                         return TryGetSession(command.NoteId, out session)
@@ -381,7 +381,7 @@ namespace PennyPet
                 return existing.CurrentResult();
 
             StickyWindowSession session = new StickyWindowSession(
-                command.Snapshot, SessionEventRaised);
+                command.Snapshot, SessionEventRaised, command.Placement);
             _sessions[command.NoteId] = session;
             if (command.Reminders != null)
                 session.UpdateReminders(command.Reminders);
@@ -393,7 +393,7 @@ namespace PennyPet
                 if (command.ReprojectTarget != null)
                     return session.Reproject(command.ReprojectTarget,
                         command.Topology, command.Flag);
-                return session.Show(command.Flag, command.Topology);
+                return session.Show(command.Flag, command.Topology, command.Placement);
             }
             catch
             {

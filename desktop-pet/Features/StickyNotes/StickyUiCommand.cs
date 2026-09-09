@@ -39,7 +39,7 @@ namespace PennyPet
             StickyUiReprojectTarget reprojectTarget = null,
             string[] dockNoteIds = null,
             DockGroupReprojectPlan dockGroupReprojectPlan = null,
-            long interactionEpoch = 0)
+            long interactionEpoch = 0, WindowPlacementPlan placement = null)
         {
             Kind = kind;
             NoteId = noteId ?? String.Empty;
@@ -55,18 +55,21 @@ namespace PennyPet
                 : (string[])dockNoteIds.Clone();
             DockGroupReprojectPlan = dockGroupReprojectPlan;
             InteractionEpoch = interactionEpoch;
+            Placement = placement;
         }
 
         internal static StickyUiCommand Create(StickyNoteUiSnapshot snapshot,
             bool focusEditor, IEnumerable<ReminderItem> reminders = null,
             DisplayTopologySnapshot topology = null,
-            StickyUiReprojectTarget reprojectTarget = null)
+            StickyUiReprojectTarget reprojectTarget = null,
+            WindowPlacementPlan placement = null)
         {
             if (snapshot == null)
                 throw new ArgumentNullException(nameof(snapshot));
             return new StickyUiCommand(StickyUiCommandKind.Create,
                 snapshot.NoteId, focusEditor, snapshot, null, null,
-                CopyReminders(reminders), topology, reprojectTarget);
+                CopyReminders(reminders), topology, reprojectTarget,
+                placement: placement);
         }
 
         internal static StickyUiCommand EnsureSession(
@@ -96,10 +99,11 @@ namespace PennyPet
         }
 
         internal static StickyUiCommand Show(string noteId, bool focusEditor,
-            DisplayTopologySnapshot topology = null)
+            DisplayTopologySnapshot topology = null, WindowPlacementPlan placement = null)
         {
             return new StickyUiCommand(StickyUiCommandKind.Show, noteId,
-                focusEditor, null, null, null, null, topology);
+                focusEditor, null, null, null, null, topology,
+                placement: placement);
         }
 
         internal static StickyUiCommand Hide(string noteId)
@@ -273,6 +277,7 @@ namespace PennyPet
         internal DockGroupReprojectPlan DockGroupReprojectPlan
             { get; private set; }
         internal long InteractionEpoch { get; private set; }
+        internal WindowPlacementPlan Placement { get; private set; }
 
         private static ReminderItem[] CopyReminders(
             IEnumerable<ReminderItem> reminders)
