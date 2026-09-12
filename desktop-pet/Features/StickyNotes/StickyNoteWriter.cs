@@ -42,21 +42,18 @@ namespace PennyPet
             if (request == null) throw new ArgumentNullException(nameof(request));
             lock (_gate)
             {
-                long revision = request.UpdatesWorkspace
-                    ? ++_requestedRevision : 0;
+                long revision = ++_requestedRevision;
                 PendingWrite tail = _pending.Last == null ? null : _pending.Last.Value;
                 // Only adjacent pending autosaves may be replaced. Explicit
-                // save/import/export requests are barriers with their own receipt.
-                if (coalesce && request.UpdatesWorkspace && tail != null &&
-                    tail.Coalesce && String.Equals(tail.Request.Path,
-                        request.Path, StringComparison.OrdinalIgnoreCase))
+                // save/import requests are barriers with their own receipt.
+                if (coalesce && tail != null && tail.Coalesce)
                 {
                     tail.Request = request;
                     tail.Revision = revision;
                     return tail.Completion.Task;
                 }
                 PendingWrite entry = new PendingWrite(request, revision,
-                    coalesce && request.UpdatesWorkspace);
+                    coalesce);
                 _pending.AddLast(entry);
                 if (!_running)
                 {
@@ -110,16 +107,13 @@ namespace PennyPet
                 int failureCount = 0;
                 lock (_gate)
                 {
-                    if (entry.Request.UpdatesWorkspace)
+                    _lastResult = result;
+                    if (result.Succeeded)
                     {
-                        _lastResult = result;
-                        if (result.Succeeded)
-                        {
-                            _savedRevision = entry.Revision;
-                            _consecutiveFailures = 0;
-                        }
-                        else failureCount = ++_consecutiveFailures;
+                        _savedRevision = entry.Revision;
+                        _consecutiveFailures = 0;
                     }
+                    else failureCount = ++_consecutiveFailures;
                     entry.Completion.SetResult(result);
                 }
                 if (failureCount > 0)
@@ -159,19 +153,15 @@ namespace PennyPet
 
     internal sealed class StickyWriteRequest
     {
-        internal readonly string Path;
         internal readonly IReadOnlyList<StickyNoteData> Snapshot;
-        internal readonly bool UpdatesWorkspace;
         internal readonly string BackupPath;
         internal readonly IReadOnlyList<StickyNoteData> BackupSnapshot;
 
-        internal StickyWriteRequest(string path, IReadOnlyList<StickyNoteData> snapshot,
-            bool updatesWorkspace = true, string backupPath = null,
+        internal StickyWriteRequest(IReadOnlyList<StickyNoteData> snapshot,
+            string backupPath = null,
             IReadOnlyList<StickyNoteData> backupSnapshot = null)
         {
-            Path = path;
             Snapshot = snapshot;
-            UpdatesWorkspace = updatesWorkspace;
             BackupPath = backupPath;
             BackupSnapshot = backupSnapshot;
         }

@@ -28,11 +28,12 @@ namespace PennyPet
 
         internal event EventHandler<PersistenceFailedEventArgs> SaveFailed;
 
-        private StickyNoteRepository(string filePath)
+        internal StickyNoteRepository(string filePath,
+            Func<StickyWriteRequest, PersistenceResult> write = null)
         {
             _filePath = filePath;
             _uiContext = SynchronizationContext.Current;
-            _writer = new StickyNoteWriter(WriteSnapshot);
+            _writer = new StickyNoteWriter(write ?? WriteSnapshot);
             _writer.Failed += delegate(object sender, PersistenceFailedEventArgs e)
             {
                 NotifySaveFailed(e.Result, e.ConsecutiveFailures);
@@ -525,8 +526,7 @@ namespace PennyPet
                 RejectBlockedSave("save asynchronously");
                 return;
             }
-            _writer.Enqueue(new StickyWriteRequest(_filePath,
-                CloneNotes(_notes)), coalesce: true);
+            _writer.Enqueue(new StickyWriteRequest(CloneNotes(_notes)), coalesce: true);
         }
 
         internal PersistenceResult WaitForPendingSaves()
@@ -542,16 +542,40 @@ namespace PennyPet
         internal PersistenceResult SaveToFile(string filePath)
         {
             if (!_loadSucceeded) return RejectBlockedSave("save");
-            return _writer.Enqueue(new StickyWriteRequest(filePath,
-                CloneNotes(_notes))).GetAwaiter().GetResult();
+            try
+            {
+                // Saving a copy does not acknowledge the owned primary file.
+                if (!String.Equals(Path.GetFullPath(filePath),
+                    Path.GetFullPath(_filePath), StringComparison.OrdinalIgnoreCase))
+                    return ExportSnapshot(filePath);
+            }
+            catch (Exception error) { return PersistenceResult.Failure(error); }
+            return _writer.Enqueue(new StickyWriteRequest(CloneNotes(_notes)))
+                .GetAwaiter().GetResult();
         }
 
         internal PersistenceResult ExportSnapshot(string filePath)
         {
             if (!_loadSucceeded)
                 return PersistenceResult.Failure(CreateMutationBlockedError("export"));
-            return _writer.Enqueue(new StickyWriteRequest(filePath,
-                CloneNotes(_notes), updatesWorkspace: false)).GetAwaiter().GetResult();
+            try
+            {
+                string destination = Path.GetFullPath(filePath);
+                string primary = Path.GetFullPath(_filePath);
+                if (String.Equals(destination, primary, StringComparison.OrdinalIgnoreCase) ||
+                    String.Equals(destination, primary + ".bak", StringComparison.OrdinalIgnoreCase))
+                    return PersistenceResult.Failure(new InvalidOperationException(
+                        "Export must use a separate file, not the active data file or its backup."));
+                // Independent export remains available if the primary writer stalls.
+                AtomicTextFile.WriteAllLines(destination,
+                    SerializeSnapshot(CloneNotes(_notes)), false);
+                return PersistenceResult.Success();
+            }
+            catch (Exception error)
+            {
+                ApplicationDiagnostics.ReportNonFatal("sticky-notes-export", error);
+                return PersistenceResult.Failure(error);
+            }
         }
 
         internal PersistenceResult CommitImportedMerge(
@@ -623,7 +647,7 @@ namespace PennyPet
             PersistenceResult pending = WaitForPendingSaves();
             if (pending.Error is TimeoutException) return pending;
             PersistenceResult result = _writer.Enqueue(new StickyWriteRequest(
-                _filePath, committed, backupPath: automaticBackupPath,
+                committed, backupPath: automaticBackupPath,
                 backupSnapshot: CloneNotes(_notes))).GetAwaiter().GetResult();
             if (!result.Succeeded) return result;
 
@@ -714,15 +738,15 @@ namespace PennyPet
             return result;
         }
 
-        private static PersistenceResult WriteSnapshot(StickyWriteRequest request)
+        private PersistenceResult WriteSnapshot(StickyWriteRequest request)
         {
             try
             {
                 if (request.BackupPath != null)
                     AtomicTextFile.WriteAllLines(request.BackupPath,
                         SerializeSnapshot(request.BackupSnapshot), false);
-                AtomicTextFile.WriteAllLines(request.Path,
-                    SerializeSnapshot(request.Snapshot), request.UpdatesWorkspace);
+                AtomicTextFile.WriteAllLines(_filePath,
+                    SerializeSnapshot(request.Snapshot), true);
                 return PersistenceResult.Success();
             }
             catch (Exception error)

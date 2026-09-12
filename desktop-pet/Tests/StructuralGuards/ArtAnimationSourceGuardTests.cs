@@ -17,19 +17,22 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void StickyPersistence_AllEntryPointsUseOneQueuedWriter()
+        public void StickyPersistence_WorkspaceEntryPointsUseOneQueuedWriter()
         {
             string source = ReadSource("Features/StickyNotes/StickyNoteRepository.cs");
             foreach (string entry in new[] { "internal void SaveAsync()",
-                "internal PersistenceResult SaveToFile", "internal PersistenceResult ExportSnapshot",
+                "internal PersistenceResult SaveToFile",
                 "private PersistenceResult CommitPreparedSnapshot" })
             {
                 string body = RawSource.SliceMethod(source, entry);
                 Assert.IsTrue(body.Contains("_writer.Enqueue("), entry);
                 Assert.IsFalse(body.Contains("AtomicTextFile.WriteAllLines"), entry);
             }
+            string export = RawSource.SliceMethod(source, "internal PersistenceResult ExportSnapshot");
+            Assert.IsFalse(export.Contains("_writer.Enqueue(") || export.Contains("WaitForPendingSaves("),
+                "Emergency export must not wait for the primary writer.");
             string physicalWrite = RawSource.SliceMethod(source,
-                "private static PersistenceResult WriteSnapshot");
+                "private PersistenceResult WriteSnapshot");
             Assert.IsFalse(physicalWrite.Contains("NormalizeAll") ||
                 physicalWrite.Contains("generation") || physicalWrite.Contains("lock ("),
                 "The single writer must only persist its detached request.");

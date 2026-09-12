@@ -16,6 +16,10 @@
     <Compile Include="Features\StickyNotes\StickyPlacementRuntime.cs" />
     <Compile Include="Features\StickyNotes\StickyUiCommand.cs" />
     <Compile Include="Features\StickyNotes\StickyNoteWriter.cs" />
+    <Compile Include="Features\StickyNotes\StickyNoteRepository.cs" />
+    <Compile Include="Features\StickyNotes\UnsupportedStickySchemaException.cs" />
+    <Compile Include="Infrastructure\Persistence\AtomicTextFile.cs" />
+    <Compile Include="Infrastructure\Persistence\WindowsDataPaths.cs" />
     <Compile Include="Infrastructure\Persistence\PersistenceResult.cs" />
     <ProjectReference Include="PennyPet.Core.csproj" />
   </ItemGroup>

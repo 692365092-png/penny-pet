@@ -496,9 +496,9 @@ namespace PennyPet.Tests
             DisplayTopologySnapshot topologyG1 = new DisplayTopologySnapshot(5,
                 new[] { surfaceG1 });
             WindowPlacementPreference wrongGeneration;
-            Assert.IsTrue(StickyPlacementRules.TryBuildPreferredPlacement(
+            Assert.IsFalse(StickyPlacementRules.TryBuildPreferredPlacement(
                 factsG, topologyG1, null, out wrongGeneration));
-            Assert.AreEqual(3940, wrongGeneration.LocalLogicalRect.X);
+            Assert.IsNull(wrongGeneration);
         }
 
         [TestMethod]

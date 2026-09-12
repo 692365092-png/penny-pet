@@ -27,7 +27,7 @@ namespace PennyPet
                         Y = note.PreferredLocalLogicalY,
                         Width = note.PreferredLocalLogicalWidth,
                         Height = note.PreferredLocalLogicalHeight });
-            surface = topology.FindByRuntimeGdiName(note.DisplayId ?? String.Empty);
+            surface = legacyValid ? topology.FindByRuntimeGdiName(note.DisplayId) : null;
             if (surface != null)
                 return WindowPlacementPlan.OnSurface(topology, surface,
                     new LogicalRect { X = note.LocalLogicalX, Y = note.LocalLogicalY,

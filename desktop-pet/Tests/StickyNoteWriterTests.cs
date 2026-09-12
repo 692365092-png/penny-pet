@@ -12,11 +12,10 @@ namespace PennyPet.Tests
     [TestClass]
     public sealed class StickyNoteWriterTests
     {
-        private static StickyWriteRequest Request(string text, bool workspace = true)
+        private static StickyWriteRequest Request(string text)
         {
-            return new StickyWriteRequest("notes.dat",
-                new List<StickyNoteData> { new StickyNoteData { Text = text } },
-                updatesWorkspace: workspace);
+            return new StickyWriteRequest(
+                new List<StickyNoteData> { new StickyNoteData { Text = text } });
         }
 
         [TestMethod]
@@ -48,7 +47,7 @@ namespace PennyPet.Tests
                     var latest = writer.Enqueue(Request("latest"), true);
                     Assert.AreSame(obsolete, latest);
                     writer.Enqueue(Request("save"));
-                    writer.Enqueue(Request("export", false));
+                    writer.Enqueue(Request("import"));
                     writer.Enqueue(Request("after"), true);
                     Assert.IsTrue(writer.IsDirty);
                     Assert.IsTrue(writer.HasPending);
@@ -56,7 +55,7 @@ namespace PennyPet.Tests
                 finally { release.Set(); }
                 Assert.IsTrue(writer.Flush(TimeSpan.FromSeconds(5)).Succeeded);
                 Assert.IsTrue(first.Result.Succeeded);
-                CollectionAssert.AreEqual(new[] { "active", "latest", "save", "export", "after" },
+                CollectionAssert.AreEqual(new[] { "active", "latest", "save", "import", "after" },
                     writes.ToArray());
                 Assert.IsFalse(writer.IsDirty);
             }
@@ -92,19 +91,6 @@ namespace PennyPet.Tests
                 Assert.IsFalse(writer.IsDirty);
                 Assert.IsNull(writer.LastError);
             }
-        }
-
-        [TestMethod]
-        public void ExportCannotClearAFailedWorkspaceSave()
-        {
-            var failure = new IOException("disk full");
-            var writer = new StickyNoteWriter(request => request.UpdatesWorkspace
-                ? PersistenceResult.Failure(failure) : PersistenceResult.Success());
-            Assert.IsFalse(writer.Enqueue(Request("workspace")).Result.Succeeded);
-            Assert.IsTrue(writer.Enqueue(Request("export", false)).Result.Succeeded);
-            Assert.IsFalse(writer.Flush(TimeSpan.FromSeconds(5)).Succeeded);
-            Assert.IsTrue(writer.IsDirty);
-            Assert.AreSame(failure, writer.LastError);
         }
 
         [TestMethod]

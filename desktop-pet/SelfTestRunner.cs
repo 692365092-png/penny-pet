@@ -421,8 +421,7 @@ namespace PennyPet
                         return PersistenceResult.Failure(new TimeoutException());
                     return PersistenceResult.Success();
                 });
-                writer.Enqueue(new StickyWriteRequest("pending-test",
-                    new List<StickyNoteData>()));
+                writer.Enqueue(new StickyWriteRequest(new List<StickyNoteData>()));
                 bool started = entered.Wait(TimeSpan.FromSeconds(5));
                 Stopwatch waitTimer = Stopwatch.StartNew();
                 PersistenceResult timedOut = writer.Flush(TimeSpan.FromMilliseconds(25));
@@ -439,13 +438,14 @@ namespace PennyPet
             StickyNoteRepository persistenceStateRepository =
                 StickyNoteRepository.LoadFromFile(persistenceStatePath);
             persistenceStateRepository.Create("dirty-state", Point.Empty);
-            PersistenceResult failedSave = persistenceStateRepository
-                .SaveToFile(persistenceStatePath + "\0");
+            File.Delete(persistenceStatePath);
+            Directory.CreateDirectory(persistenceStatePath);
+            PersistenceResult failedSave = persistenceStateRepository.Save();
             result.FailureDirtyRetryOk = !failedSave.Succeeded &&
                 persistenceStateRepository.HasUnsavedChanges &&
                 persistenceStateRepository.LastSaveError != null;
-            PersistenceResult recoveredSave = persistenceStateRepository
-                .SaveToFile(persistenceStatePath);
+            Directory.Delete(persistenceStatePath);
+            PersistenceResult recoveredSave = persistenceStateRepository.Save();
             result.FailureDirtyRetryOk = result.FailureDirtyRetryOk &&
                 recoveredSave.Succeeded &&
                 !persistenceStateRepository.HasUnsavedChanges;

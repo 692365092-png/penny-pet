@@ -268,7 +268,9 @@ namespace PennyPet.Tests
                 "private void CommitDockGroupResizePreferred");
             Assert.IsTrue(divider.Contains("hasPreferred") &&
                 divider.Contains("PreferredLocalLogicalHeight") &&
-                divider.Contains("canonical.LocalLogicalHeight"),
+                divider.Contains("local.Height") &&
+                divider.Contains("TryBuildPreferredPlacement(facts, topology") &&
+                !divider.Contains("canonical.LocalLogicalHeight"),
                 "A vertical divider must advance only the durable height and keep the established preferred position and width.");
             string groupResize = Between(coordinator,
                 "private void CommitDockGroupResizePreferred",
@@ -343,7 +345,7 @@ namespace PennyPet.Tests
                 !mergeVisuals.Contains("if (!_activeNoteDragHosted)"),
                 "Hosted merge must publish the detached seam pulse.");
             Assert.IsTrue(helpers.Contains(
-                    "CalculateDockVisualSeamPhysical(parentFacts)") &&
+                    "CalculateDockVisualSeam(parentFacts)") &&
                 helpers.Contains("IDictionary<string, DockWindowFacts>") &&
                 !helpers.Contains("parent.Bounds") &&
                 !helpers.Contains("StickyDockOperations"),
@@ -441,7 +443,7 @@ namespace PennyPet.Tests
                     "ApplyHostedStickyFactsGeometry") &&
                 coordinator.Contains("StickyPlacementMath.FromPhysicalRect(") &&
                 coordinator.Contains(
-                    "value.Snapshot.ApplyContentTo(canonical)"),
+                    "snapshot.ApplyContentTo(canonical)"),
                 "Geometry events must derive v10 geometry from facts, never snapshot.ApplyTo.");
 
             string dragHandler = Between(coordinator,
@@ -596,7 +598,7 @@ namespace PennyPet.Tests
             Assert.IsTrue(plannerPath.Contains(
                     "WindowFacts sourceFacts") &&
                 plannerPath.Contains("DockPlacementPlanner.Plan(") &&
-                plannerPath.Contains("DisplayGeometry.PhysicalToLocal(") &&
+                plannerPath.Contains("StickyPlacementRules.TryBuildLiveDockState(") &&
                 plannerPath.Contains("BuildDockChainOrder(seed)"),
                 "The live drag must be planned from the source window's actual facts.");
             Assert.IsFalse(plannerPath.Contains("WindowsDisplayResolver") ||
@@ -902,14 +904,11 @@ namespace PennyPet.Tests
                 "private DockPlacementPlan PlanDockPlan",
                 "private List<DockLayoutTarget> PlanToDockTargets");
 
-            Assert.IsTrue(plan.Contains(
-                    "DisplayGeometry.PhysicalLengthToLogical(") &&
-                plan.Contains("sourceFacts.PhysicalBounds.Width") &&
-                plan.Contains("new DockLogicalMember(member.Id,\n                    unifiedLogicalWidth,"),
-                "Every member must use the source HWND's actual logical width.");
-            Assert.IsFalse(plan.Contains(
-                "new DockLogicalMember(member.Id,\n                    member.LocalLogicalWidth,"),
-                "Stale per-member widths must not fracture one Dock layout.");
+            StringAssert.Contains(plan, "StickyPlacementRules.TryBuildLiveDockState(");
+            StringAssert.Contains(plan, "_placementRuntime.GetEffective(");
+            Assert.IsFalse(plan.Contains("LocalLogicalWidth") ||
+                plan.Contains("LocalLogicalHeight") || plan.Contains("member.Height"),
+                "Live Dock geometry must not fall back to persisted coordinates.");
         }
 
         [TestMethod]
