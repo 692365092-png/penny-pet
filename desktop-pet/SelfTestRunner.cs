@@ -411,23 +411,28 @@ namespace PennyPet
                     File.Delete(currentBackupPath + ".bak");
             }
 
-            string waitPath = outputPath + ".pending-save-wait-test.dat";
-            StickyNoteRepository waitRepository =
-                StickyNoteRepository.LoadFromFile(waitPath);
-            FieldInfo writerRunning = typeof(StickyNoteRepository).GetField(
-                "_writerRunning", BindingFlags.Instance |
-                BindingFlags.NonPublic);
-            writerRunning.SetValue(waitRepository, true);
-            Stopwatch waitTimer = Stopwatch.StartNew();
-            PersistenceResult timedOut = waitRepository.WaitForPendingSaves(
-                TimeSpan.FromMilliseconds(25));
-            waitTimer.Stop();
-            writerRunning.SetValue(waitRepository, false);
-            result.PendingSaveWaitBoundedOk = !timedOut.Succeeded &&
-                timedOut.Error is TimeoutException &&
-                waitTimer.Elapsed < TimeSpan.FromSeconds(1) &&
-                waitRepository.WaitForPendingSaves(
-                    TimeSpan.Zero).Succeeded;
+            using (var entered = new System.Threading.ManualResetEventSlim())
+            using (var release = new System.Threading.ManualResetEventSlim())
+            {
+                var writer = new StickyNoteWriter(delegate(StickyWriteRequest request)
+                {
+                    entered.Set();
+                    if (!release.Wait(TimeSpan.FromSeconds(5)))
+                        return PersistenceResult.Failure(new TimeoutException());
+                    return PersistenceResult.Success();
+                });
+                writer.Enqueue(new StickyWriteRequest("pending-test",
+                    new List<StickyNoteData>()));
+                bool started = entered.Wait(TimeSpan.FromSeconds(5));
+                Stopwatch waitTimer = Stopwatch.StartNew();
+                PersistenceResult timedOut = writer.Flush(TimeSpan.FromMilliseconds(25));
+                waitTimer.Stop();
+                release.Set();
+                result.PendingSaveWaitBoundedOk = started && !timedOut.Succeeded &&
+                    timedOut.Error is TimeoutException &&
+                    waitTimer.Elapsed < TimeSpan.FromSeconds(1) &&
+                    writer.Flush(TimeSpan.FromSeconds(5)).Succeeded;
+            }
 
             string persistenceStatePath = outputPath +
                 ".persistence-state-test.dat";
@@ -452,25 +457,17 @@ namespace PennyPet
             string generationPath = outputPath + ".generation-test.dat";
             StickyNoteRepository generationRepository =
                 StickyNoteRepository.LoadFromFile(generationPath);
-            MethodInfo physicalWriter = typeof(StickyNoteRepository).GetMethod(
-                "WriteSnapshot", BindingFlags.Instance | BindingFlags.NonPublic);
-            StickyNoteData newerNote = new StickyNoteData();
-            newerNote.Text = "newer-generation";
-            StickyNoteData staleNote = new StickyNoteData();
-            staleNote.Text = "stale-generation";
-            PersistenceResult newerWrite = (PersistenceResult)physicalWriter.Invoke(
-                generationRepository, new object[] { generationPath,
-                    new List<StickyNoteData> { newerNote }, 20L,
-                    "sticky-generation-test" });
-            PersistenceResult staleWrite = (PersistenceResult)physicalWriter.Invoke(
-                generationRepository, new object[] { generationPath,
-                    new List<StickyNoteData> { staleNote }, 19L,
-                    "sticky-generation-test" });
+            StickyNoteData generationNote = generationRepository.CreateDraft(
+                "older-snapshot", Point.Empty);
+            generationRepository.SaveAsync();
+            generationNote.Text = "newer-snapshot";
+            PersistenceResult finalWrite = generationRepository.Save();
             List<StickyNoteData> generationRestored = StickyNoteRepository
                 .LoadFromFile(generationPath).GetAll();
-            result.GenerationMonotonicOk = newerWrite.Succeeded &&
-                staleWrite.Succeeded && generationRestored.Count == 1 &&
-                generationRestored[0].Text == "newer-generation";
+            result.GenerationMonotonicOk = finalWrite.Succeeded &&
+                generationRestored.Count == 1 &&
+                generationRestored[0].Text == "newer-snapshot" &&
+                !generationRepository.HasUnsavedChanges;
             if (File.Exists(generationPath)) File.Delete(generationPath);
             if (File.Exists(generationPath + ".bak"))
                 File.Delete(generationPath + ".bak");

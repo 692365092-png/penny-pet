@@ -47,12 +47,11 @@ namespace PennyPet
             bool settingsResolved = false;
             while (true)
             {
-                PersistenceResult pendingSaves = notesResolved
-                    ? PersistenceResult.Success()
-                    : _notes.WaitForPendingSaves();
+                PersistenceResult pending = notesResolved
+                    ? PersistenceResult.Success() : _notes.WaitForPendingSaves();
                 PersistenceResult noteResult = notesResolved
                     ? PersistenceResult.Success()
-                    : pendingSaves.Succeeded ? _notes.Save() : pendingSaves;
+                    : pending.Error is TimeoutException ? pending : _notes.Save();
                 PersistenceResult settingsResult = settingsResolved
                     ? PersistenceResult.Success() : _settings.Save();
                 if (noteResult.Succeeded && settingsResult.Succeeded)

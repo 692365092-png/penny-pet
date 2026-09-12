@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
@@ -22,18 +21,10 @@ namespace PennyPet
         private int _skippedCorruptLineCount;
         private string _recoveryBackupPath = String.Empty;
         private UnsupportedStickySchemaException _futureSchemaError;
-        private bool _hasUnsavedChanges;
-        private Exception _lastSaveError;
-        private int _consecutiveSaveFailures;
-        private readonly object _saveGate = new object();
-        private readonly object _ioGate = new object();
+        private readonly StickyNoteWriter _writer;
         private readonly SynchronizationContext _uiContext;
-        private long _requestedGeneration;
-        private long _completedGeneration = -1;
-        private long _lastWrittenGeneration = -1;
-        private bool _writerRunning;
-        private List<StickyNoteData> _latestSnapshot;
-        private long _latestGeneration = -1;
+        private Exception _blockedSaveError;
+        private int _blockedSaveFailures;
 
         internal event EventHandler<PersistenceFailedEventArgs> SaveFailed;
 
@@ -41,6 +32,11 @@ namespace PennyPet
         {
             _filePath = filePath;
             _uiContext = SynchronizationContext.Current;
+            _writer = new StickyNoteWriter(WriteSnapshot);
+            _writer.Failed += delegate(object sender, PersistenceFailedEventArgs e)
+            {
+                NotifySaveFailed(e.Result, e.ConsecutiveFailures);
+            };
         }
 
         private static string DefaultFilePath
@@ -406,17 +402,17 @@ namespace PennyPet
 
         internal bool HasUnsavedChanges
         {
-            get { return _hasUnsavedChanges; }
+            get { return _writer.IsDirty; }
         }
 
         internal bool HasPendingSaves
         {
-            get { lock (_saveGate) return _writerRunning; }
+            get { return _writer.HasPending; }
         }
 
         internal Exception LastSaveError
         {
-            get { return _lastSaveError; }
+            get { return _blockedSaveError ?? _writer.LastError; }
         }
 
         internal bool CanCreate
@@ -529,17 +525,8 @@ namespace PennyPet
                 RejectBlockedSave("save asynchronously");
                 return;
             }
-            bool startWriter;
-            lock (_saveGate)
-            {
-                _latestSnapshot = CloneNotes(_notes);
-                _latestGeneration = ++_requestedGeneration;
-                _hasUnsavedChanges = true;
-                startWriter = !_writerRunning;
-                if (startWriter) _writerRunning = true;
-            }
-            if (startWriter)
-                ThreadPool.QueueUserWorkItem(delegate { AsyncWriterLoop(); });
+            _writer.Enqueue(new StickyWriteRequest(_filePath,
+                CloneNotes(_notes)), coalesce: true);
         }
 
         internal PersistenceResult WaitForPendingSaves()
@@ -549,141 +536,22 @@ namespace PennyPet
 
         internal PersistenceResult WaitForPendingSaves(TimeSpan timeout)
         {
-            if (timeout < TimeSpan.Zero)
-                throw new ArgumentOutOfRangeException(nameof(timeout));
-            Stopwatch elapsed = Stopwatch.StartNew();
-            lock (_saveGate)
-            {
-                while (_writerRunning)
-                {
-                    TimeSpan remaining = timeout - elapsed.Elapsed;
-                    if (remaining <= TimeSpan.Zero)
-                    {
-                        TimeoutException error = new TimeoutException(
-                            "Timed out waiting for pending sticky-note saves.");
-                        ApplicationDiagnostics.ReportNonFatal(
-                            "sticky-notes-pending-save-timeout", error);
-                        return PersistenceResult.Failure(error);
-                    }
-                    Monitor.Wait(_saveGate, remaining);
-                }
-            }
-            return PersistenceResult.Success();
-        }
-
-        private void AsyncWriterLoop()
-        {
-            while (true)
-            {
-                List<StickyNoteData> snapshot;
-                long generation;
-                lock (_saveGate)
-                {
-                    if (_latestSnapshot == null ||
-                        _latestGeneration <= _lastWrittenGeneration)
-                    {
-                        _writerRunning = false;
-                        Monitor.PulseAll(_saveGate);
-                        return;
-                    }
-                    snapshot = _latestSnapshot;
-                    generation = _latestGeneration;
-                }
-                PersistenceResult result = WriteSnapshot(_filePath, snapshot,
-                    generation, "sticky-notes-save-async");
-                int consecutiveFailures = 0;
-                lock (_saveGate)
-                {
-                    if (result.Succeeded)
-                    {
-                        _completedGeneration = Math.Max(_completedGeneration,
-                            generation);
-                        if (generation == _requestedGeneration)
-                        {
-                            _hasUnsavedChanges = false;
-                            _lastSaveError = null;
-                            _consecutiveSaveFailures = 0;
-                        }
-                    }
-                    else
-                    {
-                        _lastSaveError = result.Error;
-                        _consecutiveSaveFailures++;
-                        consecutiveFailures = _consecutiveSaveFailures;
-                    }
-                }
-                if (!result.Succeeded)
-                {
-                    NotifySaveFailed(result, consecutiveFailures);
-                    lock (_saveGate)
-                    {
-                        _writerRunning = false;
-                        _latestSnapshot = null;
-                        Monitor.PulseAll(_saveGate);
-                    }
-                    return;
-                }
-            }
+            return _writer.Flush(timeout);
         }
 
         internal PersistenceResult SaveToFile(string filePath)
         {
-            // Never create a snapshot or generation for a repository whose
-            // on-disk schema this reader cannot safely own.
-            if (!_loadSucceeded)
-                return RejectBlockedSave("save");
-            long generation;
-            List<StickyNoteData> snapshot;
-            lock (_saveGate)
-            {
-                generation = ++_requestedGeneration;
-                _latestSnapshot = null;
-                _latestGeneration = generation;
-                _hasUnsavedChanges = true;
-                StickyDockGroups.NormalizeAll(_notes);
-                snapshot = CloneNotes(_notes);
-            }
-            PersistenceResult result = WriteSnapshot(filePath, snapshot,
-                generation, "sticky-notes-save");
-            if (result.Succeeded)
-            {
-                lock (_saveGate)
-                {
-                    _completedGeneration = Math.Max(_completedGeneration,
-                        generation);
-                    if (generation == _requestedGeneration)
-                    {
-                        _hasUnsavedChanges = false;
-                        _lastSaveError = null;
-                        _consecutiveSaveFailures = 0;
-                    }
-                }
-                return result;
-            }
-            return RecordSaveFailure(result.Error);
+            if (!_loadSucceeded) return RejectBlockedSave("save");
+            return _writer.Enqueue(new StickyWriteRequest(filePath,
+                CloneNotes(_notes))).GetAwaiter().GetResult();
         }
 
         internal PersistenceResult ExportSnapshot(string filePath)
         {
             if (!_loadSucceeded)
-                return PersistenceResult.Failure(
-                    CreateMutationBlockedError("export"));
-            try
-            {
-                // Export is a detached read; normalizing the live repository
-                // here could silently change current workspace ownership.
-                List<StickyNoteData> snapshot = CloneNotes(_notes);
-                StickyDockGroups.NormalizeAll(snapshot);
-                List<string> lines = SerializeSnapshot(snapshot);
-                AtomicTextFile.WriteAllLines(filePath, lines, false);
-                return PersistenceResult.Success();
-            }
-            catch (Exception error)
-            {
-                ApplicationDiagnostics.ReportNonFatal(
-                    "sticky-notes-emergency-export", error);
-                return PersistenceResult.Failure(error);
-            }
+                return PersistenceResult.Failure(CreateMutationBlockedError("export"));
+            return _writer.Enqueue(new StickyWriteRequest(filePath,
+                CloneNotes(_notes), updatesWorkspace: false)).GetAwaiter().GetResult();
         }
 
         internal PersistenceResult CommitImportedMerge(
@@ -706,8 +574,7 @@ namespace PennyPet
             {
                 return PersistenceResult.Failure(error);
             }
-            return CommitPreparedSnapshot(committed, backupPath,
-                "sticky-notes-import-merge");
+            return CommitPreparedSnapshot(committed, backupPath);
         }
 
         internal PersistenceResult CommitFullRestore(
@@ -729,8 +596,7 @@ namespace PennyPet
             {
                 return PersistenceResult.Failure(error);
             }
-            return CommitPreparedSnapshot(committed, backupPath,
-                "sticky-notes-full-restore");
+            return CommitPreparedSnapshot(committed, backupPath);
         }
 
         internal PersistenceResult CommitFullRestore(
@@ -743,8 +609,7 @@ namespace PennyPet
         }
 
         private PersistenceResult CommitPreparedSnapshot(
-            List<StickyNoteData> committed, string backupPath,
-            string diagnosticContext)
+            List<StickyNoteData> committed, string backupPath)
         {
             string primaryPath = Path.GetFullPath(_filePath);
             string automaticBackupPath = Path.GetFullPath(backupPath);
@@ -753,58 +618,20 @@ namespace PennyPet
                 return PersistenceResult.Failure(new InvalidOperationException(
                     "Automatic backup path must differ from the data file."));
 
-            PersistenceResult pendingSaves = WaitForPendingSaves();
-            if (!pendingSaves.Succeeded) return pendingSaves;
+            // Do not queue a dataset replacement behind stalled I/O: the
+            // caller must remain free to cancel while the old model is active.
+            PersistenceResult pending = WaitForPendingSaves();
+            if (pending.Error is TimeoutException) return pending;
+            PersistenceResult result = _writer.Enqueue(new StickyWriteRequest(
+                _filePath, committed, backupPath: automaticBackupPath,
+                backupSnapshot: CloneNotes(_notes))).GetAwaiter().GetResult();
+            if (!result.Succeeded) return result;
 
-            long generation;
-            List<StickyNoteData> currentSnapshot;
-            lock (_saveGate)
-            {
-                generation = ++_requestedGeneration;
-                _latestSnapshot = null;
-                _latestGeneration = generation;
-                _hasUnsavedChanges = true;
-                currentSnapshot = CloneNotes(_notes);
-            }
-
-            PersistenceResult backupResult;
-            lock (_ioGate)
-            {
-                try
-                {
-                    // One rolling pre-change backup is deliberate: it protects
-                    // the current dataset without accumulating unbounded files.
-                    AtomicTextFile.WriteAllLines(automaticBackupPath,
-                        SerializeSnapshot(currentSnapshot), false);
-                }
-                catch (Exception error)
-                {
-                    backupResult = PersistenceResult.Failure(error);
-                    ApplicationDiagnostics.ReportNonFatal(
-                        diagnosticContext + "-backup", error);
-                    return RecordSaveFailure(backupResult.Error);
-                }
-                backupResult = WriteSnapshot(_filePath, committed,
-                    generation, diagnosticContext);
-            }
-            if (!backupResult.Succeeded)
-                return RecordSaveFailure(backupResult.Error);
-
-            lock (_saveGate)
-            {
-                _notes.Clear();
-                foreach (StickyNoteData note in committed)
-                    _notes.Add(note.CloneForPersistence());
-                _completedGeneration = Math.Max(_completedGeneration,
-                    generation);
-                if (generation == _requestedGeneration)
-                {
-                    _hasUnsavedChanges = false;
-                    _lastSaveError = null;
-                    _consecutiveSaveFailures = 0;
-                }
-            }
-            return PersistenceResult.Success();
+            // The model thread publishes the prepared dataset only after the
+            // same writer has durably committed both the backup and primary.
+            _notes.Clear();
+            _notes.AddRange(committed);
+            return result;
         }
 
         internal PersistenceResult CommitImportedMerge(
@@ -814,16 +641,6 @@ namespace PennyPet
             // create an unbounded trail of automatic backup files.
             return CommitImportedMerge(merge,
                 _filePath + ".before-import.pennysticky");
-        }
-
-        private PersistenceResult RecordSaveFailure(Exception error)
-        {
-            _hasUnsavedChanges = true;
-            _lastSaveError = error;
-            _consecutiveSaveFailures++;
-            PersistenceResult result = PersistenceResult.Failure(error);
-            NotifySaveFailed(result, _consecutiveSaveFailures);
-            return result;
         }
 
         private void NotifySaveFailed(PersistenceResult result,
@@ -853,10 +670,10 @@ namespace PennyPet
         private PersistenceResult RejectBlockedSave(string operation)
         {
             Exception error = CreateMutationBlockedError(operation);
-            _lastSaveError = error;
-            _consecutiveSaveFailures++;
+            _blockedSaveError = error;
+            _blockedSaveFailures++;
             PersistenceResult result = PersistenceResult.Failure(error);
-            NotifySaveFailed(result, _consecutiveSaveFailures);
+            NotifySaveFailed(result, _blockedSaveFailures);
             return result;
         }
 
@@ -897,36 +714,21 @@ namespace PennyPet
             return result;
         }
 
-        private PersistenceResult WriteSnapshot(string filePath,
-            List<StickyNoteData> snapshot, long generation,
-            string diagnosticContext)
+        private static PersistenceResult WriteSnapshot(StickyWriteRequest request)
         {
-            lock (_ioGate)
+            try
             {
-                // A newer writer may have won the IO gate after this snapshot
-                // was captured. Never let an older generation move disk state
-                // backwards.
-                lock (_saveGate)
-                    if (generation < _lastWrittenGeneration)
-                        return PersistenceResult.Success();
-                try
-                {
-                    StickyDockGroups.NormalizeAll(snapshot);
-                    List<string> lines = new List<string>();
-                    foreach (StickyNoteData note in snapshot)
-                        lines.Add(StickyNoteCodec.SerializeLine(note));
-                    AtomicTextFile.WriteAllLines(filePath, lines, true);
-                    lock (_saveGate)
-                        _lastWrittenGeneration = Math.Max(
-                            _lastWrittenGeneration, generation);
-                    return PersistenceResult.Success();
-                }
-                catch (Exception error)
-                {
-                    ApplicationDiagnostics.ReportNonFatal(
-                        diagnosticContext, error);
-                    return PersistenceResult.Failure(error);
-                }
+                if (request.BackupPath != null)
+                    AtomicTextFile.WriteAllLines(request.BackupPath,
+                        SerializeSnapshot(request.BackupSnapshot), false);
+                AtomicTextFile.WriteAllLines(request.Path,
+                    SerializeSnapshot(request.Snapshot), request.UpdatesWorkspace);
+                return PersistenceResult.Success();
+            }
+            catch (Exception error)
+            {
+                ApplicationDiagnostics.ReportNonFatal("sticky-notes-write", error);
+                return PersistenceResult.Failure(error);
             }
         }
 

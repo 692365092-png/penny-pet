@@ -51,9 +51,9 @@ namespace PennyPet.Tests
         {
             string repository = ReadSource(
                 "Features/StickyNotes/StickyNoteRepository.cs");
-            string wait = Between(repository,
-                "internal PersistenceResult WaitForPendingSaves(TimeSpan timeout)",
-                "private void AsyncWriterLoop");
+            string writer = ReadSource("Features/StickyNotes/StickyNoteWriter.cs");
+            string wait = RawSource.SliceMethod(writer,
+                "internal PersistenceResult Flush(TimeSpan timeout)");
             string commit = Between(repository,
                 "private PersistenceResult CommitPreparedSnapshot",
                 "internal PersistenceResult CommitImportedMerge");
@@ -63,12 +63,12 @@ namespace PennyPet.Tests
                 "private bool FlushPersistenceBeforeExit()",
                 "private bool ExportUnsavedStickyNotes()");
 
-            Assert.IsTrue(wait.Contains("Monitor.Wait(_saveGate, remaining)") &&
+            Assert.IsTrue(wait.Contains("Monitor.Wait(_gate, remaining)") &&
                 wait.Contains("TimeoutException") &&
-                wait.Contains("PersistenceResult.Failure(error)"),
+                wait.Contains("PersistenceResult.Failure(new TimeoutException("),
                 "Pending-save barriers must return a bounded failure.");
             Assert.IsTrue(commit.Contains("WaitForPendingSaves()") &&
-                commit.Contains("if (!pendingSaves.Succeeded) return pendingSaves;"),
+                commit.Contains("if (pending.Error is TimeoutException) return pending;"),
                 "Import and full restore must stop when pending saves time out.");
             int emergencyExport = exit.IndexOf(
                 "if (!ExportUnsavedStickyNotes()) return false;",
