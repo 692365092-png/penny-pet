@@ -205,7 +205,8 @@ namespace PennyPet
         // logical DIP size; physical compatibility fields must not be fed
         // into WPF DIP because that double-scales on a high-DPI display.
         internal StickyNoteWindow(StickyNoteData data, bool opaqueQaHost,
-            bool showInTaskbarForQa, bool hostedNativePlacement)
+            bool showInTaskbarForQa, bool hostedNativePlacement,
+            LogicalRect initialLogicalBounds = default(LogicalRect))
         {
             if (data == null) throw new ArgumentNullException("data");
             Data = data;
@@ -237,9 +238,9 @@ namespace PennyPet
                 // Left/Top stay unset so the HWND is created without claiming
                 // any desktop position; the executor parks and places it.
                 base.Width = Math.Max(MinWidth,
-                    Math.Max(1, data.LocalLogicalWidth));
+                    Math.Max(1, initialLogicalBounds.Width));
                 base.Height = Math.Max(MinHeight,
-                    Math.Max(1, data.LocalLogicalHeight));
+                    Math.Max(1, initialLogicalBounds.Height));
             }
             else
             {

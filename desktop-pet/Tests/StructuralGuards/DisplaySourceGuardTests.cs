@@ -207,20 +207,20 @@ namespace PennyPet.Tests
         [TestMethod]
         public void Drt7_UserCommitBlocksReturnButReturnRestores()
         {
-            string runtime = ReadSource(
-                "Features/StickyNotes/StickyPlacementRuntime.cs");
-
-            Assert.IsTrue(runtime.Contains("MarkUserPlacementCommit(") &&
-                runtime.Contains("MarkReturnedToPreferred(") &&
-                runtime.Contains("MarkTemporaryRehome("),
-                "The runtime must model temporary, user-moved and returned states.");
-            string commit = Between(runtime,
-                "internal void MarkUserPlacementCommit(string noteId)",
-                "internal void MarkReturnedToPreferred(string noteId)");
-            Assert.IsTrue(commit.Contains(
-                    "userMoved = state.IsTemporaryRehome") &&
-                commit.Contains("state.UserMovedSinceRehome"),
-                "A commit during a temporary stay must record user intent.");
+            var runtime = new StickyPlacementRuntime();
+            WindowFacts facts = StickyGeometryAuthorityTests.Facts();
+            Assert.IsTrue(runtime.TryUpdateEffective("note", facts, StickyGeometryAuthorityTests.Topology()));
+            runtime.MarkTemporaryRehome("note", "display removed");
+            Assert.IsTrue(runtime.IsTemporaryRehome("note"));
+            runtime.MarkUserPlacementCommit("note");
+            Assert.IsFalse(runtime.IsTemporaryRehome("note"));
+            Assert.IsTrue(runtime.UserMovedSinceRehome("note"));
+            runtime.MarkTemporaryRehome("note", "removed again");
+            Assert.IsFalse(runtime.UserMovedSinceRehome("note"));
+            runtime.MarkReturnedToPreferred("note");
+            Assert.IsFalse(runtime.IsTemporaryRehome("note"));
+            Assert.AreEqual(String.Empty, runtime.TemporaryReason("note"));
+            Assert.AreSame(facts, runtime.GetEffective("note"));
         }
 
         [TestMethod]

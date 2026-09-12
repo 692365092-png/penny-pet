@@ -27,10 +27,10 @@ namespace PennyPet
             internal readonly Pc2Context Context = new Pc2Context();
             internal readonly DisplayTopologyRuntime Display;
             internal readonly List<StickyNoteData> Notes = new List<StickyNoteData>();
-            internal readonly Dictionary<string, DockWindowFacts> Active =
-                new Dictionary<string, DockWindowFacts>(StringComparer.OrdinalIgnoreCase);
-            internal readonly Dictionary<string, DockWindowFacts> Original =
-                new Dictionary<string, DockWindowFacts>(StringComparer.OrdinalIgnoreCase);
+            internal IReadOnlyDictionary<string, DockWindowFacts> Active
+                { get { return Interaction.PreviewFacts; } }
+            internal IReadOnlyDictionary<string, DockWindowFacts> Original
+                { get { return Interaction.BaselineFacts; } }
             internal readonly string PathName;
             private readonly PetContextMenu menu;
             private readonly PetBubbleCoordinator bubble;
@@ -73,8 +73,6 @@ namespace PennyPet
                 Pc2Set(Pet, "_lastAppliedDockPlanSequence", -1L);
                 Pc2Set(Pet, "_stickyUiHost", Host);
                 Pc2Set(Pet, "_petUiContext", Context);
-                Pc2Set(Pet, "_activeDockCurrentFacts", Active);
-                Pc2Set(Pet, "_activeDockOriginalFacts", Original);
                 Pc2Set(Pet, "_settings", new PetSettings());
                 Pc2Set(Pet, "_reminders", new ReminderSchedule());
                 Pc2Set(Pet, "_petContextMenu", menu);
@@ -101,13 +99,11 @@ namespace PennyPet
                     Notes.Add(note); Hosted.AddNote(note.Id);
                     Hosted.RecordSequence(note.Id, 1);
                     Placement.TryUpdateEffective(note.Id, Facts(i, 1, 100));
-                    Active[note.Id] = DockWindowFacts.FromData(note);
-                    Original[note.Id] = DockWindowFacts.FromData(note);
                 }
                 StickyDockGroups.ApplyOrderedGroup(Notes);
-                Pc2Set(Pet, "_activeDockGroupIds", new List<string>(Ids));
-                Pc2Set(Pet, "_activeNoteDragId", Notes[0].Id);
-                Interaction.BeginPreparing(Notes[0].Id, Topology.Generation);
+                Dictionary<string, DockWindowFacts> baseline = new Dictionary<string, DockWindowFacts>();
+                foreach (StickyNoteData note in Notes) baseline[note.Id] = DockWindowFacts.FromData(note);
+                Interaction.BeginGesture(baseline[Notes[0].Id], Ids, baseline, Topology.Generation, DateTime.UtcNow);
                 Interaction.TryEnterDragging(Interaction.Epoch, Topology.Generation);
                 Host.SetCurrentTopology(Topology);
                 Host.SetCurrentDockInteractionEpoch(Interaction.Epoch);
@@ -117,7 +113,7 @@ namespace PennyPet
             internal DisplayTopologySnapshot Topology { get { return Display.Current; } }
             internal DisplaySurfaceSnapshot Surface { get { return Topology.PrimaryOrFirst(); } }
             internal string[] Ids { get { return Notes.ConvertAll(n => n.Id).ToArray(); } }
-            internal long Saves { get { return (long)Pc2Get(Repository, "_requestedGeneration"); } }
+            internal long Saves { get { return (long)Pc2Get(Pc2Get(Repository, "_writer"), "_requestedRevision"); } }
             internal long Sequence(int i)
             { return ((Dictionary<string, long>)Pc2Get(Hosted, "_appliedSequences"))[Notes[i].Id]; }
             internal WindowFacts Facts(int i, long sequence, int x)
@@ -357,7 +353,7 @@ namespace PennyPet
                 Pc2Call(s.Pet, "StartDockFinalization", s.Notes[0], null);
                 s.Context.PumpUntil(() => s.Context.Executed > before);
                 Pc2Assert(s.Interaction.Phase == DockInteractionPhase.Idle && s.Active.Count == 0 &&
-                    Pc2Get(s.Pet, "_activeNoteDragId") == null, "A6 final failure resets");
+                    String.IsNullOrEmpty(s.Interaction.SourceNoteId), "A6 final failure resets");
             }
             using (Pc2Scene s = new Pc2Scene(root, "A6-restore"))
             {
@@ -391,7 +387,8 @@ namespace PennyPet
                 Pc2Assert(reused.Status == StickyUiCommandStatus.Handled &&
                     !reused.SessionCreated, "second real EnsureSession reports reused");
                 s.Hosted.SynchronizeSessionLease(note.Id, ensured.Sequence);
-                Pc2Assert(s.Send(StickyUiCommand.Show(note.Id, false, s.Topology)).Status ==
+                Pc2Assert(s.Send(StickyUiCommand.Show(note.Id, false, s.Topology,
+                    StickyPlacementRecovery.SelectForShow(note, s.Topology))).Status ==
                     StickyUiCommandStatus.Handled, "old native window show");
                 StickyUiCommandResult old = null;
                 for (int i = 0; i < 30; i++)

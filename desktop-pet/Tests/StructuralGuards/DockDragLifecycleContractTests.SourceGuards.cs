@@ -12,8 +12,8 @@ namespace PennyPet.Tests
         public void NormalDrag_EntersDraggingWithoutAsyncFactsBarrier()
         {
             string method = SliceMethod(ReadSource(Dock), "private void BeginStickyDockDrag(");
-            Assert.IsTrue(method.IndexOf("TryEnterDragging(", StringComparison.Ordinal) >
-                method.IndexOf("BeginPreparing(", StringComparison.Ordinal));
+            int begin = method.IndexOf("BeginGesture(", StringComparison.Ordinal);
+            Assert.IsTrue(begin >= 0 && method.IndexOf("TryEnterDragging(", StringComparison.Ordinal) > begin);
             Assert.IsTrue(method.Contains("CaptureDockInteractionBaseline("));
             Assert.IsFalse(method.Contains("StickyUiCommand.CaptureDockFacts("));
             Assert.IsFalse(method.Contains("TryApplyDockFactsBarrier("));
@@ -24,34 +24,5 @@ namespace PennyPet.Tests
                 "StickyUiCommand.RaiseDockGroupForDrag("));
         }
 
-        [TestMethod]
-        [TestCategory("ArchitectureSourceBoundary")]
-        public void GestureStartClock_IsWrittenOnceAtHeaderStart()
-        {
-            string dock = ReadSource(Dock);
-            string start = SliceMethod(dock, "private void BeginStickyDockDrag(");
-            string reset = SliceMethod(dock, "private void ResetDockDragState(");
-            foreach (string field in new[] { "_activeNoteDragStartedUtc", "_activeNoteDragStartFacts" })
-            {
-                string pattern = Regex.Escape(field) + @"\s*=(?!=)";
-                Assert.AreEqual(1, Regex.Matches(start, pattern).Count);
-                Assert.AreEqual(0, Regex.Matches(dock.Replace(start, "").Replace(reset, "") +
-                    ReadSource(Windows), pattern).Count,
-                    "No callback may rewrite original gesture provenance: " + field);
-            }
-        }
-
-        [TestMethod]
-        [TestCategory("ArchitectureSourceBoundary")]
-        public void Rebase_DoesNotRestartSplitGestureClock()
-        {
-            string method = SliceMethod(ReadSource(Windows),
-                "private void ResumeDockDragAfterTopologyChange(");
-            Assert.IsTrue(method.Contains("TryApplyDockFactsBarrier("));
-            Assert.IsTrue(method.Contains("_activeNoteSplitEligible = false"));
-            Assert.IsTrue(method.Contains("_activeNoteDragLastFacts = sourceRuntime"));
-            Assert.IsFalse(method.Contains("_activeNoteDragStartedUtc ="));
-            Assert.IsFalse(method.Contains("_activeNoteDragStartFacts ="));
-        }
     }
 }

@@ -11,67 +11,11 @@ namespace PennyPet
         internal const int SplitHoldMilliseconds = 520;
         internal const int SplitPreHoldMovement = 7;
 
-        internal static List<StickyNoteData> SelectMoreCompleteDockOrder(
-            IList<StickyNoteData> live, IList<StickyNoteData> stored)
-        {
-            List<StickyNoteData> liveCopy = live == null
-                ? new List<StickyNoteData>() :
-                new List<StickyNoteData>(live);
-            List<StickyNoteData> storedCopy = stored == null
-                ? new List<StickyNoteData>() :
-                new List<StickyNoteData>(stored);
-            // A newly inserted stack makes the live parent chain larger; a
-            // temporarily broken parent link makes the saved group larger.
-            return liveCopy.Count >= storedCopy.Count ? liveCopy : storedCopy;
-        }
-
         internal static List<StickyNoteData> BuildDockChainOrderFromNotes(
-            IList<StickyNoteData> notes, StickyNoteData seed,
-            bool visibleOnly)
+            IList<StickyNoteData> notes, StickyNoteData seed, bool visibleOnly)
         {
-            List<StickyNoteData> result = new List<StickyNoteData>();
-            if (seed == null) return result;
-            if (!visibleOnly)
-                return StickyDockGroups.GetOrderedGroup(notes, seed);
-
-            Dictionary<string, StickyNoteData> visible =
-                new Dictionary<string, StickyNoteData>(
-                    StringComparer.OrdinalIgnoreCase);
-            if (notes == null) return result;
-            foreach (StickyNoteData note in notes)
-                if (note != null && note.Visible &&
-                    !String.IsNullOrEmpty(note.Id))
-                    visible[note.Id] = note;
-
-            StickyNoteData root = seed;
-            HashSet<string> guard = new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase);
-            while (root != null && guard.Add(root.Id) &&
-                !String.IsNullOrEmpty(root.DockParentId))
-            {
-                StickyNoteData parent;
-                if (!visible.TryGetValue(root.DockParentId, out parent)) break;
-                root = parent;
-            }
-
-            guard.Clear();
-            StickyNoteData current = root;
-            while (current != null && guard.Add(current.Id))
-            {
-                result.Add(current);
-                StickyNoteData child = null;
-                foreach (StickyNoteData candidate in visible.Values)
-                {
-                    if (String.Equals(candidate.DockParentId, current.Id,
-                        StringComparison.OrdinalIgnoreCase))
-                    {
-                        child = candidate;
-                        break;
-                    }
-                }
-                current = child;
-            }
-            return result;
+            return visibleOnly ? StickyDockGroups.GetVisibleGroup(notes, seed)
+                : StickyDockGroups.GetOrderedGroup(notes, seed);
         }
 
         internal static bool ShouldRestoreWholeDockComponent(
@@ -86,14 +30,6 @@ namespace PennyPet
             int visibleComponentCount)
         {
             return visibleComponentCount > 1 && sourceIndex == 0;
-        }
-
-        internal static void RewireDockChainAfterMemberClose(
-            StickyNoteData closing, StickyNoteData child)
-        {
-            if (closing == null) return;
-            if (child != null) child.DockParentId = closing.DockParentId;
-            closing.DockParentId = String.Empty;
         }
 
         internal static List<StickyNoteData> ExtractSingleDockMember(
@@ -117,26 +53,23 @@ namespace PennyPet
             return remaining;
         }
 
-        internal static void PreserveDockSlotForHiddenMember(
-            IList<StickyNoteData> snapshot, StickyNoteData hidden)
-        {
-            if (hidden != null) hidden.Visible = false;
-            StickyDockGroups.ApplyGroupSnapshot(snapshot);
-            StickyDockGroups.RebuildVisibleParentChain(snapshot);
-        }
-
-        internal static void RewireDockChainForInsertion(
-            StickyNoteData parent, StickyNoteData insertedHead,
-            StickyNoteData insertedTail, StickyNoteData previousChild)
-        {
-            if (parent == null || insertedHead == null) return;
-            StickyNoteData tail = insertedTail ?? insertedHead;
-            insertedHead.DockParentId = parent.Id;
-            if (previousChild != null)
-                previousChild.DockParentId = tail.Id;
-        }
-
         internal static List<StickyNoteData> MergeDockSnapshotsAfterParent(
+            IList<StickyNoteData> targetSnapshot, StickyNoteData parent,
+            IList<StickyNoteData> insertedSnapshot)
+        {
+            List<StickyNoteData> result = BuildMergedOrder(targetSnapshot, parent, insertedSnapshot);
+            StickyDockGroups.ApplyOrderedGroup(result);
+            return result;
+        }
+
+        internal static DockMergePlan PrepareMergeAfterParent(
+            IList<StickyNoteData> targetSnapshot, StickyNoteData parent,
+            IList<StickyNoteData> insertedSnapshot)
+        {
+            return new DockMergePlan(BuildMergedOrder(targetSnapshot, parent, insertedSnapshot));
+        }
+
+        private static List<StickyNoteData> BuildMergedOrder(
             IList<StickyNoteData> targetSnapshot, StickyNoteData parent,
             IList<StickyNoteData> insertedSnapshot)
         {
@@ -168,7 +101,6 @@ namespace PennyPet
                 if (parentIndex >= 0) insertion = parentIndex + 1;
             }
             result.InsertRange(insertion, inserted);
-            StickyDockGroups.ApplyOrderedGroup(result);
             return result;
         }
 
@@ -208,37 +140,14 @@ namespace PennyPet
             StickyNoteData seed)
         {
             if (seed == null) return null;
-            HashSet<string> activeIds = new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase);
+            HashSet<string> activeIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (activeGroup != null)
-            {
                 foreach (StickyNoteData note in activeGroup)
                     if (note != null) activeIds.Add(note.Id);
-            }
-
             StickyNoteData tail = seed;
-            HashSet<string> visited = new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase);
-            while (tail != null && visited.Add(tail.Id))
-            {
-                StickyNoteData child = null;
-                if (notes != null)
-                {
-                    foreach (StickyNoteData note in notes)
-                    {
-                        if (note != null && activeIds.Contains(note.Id) &&
-                            String.Equals(note.DockParentId, tail.Id,
-                                StringComparison.OrdinalIgnoreCase))
-                        {
-                            child = note;
-                            break;
-                        }
-                    }
-                }
-                if (child == null) break;
-                tail = child;
-            }
-            return tail ?? seed;
+            foreach (StickyNoteData note in StickyDockGroups.GetVisibleGroup(notes, seed))
+                if (activeIds.Contains(note.Id)) tail = note;
+            return tail;
         }
 
         internal static bool CanDockBelow(int movingLeft, int movingTop,

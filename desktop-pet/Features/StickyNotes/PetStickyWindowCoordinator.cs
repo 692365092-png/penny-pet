@@ -109,13 +109,14 @@ namespace PennyPet
                 return;
             }
 
-            // Expand-and-tile is an explicit user placement command, so each
-            // note's durable preference is committed together with its v10
-            // canonical geometry before anything is persisted.
+            DisplayTopologySnapshot topology = CurrentTopologySnapshot();
+            DisplaySurfaceSnapshot surface = topology == null || metrics == null
+                ? null : topology.FindByRuntimeGdiName(metrics.DisplayId);
+            // Commit the selected target directly, never a serialization mirror.
             foreach (DockLayoutTarget target in targets)
             {
                 StickyNoteData note = _notes.Find(target.NoteId);
-                if (note != null) CommitExpandedPreferred(note);
+                if (note != null) CommitExpandedPreferred(note, target, surface, scale);
             }
             // Persist the complete canonical transition before asynchronous
             // hosted effects can report their detached snapshots back.
@@ -139,20 +140,18 @@ namespace PennyPet
                 " 张便利贴到当前屏幕。");
         }
 
-        private void CommitExpandedPreferred(StickyNoteData note)
+        private void CommitExpandedPreferred(StickyNoteData note,
+            DockLayoutTarget target, DisplaySurfaceSnapshot surface, double scale)
         {
-            if (note == null) return;
-            DisplayTopologySnapshot topology = CurrentTopologySnapshot();
-            DisplaySurfaceSnapshot surface = topology != null
-                ? topology.FindByRuntimeGdiName(
-                    note.DisplayId ?? String.Empty)
-                : null;
+            if (note == null || surface == null) return;
             string key = DisplayTopologyRules.SelectPreferredTargetKey(
                 surface, note.PreferredDisplayTargetKey);
-            if (CommitHostedStickyPreferred(note, key,
-                note.LocalLogicalX, note.LocalLogicalY,
-                note.LocalLogicalWidth, note.LocalLogicalHeight,
-                PlacementReason.ExpandAndTile))
+            WindowPlacementPreference preference = StickyPlacementMath.PreferenceFromPhysicalRect(
+                key, surface.Bounds.Left, surface.Bounds.Top, scale,
+                new PhysicalRect(target.X, target.Y, target.Width, target.Height));
+            LogicalRect local = preference.LocalLogicalRect;
+            if (CommitHostedStickyPreferred(note, key, local.X, local.Y,
+                local.Width, local.Height, PlacementReason.ExpandAndTile))
                 _placementRuntime.MarkUserPlacementCommit(note.Id);
         }
 
@@ -193,10 +192,6 @@ namespace PennyPet
                 DockLayoutTarget target = new DockLayoutTarget(note.Id,
                     x, y, width, height, true,
                     note.AlwaysOnTop);
-                // P1-C: keep the canonical DisplayId + LocalLogicalRect in
-                // lockstep with the physical bounds before the geometry is
-                // persisted or shown, so restore never re-reads stale data.
-                ApplyDockCanonicalFromPhysical(note, target);
                 targets.Add(target);
                 index++;
             }
@@ -479,12 +474,7 @@ namespace PennyPet
         private void InvalidateDockPlansForTopologyChange(
             DisplayTopologySnapshot snapshot)
         {
-            lock (_dockPlanMailbox.Gate)
-            {
-                _dockPlanMailbox.Current = null;
-                _dockPlanMailbox.ApplyQueued = false;
-                _dockPlanMailbox.FinalPlanSequence = 0;
-            }
+            _dockPlanMailbox.Clear();
             if (_dockInteraction.IsActive)
             {
                 long epoch = _dockInteraction.IsFinalizing
@@ -499,20 +489,20 @@ namespace PennyPet
         private void ResumeDockDragAfterTopologyChange(
             DisplayTopologySnapshot snapshot)
         {
-            if (snapshot == null || String.IsNullOrEmpty(_activeNoteDragId) ||
-                _activeDockGroupIds.Count == 0 || !_dockInteraction.IsActive)
+            if (snapshot == null || String.IsNullOrEmpty(_dockInteraction.SourceNoteId) ||
+                _dockInteraction.MemberIds.Count == 0 || !_dockInteraction.IsActive)
                 return;
-            string sourceId = _activeNoteDragId;
+            string sourceId = _dockInteraction.SourceNoteId;
             if (_dockInteraction.IsFinalizing)
             {
                 StartDockFinalization(_notes.Find(sourceId),
-                    _notes.Find(_splitRemainderNoteId));
+                    _notes.Find(_dockInteraction.RemainderNoteId));
                 return;
             }
             long epoch = _dockInteraction.Epoch;
             if (!_dockInteraction.Matches(epoch, snapshot.Generation,
                 DockInteractionPhase.Rebasing)) return;
-            string[] expectedIds = _activeDockGroupIds.ToArray();
+            string[] expectedIds = _dockInteraction.CopyMemberIds();
             PostHostedStickyCommand(StickyUiCommand.CaptureDockFacts(
                 expectedIds, snapshot, epoch), delegate(StickyUiCommandResult result)
                 {
@@ -530,13 +520,12 @@ namespace PennyPet
                         return;
                     }
                     DockWindowFacts sourceRuntime;
-                    if (!_activeDockCurrentFacts.TryGetValue(sourceId,
+                    if (!_dockInteraction.PreviewFacts.TryGetValue(sourceId,
                         out sourceRuntime) || sourceRuntime == null) return;
                     // Rebase cancels this split hold; a fresh mouse-down is
                     // required. Preserve the original gesture provenance.
-                    _activeNoteSplitEligible = false;
                     ClearSplitGuide();
-                    _activeNoteDragLastFacts = sourceRuntime;
+                    _dockInteraction.RecordMove(sourceRuntime);
                     if (!_dockInteraction.TryEnterDragging(epoch,
                         snapshot.Generation)) return;
                     StickyNoteData seed = _notes.Find(sourceId);
@@ -570,10 +559,10 @@ namespace PennyPet
                         !IsHostedSticky(member);
                 });
                 if (group.Count < 2) continue;
-                if (!String.IsNullOrEmpty(_activeNoteDragId) &&
+                if (!String.IsNullOrEmpty(_dockInteraction.SourceNoteId) &&
                     group.Exists(delegate(StickyNoteData member)
                     {
-                        return String.Equals(member.Id, _activeNoteDragId,
+                        return String.Equals(member.Id, _dockInteraction.SourceNoteId,
                             StringComparison.OrdinalIgnoreCase);
                     })) continue;
                 ReconcileDockGroup(group, snapshot, petFacts);
@@ -612,8 +601,8 @@ namespace PennyPet
             DisplaySurfaceSnapshot fallback =
                 FallbackDisplayPolicy.ResolveFallbackSurface(snapshot,
                     root.PreferredDisplayTargetKey,
-                    new PhysicalRect(root.X, root.Y,
-                        root.Width, root.Height),
+                    _placementRuntime.GetEffective(root.Id) == null
+                        ? new PhysicalRect() : _placementRuntime.GetEffective(root.Id).PhysicalBounds,
                     petFacts == null ? String.Empty :
                         petFacts.RuntimeGdiName);
             if (fallback != null)
@@ -647,40 +636,29 @@ namespace PennyPet
 
         internal static bool TryBuildDockTopologyLogicalState(
             IList<StickyNoteData> group, DockTopologyReprojectReason reason,
-            out DockGroupLogicalState state)
+            out DockGroupLogicalState state, StickyPlacementRuntime runtime = null)
         {
             state = null;
             if (group == null || group.Count < 2) return false;
-            StickyNoteData root = group[0];
-            if (root == null) return false;
-            bool usePreferred =
-                reason == DockTopologyReprojectReason.PreferredReturn ||
-                reason == DockTopologyReprojectReason.TemporaryRehome ||
-                reason == DockTopologyReprojectReason.RestorePreferred;
-            int rootX = usePreferred ? root.PreferredLocalLogicalX : root.LocalLogicalX;
-            int rootY = usePreferred ? root.PreferredLocalLogicalY : root.LocalLogicalY;
-            int unifiedWidth = usePreferred ? root.PreferredLocalLogicalWidth : root.LocalLogicalWidth;
-            if (unifiedWidth <= 0) return false;
+            bool usePreferred = reason != DockTopologyReprojectReason.CurrentRuntimeRepair;
             List<DockLogicalMember> members = new List<DockLogicalMember>(group.Count);
+            LogicalPoint anchor = new LogicalPoint();
+            int unifiedWidth = 0;
             foreach (StickyNoteData member in group)
             {
                 if (member == null || String.IsNullOrWhiteSpace(member.Id)) return false;
-                int memberWidth = usePreferred ? member.PreferredLocalLogicalWidth : member.LocalLogicalWidth;
-                int memberHeight = usePreferred ? member.PreferredLocalLogicalHeight : member.LocalLogicalHeight;
-                if (memberWidth <= 0 || memberHeight <= 0) return false;
-                members.Add(new DockLogicalMember(member.Id, unifiedWidth, memberHeight));
+                LogicalRect local;
+                if (usePreferred)
+                    local = new LogicalRect {
+                        X = member.PreferredLocalLogicalX, Y = member.PreferredLocalLogicalY,
+                        Width = member.PreferredLocalLogicalWidth, Height = member.PreferredLocalLogicalHeight };
+                else if (runtime == null || !runtime.TryGetEffectiveLogical(member.Id, out local)) return false;
+                if (local.Width <= 0 || local.Height <= 0) return false;
+                if (members.Count == 0) { anchor = new LogicalPoint { X = local.X, Y = local.Y }; unifiedWidth = local.Width; }
+                members.Add(new DockLogicalMember(member.Id, unifiedWidth, local.Height));
             }
-            try
-            {
-                state = new DockGroupLogicalState(
-                    new LogicalPoint { X = rootX, Y = rootY }, members);
-                return true;
-            }
-            catch (ArgumentException)
-            {
-                state = null;
-                return false;
-            }
+            try { state = new DockGroupLogicalState(anchor, members); return true; }
+            catch (ArgumentException) { return false; }
         }
 
         private void PostDockGroupTopologyReproject(
@@ -693,7 +671,8 @@ namespace PennyPet
             if (root == null || String.IsNullOrWhiteSpace(root.DockGroupId)) return;
             string groupId = root.DockGroupId;
             DockGroupLogicalState logicalState;
-            if (!TryBuildDockTopologyLogicalState(group, reason, out logicalState))
+            if (!TryBuildDockTopologyLogicalState(group, reason, out logicalState,
+                _placementRuntime))
             {
                 DisplayDiagnostics.Trace("DockTopologyGeometryRejected",
                     "group=" + groupId + " generation=" + snapshot.Generation +
@@ -850,7 +829,7 @@ namespace PennyPet
                 ApplyHostedStickyFactsGeometry(candidate.Canonical,
                     member.Facts, snapshot);
                 if (!_placementRuntime.TryUpdateEffective(member.NoteId,
-                    member.Facts))
+                    member.Facts, snapshot))
                     throw new InvalidOperationException(
                         "Dock topology Effective acceptance changed after preflight.");
                 _hostedRuntime.RecordSequence(member.NoteId,
@@ -912,7 +891,8 @@ namespace PennyPet
             DisplaySurfaceSnapshot fallback;
             StickyUiReprojectTarget rehomeTarget;
             if (!TryBuildTemporaryRehomeTarget(note, snapshot, petFacts,
-                true, out fallback, out rehomeTarget)) return;
+                true, out fallback, out rehomeTarget,
+                _placementRuntime.GetEffective(note.Id))) return;
             string rehomedNoteId = note.Id;
             PostHostedStickyCommand(StickyUiCommand.Reproject(rehomedNoteId,
                 rehomeTarget, snapshot),
@@ -938,7 +918,7 @@ namespace PennyPet
         private static bool TryBuildTemporaryRehomeTarget(StickyNoteData note,
             DisplayTopologySnapshot topology, WindowFacts petFacts,
             bool showAfter, out DisplaySurfaceSnapshot fallback,
-            out StickyUiReprojectTarget target)
+            out StickyUiReprojectTarget target, WindowFacts actual = null)
         {
             fallback = null;
             target = null;
@@ -952,7 +932,9 @@ namespace PennyPet
                     note.PreferredDisplayTargetKey) != null) return false;
             fallback = FallbackDisplayPolicy.ResolveFallbackSurface(topology,
                 note.PreferredDisplayTargetKey,
-                new PhysicalRect(note.X, note.Y, note.Width, note.Height),
+                actual == null
+                    ? new PhysicalRect(note.X, note.Y, note.Width, note.Height)
+                    : actual.PhysicalBounds,
                 petFacts == null ? String.Empty : petFacts.RuntimeGdiName);
             if (fallback == null) return false;
             target = new StickyUiReprojectTarget(
@@ -1004,12 +986,12 @@ namespace PennyPet
             StickyUiReprojectTarget rehomeTarget;
             bool temporaryRehome = TryBuildTemporaryRehomeTarget(note,
                 topology, CapturePetWindowFacts(topology), false,
-                out fallback, out rehomeTarget);
+                out fallback, out rehomeTarget, _placementRuntime.GetEffective(note.Id));
             StickyNoteUiSnapshot createSnapshot =
                 StickyNoteUiSnapshot.FromData(note);
             StickyUiCommand command = StickyUiCommand.Create(
                 createSnapshot, focusEditor, _reminders.GetItems(), topology,
-                rehomeTarget);
+                rehomeTarget, StickyPlacementRecovery.SelectForShow(note, topology));
             PostHostedStickyCommand(command,
                 delegate(StickyUiCommandResult result)
                 {
@@ -1034,7 +1016,7 @@ namespace PennyPet
                         }
                         else
                             ApplyHostedStickySnapshot(result.Snapshot,
-                                result.Sequence);
+                                result.Sequence, true, result.Facts, result.Topology);
                         if (temporaryRehome)
                             CompleteTemporaryRehome(noteId, fallback,
                                 "preferred-display-missing-at-restore",
@@ -1061,7 +1043,7 @@ namespace PennyPet
             StickyUiReprojectTarget rehomeTarget;
             if (TryBuildTemporaryRehomeTarget(note, topology,
                 CapturePetWindowFacts(topology), true,
-                out fallback, out rehomeTarget))
+                out fallback, out rehomeTarget, _placementRuntime.GetEffective(note.Id)))
             {
                 PostHostedStickyCommand(StickyUiCommand.Reproject(noteId,
                     rehomeTarget, topology),
@@ -1091,14 +1073,14 @@ namespace PennyPet
                 return true;
             }
             PostHostedStickyCommand(StickyUiCommand.Show(noteId,
-                focusEditor, topology),
+                focusEditor, topology, StickyPlacementRecovery.SelectForShow(note, topology)),
                 delegate(StickyUiCommandResult result)
                 {
                     if (result != null &&
                         result.Status == StickyUiCommandStatus.Handled)
                     {
                         ApplyHostedStickySnapshot(result.Snapshot,
-                            result.Sequence);
+                            result.Sequence, true, result.Facts, result.Topology);
                         if (_placementRuntime.IsTemporaryRehome(noteId) &&
                             topology != null && topology.FindByTargetKey(
                                 note.PreferredDisplayTargetKey) != null)
@@ -1124,7 +1106,7 @@ namespace PennyPet
                         if (result.Snapshot != null &&
                             !result.Snapshot.Visible)
                             ApplyHostedStickySnapshot(result.Snapshot,
-                                result.Sequence);
+                                result.Sequence, true, result.Facts, result.Topology);
                         return;
                     }
                     ReportHostedStickyCommandFailure(
@@ -1216,10 +1198,10 @@ namespace PennyPet
             if (value.Kind == StickyUiEventKind.DockDividerResizeStarted)
             {
                 ClearHostedDockResizeSession();
-                if (!ApplyHostedStickySnapshot(value.Snapshot,
-                    value.Sequence, false) ||
-                    !BeginHostedStickyDockDivider(
-                        DockWindowFacts.FromSnapshot(value.Snapshot)))
+                if (!IsCurrentHostedGeometryEvent(value) ||
+                    !ApplyHostedStickyEvent(value, false) ||
+                    !BeginHostedStickyDockDivider(DockWindowFacts.FromWindowFacts(
+                        value.Facts, value.Snapshot.Visible, value.Snapshot.AlwaysOnTop)))
                     ClearHostedDockResizeSession();
                 return;
             }
@@ -1241,19 +1223,20 @@ namespace PennyPet
             }
             if (value.Kind == StickyUiEventKind.DockHorizontalResizing)
             {
-                if (!ApplyHostedStickySnapshot(value.Snapshot,
-                    value.Sequence, false)) return;
-                ResizeStickyDockGroup(
-                    DockWindowFacts.FromSnapshot(value.Snapshot),
+                if (!IsCurrentHostedGeometryEvent(value) ||
+                    !ApplyHostedStickyEvent(value, false)) return;
+                ResizeStickyDockGroup(DockWindowFacts.FromWindowFacts(
+                    value.Facts, value.Snapshot.Visible, value.Snapshot.AlwaysOnTop),
                     value.Left, value.Width);
                 return;
             }
             if (value.Kind == StickyUiEventKind.CloseRequested)
             {
-                if (!ApplyHostedStickySnapshot(value.Snapshot,
-                    value.Sequence, false)) return;
+                if (!IsCurrentHostedGeometryEvent(value) ||
+                    !ApplyHostedStickyEvent(value, false)) return;
                 CloseStickyDockNote(_notes.Find(value.NoteId),
-                    DockWindowFacts.FromSnapshot(value.Snapshot));
+                    DockWindowFacts.FromWindowFacts(value.Facts,
+                        value.Snapshot.Visible, value.Snapshot.AlwaysOnTop));
                 return;
             }
             if (value.Kind == StickyUiEventKind.SnapshotChanged)
@@ -1306,7 +1289,7 @@ namespace PennyPet
             if (value.Kind == StickyUiEventKind.Closed)
             {
                 ClearHostedDockResizeSession();
-                ApplyHostedStickySnapshot(value.Snapshot, value.Sequence);
+                ApplyHostedStickyEvent(value);
                 _hostedRuntime.RemoveNote(value.NoteId);
                 _placementRuntime.Remove(value.NoteId);
                 _renderedFirstRenderNoteIds.Remove(value.NoteId);
@@ -1353,7 +1336,7 @@ namespace PennyPet
                     "sticky-hosted-create-schedule");
                 return;
             }
-            ApplyHostedStickySnapshot(value.Snapshot, value.Sequence);
+            ApplyHostedStickyEvent(value);
         }
 
         private void TraceHostedWindowFacts(StickyUiEvent value)
@@ -1379,44 +1362,8 @@ namespace PennyPet
         private bool ApplyHostedStickyEvent(StickyUiEvent value,
             bool persist = true)
         {
-            if (value == null || value.Snapshot == null ||
-                !_hostedRuntime.CanApplySequence(value.NoteId,
-                    value.Sequence)) return false;
-            StickyNoteData canonical = _notes.Find(value.NoteId);
-            if (canonical == null) return false;
-            bool visibilityChanged = canonical.Visible !=
-                value.Snapshot.Visible;
-            string oldHiddenTitle = canonical.Visible
-                ? String.Empty : canonical.DisplayTitle;
-            WindowFactsVersionDisposition geometryDisposition =
-                ClassifyHostedGeometry(value);
-            value.Snapshot.ApplyContentTo(canonical);
-            canonical.Visible = value.Snapshot.Visible;
-            canonical.AlwaysOnTop = value.Snapshot.AlwaysOnTop;
-            if (geometryDisposition == WindowFactsVersionDisposition.Current)
-            {
-                if (_placementRuntime.TryUpdateEffective(value.NoteId,
-                    value.Facts))
-                    ApplyHostedStickyFactsGeometry(canonical, value.Facts,
-                        value.Topology);
-                else
-                    DisplayDiagnostics.Trace("HostedGeometryRejected",
-                        "note=" + value.NoteId + " reason=effective-monotonic");
-            }
-            else if (value.Facts != null)
-            {
-                DisplayDiagnostics.Trace(geometryDisposition ==
-                    WindowFactsVersionDisposition.StaleTopology
-                    ? "HostedGeometryStale" : "HostedGeometryRejected",
-                    "note=" + value.NoteId + " sequence=" + value.Sequence);
-            }
-            _hostedRuntime.RecordSequence(value.NoteId, value.Sequence);
-            if (persist) _notes.SaveAsync();
-            RefreshMenuText();
-            if (visibilityChanged || (!canonical.Visible &&
-                !String.Equals(oldHiddenTitle, canonical.DisplayTitle,
-                    StringComparison.Ordinal))) RefreshNoteTabs();
-            return true;
+            return value != null && ApplyHostedStickySnapshot(value.Snapshot,
+                value.Sequence, persist, value.Facts, value.Topology);
         }
 
         private static void ApplyHostedStickyFactsGeometry(
@@ -1473,7 +1420,7 @@ namespace PennyPet
             canonical.AlwaysOnTop = result.Snapshot.AlwaysOnTop;
             ApplyHostedStickyFactsGeometry(canonical, result.Facts,
                 result.Topology);
-            if (!_placementRuntime.TryUpdateEffective(noteId, result.Facts))
+            if (!_placementRuntime.TryUpdateEffective(noteId, result.Facts, result.Topology))
                 throw new InvalidOperationException(
                     "Reproject Effective acceptance changed after preflight.");
             _hostedRuntime.RecordSequence(noteId, result.Sequence);
@@ -1506,7 +1453,7 @@ namespace PennyPet
             {
                 _pendingStandaloneTopologyNotes.Remove(noteId);
                 if (IsDisposed || Disposing || String.Equals(noteId,
-                    _activeNoteDragId, StringComparison.OrdinalIgnoreCase))
+                    _dockInteraction.SourceNoteId, StringComparison.OrdinalIgnoreCase))
                     return;
                 StickyNoteData note = _notes.Find(noteId);
                 DisplayTopologySnapshot snapshot = CurrentTopologySnapshot();
@@ -1583,7 +1530,7 @@ namespace PennyPet
         // capture ran on the Sticky STA; every member's preferred placement
         // is derived from the captured actual facts plus the finalizing
         // epoch's exact topology, then membership and content are persisted
-        // once. No synchronous wait and no Current-generation guessing.
+        // once. The commit uses its captured generation throughout.
         private void CompleteDockDurableCommit(StickyUiCommandResult result,
             DisplayTopologySnapshot expectedTopology, long expectedEpoch,
             StickyNoteData seed,
@@ -1600,6 +1547,12 @@ namespace PennyPet
                 return;
             }
 
+            bool merged = _dockInteraction.PendingMerge != null;
+            if (merged && !_dockInteraction.PendingMerge.TryCommit(_notes.GetAll()))
+            {
+                TraceDockCommitRejected("membership changed before final commit");
+                return;
+            }
             _lastAppliedDockPlanSequence = Math.Max(
                 _lastAppliedDockPlanSequence, expectedPlanSequence);
             foreach (DockCommitCandidate candidate in candidates)
@@ -1612,7 +1565,7 @@ namespace PennyPet
                 ApplyHostedStickyFactsGeometry(canonical, member.Facts,
                     expectedTopology);
                 if (!_placementRuntime.TryUpdateEffective(member.NoteId,
-                    member.Facts))
+                    member.Facts, expectedTopology))
                     throw new InvalidOperationException(
                         "Dock durable Effective acceptance changed after preflight.");
                 _hostedRuntime.RecordSequence(member.NoteId,
@@ -1623,13 +1576,17 @@ namespace PennyPet
                     local.X, local.Y, local.Width, local.Height,
                     PlacementReason.DockCommit);
             }
-            CommitVisibleDockOrder(seed);
-            if (remainderSeed != null)
-                CommitVisibleDockOrder(remainderSeed);
+            if (merged)
+            {
+                List<StickyNoteData> group = BuildDockChainOrderIncludingHidden(seed);
+                bool topMost = group[0].AlwaysOnTop;
+                foreach (StickyNoteData member in group) member.AlwaysOnTop = topMost;
+            }
             _notes.Save();
             foreach (DockCommitCandidate candidate in candidates)
                 _placementRuntime.MarkUserPlacementCommit(
                     candidate.Member.NoteId);
+            if (merged) ApplyDockComponentTopMost(seed, seed.AlwaysOnTop, null);
         }
 
         private bool TryPrepareDockCommit(StickyUiCommandResult result,
@@ -1770,17 +1727,42 @@ namespace PennyPet
         }
 
         private bool ApplyHostedStickySnapshot(StickyNoteUiSnapshot snapshot,
-            long sequence, bool persist = true)
+            long sequence, bool persist = true, WindowFacts facts = null,
+            DisplayTopologySnapshot topology = null)
         {
             if (snapshot == null ||
-                !_hostedRuntime.CanApplySequence(snapshot.NoteId, sequence))
-                return false;
+                !_hostedRuntime.CanApplySequence(snapshot.NoteId,
+                    sequence)) return false;
             StickyNoteData canonical = _notes.Find(snapshot.NoteId);
             if (canonical == null) return false;
-            bool visibilityChanged = canonical.Visible != snapshot.Visible;
+            bool visibilityChanged = canonical.Visible !=
+                snapshot.Visible;
             string oldHiddenTitle = canonical.Visible
                 ? String.Empty : canonical.DisplayTitle;
-            snapshot.ApplyTo(canonical);
+            DisplayTopologySnapshot current = CurrentTopologySnapshot();
+            WindowFactsVersionDisposition geometryDisposition =
+                WindowFactsVersionRules.Classify(snapshot.NoteId, sequence,
+                    facts, topology, current == null ? -1 : current.Generation);
+            snapshot.ApplyContentTo(canonical);
+            canonical.Visible = snapshot.Visible;
+            canonical.AlwaysOnTop = snapshot.AlwaysOnTop;
+            if (geometryDisposition == WindowFactsVersionDisposition.Current)
+            {
+                if (_placementRuntime.TryUpdateEffective(snapshot.NoteId,
+                    facts, topology))
+                    ApplyHostedStickyFactsGeometry(canonical, facts,
+                        topology);
+                else
+                    DisplayDiagnostics.Trace("HostedGeometryRejected",
+                        "note=" + snapshot.NoteId + " reason=effective-monotonic");
+            }
+            else if (facts != null)
+            {
+                DisplayDiagnostics.Trace(geometryDisposition ==
+                    WindowFactsVersionDisposition.StaleTopology
+                    ? "HostedGeometryStale" : "HostedGeometryRejected",
+                    "note=" + snapshot.NoteId + " sequence=" + sequence);
+            }
             _hostedRuntime.RecordSequence(snapshot.NoteId, sequence);
             if (persist) _notes.SaveAsync();
             RefreshMenuText();
@@ -1811,6 +1793,8 @@ namespace PennyPet
         private void CompleteHostedStickyDockDivider(StickyUiEvent value)
         {
             if (value == null || value.Snapshot == null ||
+                !IsCurrentHostedGeometryEvent(value) ||
+                !_placementRuntime.CanAcceptEffective(value.NoteId, value.Facts) ||
                 !_hostedRuntime.CanApplySequence(value.NoteId,
                     value.Sequence))
             {
@@ -1830,7 +1814,7 @@ namespace PennyPet
                     " height=" + value.Height +
                     " accepted=false" +
                     " seq=" + value.Sequence);
-                ApplyHostedStickySnapshot(value.Snapshot, value.Sequence);
+                ApplyHostedStickyEvent(value);
                 ClearHostedDockResizeSession();
                 return;
             }
@@ -1847,12 +1831,12 @@ namespace PennyPet
                 ClearHostedDockResizeSession();
                 return;
             }
-            DisplayTopologySnapshot topology = CurrentTopologySnapshot();
+            DisplayTopologySnapshot topology = value.Topology;
             // The source is Windows-live authoritative. Persist its final
             // geometry and durable preference SYNCHRONOUSLY here, so a
             // collapse/reopen that races the async follower batch can never
             // save or restore a stale pre-gesture height.
-            CommitDividerSourceFinal(value, sourceCanonical, finalHeight,
+            CommitDividerSourceFinal(value, sourceCanonical,
                 topology);
             if (finalTargets.Count == 0)
             {
@@ -1884,8 +1868,8 @@ namespace PennyPet
             out int finalHeight)
         {
             targets = new List<DockWindowTarget>();
-            finalTop = value.Snapshot.Y;
-            finalHeight = Math.Max(1, value.Height);
+            finalTop = value.Facts.PhysicalBounds.Top;
+            finalHeight = value.Facts.PhysicalBounds.Height;
             if (_activeHostedDockResizeFacts == null ||
                 !String.Equals(_activeHostedDockResizeSourceId,
                     value.NoteId, StringComparison.OrdinalIgnoreCase))
@@ -2020,18 +2004,21 @@ namespace PennyPet
         }
 
         private void CommitDividerSourceFinal(StickyUiEvent value,
-            StickyNoteData sourceCanonical, int finalHeight,
+            StickyNoteData sourceCanonical,
             DisplayTopologySnapshot topology)
         {
             if (sourceCanonical == null) return;
             _synchronizingDockLayout = true;
             try
             {
-                value.Snapshot.ApplyTo(sourceCanonical);
-                // value.Height is the physical final HWND height; canonical
-                // must not pass through a second 220..700 logical clamp.
-                sourceCanonical.Height = Math.Max(1, finalHeight);
-                CommitDividerPreferred(sourceCanonical, topology);
+                value.Snapshot.ApplyContentTo(sourceCanonical);
+                sourceCanonical.Visible = value.Snapshot.Visible;
+                sourceCanonical.AlwaysOnTop = value.Snapshot.AlwaysOnTop;
+                // Exact physical facts: never apply the persisted-size clamp.
+                ApplyHostedStickyFactsGeometry(sourceCanonical, value.Facts, topology);
+                if (!_placementRuntime.TryUpdateEffective(value.NoteId, value.Facts, topology))
+                    throw new InvalidOperationException("Divider source acceptance changed after preflight.");
+                CommitDividerPreferred(sourceCanonical, value.Facts, topology);
                 _hostedRuntime.RecordSequence(value.NoteId, value.Sequence);
                 _notes.SaveAsync();
             }
@@ -2044,33 +2031,19 @@ namespace PennyPet
         // position and width, so a collapse/reopen restores the new height at
         // the place the user left the group (never a drifted gesture-time top).
         private void CommitDividerPreferred(StickyNoteData canonical,
-            DisplayTopologySnapshot topology)
+            WindowFacts facts, DisplayTopologySnapshot topology)
         {
-            if (canonical == null || topology == null) return;
-            DisplaySurfaceSnapshot surface =
-                topology.FindByRuntimeGdiName(canonical.DisplayId);
-            if (surface == null) return;
-            string targetKey = DisplayTopologyRules.SelectPreferredTargetKey(
-                surface, canonical.PreferredDisplayTargetKey);
-            if (String.IsNullOrWhiteSpace(targetKey)) return;
-            bool hasPreferred =
-                !String.IsNullOrWhiteSpace(
-                    canonical.PreferredDisplayTargetKey) &&
-                canonical.PreferredLocalLogicalWidth > 0 &&
-                canonical.PreferredLocalLogicalHeight > 0;
-            int localX = hasPreferred
-                ? canonical.PreferredLocalLogicalX
-                : canonical.LocalLogicalX;
-            int localY = hasPreferred
-                ? canonical.PreferredLocalLogicalY
-                : canonical.LocalLogicalY;
-            int localWidth = hasPreferred
-                ? canonical.PreferredLocalLogicalWidth
-                : canonical.LocalLogicalWidth;
-            CommitHostedStickyPreferred(canonical, targetKey,
-                localX, localY, localWidth,
-                canonical.LocalLogicalHeight,
-                PlacementReason.UserResizeCommit);
+            WindowPlacementPreference preference;
+            if (!StickyPlacementRules.TryBuildPreferredPlacement(facts, topology,
+                canonical.PreferredDisplayTargetKey, out preference)) return;
+            LogicalRect local = preference.LocalLogicalRect;
+            bool hasPreferred = !String.IsNullOrWhiteSpace(canonical.PreferredDisplayTargetKey) &&
+                canonical.PreferredLocalLogicalWidth > 0 && canonical.PreferredLocalLogicalHeight > 0;
+            CommitHostedStickyPreferred(canonical, preference.PreferredTargetKey,
+                hasPreferred ? canonical.PreferredLocalLogicalX : local.X,
+                hasPreferred ? canonical.PreferredLocalLogicalY : local.Y,
+                hasPreferred ? canonical.PreferredLocalLogicalWidth : local.Width,
+                local.Height, PlacementReason.UserResizeCommit);
         }
 
         // A group horizontal resize shares one left/width across the whole
@@ -2093,14 +2066,10 @@ namespace PennyPet
                         member.PreferredDisplayTargetKey) &&
                     member.PreferredLocalLogicalWidth > 0 &&
                     member.PreferredLocalLogicalHeight > 0;
-                int localY = hasPreferred
-                    ? member.PreferredLocalLogicalY
-                    : member.LocalLogicalY;
-                int localHeight = hasPreferred
-                    ? member.PreferredLocalLogicalHeight
-                    : member.LocalLogicalHeight;
-                if (localHeight <= 0)
-                    localHeight = member.LocalLogicalHeight;
+                LogicalRect actual = new LogicalRect();
+                if (!hasPreferred && !_placementRuntime.TryGetEffectiveLogical(member.Id, out actual)) continue;
+                int localY = hasPreferred ? member.PreferredLocalLogicalY : actual.Y;
+                int localHeight = hasPreferred ? member.PreferredLocalLogicalHeight : actual.Height;
                 if (localHeight <= 0) continue;
                 CommitHostedStickyPreferred(member, targetKey,
                     sourceLocal.X, localY, sourceLocal.Width,
@@ -2184,7 +2153,8 @@ namespace PennyPet
                             result.FinalSnapshots)
                             ApplyHostedStickySnapshot(
                                 finalSnapshot.Snapshot,
-                                finalSnapshot.Sequence, false);
+                                finalSnapshot.Sequence, false, finalSnapshot.Facts,
+                                finalSnapshot.Topology);
                     _hostedRuntime.PrepareExit();
                     _stickyUiHost.BeginShutdown();
                     BeginExitSequence();
@@ -2217,7 +2187,8 @@ namespace PennyPet
                             if (finalSnapshot == null) continue;
                             ApplyHostedStickySnapshot(
                                 finalSnapshot.Snapshot,
-                                finalSnapshot.Sequence, false);
+                                finalSnapshot.Sequence, false, finalSnapshot.Facts,
+                                finalSnapshot.Topology);
                             _hostedRuntime.RemoveNote(finalSnapshot.NoteId);
                             _placementRuntime.InvalidateEffective(
                                 finalSnapshot.NoteId);
@@ -2613,7 +2584,6 @@ namespace PennyPet
                     return;
                 }
 
-                StickyDockGroups.ApplyOrderedGroup(state.Ordered);
 
                 DisplayDiagnostics.Trace("DockRestoreGroupQueued",
                     "stage=reproject members=" + state.Ordered.Count +
@@ -2739,7 +2709,6 @@ namespace PennyPet
                     member.AlwaysOnTop = state.Ordered[0].AlwaysOnTop;
                 }
 
-                StickyDockGroups.ApplyOrderedGroup(state.Ordered);
 
                 if (state.PersistVisibility) _notes.Save();
 
@@ -2824,7 +2793,6 @@ namespace PennyPet
                 member.Visible = true;
                 member.AlwaysOnTop = rootData.AlwaysOnTop;
             }
-            StickyDockGroups.ApplyOrderedGroup(ordered);
             List<Rectangle> layout = CalculateUnifiedDockLayout(sizes,
                 rootLeft, rootTop, rootWidth);
 
@@ -2868,7 +2836,7 @@ namespace PennyPet
                         else
                         {
                             ApplyHostedStickySnapshot(result.Snapshot,
-                                result.Sequence);
+                                result.Sequence, true, result.Facts, result.Topology);
                             PostHostedStickyCommand(
                                 StickyUiCommand.SetBounds(member.Id,
                                     new StickyUiBounds(bounds.Left, bounds.Top,
@@ -2921,7 +2889,6 @@ namespace PennyPet
                 List<StickyNoteData> group =
                     BuildDockChainOrderIncludingHidden(note);
                 if (group.Count == 0) group.Add(note);
-                StickyDockGroups.ApplyOrderedGroup(group);
                 foreach (StickyNoteData member in group)
                 {
                     handled.Add(member.Id);
@@ -3099,9 +3066,11 @@ namespace PennyPet
             foreach (StickyNoteData note in _notes.GetAll())
             {
                 if (note == null || !note.Visible) continue;
-                if (note.Width <= 0 || note.Height <= 0) continue;
-                Rectangle noteBounds = new Rectangle(note.X, note.Y,
-                    note.Width, note.Height);
+                WindowFacts facts = _placementRuntime.GetEffective(note.Id);
+                if (facts == null) continue;
+                PhysicalRect actual = facts.PhysicalBounds;
+                Rectangle noteBounds = new Rectangle(actual.Left, actual.Top,
+                    actual.Width, actual.Height);
                 if (stripBounds.IntersectsWith(noteBounds)) return true;
             }
             return false;

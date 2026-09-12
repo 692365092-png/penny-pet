@@ -39,7 +39,7 @@ namespace PennyPet
             StickyUiReprojectTarget reprojectTarget = null,
             string[] dockNoteIds = null,
             DockGroupReprojectPlan dockGroupReprojectPlan = null,
-            long interactionEpoch = 0)
+            long interactionEpoch = 0, WindowPlacementPlan placement = null)
         {
             Kind = kind;
             NoteId = noteId ?? String.Empty;
@@ -55,18 +55,21 @@ namespace PennyPet
                 : (string[])dockNoteIds.Clone();
             DockGroupReprojectPlan = dockGroupReprojectPlan;
             InteractionEpoch = interactionEpoch;
+            Placement = placement;
         }
 
         internal static StickyUiCommand Create(StickyNoteUiSnapshot snapshot,
             bool focusEditor, IEnumerable<ReminderItem> reminders = null,
             DisplayTopologySnapshot topology = null,
-            StickyUiReprojectTarget reprojectTarget = null)
+            StickyUiReprojectTarget reprojectTarget = null,
+            WindowPlacementPlan placement = null)
         {
             if (snapshot == null)
                 throw new ArgumentNullException(nameof(snapshot));
             return new StickyUiCommand(StickyUiCommandKind.Create,
                 snapshot.NoteId, focusEditor, snapshot, null, null,
-                CopyReminders(reminders), topology, reprojectTarget);
+                CopyReminders(reminders), topology, reprojectTarget,
+                placement: placement);
         }
 
         internal static StickyUiCommand EnsureSession(
@@ -96,10 +99,11 @@ namespace PennyPet
         }
 
         internal static StickyUiCommand Show(string noteId, bool focusEditor,
-            DisplayTopologySnapshot topology = null)
+            DisplayTopologySnapshot topology = null, WindowPlacementPlan placement = null)
         {
             return new StickyUiCommand(StickyUiCommandKind.Show, noteId,
-                focusEditor, null, null, null, null, topology);
+                focusEditor, null, null, null, null, topology,
+                placement: placement);
         }
 
         internal static StickyUiCommand Hide(string noteId)
@@ -273,6 +277,7 @@ namespace PennyPet
         internal DockGroupReprojectPlan DockGroupReprojectPlan
             { get; private set; }
         internal long InteractionEpoch { get; private set; }
+        internal WindowPlacementPlan Placement { get; private set; }
 
         private static ReminderItem[] CopyReminders(
             IEnumerable<ReminderItem> reminders)
@@ -657,17 +662,19 @@ namespace PennyPet
         }
 
         internal static StickyUiEvent HorizontalResize(
-            StickyNoteUiSnapshot snapshot, long sequence, int left, int width)
+            StickyNoteUiSnapshot snapshot, long sequence, int left, int width,
+            WindowFacts facts = null, DisplayTopologySnapshot topology = null)
         {
             if (snapshot == null)
                 throw new ArgumentNullException(nameof(snapshot));
             return new StickyUiEvent(
                 StickyUiEventKind.DockHorizontalResizing, snapshot.NoteId,
-                snapshot, false, sequence, null, left, width);
+                snapshot, false, sequence, null, left, width, 0, facts, topology);
         }
 
         internal static StickyUiEvent DividerResize(StickyUiEventKind kind,
-            StickyNoteUiSnapshot snapshot, long sequence, int height)
+            StickyNoteUiSnapshot snapshot, long sequence, int height,
+            WindowFacts facts = null, DisplayTopologySnapshot topology = null)
         {
             if (snapshot == null)
                 throw new ArgumentNullException(nameof(snapshot));
@@ -676,7 +683,7 @@ namespace PennyPet
                 kind != StickyUiEventKind.DockDividerResizeCompleted)
                 throw new ArgumentOutOfRangeException(nameof(kind));
             return new StickyUiEvent(kind, snapshot.NoteId, snapshot, false,
-                sequence, null, 0, 0, height);
+                sequence, null, 0, 0, height, facts, topology);
         }
 
         internal StickyUiEventKind Kind { get; private set; }
@@ -703,18 +710,23 @@ namespace PennyPet
     internal sealed class StickyUiFinalSnapshot
     {
         internal StickyUiFinalSnapshot(StickyNoteUiSnapshot snapshot,
-            long sequence)
+            long sequence, WindowFacts facts = null,
+            DisplayTopologySnapshot topology = null)
         {
             if (snapshot == null)
                 throw new ArgumentNullException(nameof(snapshot));
             NoteId = snapshot.NoteId;
             Snapshot = snapshot;
             Sequence = sequence;
+            Facts = facts;
+            Topology = topology;
         }
 
         internal string NoteId { get; private set; }
         internal StickyNoteUiSnapshot Snapshot { get; private set; }
         internal long Sequence { get; private set; }
+        internal WindowFacts Facts { get; private set; }
+        internal DisplayTopologySnapshot Topology { get; private set; }
     }
 
     // Detached actual-facts result for one window inside a native Dock batch

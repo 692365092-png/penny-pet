@@ -678,6 +678,7 @@ namespace PennyPet.Tests
                 DockParentId = "middle"
             };
 
+            StickyDockGroups.NormalizeAll(new[] { root, middle, tail });
             StickyNoteData found = StickyDockOperations.FindActiveDockTail(
                 new[] { root, middle, tail },
                 new[] { root, middle, tail },
@@ -1017,7 +1018,7 @@ namespace PennyPet.Tests
             Assert.AreEqual(1, hidden.DockGroupOrder);
             Assert.AreEqual(2, last.DockGroupOrder);
             Assert.AreEqual(String.Empty, hidden.DockParentId);
-            Assert.AreEqual("first", last.DockParentId);
+            Assert.AreSame(first, StickyDockGroups.GetVisibleNeighbor(ordered, last, -1));
             CollectionAssert.AreEqual(ordered,
                 StickyDockGroups.GetOrderedGroup(ordered, last));
         }
@@ -1052,14 +1053,13 @@ namespace PennyPet.Tests
             {
                 first, middle, extracted, last
             }, merged);
-            Assert.AreEqual(middle.Id, extracted.DockParentId);
-            Assert.AreEqual(extracted.Id, last.DockParentId);
+            Assert.AreSame(middle, StickyDockGroups.GetVisibleNeighbor(merged, extracted, -1));
+            Assert.AreSame(extracted, StickyDockGroups.GetVisibleNeighbor(merged, last, -1));
 
-            StickyDockOperations.PreserveDockSlotForHiddenMember(merged,
-                extracted);
+            extracted.Visible = false;
             Assert.IsFalse(extracted.Visible);
             Assert.AreEqual(2, extracted.DockGroupOrder);
-            Assert.AreEqual(middle.Id, last.DockParentId);
+            Assert.AreSame(middle, StickyDockGroups.GetVisibleNeighbor(merged, last, -1));
         }
 
         [TestMethod]

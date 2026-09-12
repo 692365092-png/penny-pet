@@ -199,8 +199,8 @@ namespace PennyPet.Tests
             string session = ReadSource("StickyWindowSession.cs");
 
             Assert.IsTrue(wpf.Contains("hostedNativePlacement") &&
-                wpf.Contains("data.LocalLogicalWidth") &&
-                wpf.Contains("data.LocalLogicalHeight"),
+                wpf.Contains("initialLogicalBounds.Width") &&
+                wpf.Contains("initialLogicalBounds.Height"),
                 "Hosted construction must size from the logical DIP model.");
             string hostedBranch = Between(wpf,
                 "if (hostedNativePlacement)", "else");
@@ -211,7 +211,7 @@ namespace PennyPet.Tests
                 "The hosted path must not feed physical fields into WPF placement.");
             Assert.IsTrue(session.Contains(
                     "new StickyNoteWindow(snapshot.CreateWorkingCopy(),") &&
-                session.Contains("false, false, true)"),
+                session.Contains("false, false, true, initialPlacement"),
                 "Hosted sessions must use the native-placement constructor.");
         }
 
@@ -244,7 +244,7 @@ namespace PennyPet.Tests
                 "The standalone path must run the full hidden bootstrap.");
 
             string placement = Between(session,
-                "private bool PlaceAtNativeBounds(NativePlacementPlan plan, bool edit)",
+                "private bool PlaceAtNativeBounds(WindowPlacementPlan plan, bool edit)",
                 "private void TracePlacementMismatch");
             Assert.IsFalse(placement.Contains("_window.ShowAtPhysicalBounds") ||
                 placement.Contains("ShowRestoredAtPhysicalBounds"),
@@ -269,22 +269,15 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void Drt6_SessionRestoresPreferredBeforeV10Display()
+        public void Drt6_RestorePolicyIsSelectedBeforeTheStaBoundary()
         {
             string session = ReadSource("StickyWindowSession.cs");
-            int preferred = session.IndexOf(
-                "data.PreferredDisplayTargetKey",
-                StringComparison.Ordinal);
-            int legacy = session.IndexOf(
-                "topology.FindByRuntimeGdiName(",
-                StringComparison.Ordinal);
-
-            Assert.IsTrue(preferred >= 0 && legacy > preferred,
-                "Restore must resolve the v11 preferred target before the v10 DisplayId.");
-            Assert.IsTrue(session.Contains(
-                    "data.PreferredLocalLogicalWidth > 0") &&
-                session.Contains("topology.FindByTargetKey("),
-                "The preferred local rect must be projected against its durable target.");
+            string coordinator = ReadSource("Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string host = ReadSource("StickyUiHost.cs");
+            Assert.IsFalse(session.Contains("data.PreferredDisplayTargetKey") ||
+                session.Contains("data.LocalLogicalWidth") || session.Contains("ResolvePlacementPlan"));
+            StringAssert.Contains(coordinator, "StickyPlacementRecovery.SelectForShow(note, topology)");
+            StringAssert.Contains(host, "command.Placement");
         }
 
         [TestMethod]
@@ -338,7 +331,7 @@ namespace PennyPet.Tests
             Assert.IsTrue(start.Contains(
                     "TryBuildTemporaryRehomeTarget(note") &&
                 start.Contains("StickyUiCommand.Create(") &&
-                start.Contains("rehomeTarget)") &&
+                start.Contains("rehomeTarget, StickyPlacementRecovery.SelectForShow") &&
                 start.Contains(
                     "preferred-display-missing-at-restore"),
                 "Startup restore must attach a typed rehome target without rewriting the durable preferred target.");

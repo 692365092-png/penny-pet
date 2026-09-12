@@ -17,34 +17,25 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void StickyPersistence_AllWritersShareGenerationCheckedIoGate()
+        public void StickyPersistence_WorkspaceEntryPointsUseOneQueuedWriter()
         {
-            string source = ReadSource(
-                "Features/StickyNotes/StickyNoteRepository.cs");
-            string synchronous = Between(source,
+            string source = ReadSource("Features/StickyNotes/StickyNoteRepository.cs");
+            foreach (string entry in new[] { "internal void SaveAsync()",
                 "internal PersistenceResult SaveToFile",
-                "internal PersistenceResult ExportSnapshot");
-            string asynchronous = Between(source, "private void AsyncWriterLoop",
-                "internal PersistenceResult SaveToFile");
-            string physicalWrite = Between(source,
-                "private PersistenceResult WriteSnapshot",
-                "internal static bool RepairForDisplay");
-
-            Assert.IsFalse(synchronous.Contains("WaitForPendingSaves();"),
-                "Synchronous saves must not rely on a race-prone wait-before-write.");
-            Assert.IsTrue(synchronous.Contains("WriteSnapshot(filePath, snapshot,"),
-                "Synchronous saves must use the shared physical writer.");
-            Assert.IsTrue(asynchronous.Contains("WriteSnapshot(_filePath, snapshot,"),
-                "Asynchronous saves must use the shared physical writer.");
-            int ioGate = physicalWrite.IndexOf("lock (_ioGate)",
-                StringComparison.Ordinal);
-            int generationCheck = physicalWrite.IndexOf(
-                "generation < _lastWrittenGeneration", StringComparison.Ordinal);
-            int diskWrite = physicalWrite.IndexOf("AtomicTextFile.WriteAllLines",
-                StringComparison.Ordinal);
-            Assert.IsTrue(ioGate >= 0 && generationCheck > ioGate &&
-                diskWrite > generationCheck,
-                "Generation must be checked after winning the IO gate and before disk write.");
+                "private PersistenceResult CommitPreparedSnapshot" })
+            {
+                string body = RawSource.SliceMethod(source, entry);
+                Assert.IsTrue(body.Contains("_writer.Enqueue("), entry);
+                Assert.IsFalse(body.Contains("AtomicTextFile.WriteAllLines"), entry);
+            }
+            string export = RawSource.SliceMethod(source, "internal PersistenceResult ExportSnapshot");
+            Assert.IsFalse(export.Contains("_writer.Enqueue(") || export.Contains("WaitForPendingSaves("),
+                "Emergency export must not wait for the primary writer.");
+            string physicalWrite = RawSource.SliceMethod(source,
+                "private PersistenceResult WriteSnapshot");
+            Assert.IsFalse(physicalWrite.Contains("NormalizeAll") ||
+                physicalWrite.Contains("generation") || physicalWrite.Contains("lock ("),
+                "The single writer must only persist its detached request.");
         }
 
         [TestMethod]
@@ -87,7 +78,7 @@ namespace PennyPet.Tests
                 "Every file must be version-preflighted before payload parsing.");
             Assert.IsTrue(save.IndexOf("if (!_loadSucceeded)",
                     StringComparison.Ordinal) <
-                save.IndexOf("generation = ++_requestedGeneration",
+                save.IndexOf("CloneNotes(_notes)",
                     StringComparison.Ordinal),
                 "A blocked repository must reject save before snapshot generation.");
             Assert.IsTrue(pet.Contains("if (_notes.IsFutureSchemaBlocked)") &&
