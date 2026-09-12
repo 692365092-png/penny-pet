@@ -15,3 +15,12 @@
 ## Later phases remain separate
 
 PC-9 SideTabs/Manager/ancillary ownership; PC-10 measured PERF-OBS-01, diagnostic noise and remaining test debt; PC-11 full integration/release/docs. No opportunistic SideTabs optimization, loading changes, feature work or main merge. Every future checkpoint needs a fresh exact SHA, one architecture concept, automated gate, focused human test when native/thread/persistence behavior is touched, then STOP.
+
+
+## 2026-09-12 continuation addendum
+
+Historical phase status above describes the earlier checkpoint. The current user-requested continuation is tracked in [the geometry/persistence integration review](../architecture-review/2026-09-12-integration-review.md); implementation does not itself close its Windows acceptance gates.
+
+- Add to **PC-6 and PC-8**: one ordered Dock membership relation including hidden members. `DockParentId` and `DockGroupId/Order` must not remain independently mutable sources; legacy fields become boundary projections only after all normal consumers migrate.
+- Add to **PC-8 persistence**: one owner orders writes to the workspace file. Independent rescue exports must not wait on that writer or clear its dirty/error state. Whole-process I/O serialization is not a substitute for per-resource ownership.
+- PC-6 and PC-7 remain open. Registry consolidation and partial-file splitting alone do not satisfy their ownership/decomposition requirements.

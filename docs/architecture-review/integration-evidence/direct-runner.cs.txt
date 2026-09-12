@@ -1,0 +1,46 @@
+using System.Reflection;
+using System.Runtime.Loader;
+using System.Text.Json;
+string assemblyPath = Path.GetFullPath(args[0]);
+string directory = Path.GetDirectoryName(assemblyPath)!;
+AssemblyLoadContext.Default.Resolving += (_, name) => {
+    string path = Path.Combine(directory, name.Name + ".dll");
+    return File.Exists(path) ? AssemblyLoadContext.Default.LoadFromAssemblyPath(path) : null;
+};
+Assembly assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(assemblyPath);
+var results = new List<object>();
+int passed = 0, failed = 0, taggedSource = 0;
+foreach (Type type in assembly.GetTypes().OrderBy(t => t.FullName)) {
+    if (!type.GetCustomAttributes().Any(a => a.GetType().Name == "TestClassAttribute")) continue;
+    if(type.GetMethods().SelectMany(m => m.GetCustomAttributes()).Any(a => a.GetType().Name is "TestInitializeAttribute" or "TestCleanupAttribute" or "ClassInitializeAttribute" or "ClassCleanupAttribute" or "DynamicDataAttribute"))
+        throw new NotSupportedException("Use the real test host for lifecycle/dynamic tests.");
+    foreach (MethodInfo method in type.GetMethods().OrderBy(m => m.Name)) {
+        var attributes = method.GetCustomAttributes().ToArray();
+        if (!attributes.Any(a => a.GetType().Name is "TestMethodAttribute" or "DataTestMethodAttribute")) continue;
+        var rows = attributes.Where(a => a.GetType().Name == "DataRowAttribute")
+            .Select(a => (object?[])a.GetType().GetProperty("Data")!.GetValue(a)!).ToArray();
+        if (rows.Length == 0) rows = new object?[][] { Array.Empty<object?>() };
+        bool sourceGuard = type.GetCustomAttributes().Concat(attributes).Any(a =>
+            a.GetType().Name == "TestCategoryAttribute" &&
+            ((System.Collections.IEnumerable)a.GetType().GetProperty("TestCategories")!.GetValue(a)!)
+                .Cast<object>().Any(c => c.ToString() == "ArchitectureSourceBoundary"));
+        for (int index = 0; index < rows.Length; index++) {
+            string name = type.Name + "." + method.Name + "[" + index + "]";
+            try {
+                object? result = method.Invoke(Activator.CreateInstance(type), rows[index]);
+                if (result is Task task) await task;
+                passed++;
+                if (sourceGuard) taggedSource++;
+                results.Add(new { name, passed = true, sourceGuard });
+            } catch (Exception error) {
+                failed++;
+                Exception cause = error is TargetInvocationException && error.InnerException != null ? error.InnerException : error;
+                Console.WriteLine(name + ": " + cause);
+                results.Add(new { name, passed = false, error = cause.ToString(), sourceGuard });
+            }
+        }
+    }
+}
+File.WriteAllText(args[1], JsonSerializer.Serialize(new { passed, failed, taggedSource, results }, new JsonSerializerOptions { WriteIndented = true }));
+Console.WriteLine($"Direct invocation: {passed} passed, {failed} failed; {taggedSource} passed cases tagged ArchitectureSourceBoundary.");
+return failed == 0 ? 0 : 1;

@@ -167,6 +167,48 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void SavingPreservesHiddenSlotsAndIndependentHeightsWithoutRepairingTheLiveModel(bool async)
+        {
+            string directory = DirectoryForTest();
+            string primary = Path.Combine(directory, "notes.dat");
+            var repository = StickyNoteRepository.LoadFromFile(primary);
+            try
+            {
+                var notes = new[] { repository.CreateDraft("A", Point.Empty),
+                    repository.CreateDraft("B", Point.Empty), repository.CreateDraft("C", Point.Empty) };
+                for (int i = 0; i < notes.Length; i++)
+                {
+                    notes[i].Height = 310 + i * 60;
+                    notes[i].PreferredDisplayTargetKey = "mdp:one";
+                    notes[i].PreferredLocalLogicalWidth = 320;
+                    notes[i].PreferredLocalLogicalHeight = notes[i].Height;
+                }
+                StickyDockGroups.ApplyOrderedGroup(notes);
+                StickyDockOperations.PreserveDockSlotForHiddenMember(notes, notes[1]);
+                string[] before = Array.ConvertAll(notes, StickyNoteCodec.SerializeLine);
+                if (async) repository.SaveAsync();
+                else Assert.IsTrue(repository.Save().Succeeded);
+                Assert.IsTrue(repository.WaitForPendingSaves().Succeeded);
+                CollectionAssert.AreEqual(before, Array.ConvertAll(notes, StickyNoteCodec.SerializeLine));
+                // Parse the raw file: repository load-time repair cannot mask a write regression.
+                var saved = Array.ConvertAll(File.ReadAllLines(primary), StickyNoteCodec.ParseLine);
+                Assert.AreEqual(3, saved.Length);
+                for (int i = 0; i < saved.Length; i++)
+                {
+                    Assert.AreEqual(notes[i].Id, saved[i].Id);
+                    Assert.AreEqual(i, saved[i].DockGroupOrder);
+                    Assert.AreEqual(notes[i].Height, saved[i].Height);
+                    Assert.AreEqual(notes[i].PreferredLocalLogicalHeight, saved[i].PreferredLocalLogicalHeight);
+                }
+                Assert.IsFalse(saved[1].Visible);
+                Assert.AreEqual(saved[0].Id, saved[2].DockParentId);
+            }
+            finally { Directory.Delete(directory, true); }
+        }
+
+        [TestMethod]
         public void FutureSchemaIsRejectedBeforeAnyWriterOrExportCanReplaceIt()
         {
             string directory = DirectoryForTest();
