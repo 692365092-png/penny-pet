@@ -1129,25 +1129,23 @@ namespace PennyPet
                 new Point(100, 100));
             StickyNoteData dockChild = dockRepository.Create("下层",
                 new Point(100, 330));
-            dockChild.DockParentId = dockParent.Id;
+            StickyDockGroups.ApplyOrderedGroup(new[] { dockParent, dockChild });
             dockRepository.SaveToFile(dockPath);
             List<StickyNoteData> restoredDockNotes =
                 StickyNoteRepository.LoadFromFile(dockPath).GetAll();
             result.DockRoundTripOk = restoredDockNotes.Count == 2 &&
                 restoredDockNotes.Exists(delegate(StickyNoteData value)
                 {
-                    return !String.IsNullOrEmpty(value.DockParentId);
+                    return !String.IsNullOrEmpty(value.DockGroupId);
                 });
             StickyNoteData dockInsertedTodo = dockRepository.Create(
                 "中间待办", new Point(100, 330));
             dockInsertedTodo.IsTodoList = true;
-            StickyDockOperations.RewireDockChainForInsertion(dockParent,
-                dockInsertedTodo, dockInsertedTodo, dockChild);
-            StickyDockGroups.NormalizeAll(new StickyNoteData[] {
-                dockParent, dockInsertedTodo, dockChild });
+            StickyDockOperations.MergeDockSnapshotsAfterParent(
+                new[] { dockParent, dockChild }, dockParent, new[] { dockInsertedTodo });
             result.MixedInsertionOk =
-                dockInsertedTodo.DockParentId == dockParent.Id &&
-                dockChild.DockParentId == dockInsertedTodo.Id &&
+                dockInsertedTodo.DockGroupOrder == 1 &&
+                dockChild.DockGroupOrder == 2 &&
                 dockInsertedTodo.IsTodoList && !dockParent.IsTodoList;
 
             dockParent.Visible = false;
@@ -1200,11 +1198,10 @@ namespace PennyPet
             dockChild.Visible = true;
             StickyDockGroups.ApplyOrderedGroup(new StickyNoteData[] {
                 dockParent, dockInsertedTodo, dockChild });
-            StickyDockOperations.RewireDockChainAfterMemberClose(
-                dockInsertedTodo, dockChild);
-            result.LowerCloseRewiresNeighborsOk =
-                String.IsNullOrEmpty(dockInsertedTodo.DockParentId) &&
-                dockChild.DockParentId == dockParent.Id;
+            dockInsertedTodo.Visible = false;
+            result.LowerCloseRewiresNeighborsOk = dockInsertedTodo.DockGroupOrder == 1 &&
+                StickyDockGroups.GetVisibleNeighbor(new[] { dockParent, dockInsertedTodo, dockChild },
+                    dockChild, -1) == dockParent;
             if (File.Exists(dockPath)) File.Delete(dockPath);
             if (File.Exists(dockPath + ".bak")) File.Delete(dockPath + ".bak");
 
@@ -1219,9 +1216,7 @@ namespace PennyPet
                 "C", Point.Empty);
             StickyDockGroups.ApplyOrderedGroup(new StickyNoteData[] {
                 persistedHideA, persistedHideB, persistedHideC });
-            StickyDockOperations.PreserveDockSlotForHiddenMember(
-                new StickyNoteData[] { persistedHideA, persistedHideB,
-                    persistedHideC }, persistedHideB);
+            persistedHideB.Visible = false;
             hiddenSlotRepository.SaveToFile(hiddenSlotPath);
             StickyNoteRepository restoredHiddenSlotRepository =
                 StickyNoteRepository.LoadFromFile(hiddenSlotPath);
@@ -1235,8 +1230,8 @@ namespace PennyPet
                 !restoredHiddenSlotOrder[1].Visible &&
                 restoredHiddenSlotOrder[1].Id == persistedHideB.Id &&
                 restoredHiddenSlotOrder[1].DockGroupOrder == 1 &&
-                restoredHiddenSlotOrder[2].DockParentId ==
-                    restoredHiddenSlotOrder[0].Id;
+                StickyDockGroups.GetVisibleNeighbor(restoredHiddenSlotOrder,
+                    restoredHiddenSlotOrder[2], -1) == restoredHiddenSlotOrder[0];
             if (File.Exists(hiddenSlotPath)) File.Delete(hiddenSlotPath);
             if (File.Exists(hiddenSlotPath + ".bak"))
                 File.Delete(hiddenSlotPath + ".bak");
@@ -1385,8 +1380,8 @@ namespace PennyPet
                 Object.ReferenceEquals(afterMiddleExtraction[0], extractA) &&
                 Object.ReferenceEquals(afterMiddleExtraction[1], extractC) &&
                 Object.ReferenceEquals(afterMiddleExtraction[2], extractD) &&
-                extractC.DockParentId == extractA.Id &&
-                extractD.DockParentId == extractC.Id &&
+                StickyDockGroups.GetVisibleNeighbor(afterMiddleExtraction, extractC, -1) == extractA &&
+                StickyDockGroups.GetVisibleNeighbor(afterMiddleExtraction, extractD, -1) == extractC &&
                 String.IsNullOrEmpty(extractB.DockParentId) &&
                 String.IsNullOrEmpty(extractB.DockGroupId) &&
                 extractB.DockGroupOrder == -1;
@@ -1400,13 +1395,12 @@ namespace PennyPet
                     hideA, hideB, hideC, hideD });
             StickyDockGroups.ApplyOrderedGroup(hideSnapshot);
             string hiddenGroupId = hideB.DockGroupId;
-            StickyDockOperations.PreserveDockSlotForHiddenMember(
-                hideSnapshot, hideB);
+            hideB.Visible = false;
             result.HiddenSlotPreservedOk = hideB.DockGroupId == hiddenGroupId &&
                 hideB.DockGroupOrder == 1 &&
                 String.IsNullOrEmpty(hideB.DockParentId) &&
-                hideC.DockParentId == hideA.Id &&
-                hideD.DockParentId == hideC.Id;
+                StickyDockGroups.GetVisibleNeighbor(hideSnapshot, hideC, -1) == hideA &&
+                StickyDockGroups.GetVisibleNeighbor(hideSnapshot, hideD, -1) == hideC;
             List<StickyNoteData> hiddenMemberOpenOrder =
                 StickyDockGroups.GetOrderedGroup(new StickyNoteData[] {
                     hideD, hideB, hideA, hideC }, hideB);
@@ -1418,9 +1412,9 @@ namespace PennyPet
                 Object.ReferenceEquals(hiddenMemberOpenOrder[1], hideB) &&
                 Object.ReferenceEquals(hiddenMemberOpenOrder[2], hideC) &&
                 Object.ReferenceEquals(hiddenMemberOpenOrder[3], hideD) &&
-                hideB.DockParentId == hideA.Id &&
-                hideC.DockParentId == hideB.Id &&
-                hideD.DockParentId == hideC.Id;
+                StickyDockGroups.GetVisibleNeighbor(hideSnapshot, hideB, -1) == hideA &&
+                StickyDockGroups.GetVisibleNeighbor(hideSnapshot, hideC, -1) == hideB &&
+                StickyDockGroups.GetVisibleNeighbor(hideSnapshot, hideD, -1) == hideC;
 
             StickyNoteData mergeA = new StickyNoteData();
             StickyNoteData mergeB = new StickyNoteData();
@@ -1448,42 +1442,24 @@ namespace PennyPet
                 Object.ReferenceEquals(mergedPartialSnapshots[2], mergeE) &&
                 Object.ReferenceEquals(mergedPartialSnapshots[3], mergeB) &&
                 Object.ReferenceEquals(mergedPartialSnapshots[4], mergeC) &&
-                mergeD.DockParentId == mergeA.Id &&
-                mergeC.DockParentId == mergeD.Id &&
+                StickyDockGroups.GetVisibleNeighbor(mergedPartialSnapshots, mergeD, -1) == mergeA &&
+                StickyDockGroups.GetVisibleNeighbor(mergedPartialSnapshots, mergeC, -1) == mergeD &&
                 String.IsNullOrEmpty(mergeE.DockParentId) &&
                 String.IsNullOrEmpty(mergeB.DockParentId);
 
-            StickyDockOperations.RewireDockChainForInsertion(
-                extractA, extractB, extractB, extractC);
-            List<StickyNoteData> secondCycleLive = StickyDockOperations
-                .BuildDockChainOrderFromNotes(new StickyNoteData[] {
-                    extractD, extractC, extractA, extractB }, extractA, true);
-            List<StickyNoteData> secondCycleStoredBeforeCommit =
-                StickyDockGroups.GetOrderedGroup(new StickyNoteData[] {
-                    extractD, extractC, extractA, extractB }, extractA);
-            List<StickyNoteData> secondCycleCommit = StickyDockOperations
-                .SelectMoreCompleteDockOrder(secondCycleLive,
-                    secondCycleStoredBeforeCommit);
-            StickyDockGroups.ApplyOrderedGroup(secondCycleCommit);
-            extractC.DockParentId = String.Empty;
-            List<StickyNoteData> brokenSecondCycleLive = StickyDockOperations
-                .BuildDockChainOrderFromNotes(new StickyNoteData[] {
-                    extractD, extractC, extractA, extractB }, extractA, true);
-            List<StickyNoteData> completeSecondCycleSnapshot =
-                StickyDockGroups.GetOrderedGroup(new StickyNoteData[] {
-                    extractD, extractC, extractA, extractB }, extractD);
-            List<StickyNoteData> closeSecondCycleOrder = StickyDockOperations
-                .SelectMoreCompleteDockOrder(brokenSecondCycleLive,
-                    completeSecondCycleSnapshot);
-            StickyDockGroups.ApplyOrderedGroup(closeSecondCycleOrder);
+            StickyDockOperations.MergeDockSnapshotsAfterParent(
+                afterMiddleExtraction, extractA, new[] { extractB });
+            extractC.DockParentId = "stale-legacy-parent";
+            List<StickyNoteData> closeSecondCycleOrder = StickyDockGroups.GetVisibleGroup(
+                new[] { extractD, extractC, extractA, extractB }, extractD);
             result.SecondRestoreCycleOk = closeSecondCycleOrder.Count == 4 &&
                 Object.ReferenceEquals(closeSecondCycleOrder[0], extractA) &&
                 Object.ReferenceEquals(closeSecondCycleOrder[1], extractB) &&
                 Object.ReferenceEquals(closeSecondCycleOrder[2], extractC) &&
                 Object.ReferenceEquals(closeSecondCycleOrder[3], extractD) &&
-                extractB.DockParentId == extractA.Id &&
-                extractC.DockParentId == extractB.Id &&
-                extractD.DockParentId == extractC.Id;
+                StickyDockGroups.GetVisibleNeighbor(closeSecondCycleOrder, extractB, -1) == extractA &&
+                StickyDockGroups.GetVisibleNeighbor(closeSecondCycleOrder, extractC, -1) == extractB &&
+                StickyDockGroups.GetVisibleNeighbor(closeSecondCycleOrder, extractD, -1) == extractC;
 
             List<StickyNoteData> repeatedMembers =
                 new List<StickyNoteData>();
@@ -1506,18 +1482,8 @@ namespace PennyPet
                     .ExtractSingleDockMember(current, moved);
                 int targetIndex = cycle % remainder.Count;
                 StickyNoteData cycleParent = remainder[targetIndex];
-                StickyNoteData previousChild = targetIndex + 1 <
-                    remainder.Count ? remainder[targetIndex + 1] : null;
-                StickyDockOperations.RewireDockChainForInsertion(
-                    cycleParent, moved, moved, previousChild);
-                List<StickyNoteData> liveCycle = StickyDockOperations
-                    .BuildDockChainOrderFromNotes(repeatedMembers,
-                        remainder[0], true);
-                List<StickyNoteData> storedCycle = StickyDockGroups
-                    .GetOrderedGroup(repeatedMembers, cycleParent);
                 List<StickyNoteData> committedCycle = StickyDockOperations
-                    .SelectMoreCompleteDockOrder(liveCycle, storedCycle);
-                StickyDockGroups.ApplyOrderedGroup(committedCycle);
+                    .MergeDockSnapshotsAfterParent(remainder, cycleParent, new[] { moved });
                 List<StickyNoteData> randomOpenOrder = StickyDockGroups
                     .GetOrderedGroup(new StickyNoteData[] {
                         repeatedMembers[5], repeatedMembers[2],
@@ -1533,11 +1499,9 @@ namespace PennyPet
                     position++)
                 {
                     StickyNoteData member = randomOpenOrder[position];
-                    string expectedParent = position == 0 ? String.Empty :
-                        randomOpenOrder[position - 1].Id;
+                    StickyNoteData expectedParent = position == 0 ? null : randomOpenOrder[position - 1];
                     if (member.DockGroupOrder != position ||
-                        !String.Equals(member.DockParentId, expectedParent,
-                            StringComparison.OrdinalIgnoreCase))
+                        StickyDockGroups.GetVisibleNeighbor(randomOpenOrder, member, -1) != expectedParent)
                     {
                         result.RepeatedRestoreCyclesOk = false;
                         break;
@@ -5772,8 +5736,8 @@ namespace PennyPet
                     threeOrder[0].Id == second.Id &&
                     threeOrder[1].Id == third.Id &&
                     threeOrder[2].Id == canonical.Id &&
-                    third.DockParentId == second.Id &&
-                    canonical.DockParentId == third.Id &&
+                    StickyDockGroups.GetVisibleNeighbor(threeOrder, third, -1) == second &&
+                    StickyDockGroups.GetVisibleNeighbor(threeOrder, canonical, -1) == third &&
                     thirdInserted.Facts.PhysicalBounds.Top == 440 &&
                     sourceInserted.Facts.PhysicalBounds.Top == 740;
                 StickyUiCommandResult targetThreeRole =
@@ -5897,7 +5861,7 @@ namespace PennyPet
                 check.HostedMiddleSplitOk = splitRemainder.Count == 2 &&
                     splitRemainder[0].Id == second.Id &&
                     splitRemainder[1].Id == canonical.Id &&
-                    canonical.DockParentId == second.Id &&
+                    StickyDockGroups.GetVisibleNeighbor(splitRemainder, canonical, -1) == second &&
                     String.IsNullOrEmpty(third.DockGroupId) &&
                     sourceAfterSplit.Facts.PhysicalBounds.Top == 440 &&
                     thirdAfterSplit.Facts.PhysicalBounds.Left == 600;
@@ -5941,7 +5905,7 @@ namespace PennyPet
                     Object.ReferenceEquals(staleProbe, sourceDocked.Facts);
                 check.HostedDockEffectOk = dockHit && dockOrder.Count == 2 &&
                     dockOrder[0].Id == second.Id &&
-                    dockOrder[1].DockParentId == second.Id &&
+                    StickyDockGroups.GetVisibleNeighbor(dockOrder, dockOrder[1], -1) == second &&
                     targetDocked != null && sourceDocked != null &&
                     targetDocked.Status == StickyUiCommandStatus.Handled &&
                     sourceDocked.Status == StickyUiCommandStatus.Handled &&
@@ -6036,8 +6000,8 @@ namespace PennyPet
                         order[index].Y != results[index].Facts.PhysicalBounds.Top ||
                         order[index].Width != results[index].Facts.PhysicalBounds.Width ||
                         order[index].Height != results[index].Facts.PhysicalBounds.Height ||
-                        (index > 0 && order[index].DockParentId !=
-                            order[index - 1].Id)) return false;
+                        (index > 0 && StickyDockGroups.GetVisibleNeighbor(order, order[index], -1) !=
+                            order[index - 1])) return false;
                 }
                 return true;
             }

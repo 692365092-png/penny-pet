@@ -23,18 +23,21 @@ namespace PennyPet
         {
             SourceNoteId = RemainderNoteId = String.Empty;
             MemberIds = _members.AsReadOnly();
-            OriginalFacts = new ReadOnlyDictionary<string, DockWindowFacts>(_original);
-            CurrentFacts = new ReadOnlyDictionary<string, DockWindowFacts>(_current);
+            BaselineFacts = new ReadOnlyDictionary<string, DockWindowFacts>(_original);
+            PreviewFacts = new ReadOnlyDictionary<string, DockWindowFacts>(_current);
         }
         internal ReadOnlyCollection<string> MemberIds { get; private set; }
-        internal IReadOnlyDictionary<string, DockWindowFacts> OriginalFacts { get; private set; }
-        internal IReadOnlyDictionary<string, DockWindowFacts> CurrentFacts { get; private set; }
+        internal IReadOnlyDictionary<string, DockWindowFacts> BaselineFacts { get; private set; }
+        internal IReadOnlyDictionary<string, DockWindowFacts> PreviewFacts { get; private set; }
         internal DockWindowFacts StartFacts { get; private set; }
         internal DockWindowFacts LastFacts { get; private set; }
         internal DateTime StartedUtc { get; private set; }
         internal bool SplitEligible { get; private set; }
         internal bool Detached { get; private set; }
         internal string RemainderNoteId { get; private set; }
+        internal DockMergePlan PendingMerge { get; private set; }
+
+        internal void StageMerge(DockMergePlan merge) { PendingMerge = merge; }
 
         internal long BeginGesture(DockWindowFacts source, IList<string> members,
             IDictionary<string, DockWindowFacts> baseline, long generation, DateTime startedUtc)
@@ -140,10 +143,12 @@ namespace PennyPet
                 (Phase != DockInteractionPhase.Preparing && Phase != DockInteractionPhase.Rebasing)) return false;
             Phase = DockInteractionPhase.Dragging; return true;
         }
-        internal long BeginFinalizing(long generation, string remainderNoteId)
+        internal long BeginFinalizing(long generation, string remainderNoteId,
+            IEnumerable<string> members = null)
         {
             if (generation < 0) throw new ArgumentOutOfRangeException(nameof(generation));
             if (Phase == DockInteractionPhase.Idle) return 0;
+            if (members != null) { _members.Clear(); _members.AddRange(members); }
             Epoch = NextEpoch(); TopologyGeneration = generation;
             RemainderNoteId = remainderNoteId == null ? String.Empty : remainderNoteId.Trim();
             Phase = DockInteractionPhase.Finalizing; return Epoch;
@@ -165,6 +170,7 @@ namespace PennyPet
             _members.Clear(); _original.Clear(); _current.Clear();
             StartFacts = LastFacts = null; StartedUtc = default(DateTime);
             SplitEligible = Detached = false;
+            PendingMerge = null;
             return Epoch;
         }
 

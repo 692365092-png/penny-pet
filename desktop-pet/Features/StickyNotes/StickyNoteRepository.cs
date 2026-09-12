@@ -508,10 +508,12 @@ namespace PennyPet
 
         public bool Remove(StickyNoteData note)
         {
-            if (!_loadSucceeded) return false;
-            bool removed = note != null && _notes.Remove(note);
-            if (removed) Save();
-            return removed;
+            if (!_loadSucceeded || note == null || !_notes.Contains(note)) return false;
+            StickyDockOperations.ExtractSingleDockMember(
+                StickyDockGroups.GetOrderedGroup(_notes, note), note);
+            _notes.Remove(note);
+            Save();
+            return true;
         }
 
         public PersistenceResult Save()

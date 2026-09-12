@@ -520,7 +520,7 @@ namespace PennyPet
                         return;
                     }
                     DockWindowFacts sourceRuntime;
-                    if (!_dockInteraction.CurrentFacts.TryGetValue(sourceId,
+                    if (!_dockInteraction.PreviewFacts.TryGetValue(sourceId,
                         out sourceRuntime) || sourceRuntime == null) return;
                     // Rebase cancels this split hold; a fresh mouse-down is
                     // required. Preserve the original gesture provenance.
@@ -1530,7 +1530,7 @@ namespace PennyPet
         // capture ran on the Sticky STA; every member's preferred placement
         // is derived from the captured actual facts plus the finalizing
         // epoch's exact topology, then membership and content are persisted
-        // once. No synchronous wait and no Current-generation guessing.
+        // once. The commit uses its captured generation throughout.
         private void CompleteDockDurableCommit(StickyUiCommandResult result,
             DisplayTopologySnapshot expectedTopology, long expectedEpoch,
             StickyNoteData seed,
@@ -1547,6 +1547,12 @@ namespace PennyPet
                 return;
             }
 
+            bool merged = _dockInteraction.PendingMerge != null;
+            if (merged && !_dockInteraction.PendingMerge.TryCommit(_notes.GetAll()))
+            {
+                TraceDockCommitRejected("membership changed before final commit");
+                return;
+            }
             _lastAppliedDockPlanSequence = Math.Max(
                 _lastAppliedDockPlanSequence, expectedPlanSequence);
             foreach (DockCommitCandidate candidate in candidates)
@@ -1570,10 +1576,17 @@ namespace PennyPet
                     local.X, local.Y, local.Width, local.Height,
                     PlacementReason.DockCommit);
             }
+            if (merged)
+            {
+                List<StickyNoteData> group = BuildDockChainOrderIncludingHidden(seed);
+                bool topMost = group[0].AlwaysOnTop;
+                foreach (StickyNoteData member in group) member.AlwaysOnTop = topMost;
+            }
             _notes.Save();
             foreach (DockCommitCandidate candidate in candidates)
                 _placementRuntime.MarkUserPlacementCommit(
                     candidate.Member.NoteId);
+            if (merged) ApplyDockComponentTopMost(seed, seed.AlwaysOnTop, null);
         }
 
         private bool TryPrepareDockCommit(StickyUiCommandResult result,
@@ -2571,7 +2584,6 @@ namespace PennyPet
                     return;
                 }
 
-                StickyDockGroups.ApplyOrderedGroup(state.Ordered);
 
                 DisplayDiagnostics.Trace("DockRestoreGroupQueued",
                     "stage=reproject members=" + state.Ordered.Count +
@@ -2697,7 +2709,6 @@ namespace PennyPet
                     member.AlwaysOnTop = state.Ordered[0].AlwaysOnTop;
                 }
 
-                StickyDockGroups.ApplyOrderedGroup(state.Ordered);
 
                 if (state.PersistVisibility) _notes.Save();
 
@@ -2782,7 +2793,6 @@ namespace PennyPet
                 member.Visible = true;
                 member.AlwaysOnTop = rootData.AlwaysOnTop;
             }
-            StickyDockGroups.ApplyOrderedGroup(ordered);
             List<Rectangle> layout = CalculateUnifiedDockLayout(sizes,
                 rootLeft, rootTop, rootWidth);
 
@@ -2879,7 +2889,6 @@ namespace PennyPet
                 List<StickyNoteData> group =
                     BuildDockChainOrderIncludingHidden(note);
                 if (group.Count == 0) group.Add(note);
-                StickyDockGroups.ApplyOrderedGroup(group);
                 foreach (StickyNoteData member in group)
                 {
                     handled.Add(member.Id);

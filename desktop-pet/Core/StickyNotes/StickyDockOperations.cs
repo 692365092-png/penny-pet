@@ -53,13 +53,23 @@ namespace PennyPet
             return remaining;
         }
 
-        internal static void PreserveDockSlotForHiddenMember(
-            IList<StickyNoteData> snapshot, StickyNoteData hidden)
+        internal static List<StickyNoteData> MergeDockSnapshotsAfterParent(
+            IList<StickyNoteData> targetSnapshot, StickyNoteData parent,
+            IList<StickyNoteData> insertedSnapshot)
         {
-            if (hidden != null) hidden.Visible = false;
+            List<StickyNoteData> result = BuildMergedOrder(targetSnapshot, parent, insertedSnapshot);
+            StickyDockGroups.ApplyOrderedGroup(result);
+            return result;
         }
 
-        internal static List<StickyNoteData> MergeDockSnapshotsAfterParent(
+        internal static DockMergePlan PrepareMergeAfterParent(
+            IList<StickyNoteData> targetSnapshot, StickyNoteData parent,
+            IList<StickyNoteData> insertedSnapshot)
+        {
+            return new DockMergePlan(BuildMergedOrder(targetSnapshot, parent, insertedSnapshot));
+        }
+
+        private static List<StickyNoteData> BuildMergedOrder(
             IList<StickyNoteData> targetSnapshot, StickyNoteData parent,
             IList<StickyNoteData> insertedSnapshot)
         {
@@ -91,7 +101,6 @@ namespace PennyPet
                 if (parentIndex >= 0) insertion = parentIndex + 1;
             }
             result.InsertRange(insertion, inserted);
-            StickyDockGroups.ApplyOrderedGroup(result);
             return result;
         }
 

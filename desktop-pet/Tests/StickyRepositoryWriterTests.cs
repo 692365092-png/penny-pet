@@ -186,7 +186,7 @@ namespace PennyPet.Tests
                     notes[i].PreferredLocalLogicalHeight = notes[i].Height;
                 }
                 StickyDockGroups.ApplyOrderedGroup(notes);
-                StickyDockOperations.PreserveDockSlotForHiddenMember(notes, notes[1]);
+                notes[1].Visible = false;
                 string[] before = Array.ConvertAll(notes, StickyNoteCodec.SerializeLine);
                 if (async) repository.SaveAsync();
                 else Assert.IsTrue(repository.Save().Succeeded);
@@ -204,6 +204,34 @@ namespace PennyPet.Tests
                 }
                 Assert.IsFalse(saved[1].Visible);
                 Assert.AreEqual(saved[0].Id, saved[2].DockParentId);
+            }
+            finally { Directory.Delete(directory, true); }
+        }
+
+        [TestMethod]
+        [DataRow(0)]
+        [DataRow(2)]
+        public void DeleteOwnsMembershipAndPreservesHiddenSurvivorsAcrossRestart(int deletedIndex)
+        {
+            string directory = DirectoryForTest();
+            string primary = Path.Combine(directory, "notes.dat");
+            try
+            {
+                StickyNoteRepository repository = StickyNoteRepository.LoadFromFile(primary);
+                StickyNoteData[] notes = { repository.CreateDraft("A", Point.Empty),
+                    repository.CreateDraft("B", Point.Empty), repository.CreateDraft("C", Point.Empty),
+                    repository.CreateDraft("D", Point.Empty) };
+                StickyDockGroups.ApplyOrderedGroup(notes);
+                notes[1].Visible = notes[3].Visible = false;
+                string hiddenId = notes[1].Id;
+                Assert.IsTrue(repository.Remove(notes[deletedIndex]));
+                StickyNoteRepository restored = StickyNoteRepository.LoadFromFile(primary);
+                List<StickyNoteData> group = StickyDockGroups.GetOrderedGroup(restored.GetAll(), restored.Find(hiddenId));
+                Assert.AreEqual(3, group.Count);
+                Assert.AreEqual(hiddenId, group[deletedIndex == 0 ? 0 : 1].Id);
+                Assert.AreEqual(notes[3].Id, group[2].Id);
+                Assert.IsFalse(group[2].Visible);
+                Assert.IsNull(restored.Find(notes[deletedIndex].Id));
             }
             finally { Directory.Delete(directory, true); }
         }

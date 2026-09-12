@@ -1,5 +1,6 @@
 # Geometry Authority 与 ab522d9 保存补丁整合审查
 
+后续状态：本文对应 `780285e` 整合检查点。随后完成的 Dock 成员关系、拖拽状态和竞态修正，见 [Dock 所有权审查](2026-09-12-dock-ownership-review.md)。
 范围：相对 `codex/project-system-experiment` 的 `d8b682c`，延续 `43e088c` 几何检查点，审查并整合用户提供的 `penny-pet-ab522d9.patch`。补丁内容先以 `dff526b` 保存，随后在 `b0cb8b7` 修正文件所有权、紧急导出及测试边界。本分支不是 PR #3 的整体合入。
 
 ## 结论

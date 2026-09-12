@@ -24,3 +24,10 @@ Historical phase status above describes the earlier checkpoint. The current user
 - Add to **PC-6 and PC-8**: one ordered Dock membership relation including hidden members. `DockParentId` and `DockGroupId/Order` must not remain independently mutable sources; legacy fields become boundary projections only after all normal consumers migrate.
 - Add to **PC-8 persistence**: one owner orders writes to the workspace file. Independent rescue exports must not wait on that writer or clear its dirty/error state. Whole-process I/O serialization is not a substitute for per-resource ownership.
 - PC-6 and PC-7 remain open. Registry consolidation and partial-file splitting alone do not satisfy their ownership/decomposition requirements.
+
+
+### Dock 所有权后续实施（2026-09-12）
+
+PR #4 已继续移除 live Parent 权威，正常成员关系只从 GroupId/Order 表示的完整有序组查询；隐藏恢复不改关系。Header gesture 状态迁入 DockInteractionSession，合并先计划后提交，并修正旧 final 回调清理新手势的竞态。
+
+详见 [本轮审查与证据](../architecture-review/2026-09-12-dock-ownership-review.md)。这不关闭 divider resize / restore 编排、整个 Dock 控制器独立化、同步 UI 保存或 PC-7；Windows 验收仍开放。

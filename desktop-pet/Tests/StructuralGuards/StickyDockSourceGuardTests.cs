@@ -117,8 +117,10 @@ namespace PennyPet.Tests
                 "Features/StickyNotes/PetStickyDockCoordinator.cs");
             string form = ReadSource("PetForm.cs");
 
-            Assert.IsTrue(form.Contains("_activeDockGroupIds") &&
-                form.Contains("_activeDockCurrentFacts") &&
+            Assert.IsTrue(form.Contains("DockInteractionSession _dockInteraction") &&
+                !form.Contains("_activeDockGroupIds") &&
+                !form.Contains("_activeDockCurrentFacts") &&
+                coordinator.Contains("_dockInteraction.MemberIds") &&
                 coordinator.Contains("CalculateDockTranslationTargets") &&
                 coordinator.Contains("ApplyDockTargets"),
                 "Dock session geometry must be note-id/facts based.");
@@ -327,8 +329,8 @@ namespace PennyPet.Tests
                 "RememberActiveDockFacts(PlanToDockTargets(livePlan));",
                 "private void CompleteStickyDockDrag");
             string mergeVisuals = Between(coordinator,
-                "List<StickyNoteData> mergedSnapshot",
-                "CommitVisibleDockOrder(seed);");
+                "private void CompleteStickyDockDrag",
+                "private void StartDockFinalization");
             string helpers = Between(coordinator,
                 "private void ShowSplitGuide",
                 "private DockTarget FindDockTarget");
@@ -337,7 +339,7 @@ namespace PennyPet.Tests
                 !begin.Contains("StickyNoteWindow"),
                 "Hosted split candidates must receive a detached guide.");
             Assert.IsTrue(moveVisuals.Contains(
-                    "UpdateSplitGuide(seed, _activeDockCurrentFacts)") &&
+                    "UpdateSplitGuide(seed, _dockInteraction.PreviewFacts)") &&
                 moveVisuals.Contains("UpdateDockPreview(seed, previewFacts)") &&
                 !moveVisuals.Contains("_activeNoteDragHosted"),
                 "Hosted drag must update previews from detached facts.");
@@ -407,12 +409,11 @@ namespace PennyPet.Tests
             string geometry = ReadSource(
                 "Core/StickyNotes/StickyDockGeometry.cs");
             string gate = Between(coordinator,
-                "private bool IsDockParticipant",
+                "private DockTarget FindDockTarget",
                 "private string FindDockChild");
 
-            Assert.IsTrue(coordinator.Contains(
-                "CanUseDockComponents("),
-                "Hosted dock gate must be used for hosted drag targets.");
+            Assert.IsTrue(gate.Contains("activeIds.IsSubsetOf(existingIds)"),
+                "Removed active members must invalidate target selection.");
             Assert.IsFalse(gate.Contains("!note.IsTodoList") ||
                 gate.Contains("!note.IsSchedule"),
                 "Todo and Schedule must be allowed to dock with ordinary notes.");
@@ -518,7 +519,7 @@ namespace PennyPet.Tests
             Assert.IsTrue(commit.Contains(
                     "TryBuildPreferredPlacement(") &&
                 commit.Contains("PlacementReason.DockCommit") &&
-                commit.Contains("CommitVisibleDockOrder(") &&
+                commit.Contains("_dockInteraction.PendingMerge.TryCommit(") &&
                 commit.Contains("_notes.Save()"),
                 "Every member preferred must derive from captured facts plus the finalizing topology, then persist once.");
             Assert.IsFalse(commit.Contains("CurrentTopologySnapshot("),
@@ -690,7 +691,7 @@ namespace PennyPet.Tests
 
             string result = Between(coordinator,
                 "private void ApplyDockBatchResult",
-                "private void SetActiveDockGroup");
+                "private DockWindowFacts GetHostedDockFacts");
             Assert.IsTrue(result.Contains("member.Facts") &&
                 result.Contains(
                     "ApplyHostedStickyFactsGeometry(candidate.Canonical, member.Facts,") &&
@@ -713,7 +714,7 @@ namespace PennyPet.Tests
                 "A live frame must only deposit the desired plan into the mailbox.");
             string result = Between(coordinator,
                 "private void ApplyDockBatchResult",
-                "private void SetActiveDockGroup");
+                "private DockWindowFacts GetHostedDockFacts");
             Assert.IsTrue(result.Contains(
                     "ApplyHostedStickyFactsGeometry(candidate.Canonical, member.Facts,") &&
                 !result.Contains("WindowsDisplayResolver"),
@@ -825,7 +826,7 @@ namespace PennyPet.Tests
                 "private bool TryPrepareDockCommit");
             int rejectionReturn = commit.IndexOf(
                 "TraceDockCommitRejected(rejection);", StringComparison.Ordinal);
-            int membership = commit.IndexOf("CommitVisibleDockOrder(seed)",
+            int membership = commit.IndexOf("_dockInteraction.PendingMerge.TryCommit(",
                 StringComparison.Ordinal);
             int save = commit.IndexOf("_notes.Save()", StringComparison.Ordinal);
             Assert.IsTrue(rejectionReturn >= 0 && membership > rejectionReturn &&
@@ -987,11 +988,8 @@ namespace PennyPet.Tests
                     StringComparison.Ordinal) < changed.IndexOf(
                     "ReconcileDockGroups(snapshot, petFacts)",
                     StringComparison.Ordinal));
-            Assert.IsTrue(invalidate.Contains(
-                    "_dockPlanMailbox.Current = null") &&
-                invalidate.Contains("_dockPlanMailbox.ApplyQueued = false") &&
-                invalidate.Contains(
-                    "_dockPlanMailbox.FinalPlanSequence = 0"));
+            Assert.IsTrue(invalidate.Contains("_dockPlanMailbox.Clear()") &&
+                invalidate.Contains("_dockInteraction.BeginRebase("));
         }
 
         [TestMethod]

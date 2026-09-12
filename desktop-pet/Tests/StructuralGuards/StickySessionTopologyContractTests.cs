@@ -59,7 +59,7 @@ namespace PennyPet.Tests
                 StringComparison.Ordinal) >= 0);
             Assert.IsTrue(rebase.IndexOf("TryApplyDockFactsBarrier(result, expectedIds",
                 StringComparison.Ordinal) >= 0);
-            Assert.IsTrue(rebase.IndexOf("_activeNoteDragLastFacts = sourceRuntime",
+            Assert.IsTrue(rebase.IndexOf("_dockInteraction.RecordMove(sourceRuntime)",
                 StringComparison.Ordinal) >= 0);
         }
 
