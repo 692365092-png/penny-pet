@@ -474,12 +474,7 @@ namespace PennyPet
         private void InvalidateDockPlansForTopologyChange(
             DisplayTopologySnapshot snapshot)
         {
-            lock (_dockPlanMailbox.Gate)
-            {
-                _dockPlanMailbox.Current = null;
-                _dockPlanMailbox.ApplyQueued = false;
-                _dockPlanMailbox.FinalPlanSequence = 0;
-            }
+            _dockPlanMailbox.Clear();
             if (_dockInteraction.IsActive)
             {
                 long epoch = _dockInteraction.IsFinalizing
@@ -494,20 +489,20 @@ namespace PennyPet
         private void ResumeDockDragAfterTopologyChange(
             DisplayTopologySnapshot snapshot)
         {
-            if (snapshot == null || String.IsNullOrEmpty(_activeNoteDragId) ||
-                _activeDockGroupIds.Count == 0 || !_dockInteraction.IsActive)
+            if (snapshot == null || String.IsNullOrEmpty(_dockInteraction.SourceNoteId) ||
+                _dockInteraction.MemberIds.Count == 0 || !_dockInteraction.IsActive)
                 return;
-            string sourceId = _activeNoteDragId;
+            string sourceId = _dockInteraction.SourceNoteId;
             if (_dockInteraction.IsFinalizing)
             {
                 StartDockFinalization(_notes.Find(sourceId),
-                    _notes.Find(_splitRemainderNoteId));
+                    _notes.Find(_dockInteraction.RemainderNoteId));
                 return;
             }
             long epoch = _dockInteraction.Epoch;
             if (!_dockInteraction.Matches(epoch, snapshot.Generation,
                 DockInteractionPhase.Rebasing)) return;
-            string[] expectedIds = _activeDockGroupIds.ToArray();
+            string[] expectedIds = _dockInteraction.CopyMemberIds();
             PostHostedStickyCommand(StickyUiCommand.CaptureDockFacts(
                 expectedIds, snapshot, epoch), delegate(StickyUiCommandResult result)
                 {
@@ -525,13 +520,12 @@ namespace PennyPet
                         return;
                     }
                     DockWindowFacts sourceRuntime;
-                    if (!_activeDockCurrentFacts.TryGetValue(sourceId,
+                    if (!_dockInteraction.CurrentFacts.TryGetValue(sourceId,
                         out sourceRuntime) || sourceRuntime == null) return;
                     // Rebase cancels this split hold; a fresh mouse-down is
                     // required. Preserve the original gesture provenance.
-                    _activeNoteSplitEligible = false;
                     ClearSplitGuide();
-                    _activeNoteDragLastFacts = sourceRuntime;
+                    _dockInteraction.RecordMove(sourceRuntime);
                     if (!_dockInteraction.TryEnterDragging(epoch,
                         snapshot.Generation)) return;
                     StickyNoteData seed = _notes.Find(sourceId);
@@ -565,10 +559,10 @@ namespace PennyPet
                         !IsHostedSticky(member);
                 });
                 if (group.Count < 2) continue;
-                if (!String.IsNullOrEmpty(_activeNoteDragId) &&
+                if (!String.IsNullOrEmpty(_dockInteraction.SourceNoteId) &&
                     group.Exists(delegate(StickyNoteData member)
                     {
-                        return String.Equals(member.Id, _activeNoteDragId,
+                        return String.Equals(member.Id, _dockInteraction.SourceNoteId,
                             StringComparison.OrdinalIgnoreCase);
                     })) continue;
                 ReconcileDockGroup(group, snapshot, petFacts);
@@ -1459,7 +1453,7 @@ namespace PennyPet
             {
                 _pendingStandaloneTopologyNotes.Remove(noteId);
                 if (IsDisposed || Disposing || String.Equals(noteId,
-                    _activeNoteDragId, StringComparison.OrdinalIgnoreCase))
+                    _dockInteraction.SourceNoteId, StringComparison.OrdinalIgnoreCase))
                     return;
                 StickyNoteData note = _notes.Find(noteId);
                 DisplayTopologySnapshot snapshot = CurrentTopologySnapshot();
@@ -1576,9 +1570,6 @@ namespace PennyPet
                     local.X, local.Y, local.Width, local.Height,
                     PlacementReason.DockCommit);
             }
-            CommitVisibleDockOrder(seed);
-            if (remainderSeed != null)
-                CommitVisibleDockOrder(remainderSeed);
             _notes.Save();
             foreach (DockCommitCandidate candidate in candidates)
                 _placementRuntime.MarkUserPlacementCommit(

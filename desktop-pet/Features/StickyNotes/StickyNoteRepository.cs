@@ -714,9 +714,15 @@ namespace PennyPet
             IEnumerable<StickyNoteData> snapshot)
         {
             List<string> lines = new List<string>();
+            Dictionary<string, string> parents = StickyDockGroups.BuildLegacyParents(snapshot);
             if (snapshot != null)
                 foreach (StickyNoteData note in snapshot)
-                    if (note != null) lines.Add(StickyNoteCodec.SerializeLine(note));
+                {
+                    if (note == null) continue;
+                    string parent;
+                    parents.TryGetValue(note.Id, out parent);
+                    lines.Add(StickyNoteCodec.SerializeLine(note, parent ?? String.Empty));
+                }
             return lines;
         }
 

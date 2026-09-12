@@ -23,6 +23,11 @@ namespace PennyPet
 
         internal static string SerializeLine(StickyNoteData note)
         {
+            return SerializeLine(note, note == null ? null : note.DockParentId);
+        }
+
+        internal static string SerializeLine(StickyNoteData note, string legacyParentId)
+        {
             if (note == null) throw new ArgumentNullException(nameof(note));
             return String.Join("|", new string[]
             {
@@ -49,7 +54,7 @@ namespace PennyPet
                     .ToString(CultureInfo.InvariantCulture),
                 NormalizeTextColor(note.TextColorArgb)
                     .ToString(CultureInfo.InvariantCulture),
-                Encode(note.DockParentId ?? String.Empty),
+                Encode(legacyParentId ?? String.Empty),
                 Encode(note.DockGroupId ?? String.Empty),
                 Math.Max(-1, note.DockGroupOrder)
                     .ToString(CultureInfo.InvariantCulture),
