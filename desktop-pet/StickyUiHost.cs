@@ -335,6 +335,8 @@ namespace PennyPet
                             : StickyUiCommandResult.NotHandled();
                     case StickyUiCommandKind.ReprojectDockGroup:
                         return ApplyDockGroupReproject(command);
+                    case StickyUiCommandKind.RestoreDockGroup:
+                        return RestoreDockGroup(command);
                     case StickyUiCommandKind.CaptureWindowFacts:
                         if (!IsCurrentTopology(command.Topology))
                             return StickyUiCommandResult.NotHandled();
@@ -469,6 +471,48 @@ namespace PennyPet
                 session.CloseAfterFailure();
                 _sessions.Remove(command.NoteId);
                 throw;
+            }
+        }
+
+        // Preparation, placement and visibility share one STA turn. A failed
+        // attempt closes only sessions it created; existing HWNDs roll back in
+        // ApplyDockGroupReproject and retain their original visibility/content.
+        private StickyUiCommandResult RestoreDockGroup(StickyUiCommand command)
+        {
+            DockRestoreOperation operation = command.DockRestore;
+            if (operation == null || operation.Cancellation.IsCancellationRequested ||
+                !IsCurrentTopology(operation.Topology)) return StickyUiCommandResult.NotHandled();
+            var created = new Dictionary<string, StickyWindowSession>(StringComparer.OrdinalIgnoreCase);
+            bool completed = false;
+            try
+            {
+                foreach (StickyNoteUiSnapshot snapshot in operation.Snapshots)
+                {
+                    if (operation.Cancellation.IsCancellationRequested) return StickyUiCommandResult.NotHandled();
+                    StickyUiCommandResult ensured = EnsureSession(StickyUiCommand.EnsureSession(
+                        snapshot, command.Reminders, operation.Topology));
+                    if (ensured.Status != StickyUiCommandStatus.Handled) return ensured;
+                    if (ensured.SessionCreated) created.Add(snapshot.NoteId, _sessions[snapshot.NoteId]);
+                }
+                StickyUiCommandResult result = ApplyDockGroupReproject(command);
+                if (result.Status != StickyUiCommandStatus.Handled) return result;
+                DockBatchResult batch = result.DockBatchResult;
+                var members = new List<DockBatchMemberResult>(batch.Members.Count);
+                foreach (DockBatchMemberResult member in batch.Members)
+                    members.Add(new DockBatchMemberResult(member.NoteId, member.WindowSequence,
+                        member.Facts, member.Snapshot, created.ContainsKey(member.NoteId)));
+                completed = true;
+                return StickyUiCommandResult.Handled(new DockBatchResult(batch.PlanSequence,
+                    batch.TopologyGeneration, batch.TargetSurfaceId, batch.TargetDpi, members));
+            }
+            finally
+            {
+                if (!completed)
+                    foreach (KeyValuePair<string, StickyWindowSession> pair in created)
+                    {
+                        pair.Value.CloseAfterFailure();
+                        _sessions.Remove(pair.Key);
+                    }
             }
         }
 
@@ -847,6 +891,7 @@ namespace PennyPet
             DisplayTopologySnapshot topology;
             lock (_configurationGate) topology = _currentTopology;
             if (request == null || command.Topology == null ||
+                (command.DockRestore != null && command.DockRestore.Cancellation.IsCancellationRequested) ||
                 topology == null ||
                 request.TopologyGeneration != topology.Generation ||
                 command.Topology.Generation != topology.Generation)
@@ -928,7 +973,8 @@ namespace PennyPet
                 DisplayTopologySnapshot current;
                 lock (_configurationGate) current = _currentTopology;
                 if (current == null ||
-                    current.Generation != request.TopologyGeneration)
+                    current.Generation != request.TopologyGeneration ||
+                    (command.DockRestore != null && command.DockRestore.Cancellation.IsCancellationRequested))
                     return StickyUiCommandResult.NotHandled();
                 List<DockBatchMemberResult> members =
                     new List<DockBatchMemberResult>();
@@ -946,7 +992,8 @@ namespace PennyPet
                 }
                 lock (_configurationGate) current = _currentTopology;
                 if (current == null ||
-                    current.Generation != request.TopologyGeneration)
+                    current.Generation != request.TopologyGeneration ||
+                    (command.DockRestore != null && command.DockRestore.Cancellation.IsCancellationRequested))
                     return StickyUiCommandResult.NotHandled();
                 if (command.Flag)
                 {
@@ -959,6 +1006,8 @@ namespace PennyPet
                             return StickyUiCommandResult.NotHandled();
                         }
                     }
+                    if (command.DockRestore != null && command.DockRestore.Cancellation.IsCancellationRequested)
+                        return StickyUiCommandResult.NotHandled();
                     foreach (StickyWindowSession session in sessions)
                         session.CommitRestoredVisibleState();
                 }

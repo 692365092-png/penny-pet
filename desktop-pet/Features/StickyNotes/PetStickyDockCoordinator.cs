@@ -38,6 +38,7 @@ namespace PennyPet
             DockWindowFacts sourceFacts)
         {
             if (sourceData == null || sourceFacts == null) return;
+            CancelHostedDockRestores(sourceData.Id);
             if (DeferDockResizeMutation(sourceData.Id,
                 () => CloseStickyDockNote(sourceData, GetHostedDockFacts(sourceData) ?? sourceFacts))) return;
             ClearHostedDockResizeSessionIfMember(sourceData.Id);
@@ -264,6 +265,7 @@ namespace PennyPet
             if (facts == null || sourceFacts == null || topology == null ||
                 !DockExecutionRules.IsSameGeneration(sourceFacts, topology)) return;
             ClearHostedDockResizeSession();
+            CancelHostedDockRestores(facts.NoteId);
             StickyNoteData seed = _notes.Find(facts.NoteId);
             if (seed == null || !seed.Visible) return;
             List<string> memberIds = BuildDockChainOrder(seed).ConvertAll(note => note.Id);
@@ -972,6 +974,7 @@ namespace PennyPet
         {
             DockResizeSession next = CaptureHostedResizeSession(value, kind);
             if (next == null) return;
+            CancelHostedDockRestores(value.NoteId);
             ClearHostedDockResizeSession();
             if (next.MatchesMembers(BuildDockChainOrder(_notes.Find(value.NoteId)))) _dockResize = next;
         }
@@ -1380,6 +1383,7 @@ namespace PennyPet
                 return;
             }
             if (DeferDockResizeMutation(note.Id, () => DeleteStickyNote(note, completed))) return;
+            CancelHostedDockRestores(note.Id);
             if (IsHostedSticky(note))
             {
                 BeginHostedStickyDelete(note, completed);

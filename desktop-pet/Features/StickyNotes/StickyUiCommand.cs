@@ -20,6 +20,7 @@ namespace PennyPet
         SetBounds,
         Reproject,
         ReprojectDockGroup,
+        RestoreDockGroup,
         CaptureWindowFacts,
         CaptureDockFacts,
         Close,
@@ -39,7 +40,8 @@ namespace PennyPet
             StickyUiReprojectTarget reprojectTarget = null,
             string[] dockNoteIds = null,
             DockGroupReprojectPlan dockGroupReprojectPlan = null,
-            long interactionEpoch = 0, WindowPlacementPlan placement = null)
+            long interactionEpoch = 0, WindowPlacementPlan placement = null,
+            DockRestoreOperation dockRestore = null)
         {
             Kind = kind;
             NoteId = noteId ?? String.Empty;
@@ -56,6 +58,7 @@ namespace PennyPet
             DockGroupReprojectPlan = dockGroupReprojectPlan;
             InteractionEpoch = interactionEpoch;
             Placement = placement;
+            DockRestore = dockRestore;
         }
 
         internal static StickyUiCommand Create(StickyNoteUiSnapshot snapshot,
@@ -258,6 +261,15 @@ namespace PennyPet
                 false);
         }
 
+        internal static StickyUiCommand RestoreDockGroup(DockRestoreOperation operation,
+            IEnumerable<ReminderItem> reminders)
+        {
+            if (operation == null) throw new ArgumentNullException(nameof(operation));
+            return new StickyUiCommand(StickyUiCommandKind.RestoreDockGroup, String.Empty, true,
+                reminders: CopyReminders(reminders), topology: operation.Topology,
+                dockGroupReprojectPlan: operation.Plan, dockRestore: operation);
+        }
+
         internal static StickyUiCommand CloseAll()
         {
             return new StickyUiCommand(StickyUiCommandKind.CloseAll,
@@ -278,6 +290,7 @@ namespace PennyPet
             { get; private set; }
         internal long InteractionEpoch { get; private set; }
         internal WindowPlacementPlan Placement { get; private set; }
+        internal DockRestoreOperation DockRestore { get; private set; }
 
         private static ReminderItem[] CopyReminders(
             IEnumerable<ReminderItem> reminders)
@@ -737,18 +750,20 @@ namespace PennyPet
     internal sealed class DockBatchMemberResult
     {
         internal DockBatchMemberResult(string noteId, long windowSequence,
-            WindowFacts facts, StickyNoteUiSnapshot snapshot)
+            WindowFacts facts, StickyNoteUiSnapshot snapshot, bool sessionCreated = false)
         {
             NoteId = noteId ?? String.Empty;
             WindowSequence = windowSequence;
             Facts = facts;
             Snapshot = snapshot;
+            SessionCreated = sessionCreated;
         }
 
         internal string NoteId { get; private set; }
         internal long WindowSequence { get; private set; }
         internal WindowFacts Facts { get; private set; }
         internal StickyNoteUiSnapshot Snapshot { get; private set; }
+        internal bool SessionCreated { get; private set; }
     }
 
     internal sealed class DockBatchResult

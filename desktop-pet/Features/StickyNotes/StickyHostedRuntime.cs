@@ -58,6 +58,23 @@ namespace PennyPet
             _appliedSequences[noteId ?? String.Empty] = sequence;
         }
 
+        // Only a restore batch may acknowledge a newly created session. An
+        // existing session still obeys its watermark, including events received
+        // after the batch was captured and before its Pet-thread continuation.
+        internal bool CanApplyBatchSequence(DockBatchMemberResult member, bool allowSessionCreation)
+        {
+            if (member == null || String.IsNullOrEmpty(member.NoteId) || member.WindowSequence <= 0) return false;
+            return (allowSessionCreation && (member.SessionCreated || !ContainsNote(member.NoteId))) ||
+                CanApplySequence(member.NoteId, member.WindowSequence);
+        }
+
+        internal void AcceptBatchSequence(DockBatchMemberResult member, bool allowSessionCreation)
+        {
+            if (allowSessionCreation && (member.SessionCreated || !ContainsNote(member.NoteId)))
+                SynchronizeSessionLease(member.NoteId, member.WindowSequence);
+            else RecordSequence(member.NoteId, member.WindowSequence);
+        }
+
         internal void SetImeComposition(string noteId, bool active)
         {
             SetMembership(_imeComposing, noteId, active);
