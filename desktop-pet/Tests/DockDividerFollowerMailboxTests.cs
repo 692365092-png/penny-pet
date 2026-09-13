@@ -7,10 +7,10 @@ namespace PennyPet.Tests
     [TestClass]
     public sealed class DockDividerFollowerMailboxTests
     {
-        private static DockDividerFollowerBatch Batch(
+        private static DockResizeBatch Batch(
             long generation, int top)
         {
-            return new DockDividerFollowerBatch(generation,
+            return new DockResizeBatch(generation,
                 new List<DockWindowTarget>
                 {
                     new DockWindowTarget("n-1",
@@ -21,11 +21,11 @@ namespace PennyPet.Tests
         [TestMethod]
         public void QueueLive_CoalescesWhileApplyInFlight()
         {
-            DockDividerFollowerMailbox mailbox =
-                new DockDividerFollowerMailbox();
+            DockResizeMailbox mailbox =
+                new DockResizeMailbox();
             Assert.IsTrue(mailbox.QueueLive(Batch(1, 100)));
             Assert.IsFalse(mailbox.QueueLive(Batch(1, 120)));
-            DockDividerFollowerBatch taken = mailbox.TakeLatest();
+            DockResizeBatch taken = mailbox.TakeLatest();
             Assert.IsNotNull(taken);
             Assert.AreEqual(120, taken.Targets[0].PhysicalBounds.Top);
             Assert.IsTrue(mailbox.QueueLive(Batch(1, 140)));
@@ -34,14 +34,14 @@ namespace PennyPet.Tests
         [TestMethod]
         public void QueueFinal_SupersedesPendingLiveFrames()
         {
-            DockDividerFollowerMailbox mailbox =
-                new DockDividerFollowerMailbox();
+            DockResizeMailbox mailbox =
+                new DockResizeMailbox();
             Assert.IsTrue(mailbox.QueueLive(Batch(1, 100)));
-            DockDividerFollowerBatch expected = Batch(1, 200);
+            DockResizeBatch expected = Batch(1, 200);
             Assert.IsTrue(mailbox.QueueFinal(expected));
             Assert.IsNull(mailbox.TakeLatest());
             Assert.IsFalse(mailbox.QueueLive(Batch(1, 300)));
-            DockDividerFollowerBatch final = mailbox.TakeFinal(expected);
+            DockResizeBatch final = mailbox.TakeFinal(expected);
             Assert.IsNotNull(final);
             Assert.AreEqual(200, final.Targets[0].PhysicalBounds.Top);
             mailbox.CompleteFinal(expected);
@@ -53,8 +53,8 @@ namespace PennyPet.Tests
         [TestMethod]
         public void OldFinalCannotTakeOrAcknowledgeCorrection()
         {
-            DockDividerFollowerMailbox mailbox = new DockDividerFollowerMailbox();
-            DockDividerFollowerBatch first = Batch(1, 200), corrected = Batch(1, 220);
+            DockResizeMailbox mailbox = new DockResizeMailbox();
+            DockResizeBatch first = Batch(1, 200), corrected = Batch(1, 220);
             mailbox.QueueFinal(first);
             mailbox.QueueFinal(corrected);
             Assert.IsNull(mailbox.TakeFinal(first));
@@ -67,8 +67,8 @@ namespace PennyPet.Tests
         [DataRow(true)]
         public void CancelRevokesPendingWorkAndPermanentlyClosesMailbox(bool final)
         {
-            DockDividerFollowerMailbox mailbox = new DockDividerFollowerMailbox();
-            DockDividerFollowerBatch batch = Batch(1, 200);
+            DockResizeMailbox mailbox = new DockResizeMailbox();
+            DockResizeBatch batch = Batch(1, 200);
             if (final) mailbox.QueueFinal(batch);
             else mailbox.QueueLive(batch);
             mailbox.Cancel();
@@ -84,7 +84,7 @@ namespace PennyPet.Tests
         {
             List<DockWindowTarget> input = new List<DockWindowTarget> {
                 new DockWindowTarget("a", new PhysicalRect(0, 100, 400, 300)) };
-            DockDividerFollowerBatch batch = new DockDividerFollowerBatch(1, input);
+            DockResizeBatch batch = new DockResizeBatch(1, input);
             input.Clear();
             Assert.AreEqual(1, batch.Targets.Count);
             Assert.ThrowsExactly<NotSupportedException>(() => ((IList<DockWindowTarget>)batch.Targets).Clear());

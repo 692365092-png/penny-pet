@@ -74,12 +74,11 @@ namespace PennyPet
         }
     }
 
-    // One detached follower batch for a vertical Dock divider gesture. The
-    // target rects are physical pixels and cover only the members BELOW the
-    // divider source; the source itself is Windows-live during WM_SIZING.
-    internal sealed class DockDividerFollowerBatch
+    // Physical resize targets: below the source for a divider, every other
+    // visible member for a horizontal resize. Windows owns the source HWND.
+    internal sealed class DockResizeBatch
     {
-        internal DockDividerFollowerBatch(
+        internal DockResizeBatch(
             long topologyGeneration,
             IList<DockWindowTarget> targets)
         {
@@ -94,14 +93,14 @@ namespace PennyPet
         internal IReadOnlyList<DockWindowTarget> Targets { get; private set; }
     }
 
-    // Latest-wins mailbox for a live divider resize frame. The Pet UI thread
+    // Latest-wins mailbox for a live resize frame. The Pet UI thread
     // replaces the pending batch on every WM_SIZING tick; the Sticky STA takes
     // only the newest batch in one deferred apply, and a final batch replaces
     // and supersedes all pending live frames.
-    internal sealed class DockDividerFollowerMailbox
+    internal sealed class DockResizeMailbox
     {
         private readonly object Gate = new object();
-        private DockDividerFollowerBatch _current;
+        private DockResizeBatch _current;
         private bool _applyQueued;
         private bool _finalStarted;
         private bool _closed;
@@ -116,7 +115,7 @@ namespace PennyPet
 
         // Replaces the live batch. Returns true when Pet must schedule a new
         // deferred apply; at most one apply is ever in flight.
-        internal bool QueueLive(DockDividerFollowerBatch batch)
+        internal bool QueueLive(DockResizeBatch batch)
         {
             if (batch == null)
                 throw new ArgumentNullException(nameof(batch));
@@ -132,7 +131,7 @@ namespace PennyPet
 
         // A final batch supersedes every pending live frame. Returns true when
         // Pet must schedule the final apply.
-        internal bool QueueFinal(DockDividerFollowerBatch batch)
+        internal bool QueueFinal(DockResizeBatch batch)
         {
             if (batch == null)
                 throw new ArgumentNullException(nameof(batch));
@@ -149,19 +148,19 @@ namespace PennyPet
         // Sticky STA, inside one deferred dispatcher frame. While a final
         // batch is pending, live applies no-op so they can never run after
         // the authoritative final frame.
-        internal DockDividerFollowerBatch TakeLatest()
+        internal DockResizeBatch TakeLatest()
         {
             lock (Gate)
             {
                 if (_closed || _finalStarted) return null;
-                DockDividerFollowerBatch batch = _current;
+                DockResizeBatch batch = _current;
                 _current = null;
                 _applyQueued = false;
                 return batch;
             }
         }
 
-        internal DockDividerFollowerBatch TakeFinal(DockDividerFollowerBatch expected)
+        internal DockResizeBatch TakeFinal(DockResizeBatch expected)
         {
             lock (Gate)
             {
@@ -170,7 +169,7 @@ namespace PennyPet
             }
         }
 
-        internal void CompleteFinal(DockDividerFollowerBatch expected)
+        internal void CompleteFinal(DockResizeBatch expected)
         {
             lock (Gate)
             {

@@ -693,6 +693,8 @@ namespace PennyPet
             _window.HeaderDragMoved += HeaderDragMoved;
             _window.HeaderDragCompleted += HeaderDragCompleted;
             _window.UserResizeCompleted += UserResizeCompleted;
+            _window.DockHorizontalResizeStarted += DockHorizontalResizeStarted;
+            _window.DockHorizontalResizeCompleted += DockHorizontalResizeCompleted;
             _window.DockHorizontalResizing += DockHorizontalResizing;
             _window.DockDividerResizeStarted += DockDividerResizeStarted;
             _window.DockDividerResizing += DockDividerResizing;
@@ -721,6 +723,8 @@ namespace PennyPet
             _window.HeaderDragMoved -= HeaderDragMoved;
             _window.HeaderDragCompleted -= HeaderDragCompleted;
             _window.UserResizeCompleted -= UserResizeCompleted;
+            _window.DockHorizontalResizeStarted -= DockHorizontalResizeStarted;
+            _window.DockHorizontalResizeCompleted -= DockHorizontalResizeCompleted;
             _window.DockHorizontalResizing -= DockHorizontalResizing;
             _window.DockDividerResizeStarted -= DockDividerResizeStarted;
             _window.DockDividerResizing -= DockDividerResizing;
@@ -776,7 +780,7 @@ namespace PennyPet
         private void BoundsChanged(object sender, EventArgs e)
         {
             if (_applyingBounds) return;
-            if (_window.DockDividerResizeActive) return;
+            if (_window.DockDividerResizeActive || _window.DockHorizontalResizeActive) return;
             EmitSnapshot(StickyUiEventKind.BoundsChanged);
         }
 
@@ -812,10 +816,17 @@ namespace PennyPet
                 facts, _topology));
         }
 
+        private void DockHorizontalResizeStarted(object sender, EventArgs e)
+        { EmitSnapshot(StickyUiEventKind.DockHorizontalResizeStarted); }
+
+        private void DockHorizontalResizeCompleted(object sender, EventArgs e)
+        { EmitSnapshot(StickyUiEventKind.DockHorizontalResizeCompleted); }
+
         private void DockHorizontalResizing(object sender,
             DockHorizontalResizeEventArgs e)
         {
-            StickyNoteUiSnapshot snapshot = CaptureSnapshot();
+            if (_eventsSuppressed || !IsAvailable) return;
+            StickyNoteUiSnapshot snapshot = CaptureContentSnapshotForNativeResult();
             _lastSnapshot = snapshot;
             _sequence++;
             Raise(StickyUiEvent.HorizontalResize(snapshot, _sequence,
@@ -847,7 +858,8 @@ namespace PennyPet
             DockDividerResizeEventArgs e)
         {
             if (_eventsSuppressed || !IsAvailable) return;
-            StickyNoteUiSnapshot snapshot = CaptureSnapshot();
+            StickyNoteUiSnapshot snapshot = kind == StickyUiEventKind.DockDividerResizing
+                ? CaptureContentSnapshotForNativeResult() : CaptureSnapshot();
             _lastSnapshot = snapshot;
             _sequence++;
             WindowFacts facts = CaptureWindowFacts(_sequence);

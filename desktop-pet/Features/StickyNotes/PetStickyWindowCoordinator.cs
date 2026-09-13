@@ -95,6 +95,7 @@ namespace PennyPet
 
         private void ExpandAndTileAllStickyNotesToPetScreen()
         {
+            if (DeferDockResizeMutation(null, ExpandAndTileAllStickyNotesToPetScreen)) return;
             ClearHostedDockResizeSession();
             Rectangle work = Screen.FromRectangle(Bounds).WorkingArea;
             WindowsDisplayMetrics metrics =
@@ -1199,32 +1200,26 @@ namespace PennyPet
                 ApplyNoteTabZOrder();
                 return;
             }
-            if (value.Kind == StickyUiEventKind.DockDividerResizeStarted)
+            if (value.Kind == StickyUiEventKind.DockDividerResizeStarted ||
+                value.Kind == StickyUiEventKind.DockHorizontalResizeStarted)
             {
                 if (IsCurrentHostedGeometryEvent(value) && ApplyHostedStickyEvent(value, false))
-                    BeginHostedStickyDockDivider(value);
+                    BeginHostedStickyDockResize(value, value.Kind == StickyUiEventKind.DockHorizontalResizeStarted
+                        ? DockResizeKind.Horizontal : DockResizeKind.Divider);
                 return;
             }
-            if (value.Kind == StickyUiEventKind.DockDividerResizing)
+            if (value.Kind == StickyUiEventKind.DockDividerResizing ||
+                value.Kind == StickyUiEventKind.DockHorizontalResizing)
             {
                 if (IsCurrentHostedGeometryEvent(value) &&
                     _hostedRuntime.CanApplySequence(value.NoteId, value.Sequence))
-                    ResizeHostedStickyDockDivider(value);
+                    ResizeHostedStickyDock(value);
                 return;
             }
-            if (value.Kind == StickyUiEventKind.DockDividerResizeCompleted)
+            if (value.Kind == StickyUiEventKind.DockDividerResizeCompleted ||
+                value.Kind == StickyUiEventKind.DockHorizontalResizeCompleted)
             {
-                CompleteHostedStickyDockDivider(value);
-                return;
-            }
-            if (value.Kind == StickyUiEventKind.DockHorizontalResizing)
-            {
-                if (!IsCurrentHostedGeometryEvent(value) ||
-                    !ApplyHostedStickyEvent(value, false)) return;
-                ClearHostedDockResizeSessionIfMember(value.NoteId);
-                ResizeStickyDockGroup(DockWindowFacts.FromWindowFacts(
-                    value.Facts, value.Snapshot.Visible, value.Snapshot.AlwaysOnTop),
-                    value.Left, value.Width);
+                CompleteHostedStickyDockResize(value);
                 return;
             }
             if (value.Kind == StickyUiEventKind.CloseRequested)
@@ -1275,8 +1270,6 @@ namespace PennyPet
                         local.X, local.Y, local.Width, local.Height,
                         PlacementReason.UserResizeCommit))
                 {
-                    CommitDockGroupResizePreferred(canonical, targetKey,
-                        local);
                     _placementRuntime.MarkUserPlacementCommit(
                         value.NoteId);
                     _notes.SaveAsync();
@@ -1579,7 +1572,7 @@ namespace PennyPet
                 bool topMost = group[0].AlwaysOnTop;
                 foreach (StickyNoteData member in group) member.AlwaysOnTop = topMost;
             }
-            _notes.Save();
+            _notes.SaveAsync();
             foreach (DockCommitCandidate candidate in candidates)
                 _placementRuntime.MarkUserPlacementCommit(
                     candidate.Member.NoteId);
@@ -1769,20 +1762,37 @@ namespace PennyPet
             return true;
         }
 
-        private void ClearHostedDockResizeSession(DockDividerResizeSession expected = null)
+        // Only dependent user actions wait for horizontal final facts; input
+        // stays responsive and the queue belongs to this one resize session.
+        private bool DeferDockResizeMutation(string noteId, Action action)
         {
-            if (expected != null && !ReferenceEquals(_dockDividerResize, expected)) return;
-            if (_dockDividerResize != null) _dockDividerResize.Finish();
-            _dockDividerResize = null;
+            DockResizeSession session = _dockResize;
+            if (session == null) return false;
+            if (noteId != null && !session.Contains(noteId))
+            {
+                StickyNoteData note = _notes.Find(noteId), source = _notes.Find(session.SourceNoteId);
+                if (note == null || source == null || String.IsNullOrEmpty(source.DockGroupId) ||
+                    !String.Equals(source.DockGroupId, note.DockGroupId, StringComparison.OrdinalIgnoreCase)) return false;
+            }
+            return session.DeferMutation(action);
+        }
+
+        private void ClearHostedDockResizeSession(DockResizeSession expected = null)
+        {
+            if (expected != null && !ReferenceEquals(_dockResize, expected)) return;
+            DockResizeSession previous = _dockResize;
+            _dockResize = null;
+            if (previous != null)
+                foreach (Action action in previous.Finish()) action();
         }
 
         private void ClearHostedDockResizeSessionIfMember(string noteId)
         {
-            if (_dockDividerResize != null && _dockDividerResize.Contains(noteId))
+            if (_dockResize != null && _dockResize.Contains(noteId))
                 ClearHostedDockResizeSession();
         }
 
-        private void CompleteHostedStickyDockDivider(StickyUiEvent value)
+        private void CompleteHostedStickyDockResize(StickyUiEvent value)
         {
             if (value == null || value.Snapshot == null || _dockInteraction.IsActive ||
                 !IsCurrentHostedGeometryEvent(value) ||
@@ -1790,23 +1800,27 @@ namespace PennyPet
                 !_hostedRuntime.CanApplySequence(value.NoteId, value.Sequence)) return;
             StickyNoteData source = _notes.Find(value.NoteId);
             if (source == null || !source.Visible) return;
-            DockDividerResizeSession session = _dockDividerResize;
-            if (session != null && (!session.IsResizing ||
+            DockResizeKind kind = value.Kind == StickyUiEventKind.DockHorizontalResizeCompleted
+                ? DockResizeKind.Horizontal : DockResizeKind.Divider;
+            WindowPlacementPreference sourcePreference;
+            if (!StickyResizePreferences.TryBuild(source, value.Facts, value.Topology, kind, true, out sourcePreference)) return;
+            DockResizeSession session = _dockResize;
+            if (session != null && (session.Kind != kind || !session.IsResizing ||
                 !String.Equals(session.SourceNoteId, value.NoteId, StringComparison.OrdinalIgnoreCase))) return;
             // A topology barrier retires the old gesture. A current completion
             // may settle from freshly accepted facts, never from its old baseline.
             if (session == null)
             {
-                session = CaptureHostedDividerSession(value);
-                _dockDividerResize = session;
+                session = CaptureHostedResizeSession(value, kind);
+                _dockResize = session;
             }
             if (session == null || !session.MatchesMembers(BuildDockChainOrder(source)))
             {
-                CommitDividerSourceFinal(value, source, value.Topology);
+                CommitResizeSourceFinal(value, source, value.Topology, sourcePreference);
                 ClearHostedDockResizeSession(session);
                 return;
             }
-            DockDividerFollowerBatch final = session.BeginFinal(value);
+            DockResizeBatch final = session.BeginFinal(value);
             if (final == null) return;
             DisplayDiagnostics.Trace("DockDividerCompleted", "note=" + value.NoteId +
                 " height=" + value.Facts.PhysicalBounds.Height +
@@ -1814,45 +1828,49 @@ namespace PennyPet
                 " followers=" + final.Targets.Count + " seq=" + value.Sequence);
             // Commit the source in this Pet turn before posting followers, so
             // hide/reopen observes the resized preferred height. Disk I/O queues.
-            CommitDividerSourceFinal(value, source, value.Topology);
-            PostDividerFinal(session, final);
+            CommitResizeSourceFinal(value, source, value.Topology, sourcePreference);
+            PostResizeFinal(session, final);
         }
 
-        private void PostDividerFinal(DockDividerResizeSession session,
-            DockDividerFollowerBatch final)
+        private void PostResizeFinal(DockResizeSession session,
+            DockResizeBatch final)
         {
-            _stickyUiHost.PostFinalDividerBatch(session.Mailbox, final,
-                result => OnDividerFinalBatchApplied(session, final, result), _petUiContext);
+            _stickyUiHost.PostFinalResizeBatch(session.Mailbox, final,
+                result => OnResizeFinalBatchApplied(session, final, result), _petUiContext);
         }
 
-        private void OnDividerFinalBatchApplied(DockDividerResizeSession session,
-            DockDividerFollowerBatch expected, StickyUiCommandResult result)
+        private void OnResizeFinalBatchApplied(DockResizeSession session,
+            DockResizeBatch expected, StickyUiCommandResult result)
         {
-            if (!ReferenceEquals(_dockDividerResize, session) || !session.IsCurrentFinal(expected)) return;
+            if (!ReferenceEquals(_dockResize, session) || !session.IsCurrentFinal(expected)) return;
             DockBatchResult batch = result != null && result.Status == StickyUiCommandStatus.Handled
                 ? result.DockBatchResult : null;
             DisplayTopologySnapshot topology = CurrentTopologySnapshot();
-            if (!CanAcceptDividerBatch(session, batch, topology))
+            if (!CanAcceptResizeBatch(session, batch, topology))
             {
                 DisplayDiagnostics.Trace("DockDividerFinalRejected", "note=" + session.SourceNoteId);
                 ClearHostedDockResizeSession(session);
                 return;
             }
-            DockDividerFollowerBatch correction = session.TryCorrect(expected, batch);
+            DockResizeBatch correction = session.TryCorrect(expected, batch);
             if (correction != null)
             {
-                PostDividerFinal(session, correction);
+                PostResizeFinal(session, correction);
                 return;
             }
-            if (!session.SeamIsExact(batch))
+            if (!session.LayoutIsExact(batch))
                 DisplayDiagnostics.Trace("DockDividerSeamVerifyFailed", "note=" + session.SourceNoteId);
-            try { ApplyDividerBatchCanonical(batch, topology, true); }
+            try
+            {
+                if (!ApplyResizeBatchCanonical(batch, topology, true, session.Kind))
+                    DisplayDiagnostics.Trace("DockResizeFinalRejected", "reason=preference note=" + session.SourceNoteId);
+            }
             finally { ClearHostedDockResizeSession(session); }
         }
 
-        private void CommitDividerSourceFinal(StickyUiEvent value,
+        private void CommitResizeSourceFinal(StickyUiEvent value,
             StickyNoteData sourceCanonical,
-            DisplayTopologySnapshot topology)
+            DisplayTopologySnapshot topology, WindowPlacementPreference preference)
         {
             if (sourceCanonical == null) return;
             _synchronizingDockLayout = true;
@@ -1865,63 +1883,15 @@ namespace PennyPet
                 ApplyHostedStickyFactsGeometry(sourceCanonical, value.Facts, topology);
                 if (!_placementRuntime.TryUpdateEffective(value.NoteId, value.Facts, topology))
                     throw new InvalidOperationException("Divider source acceptance changed after preflight.");
-                CommitDividerPreferred(sourceCanonical, value.Facts, topology);
+                LogicalRect local = preference.LocalLogicalRect;
+                CommitHostedStickyPreferred(sourceCanonical, preference.PreferredTargetKey,
+                    local.X, local.Y, local.Width, local.Height, PlacementReason.UserResizeCommit);
+                _placementRuntime.MarkUserPlacementCommit(value.NoteId);
                 _hostedRuntime.RecordSequence(value.NoteId, value.Sequence);
                 _notes.SaveAsync();
             }
             finally { _synchronizingDockLayout = false; }
             RefreshMenuText();
-        }
-
-        // A vertical divider changes only the resized member's HEIGHT. Advance
-        // just that durable dimension while keeping the established preferred
-        // position and width, so a collapse/reopen restores the new height at
-        // the place the user left the group (never a drifted gesture-time top).
-        private void CommitDividerPreferred(StickyNoteData canonical,
-            WindowFacts facts, DisplayTopologySnapshot topology)
-        {
-            WindowPlacementPreference preference;
-            if (!StickyPlacementRules.TryBuildPreferredPlacement(facts, topology,
-                canonical.PreferredDisplayTargetKey, out preference)) return;
-            LogicalRect local = preference.LocalLogicalRect;
-            bool hasPreferred = !String.IsNullOrWhiteSpace(canonical.PreferredDisplayTargetKey) &&
-                canonical.PreferredLocalLogicalWidth > 0 && canonical.PreferredLocalLogicalHeight > 0;
-            CommitHostedStickyPreferred(canonical, preference.PreferredTargetKey,
-                hasPreferred ? canonical.PreferredLocalLogicalX : local.X,
-                hasPreferred ? canonical.PreferredLocalLogicalY : local.Y,
-                hasPreferred ? canonical.PreferredLocalLogicalWidth : local.Width,
-                local.Height, PlacementReason.UserResizeCommit);
-        }
-
-        // A group horizontal resize shares one left/width across the whole
-        // band, but the completed event only carries the grabbed member's
-        // facts. Propagate the new left/width to every visible member's
-        // durable preference (the root's preferred width is the restore
-        // authority), so a collapse/reopen cannot revert to the stale
-        // pre-gesture width.
-        private void CommitDockGroupResizePreferred(StickyNoteData source,
-            string targetKey, LogicalRect sourceLocal)
-        {
-            if (source == null ||
-                String.IsNullOrWhiteSpace(source.DockGroupId)) return;
-            foreach (StickyNoteData member in
-                BuildDockChainOrderIncludingHidden(source))
-            {
-                if (member == null || !member.Visible) continue;
-                bool hasPreferred =
-                    !String.IsNullOrWhiteSpace(
-                        member.PreferredDisplayTargetKey) &&
-                    member.PreferredLocalLogicalWidth > 0 &&
-                    member.PreferredLocalLogicalHeight > 0;
-                LogicalRect actual = new LogicalRect();
-                if (!hasPreferred && !_placementRuntime.TryGetEffectiveLogical(member.Id, out actual)) continue;
-                int localY = hasPreferred ? member.PreferredLocalLogicalY : actual.Y;
-                int localHeight = hasPreferred ? member.PreferredLocalLogicalHeight : actual.Height;
-                if (localHeight <= 0) continue;
-                CommitHostedStickyPreferred(member, targetKey,
-                    sourceLocal.X, localY, sourceLocal.Width,
-                    localHeight, PlacementReason.UserResizeCommit);
-            }
         }
 
         internal static bool ShouldApplyHostedSequence(long sequence,
@@ -1970,6 +1940,7 @@ namespace PennyPet
             if (_hostedRuntime.NoteCount == 0 ||
                 _hostedRuntime.ExitPrepared)
                 return false;
+            if (DeferDockResizeMutation(null, BeginExitSequence)) return true;
             ClearHostedDockResizeSession();
             _hostedRuntime.RequestExit();
             TryCloseAllHostedStickies();
@@ -2012,6 +1983,7 @@ namespace PennyPet
             Action<StickyUiCommandResult> completed)
         {
             if (completed == null) return;
+            if (DeferDockResizeMutation(null, () => CloseHostedStickyRuntimeForReload(completed))) return;
             ClearHostedDockResizeSession();
             if (_hostedRuntime.NoteCount == 0)
             {
@@ -2094,6 +2066,7 @@ namespace PennyPet
             bool persistVisibility)
         {
             if (note == null) return;
+            if (DeferDockResizeMutation(note.Id, () => ShowHostedSticky(note, focusEditor, persistVisibility))) return;
             List<StickyNoteData> storedDockOrder =
                 BuildDockChainOrderIncludingHidden(note);
             bool anyHiddenDockMember = storedDockOrder.Exists(
@@ -2732,6 +2705,7 @@ namespace PennyPet
 
         private void CollapseAllStickyNotes()
         {
+            if (DeferDockResizeMutation(null, CollapseAllStickyNotes)) return;
             HashSet<string> handled = new HashSet<string>(
                 StringComparer.OrdinalIgnoreCase);
             foreach (StickyNoteData note in _notes.GetAll())

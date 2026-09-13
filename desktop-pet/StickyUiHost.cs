@@ -103,47 +103,47 @@ namespace PennyPet
 
         // Divider-resize analogs of the live/final Dock plan entries. Same
         // deferred mailbox shape, dedicated to the vertical divider lifecycle.
-        internal void PostLatestDividerBatch(DockDividerFollowerMailbox mailbox,
+        internal void PostLatestResizeBatch(DockResizeMailbox mailbox,
             Action<StickyUiCommandResult> completed,
             SynchronizationContext completionContext)
         {
             if (mailbox == null)
                 throw new ArgumentNullException(nameof(mailbox));
-            _threadHost.PostDividerBatch(mailbox,
-                ApplyLatestDividerBatch, completed, completionContext);
+            _threadHost.PostResizeBatch(mailbox,
+                ApplyLatestResizeBatch, completed, completionContext);
         }
 
-        internal void PostFinalDividerBatch(DockDividerFollowerMailbox mailbox,
-            DockDividerFollowerBatch expected,
+        internal void PostFinalResizeBatch(DockResizeMailbox mailbox,
+            DockResizeBatch expected,
             Action<StickyUiCommandResult> completed,
             SynchronizationContext completionContext)
         {
             if (mailbox == null)
                 throw new ArgumentNullException(nameof(mailbox));
-            _threadHost.PostDividerBatch(mailbox,
-                value => ApplyFinalDividerBatch(value, expected), completed, completionContext);
+            _threadHost.PostResizeBatch(mailbox,
+                value => ApplyFinalResizeBatch(value, expected), completed, completionContext);
         }
 
-        private StickyUiCommandResult ApplyLatestDividerBatch(
-            DockDividerFollowerMailbox mailbox)
+        private StickyUiCommandResult ApplyLatestResizeBatch(
+            DockResizeMailbox mailbox)
         {
-            DockDividerFollowerBatch batch = mailbox == null
+            DockResizeBatch batch = mailbox == null
                 ? null : mailbox.TakeLatest();
             if (batch == null || batch.Targets.Count == 0)
                 return StickyUiCommandResult.Handled();
-            return ApplyDividerBatch(batch);
+            return ApplyResizeBatch(batch);
         }
 
-        private StickyUiCommandResult ApplyFinalDividerBatch(
-            DockDividerFollowerMailbox mailbox, DockDividerFollowerBatch expected)
+        private StickyUiCommandResult ApplyFinalResizeBatch(
+            DockResizeMailbox mailbox, DockResizeBatch expected)
         {
-            DockDividerFollowerBatch batch = mailbox == null
+            DockResizeBatch batch = mailbox == null
                 ? null : mailbox.TakeFinal(expected);
             if (batch == null || batch.Targets.Count == 0)
                 return StickyUiCommandResult.NotHandled();
             try
             {
-                return ApplyDividerBatch(batch);
+                return ApplyResizeBatch(batch);
             }
             finally
             {
@@ -151,12 +151,10 @@ namespace PennyPet
             }
         }
 
-        // One deferred divider apply: stale-gate on the host-owned topology
-        // generation, move every follower with the typed SetBounds effect in
-        // a single dispatcher frame, then return the actual captured facts so
-        // the Pet side can verify the settled seam.
-        private StickyUiCommandResult ApplyDividerBatch(
-            DockDividerFollowerBatch batch)
+        // One native batch: no show/restore, activation, Z-order changes or
+        // per-window editor serialization on the resize hot path.
+        private StickyUiCommandResult ApplyResizeBatch(
+            DockResizeBatch batch)
         {
             if (batch == null || batch.Targets.Count == 0)
                 return StickyUiCommandResult.NotHandled();
@@ -173,6 +171,8 @@ namespace PennyPet
             }
             List<StickyWindowSession> sessions =
                 new List<StickyWindowSession>();
+            List<IntPtr> handles = new List<IntPtr>();
+            List<PhysicalRect> rects = new List<PhysicalRect>();
             HashSet<string> ids = new HashSet<string>(
                 StringComparer.OrdinalIgnoreCase);
             foreach (DockWindowTarget target in batch.Targets)
@@ -184,6 +184,8 @@ namespace PennyPet
                     session.PlacementHwnd == IntPtr.Zero)
                     return StickyUiCommandResult.NotHandled();
                 sessions.Add(session);
+                handles.Add(session.PlacementHwnd);
+                rects.Add(target.PhysicalBounds);
             }
             foreach (StickyWindowSession session in sessions)
                 if (!session.AdoptTopology(topology))
@@ -192,16 +194,12 @@ namespace PennyPet
                 session.SetEventsSuppressed(true);
             try
             {
+                if (WindowsBatchWindowPlacementExecutor.Apply(handles, rects) != WindowsBatchPlacementStatus.Applied)
+                    return StickyUiCommandResult.NotHandled();
                 List<DockBatchMemberResult> members =
                     new List<DockBatchMemberResult>();
                 for (int index = 0; index < batch.Targets.Count; index++)
                 {
-                    PhysicalRect rect = batch.Targets[index].PhysicalBounds;
-                    StickyUiCommandResult bounds = sessions[index].SetBounds(
-                        new StickyUiBounds(rect.Left, rect.Top,
-                            rect.Width, rect.Height));
-                    if (bounds.Status != StickyUiCommandStatus.Handled)
-                        return StickyUiCommandResult.NotHandled();
                     DockBatchMemberResult member =
                         sessions[index].CaptureDockMember(topology);
                     if (member == null || member.Facts == null)

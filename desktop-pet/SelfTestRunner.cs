@@ -1601,7 +1601,7 @@ namespace PennyPet
             for (int index = 0; index < resizeIds.Length; index++)
                 liveResizeStart.Add(new WindowFacts(resizeIds[index], "screen", "DISPLAY1",
                     new PhysicalRect(100, 100 + 300 * index, 420, 300), 96, 1, 1));
-            DockDividerResizeSession resize = DockDividerResizeSession.TryStart("b", liveResizeStart);
+            DockResizeSession resize = DockResizeSession.TryStart(DockResizeKind.Divider, "b", liveResizeStart);
             StickyNoteUiSnapshot resizeSnapshot = StickyNoteUiSnapshot.FromData(
                 new StickyNoteData { Id = "b", Visible = true });
             long resizeSequence = 1;
@@ -1617,7 +1617,7 @@ namespace PennyPet
                         requested, new WindowFacts("b", "screen", "DISPLAY1",
                             new PhysicalRect(100, 400, 420, requested), 96, 1, resizeSequence)), out post);
                 }
-            DockDividerFollowerBatch liveTargets = resize.Mailbox.TakeLatest();
+            DockResizeBatch liveTargets = resize.Mailbox.TakeLatest();
             result.DividerLiveSessionTargetsOk = liveAccepted && liveTargets.Targets.Count == 2 &&
                 liveTargets.Targets[0].NoteId == "c" && liveTargets.Targets[0].PhysicalBounds.Top == 700 &&
                 liveTargets.Targets[1].NoteId == "d" && liveTargets.Targets[1].PhysicalBounds.Top == 1000 &&

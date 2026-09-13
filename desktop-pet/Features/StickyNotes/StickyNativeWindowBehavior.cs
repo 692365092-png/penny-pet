@@ -261,8 +261,6 @@ namespace PennyPet
             if (message == WmEnterSizeMove)
             {
                 _windowResizeActive = true;
-                _resizeStartLeft = Left;
-                _resizeStartWidth = Width;
                 _dockDividerResizeActive = _dockSplitBottom &&
                     _lastResizeHitTest == HtBottom;
                 if (_dockDividerResizeActive)
@@ -277,11 +275,13 @@ namespace PennyPet
                     RaiseDockDividerResize(DockDividerResizeStarted,
                         CurrentPhysicalHeight());
                 }
+                else if (DockHorizontalResizeActive) Raise(DockHorizontalResizeStarted);
                 return IntPtr.Zero;
             }
             if (message == WmExitSizeMove)
             {
                 bool dividerResize = _dockDividerResizeActive;
+                bool horizontalResize = DockHorizontalResizeActive;
                 _windowResizeActive = false;
                 _dockDividerResizeActive = false;
                 _lastResizeHitTest = 0;
@@ -297,6 +297,7 @@ namespace PennyPet
                     RaiseDockDividerResize(DockDividerResizeCompleted,
                         CurrentPhysicalHeight());
                 }
+                else if (horizontalResize) Raise(DockHorizontalResizeCompleted);
                 else Raise(UserResizeCompleted);
                 return IntPtr.Zero;
             }

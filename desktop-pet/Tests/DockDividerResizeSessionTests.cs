@@ -19,8 +19,8 @@ namespace PennyPet.Tests
                 Facts("c", 282, 600, width: 640, dpi: 192), Facts("d", 882, 275, width: 320, dpi: 96) };
         }
 
-        private static DockDividerResizeSession Start()
-        { return DockDividerResizeSession.TryStart("b", Baseline()); }
+        private static DockResizeSession Start()
+        { return DockResizeSession.TryStart(DockResizeKind.Divider, "b", Baseline()); }
 
         private static StickyUiEvent Event(bool final = false, string id = "b", long seq = 2,
             long gen = 7, int top = -170, int height = 900)
@@ -42,12 +42,12 @@ namespace PennyPet.Tests
         public void LiveUsesPhysicalDeltaAndKeepsEachFollowersOwnDimensions()
         {
             List<WindowFacts> input = Baseline();
-            DockDividerResizeSession session = DockDividerResizeSession.TryStart("b", input);
+            DockResizeSession session = DockResizeSession.TryStart(DockResizeKind.Divider, "b", input);
             input.Clear();
             bool post;
             Assert.IsTrue(session.QueueLive(Event(), out post));
             Assert.IsTrue(post);
-            DockDividerFollowerBatch batch = session.Mailbox.TakeLatest();
+            DockResizeBatch batch = session.Mailbox.TakeLatest();
             Assert.AreEqual(2, batch.Targets.Count);
             Assert.AreEqual("c", batch.Targets[0].NoteId);
             Assert.AreEqual(730, batch.Targets[0].PhysicalBounds.Top);
@@ -64,7 +64,7 @@ namespace PennyPet.Tests
         [DataRow("b", 2L, 8L)]
         public void ForeignStaleAndWrongTopologyEventsLeaveTheGestureUsable(string id, long seq, long gen)
         {
-            DockDividerResizeSession session = Start();
+            DockResizeSession session = Start();
             bool post;
             Assert.IsFalse(session.QueueLive(Event(id: id, seq: seq, gen: gen), out post));
             Assert.IsFalse(post);
@@ -76,10 +76,10 @@ namespace PennyPet.Tests
         [TestMethod]
         public void FinalReanchorsToActualSourceAndStaysFinalizingAfterHostAcknowledges()
         {
-            DockDividerResizeSession session = Start();
+            DockResizeSession session = Start();
             bool post;
             session.QueueLive(Event(), out post);
-            DockDividerFollowerBatch final = session.BeginFinal(Event(true, seq: 3, top: 0, height: 330));
+            DockResizeBatch final = session.BeginFinal(Event(true, seq: 3, top: 0, height: 330));
             Assert.AreEqual(330, final.Targets[0].PhysicalBounds.Top);
             Assert.AreEqual(930, final.Targets[1].PhysicalBounds.Top);
             Assert.IsNull(session.Mailbox.TakeLatest());
@@ -93,10 +93,10 @@ namespace PennyPet.Tests
         [TestMethod]
         public void CorrectionUsesVerifiedActualSizesOnceAndInvalidatesFirstFinal()
         {
-            DockDividerResizeSession session = Start();
-            DockDividerFollowerBatch first = session.BeginFinal(Event(true, top: 0, height: 330));
+            DockResizeSession session = Start();
+            DockResizeBatch first = session.BeginFinal(Event(true, top: 0, height: 330));
             DockBatchResult actual = Result(Facts("c", 340, 610, 4, width: 650), Facts("d", 952, 280, 4, width: 330));
-            DockDividerFollowerBatch correction = session.TryCorrect(first, actual);
+            DockResizeBatch correction = session.TryCorrect(first, actual);
             Assert.IsNotNull(correction);
             Assert.AreEqual(330, correction.Targets[0].PhysicalBounds.Top);
             Assert.AreEqual(610, correction.Targets[0].PhysicalBounds.Height);
@@ -112,18 +112,18 @@ namespace PennyPet.Tests
         [TestMethod]
         public void ExactSeamDoesNotScheduleCorrection()
         {
-            DockDividerResizeSession session = Start();
-            DockDividerFollowerBatch final = session.BeginFinal(Event(true, top: 0, height: 330));
+            DockResizeSession session = Start();
+            DockResizeBatch final = session.BeginFinal(Event(true, top: 0, height: 330));
             DockBatchResult result = Result(Facts("c", 332, 600, 4), Facts("d", 932, 275, 4));
-            Assert.IsTrue(session.SeamIsExact(result));
+            Assert.IsTrue(session.LayoutIsExact(result));
             Assert.IsNull(session.TryCorrect(final, result));
         }
 
         [TestMethod]
         public void IncompleteReorderedDuplicateAndWrongGenerationResultsCannotDriveCorrection()
         {
-            DockDividerResizeSession session = Start();
-            DockDividerFollowerBatch final = session.BeginFinal(Event(true));
+            DockResizeSession session = Start();
+            DockResizeBatch final = session.BeginFinal(Event(true));
             foreach (DockBatchResult invalid in new[] {
                 Result(Facts("c", 500, 600, 4)),
                 Result(Facts("d", 500, 275, 4), Facts("c", 800, 600, 4)),
@@ -140,10 +140,10 @@ namespace PennyPet.Tests
         [TestMethod]
         public void FinishRevokesFinalCallbackAndNativeQueueWithoutTouchingNewGesture()
         {
-            DockDividerResizeSession old = Start();
-            DockDividerFollowerBatch final = old.BeginFinal(Event(true));
+            DockResizeSession old = Start();
+            DockResizeBatch final = old.BeginFinal(Event(true));
             old.Finish();
-            DockDividerResizeSession current = Start();
+            DockResizeSession current = Start();
             bool post;
             current.QueueLive(Event(), out post);
             Assert.IsFalse(old.IsCurrentFinal(final));
@@ -157,7 +157,7 @@ namespace PennyPet.Tests
         [TestMethod]
         public void MembershipChangeInvalidatesBaselineButPersistedGeometryDoesNot()
         {
-            DockDividerResizeSession session = Start();
+            DockResizeSession session = Start();
             List<StickyNoteData> members = new List<StickyNoteData>();
             foreach (string id in new[] { "a", "b", "c", "d" })
                 members.Add(new StickyNoteData { Id = id, Visible = true, Height = 123, DockParentId = "stale" });
@@ -172,24 +172,24 @@ namespace PennyPet.Tests
         [TestMethod]
         public void StartRejectsMixedTopologyOrMissingSourceWithoutChangingExistingSession()
         {
-            DockDividerResizeSession current = Start();
+            DockResizeSession current = Start();
             List<WindowFacts> facts = Baseline();
             facts[2] = Facts("c", 282, 600, gen: 8);
-            Assert.IsNull(DockDividerResizeSession.TryStart("b", facts));
-            Assert.IsNull(DockDividerResizeSession.TryStart("missing", Baseline()));
-            Assert.IsNull(DockDividerResizeSession.TryStart("d", Baseline()));
+            Assert.IsNull(DockResizeSession.TryStart(DockResizeKind.Divider, "b", facts));
+            Assert.IsNull(DockResizeSession.TryStart(DockResizeKind.Divider, "missing", Baseline()));
+            Assert.IsNull(DockResizeSession.TryStart(DockResizeKind.Divider, "d", Baseline()));
             Assert.IsTrue(current.IsResizing);
         }
 
         [TestMethod]
         public void TopologyRecoveryUsesNewFactsForTheWholeStack()
         {
-            DockDividerResizeSession old = Start();
+            DockResizeSession old = Start();
             old.Finish();
             List<WindowFacts> fresh = new List<WindowFacts> {
                 Facts("b", 20, 450, 10, 8), Facts("c", 500, 620, 9, 8), Facts("d", 1200, 285, 9, 8) };
-            DockDividerResizeSession recovered = DockDividerResizeSession.TryStart("b", fresh);
-            DockDividerFollowerBatch final = recovered.BeginFinal(Event(true, seq: 10, gen: 8, top: 20, height: 450));
+            DockResizeSession recovered = DockResizeSession.TryStart(DockResizeKind.Divider, "b", fresh);
+            DockResizeBatch final = recovered.BeginFinal(Event(true, seq: 10, gen: 8, top: 20, height: 450));
             Assert.AreEqual(8L, final.TopologyGeneration);
             Assert.AreEqual(470, final.Targets[0].PhysicalBounds.Top);
             Assert.AreEqual(620, final.Targets[0].PhysicalBounds.Height);

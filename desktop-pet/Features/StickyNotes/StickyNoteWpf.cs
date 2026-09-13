@@ -152,8 +152,6 @@ namespace PennyPet
         private int _lastResizeHitTest;
         private bool _windowResizeActive;
         private bool _dockDividerResizeActive;
-        private double _resizeStartLeft;
-        private double _resizeStartWidth;
         private int _dockDividerMinimumHeight = 220;
         private int _dockDividerMaximumHeight = 700;
         private Rectangle _headerDragStartBounds;
@@ -577,6 +575,8 @@ namespace PennyPet
         public event EventHandler HeaderDragMoved;
         public event EventHandler HeaderDragCompleted;
         public event EventHandler UserResizeCompleted;
+        public event EventHandler DockHorizontalResizeStarted;
+        public event EventHandler DockHorizontalResizeCompleted;
         public event EventHandler CloseRequested;
         public event EventHandler PinStateChanged;
         public event EventHandler<DockHorizontalResizeEventArgs>
@@ -1387,7 +1387,7 @@ namespace PennyPet
         {
             get
             {
-                if (!_windowResizeActive) return false;
+                if (!_windowResizeActive || !_dockGrouped) return false;
                 return _lastResizeHitTest == HtLeft ||
                     _lastResizeHitTest == HtRight ||
                     _lastResizeHitTest == HtTopLeft ||
@@ -1395,17 +1395,6 @@ namespace PennyPet
                     _lastResizeHitTest == HtBottomLeft ||
                     _lastResizeHitTest == HtBottomRight;
             }
-        }
-
-        internal int DockHorizontalGroupLeft(double currentWidth)
-        {
-            bool fromLeft = _lastResizeHitTest == HtLeft ||
-                _lastResizeHitTest == HtTopLeft ||
-                _lastResizeHitTest == HtBottomLeft;
-            double left = fromLeft
-                ? _resizeStartLeft + _resizeStartWidth - currentWidth
-                : _resizeStartLeft;
-            return (int)Math.Round(left);
         }
 
         private Color EffectiveTextColor()
@@ -2334,17 +2323,10 @@ namespace PennyPet
             SetDockResizeRole(false, false, false);
             bool standalone = !_dockGrouped && _dockResizeTop &&
                 _dockResizeBottom && !_dockSplitBottom;
-            _resizeStartLeft = 300;
-            _resizeStartWidth = 400;
-            _windowResizeActive = true;
-            _lastResizeHitTest = HtLeft;
             bool leftEdgeKeepsRightFixed =
-                DockHorizontalGroupLeft(500) == 200;
-            _lastResizeHitTest = HtRight;
+                StickyDockGeometry.CalculatePhysicalHorizontalResizeTarget(200, 700, true, 280, 900).Left == 200;
             bool rightEdgeKeepsLeftFixed =
-                DockHorizontalGroupLeft(500) == 300;
-            _windowResizeActive = false;
-            _lastResizeHitTest = 0;
+                StickyDockGeometry.CalculatePhysicalHorizontalResizeTarget(300, 800, false, 280, 900).Left == 300;
             return top && bottom && standalone &&
                 leftEdgeKeepsRightFixed && rightEdgeKeepsLeftFixed;
         }
