@@ -61,6 +61,18 @@ namespace PennyPet
             SynchronizationContext completionContext)
         {
             if (command == null) throw new ArgumentNullException(nameof(command));
+            // When the owner thread has exited, none of its HWNDs can remain.
+            // Hidden notes can still be deleted after a Sticky subsystem fault.
+            if (command.Kind == StickyUiCommandKind.Close)
+            {
+                bool exited;
+                lock (_gate) exited = _thread != null && !_thread.IsAlive;
+                if (exited)
+                {
+                    PostCompletion(completionContext, completed, StickyUiCommandResult.Handled());
+                    return;
+                }
+            }
             PostToDispatcher(delegate { return handler(command); },
                 completed, completionContext);
         }

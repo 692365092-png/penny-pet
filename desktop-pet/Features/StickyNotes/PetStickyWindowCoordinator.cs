@@ -2204,7 +2204,8 @@ namespace PennyPet
 
         private void CancelHostedDockRestore(DockRestoreOperation operation)
         {
-            if (_dockRestores.Finish(operation)) HideUncommittedDockRestore(operation);
+            if (_dockRestores.Finish(operation) && !IsDisposed && !Disposing)
+                HideUncommittedDockRestore(operation);
         }
 
         private void CancelHostedDockRestores(string noteId = null)

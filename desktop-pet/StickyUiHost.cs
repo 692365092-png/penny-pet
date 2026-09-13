@@ -352,7 +352,7 @@ namespace PennyPet
                     case StickyUiCommandKind.Close:
                         return TryGetSession(command.NoteId, out session)
                             ? session.Close()
-                            : StickyUiCommandResult.NotHandled();
+                            : StickyUiCommandResult.Handled();
                     case StickyUiCommandKind.CloseAll:
                         return CloseAllSessions();
                     default:

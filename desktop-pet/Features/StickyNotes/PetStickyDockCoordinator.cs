@@ -1384,13 +1384,9 @@ namespace PennyPet
             }
             if (DeferDockResizeMutation(note.Id, () => DeleteStickyNote(note, completed))) return;
             CancelHostedDockRestores(note.Id);
-            if (IsHostedSticky(note))
-            {
-                BeginHostedStickyDelete(note, completed);
-                return;
-            }
-            DeleteStickyNoteAfterWindowClosed(note);
-            if (completed != null) completed(true);
+            // A cancelled restore may have prepared a real HWND before its
+            // lease was registered here. Let the STA acknowledge closure.
+            BeginHostedStickyDelete(note, completed);
         }
 
         private void BeginHostedStickyDelete(StickyNoteData note)

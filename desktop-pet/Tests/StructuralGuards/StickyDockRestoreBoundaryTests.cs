@@ -16,15 +16,18 @@ namespace PennyPet.Tests
         public void RestoreRequestsTransactionalVisibilityWithoutOrdinaryShow()
         {
             string source = ReadSource(Coordinator);
-            string post = SliceMethod(source, "private bool PostDockGroupRestoreReproject(");
-            Assert.IsTrue(post.Contains("showAfterPlacement: true"));
-            string complete = SliceMethod(source, "private void CompleteHostedDockRestoreReproject(");
+            string post = SliceMethod(source, "private bool TryRestoreHostedDockComponent(");
+            Assert.IsTrue(post.Contains("StickyUiCommand.RestoreDockGroup("));
+            Assert.IsFalse(post.Contains("StickyUiCommand.EnsureSession("));
+            string complete = SliceMethod(source, "private void CompleteHostedDockRestore(");
             Assert.IsTrue(complete.Contains("forceVisible: true"));
             Assert.IsFalse(complete.Contains("StickyUiCommand.Show("));
             Assert.IsFalse(source.Contains("ShowRestoredDockGroup"));
             Assert.IsTrue(complete.Contains("StickyUiCommand.FocusPrimaryInput("));
-            string focus = SliceMethod(complete, "if (state.FocusEditor && state.Focus != null)");
-            Assert.IsFalse(focus.Contains("FailHostedDockRestore("));
+            string focus = SliceMethod(complete, "if (operation.FocusEditor)");
+            Assert.IsFalse(focus.Contains("CancelHostedDockRestore("));
+            Assert.IsTrue(complete.IndexOf("_dockRestores.Finish(operation)", StringComparison.Ordinal) <
+                complete.IndexOf("StickyUiCommand.FocusPrimaryInput(", StringComparison.Ordinal));
             Assert.IsFalse(complete.Contains("StickyUiCommand.SetBounds("));
         }
 
@@ -65,32 +68,64 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void EnsureSessionAcknowledgementSynchronizesLeaseWithoutRemovingState()
+        public void RestoreBatchRegistersSessionsOnlyAfterWholeBatchPreflight()
         {
-            string preparation = SliceMethod(ReadSource(Coordinator),
-                "private bool PrepareHostedDockRestoreSessions(");
-            Assert.IsTrue(preparation.Contains("SynchronizeSessionLease("));
-            Assert.IsTrue(preparation.Contains("memberCopy.Id, result.Sequence"));
-            Assert.IsFalse(preparation.Contains("_hostedRuntime.RemoveNote("));
-            Assert.IsFalse(preparation.Contains("_hostedRuntime.AddNote("));
+            string apply = SliceMethod(ReadSource(Coordinator), "private bool TryApplyDockTopologyResult(");
+            int preflight = apply.IndexOf("CanApplyBatchSequence(member, acceptCreatedSessions)", StringComparison.Ordinal);
+            int complete = apply.IndexOf("if (actual.Count != expected.Count) return false", StringComparison.Ordinal);
+            int invalidate = apply.IndexOf("_placementRuntime.InvalidateEffective(member.NoteId)", StringComparison.Ordinal);
+            int register = apply.IndexOf("AcceptBatchSequence(member, acceptCreatedSessions)", StringComparison.Ordinal);
+            Assert.IsTrue(preflight >= 0 && complete > preflight && invalidate > complete && register > invalidate);
+            Assert.IsTrue(apply.Contains("if (acceptCreatedSessions && member.SessionCreated)"));
+            Assert.IsFalse(apply.Contains("_hostedRuntime.RemoveNote("));
+            string host = SliceMethod(ReadSource("StickyUiHost.cs"), "private StickyUiCommandResult RestoreDockGroup(");
+            Assert.IsTrue(host.Contains("if (ensured.SessionCreated) created.Add("));
+            Assert.IsTrue(host.Contains("created.ContainsKey(member.NoteId)"));
+            Assert.IsTrue(host.Contains("if (!completed)") && host.Contains("in created)"));
+            string completion = SliceMethod(ReadSource(Coordinator), "private void CompleteHostedDockRestore(");
+            Assert.IsFalse(completion.Contains("StickyUiCommand.Close("));
         }
 
         [TestMethod]
-        public void DuplicateRestoreIsHandledAndTerminalPathsReleaseGate()
+        public void TopologyAndUserMutationsRetireRestoreBeforeReplacementEffects()
         {
             string source = ReadSource(Coordinator);
-            string start = SliceMethod(source, "private bool TryRestoreHostedDockComponent(");
-            string duplicate = SliceMethod(start, "if (!_pendingHostedDockRestoreGroups.Add(restoreKey))");
-            Assert.IsTrue(duplicate.Contains("return true;"));
-            Assert.IsTrue(duplicate.Contains("DockRestoreDuplicateIgnored"));
-            Assert.IsTrue(start.Contains("catch"));
-            Assert.IsTrue(start.Contains("_pendingHostedDockRestoreGroups.Remove(restoreKey)"));
-            foreach (string name in new[] { "CompleteHostedDockRestoreSuccess", "FailHostedDockRestore" })
-            {
-                string terminal = SliceMethod(source, "private void " + name + "(");
-                Assert.IsTrue(terminal.Contains("finally"), name);
-                Assert.IsTrue(terminal.Contains("ReleaseHostedDockRestoreGate(state)"), name);
-            }
+            string restart = SliceMethod(source, "private void RestartHostedDockRestores(");
+            int cancel = restart.IndexOf("CancelHostedDockRestore(operation)", StringComparison.Ordinal);
+            int start = restart.IndexOf("TryRestoreHostedDockComponent(", StringComparison.Ordinal);
+            Assert.IsTrue(cancel >= 0 && start > cancel);
+            Assert.IsTrue(SliceMethod(source, "private void ReconcileDockGroups(").Contains("_dockRestores.ContainsGroup("));
+            foreach (string signature in new[] { "private bool BeginHostedStickyExitIfNeeded()",
+                "private void CollapseAllStickyNotes()", "private void ExpandAndTileAllStickyNotesToPetScreen()",
+                "private void CloseHostedStickyRuntimeForReload(" })
+                Assert.IsTrue(SliceMethod(source, signature).Contains("CancelHostedDockRestores()"), signature);
+            string complete = SliceMethod(source, "private void CompleteHostedDockRestore(");
+            int owner = complete.IndexOf("_dockRestores.IsCurrent(operation)", StringComparison.Ordinal);
+            int membership = complete.IndexOf("operation.MatchesMembers(", StringComparison.Ordinal);
+            int apply = complete.IndexOf("TryApplyDockTopologyResult(", StringComparison.Ordinal);
+            Assert.IsTrue(owner >= 0 && membership > owner && apply > membership);
+            string host = SliceMethod(ReadSource("StickyUiHost.cs"), "private StickyUiCommandResult ApplyDockGroupReproject(");
+            int cancelled = host.LastIndexOf("command.DockRestore.Cancellation.IsCancellationRequested", StringComparison.Ordinal);
+            Assert.IsTrue(cancelled >= 0 && cancelled < host.IndexOf("session.CommitRestoredVisibleState()", StringComparison.Ordinal));
+        }
+
+        [TestMethod]
+        public void DeleteWaitsForNativeCloseEvenBeforeRestoreLeaseRegistration()
+        {
+            string dock = ReadSource("Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string delete = SliceMethod(dock, "private void DeleteStickyNote(StickyNoteData note,");
+            Assert.IsTrue(delete.Contains("CancelHostedDockRestores(note.Id)"));
+            Assert.IsTrue(delete.Contains("BeginHostedStickyDelete(note, completed)"));
+            Assert.IsFalse(delete.Contains("IsHostedSticky(note)") || delete.Contains("DeleteStickyNoteAfterWindowClosed("));
+            string close = SliceMethod(ReadSource("StickyWindowSession.cs"), "internal StickyUiCommandResult Close()");
+            int ime = close.IndexOf("IsImeCompositionActive", StringComparison.Ordinal);
+            Assert.IsTrue(ime >= 0 && close.IndexOf("StickyUiCommandResult.NotAccepted()", StringComparison.Ordinal) > ime);
+            string host = ReadSource("StickyUiHost.cs");
+            string handler = host.Substring(host.IndexOf("case StickyUiCommandKind.Close:", StringComparison.Ordinal));
+            handler = handler.Substring(0, handler.IndexOf("case StickyUiCommandKind.CloseAll:", StringComparison.Ordinal));
+            Assert.IsTrue(handler.Contains(": StickyUiCommandResult.Handled()"));
+            string thread = SliceMethod(ReadSource("StickyUiThreadHost.cs"), "internal void Post(StickyUiCommand command,");
+            Assert.IsTrue(thread.Contains("_thread != null && !_thread.IsAlive"));
         }
     }
 }
