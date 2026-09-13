@@ -1783,7 +1783,11 @@ namespace PennyPet
             DockResizeSession previous = _dockResize;
             _dockResize = null;
             if (previous != null)
-                foreach (Action action in previous.Finish()) action();
+                foreach (Action action in previous.Finish())
+                {
+                    try { action(); }
+                    catch (Exception error) { ShowStickyWindowFailure("尺寸调整后续操作", error); }
+                }
         }
 
         private void ClearHostedDockResizeSessionIfMember(string noteId)
@@ -1822,12 +1826,13 @@ namespace PennyPet
             }
             DockResizeBatch final = session.BeginFinal(value);
             if (final == null) return;
-            DisplayDiagnostics.Trace("DockDividerCompleted", "note=" + value.NoteId +
+            DisplayDiagnostics.Trace("DockResizeCompleted", "note=" + value.NoteId + " kind=" + kind +
+                " width=" + value.Facts.PhysicalBounds.Width +
                 " height=" + value.Facts.PhysicalBounds.Height +
                 " top=" + value.Facts.PhysicalBounds.Top + " accepted=true" +
                 " followers=" + final.Targets.Count + " seq=" + value.Sequence);
             // Commit the source in this Pet turn before posting followers, so
-            // hide/reopen observes the resized preferred height. Disk I/O queues.
+            // hide/reopen observes the resized preference. Disk I/O queues.
             CommitResizeSourceFinal(value, source, value.Topology, sourcePreference);
             PostResizeFinal(session, final);
         }
@@ -1848,7 +1853,7 @@ namespace PennyPet
             DisplayTopologySnapshot topology = CurrentTopologySnapshot();
             if (!CanAcceptResizeBatch(session, batch, topology))
             {
-                DisplayDiagnostics.Trace("DockDividerFinalRejected", "note=" + session.SourceNoteId);
+                DisplayDiagnostics.Trace("DockResizeFinalRejected", "note=" + session.SourceNoteId + " kind=" + session.Kind);
                 ClearHostedDockResizeSession(session);
                 return;
             }
@@ -1859,7 +1864,7 @@ namespace PennyPet
                 return;
             }
             if (!session.LayoutIsExact(batch))
-                DisplayDiagnostics.Trace("DockDividerSeamVerifyFailed", "note=" + session.SourceNoteId);
+                DisplayDiagnostics.Trace("DockResizeLayoutVerifyFailed", "note=" + session.SourceNoteId + " kind=" + session.Kind);
             try
             {
                 if (!ApplyResizeBatchCanonical(batch, topology, true, session.Kind))
@@ -1882,7 +1887,7 @@ namespace PennyPet
                 // Exact physical facts: never apply the persisted-size clamp.
                 ApplyHostedStickyFactsGeometry(sourceCanonical, value.Facts, topology);
                 if (!_placementRuntime.TryUpdateEffective(value.NoteId, value.Facts, topology))
-                    throw new InvalidOperationException("Divider source acceptance changed after preflight.");
+                    throw new InvalidOperationException("Resize source acceptance changed after preflight.");
                 LogicalRect local = preference.LocalLogicalRect;
                 CommitHostedStickyPreferred(sourceCanonical, preference.PreferredTargetKey,
                     local.X, local.Y, local.Width, local.Height, PlacementReason.UserResizeCommit);

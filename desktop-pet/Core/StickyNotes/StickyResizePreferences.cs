@@ -18,13 +18,13 @@ namespace PennyPet
                 !StickyPlacementRules.TryBuildPreferredPlacement(facts, topology,
                     note.PreferredDisplayTargetKey, out preference)) return false;
             LogicalRect actual = preference.LocalLogicalRect;
-            bool hasPreferred = !String.IsNullOrWhiteSpace(note.PreferredDisplayTargetKey) &&
+            bool samePreferredSurface = !String.IsNullOrWhiteSpace(note.PreferredDisplayTargetKey) &&
+                String.Equals(preference.PreferredTargetKey, note.PreferredDisplayTargetKey, StringComparison.OrdinalIgnoreCase) &&
                 note.PreferredLocalLogicalWidth > 0 && note.PreferredLocalLogicalHeight > 0;
-            if (kind == DockResizeKind.Divider && hasPreferred)
+            if (kind == DockResizeKind.Divider && samePreferredSurface)
                 actual = new LogicalRect { X = note.PreferredLocalLogicalX, Y = note.PreferredLocalLogicalY,
                     Width = note.PreferredLocalLogicalWidth, Height = actual.Height };
-            else if (kind == DockResizeKind.Horizontal && !source && hasPreferred &&
-                String.Equals(preference.PreferredTargetKey, note.PreferredDisplayTargetKey, StringComparison.OrdinalIgnoreCase))
+            else if (kind == DockResizeKind.Horizontal && !source && samePreferredSurface)
                 actual = new LogicalRect { X = actual.X, Y = note.PreferredLocalLogicalY,
                     Width = actual.Width, Height = note.PreferredLocalLogicalHeight };
             // On another surface the old display-local Y is not meaningful;

@@ -285,7 +285,7 @@ namespace PennyPet
                 return StickyUiCommandResult.NotHandled();
             _topology = topology;
             long resultSequence = ++_sequence;
-            _lastSnapshot = CaptureContentSnapshotForNativeResult();
+            _lastSnapshot = CaptureSnapshot();
             WindowFacts facts = CaptureWindowFacts(resultSequence);
             if (facts == null || facts.TopologyGeneration != topology.Generation ||
                 facts.WindowSequence != resultSequence || !String.Equals(facts.WindowId,
@@ -392,7 +392,7 @@ namespace PennyPet
                 _applyingBounds = previousApplying;
             }
             if (!succeeded) return StickyUiCommandResult.NotHandled();
-            _lastSnapshot = CaptureContentSnapshotForNativeResult();
+            _lastSnapshot = CaptureSnapshot();
             return StickyUiCommandResult.Handled(_lastSnapshot,
                 resultSequence,
                 facts, _topology);
@@ -514,7 +514,7 @@ namespace PennyPet
         {
             if (!IsAvailable) return;
             _window.Data.Visible = true;
-            _lastSnapshot = CaptureContentSnapshotForNativeResult();
+            _lastSnapshot = CaptureSnapshot();
         }
 
         internal void CompleteDockTargetDpi(DockDpiTransition transition,
@@ -557,7 +557,7 @@ namespace PennyPet
                 if (wasVisible) _placementExecutor.Show();
                 else _window.Hide();
                 _window.Data.Visible = wasVisible;
-                _lastSnapshot = CaptureContentSnapshotForNativeResult();
+                _lastSnapshot = CaptureSnapshot();
             }
             catch
             {
@@ -573,7 +573,7 @@ namespace PennyPet
         {
             if (!AdoptTopology(topology)) return null;
             _sequence++;
-            _lastSnapshot = CaptureContentSnapshotForNativeResult();
+            _lastSnapshot = CaptureSnapshot();
             WindowFacts facts = CaptureFactsWith(_topology);
             if (facts == null || facts.TopologyGeneration !=
                 _topology.Generation || facts.WindowSequence != _sequence ||
@@ -581,11 +581,6 @@ namespace PennyPet
                     StringComparison.OrdinalIgnoreCase)) return null;
             return new DockBatchMemberResult(_noteId, _sequence, facts,
                 _lastSnapshot);
-        }
-
-        private StickyNoteUiSnapshot CaptureContentSnapshotForNativeResult()
-        {
-            return StickyNoteUiSnapshot.FromContentData(_window.Data);
         }
 
         private WindowFacts CaptureFactsWith(DisplayTopologySnapshot topology)
@@ -826,7 +821,7 @@ namespace PennyPet
             DockHorizontalResizeEventArgs e)
         {
             if (_eventsSuppressed || !IsAvailable) return;
-            StickyNoteUiSnapshot snapshot = CaptureContentSnapshotForNativeResult();
+            StickyNoteUiSnapshot snapshot = CaptureSnapshot();
             _lastSnapshot = snapshot;
             _sequence++;
             Raise(StickyUiEvent.HorizontalResize(snapshot, _sequence,
@@ -858,8 +853,7 @@ namespace PennyPet
             DockDividerResizeEventArgs e)
         {
             if (_eventsSuppressed || !IsAvailable) return;
-            StickyNoteUiSnapshot snapshot = kind == StickyUiEventKind.DockDividerResizing
-                ? CaptureContentSnapshotForNativeResult() : CaptureSnapshot();
+            StickyNoteUiSnapshot snapshot = CaptureSnapshot();
             _lastSnapshot = snapshot;
             _sequence++;
             WindowFacts facts = CaptureWindowFacts(_sequence);

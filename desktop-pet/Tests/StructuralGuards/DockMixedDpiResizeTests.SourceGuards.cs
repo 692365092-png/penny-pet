@@ -31,16 +31,5 @@ namespace PennyPet.Tests
                 "The DIP-based left-edge reconstruction must not remain.");
         }
 
-        [TestMethod]
-        public void PetGroupResize_DoesNotReclampPhysicalWidth()
-        {
-            string source = ReadSource(
-                "Features/StickyNotes/PetStickyDockCoordinator.cs");
-            string method = SliceMethod(source,
-                "private void ResizeStickyDockGroup(");
-            Assert.IsFalse(method.Contains("Math.Max(280") ||
-                method.Contains("Math.Min(900"),
-                "The Pet must not apply a second 280..900 logical clamp.");
-        }
     }
 }

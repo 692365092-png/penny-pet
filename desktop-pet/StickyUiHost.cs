@@ -101,8 +101,7 @@ namespace PennyPet
             }, completed, completionContext);
         }
 
-        // Divider-resize analogs of the live/final Dock plan entries. Same
-        // deferred mailbox shape, dedicated to the vertical divider lifecycle.
+        // Horizontal and divider gestures share one latest-frame/final transport.
         internal void PostLatestResizeBatch(DockResizeMailbox mailbox,
             Action<StickyUiCommandResult> completed,
             SynchronizationContext completionContext)
@@ -151,8 +150,8 @@ namespace PennyPet
             }
         }
 
-        // One native batch: no show/restore, activation, Z-order changes or
-        // per-window editor serialization on the resize hot path.
+        // Move all followers without showing or activating them, then capture
+        // each member once. WindowFacts remain the actual geometry authority.
         private StickyUiCommandResult ApplyResizeBatch(
             DockResizeBatch batch)
         {
@@ -163,7 +162,7 @@ namespace PennyPet
             if (topology == null ||
                 batch.TopologyGeneration != topology.Generation)
             {
-                DisplayDiagnostics.Trace("DockDividerBatchStale",
+                DisplayDiagnostics.Trace("DockResizeBatchStale",
                     "batchGeneration=" + batch.TopologyGeneration +
                     " currentGeneration=" +
                     (topology == null ? -1 : topology.Generation));

@@ -221,8 +221,8 @@ namespace PennyPet.Tests
                 "private void ResizeHostedStickyDock",
                 "private void OnResizeLiveBatchApplied");
             string progress = Between(windowCoordinator,
-                "if (value.Kind == StickyUiEventKind.DockDividerResizing)",
-                "if (value.Kind == StickyUiEventKind.DockDividerResizeCompleted)");
+                "if (value.Kind == StickyUiEventKind.DockDividerResizing ||",
+                "if (value.Kind == StickyUiEventKind.DockDividerResizeCompleted ||");
 
             Assert.IsTrue(native.Contains("WmEnterSizeMove") &&
                 native.Contains("WmSizing") &&
@@ -237,7 +237,7 @@ namespace PennyPet.Tests
                 !liveResize.Contains("RefreshDockResizeRoles") &&
                 !liveResize.Contains("SaveAsync") &&
                 !liveResize.Contains("ApplyDockCanonicalFromPhysical"),
-                "Live ticks must coalesce follower frames through the latest-wins divider mailbox without writing canonical state.");
+                "Live ticks must coalesce follower frames through the latest-wins divider mailbox without committing durable preferences.");
             Assert.IsFalse(progress.Contains("SaveAsync") ||
                 progress.Contains("RefreshDockResizeRoles"),
                 "Live progress must not save or refresh resize roles.");
@@ -271,38 +271,56 @@ namespace PennyPet.Tests
             int commit = final.IndexOf("ApplyResizeBatchCanonical(", StringComparison.Ordinal);
             Assert.IsTrue(owner >= 0 && validate > owner && correction > validate && commit > correction);
             Assert.IsTrue(final.Contains("!ReferenceEquals(_dockResize, session)"));
-            string preflight = Between(dock, "private bool CanAcceptResizeBatch", "private void ApplyResizeBatchCanonical");
+            string preflight = Between(dock, "private bool CanAcceptResizeBatch", "private bool ApplyResizeBatchCanonical");
             Assert.IsTrue(preflight.Contains("HasExpectedFollowers") && preflight.Contains("MatchesMembers") &&
                 preflight.Contains("CanApplySequence") && preflight.Contains("CanAcceptEffective"));
-            string start = Between(window, "if (value.Kind == StickyUiEventKind.DockDividerResizeStarted)",
-                "if (value.Kind == StickyUiEventKind.DockDividerResizing)");
+            string start = Between(window, "if (value.Kind == StickyUiEventKind.DockDividerResizeStarted ||",
+                "if (value.Kind == StickyUiEventKind.DockDividerResizing ||");
             Assert.IsFalse(start.Contains("ClearHostedDockResizeSession"), "Rejected events cannot clear a current gesture.");
             string host = ReadSource("StickyUiHost.cs");
             Assert.IsTrue(host.Contains("mailbox.TakeFinal(expected)") && host.Contains("mailbox.CompleteFinal(expected)"));
         }
 
         [TestMethod]
-        public void DockResizeCompletionsCommitDurablePreferenceWithoutDrift()
+        [TestCategory("ArchitectureSourceBoundary")]
+        public void ResizeNativeEffectsUseOneQuietBatchAndOneCapturePerMember()
         {
-            string coordinator = ReadSource(
-                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
-            string divider = Between(coordinator,
-                "private void CommitDividerPreferred",
-                "private void CommitDockGroupResizePreferred");
-            Assert.IsTrue(divider.Contains("hasPreferred") &&
-                divider.Contains("PreferredLocalLogicalHeight") &&
-                divider.Contains("local.Height") &&
-                divider.Contains("TryBuildPreferredPlacement(facts, topology") &&
-                !divider.Contains("canonical.LocalLogicalHeight"),
-                "A vertical divider must advance only the durable height and keep the established preferred position and width.");
-            string groupResize = Between(coordinator,
-                "private void CommitDockGroupResizePreferred",
-                "internal static bool ShouldApplyHostedSequence");
-            Assert.IsTrue(groupResize.Contains(
-                    "BuildDockChainOrderIncludingHidden") &&
-                groupResize.Contains("sourceLocal.Width") &&
-                groupResize.Contains("PlacementReason.UserResizeCommit"),
-                "A group horizontal resize must propagate the new left/width to every visible member's durable preference.");
+            string host = ReadSource("StickyUiHost.cs");
+            string apply = RawSource.SliceMethod(host, "private StickyUiCommandResult ApplyResizeBatch(");
+            int validate = apply.IndexOf("!TryGetSession(target.NoteId", StringComparison.Ordinal);
+            int suppress = apply.IndexOf("session.SetEventsSuppressed(true)", StringComparison.Ordinal);
+            int move = apply.IndexOf("WindowsBatchWindowPlacementExecutor.Apply(", StringComparison.Ordinal);
+            int capture = apply.IndexOf(".CaptureDockMember(topology)", StringComparison.Ordinal);
+            Assert.IsTrue(validate >= 0 && suppress > validate && move > suppress && capture > move);
+            Assert.IsTrue(apply.Contains("finally") && apply.Contains("session.SetEventsSuppressed(false)"));
+            Assert.IsFalse(apply.Contains(".SetBounds(") || apply.Contains(".ShowAtPhysicalBounds("));
+            string live = RawSource.SliceMethod(ReadSource("Features/StickyNotes/PetStickyDockCoordinator.cs"),
+                "private void ResizeHostedStickyDock(");
+            int accepted = live.IndexOf("session.QueueLive(value", StringComparison.Ordinal);
+            int facts = live.IndexOf("TryUpdateEffective(value.NoteId, value.Facts, value.Topology)", StringComparison.Ordinal);
+            Assert.IsTrue(accepted >= 0 && facts > accepted);
+            Assert.IsFalse(live.Contains("SaveAsync") || live.Contains("CommitHostedStickyPreferred"));
+        }
+
+        [TestMethod]
+        [TestCategory("ArchitectureSourceBoundary")]
+        public void ResizeDependentMutationsWaitForFactsAndClearOwnerBeforeContinuations()
+        {
+            string window = ReadSource("Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string dock = ReadSource("Features/StickyNotes/PetStickyDockCoordinator.cs");
+            foreach (string signature in new[] { "private void CollapseAllStickyNotes()",
+                "private void ExpandAndTileAllStickyNotesToPetScreen()", "private bool BeginHostedStickyExitIfNeeded()",
+                "private void CloseHostedStickyRuntimeForReload(" })
+                Assert.IsTrue(RawSource.SliceMethod(window, signature).Contains("DeferDockResizeMutation"), signature);
+            Assert.IsTrue(RawSource.SliceMethod(dock, "private void CloseStickyDockNote(").Contains("DeferDockResizeMutation"));
+            Assert.IsTrue(dock.Contains("DeferDockResizeMutation(note.Id, () => DeleteStickyNote(note, completed))"));
+            Assert.IsTrue(window.Contains("DeferDockResizeMutation(note.Id, () => ShowHostedSticky("));
+            string clear = RawSource.SliceMethod(window, "private void ClearHostedDockResizeSession(");
+            int releaseOwner = clear.IndexOf("_dockResize = null", StringComparison.Ordinal);
+            Assert.IsTrue(releaseOwner >= 0 && clear.IndexOf("previous.Finish()", StringComparison.Ordinal) > releaseOwner);
+            string apply = RawSource.SliceMethod(dock, "private bool ApplyResizeBatchCanonical(");
+            int prepare = apply.IndexOf("StickyResizePreferences.TryBuild", StringComparison.Ordinal);
+            Assert.IsTrue(prepare >= 0 && apply.IndexOf("ApplyHostedStickyFactsGeometry", StringComparison.Ordinal) > prepare);
         }
 
         [TestMethod]
@@ -323,7 +341,6 @@ namespace PennyPet.Tests
                 "StickyUiCommand.SetBounds(") &&
                 dockCoordinator.Contains("StickyUiCommand.SetTopMost(") &&
                 dockCoordinator.Contains("ApplyDockTargets") &&
-                dockCoordinator.Contains("ResizeStickyDockGroup") &&
                 dockCoordinator.Contains("ResizeHostedStickyDock") &&
                 dockCoordinator.Contains("CalculateDockDividerTargets") &&
                 dockCoordinator.Contains("CloseStickyDockNote") &&
@@ -477,7 +494,7 @@ namespace PennyPet.Tests
                 "Drag geometry must flow from facts-derived canonical state.");
             string boundsHandler = Between(coordinator,
                 "if (value.Kind == StickyUiEventKind.BoundsChanged)",
-                "if (value.Kind == StickyUiEventKind.DockDividerResizeStarted)");
+                "if (value.Kind == StickyUiEventKind.DockDividerResizeStarted ||");
             Assert.IsTrue(boundsHandler.Contains(
                     "ApplyHostedStickyEvent(value, false)") &&
                 !boundsHandler.Contains("ApplyHostedStickySnapshot"),
@@ -541,7 +558,7 @@ namespace PennyPet.Tests
                     "TryBuildPreferredPlacement(") &&
                 commit.Contains("PlacementReason.DockCommit") &&
                 commit.Contains("_dockInteraction.PendingMerge.TryCommit(") &&
-                commit.Contains("_notes.Save()"),
+                commit.Contains("_notes.SaveAsync()"),
                 "Every member preferred must derive from captured facts plus the finalizing topology, then persist once.");
             Assert.IsFalse(commit.Contains("CurrentTopologySnapshot("),
                 "A G-generation dock commit must never read a later Current generation.");
@@ -849,7 +866,7 @@ namespace PennyPet.Tests
                 "TraceDockCommitRejected(rejection);", StringComparison.Ordinal);
             int membership = commit.IndexOf("_dockInteraction.PendingMerge.TryCommit(",
                 StringComparison.Ordinal);
-            int save = commit.IndexOf("_notes.Save()", StringComparison.Ordinal);
+            int save = commit.IndexOf("_notes.SaveAsync()", StringComparison.Ordinal);
             Assert.IsTrue(rejectionReturn >= 0 && membership > rejectionReturn &&
                 save > membership);
         }
@@ -874,13 +891,12 @@ namespace PennyPet.Tests
                 "internal DockBatchMemberResult CaptureDockMember(",
                 "private WindowFacts CaptureFactsWith");
             string helper = Between(session,
-                "private StickyNoteUiSnapshot CaptureContentSnapshotForNativeResult",
-                "private WindowFacts CaptureFactsWith");
+                "private StickyNoteUiSnapshot CaptureSnapshot",
+                "private void Raise");
             Assert.IsTrue(capture.Contains(
-                    "CaptureContentSnapshotForNativeResult()") &&
+                    "CaptureSnapshot()") &&
                 helper.Contains("StickyNoteUiSnapshot.FromContentData("));
-            Assert.IsFalse(capture.Contains("CaptureSnapshot()") ||
-                capture.Contains("CaptureCanonicalPlacement") ||
+            Assert.IsFalse(capture.Contains("CaptureCanonicalPlacement") ||
                 helper.Contains("StickyNoteUiSnapshot.FromData(") ||
                 helper.Contains("CaptureCanonicalPlacement") ||
                 helper.Contains("WindowsDisplayResolver"));

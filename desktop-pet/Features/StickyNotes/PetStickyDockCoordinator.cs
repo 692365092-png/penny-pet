@@ -803,13 +803,13 @@ namespace PennyPet
             if (target == null) return;
             StickyNoteData note = _notes.Find(target.NoteId);
             if (note == null) return;
-            bool dividerSession = _dockResize != null;
+            bool traceResize = _dockResize != null;
             note.Visible = target.Visible;
             note.AlwaysOnTop = target.TopMost;
             if (String.Equals(target.NoteId, alreadyAppliedNoteId,
                 StringComparison.OrdinalIgnoreCase)) return;
             if (!IsHostedSticky(note)) return;
-            if (dividerSession)
+            if (traceResize)
                 DisplayDiagnostics.Trace("DockTargetPosted",
                     "note=" + target.NoteId +
                     " rect=(" + target.X + "," + target.Y + "," +
@@ -819,7 +819,7 @@ namespace PennyPet
                     target.Width, target.Height)),
                 delegate(StickyUiCommandResult result)
                 {
-                    if (dividerSession || result == null ||
+                    if (traceResize || result == null ||
                         result.Status != StickyUiCommandStatus.Handled)
                         DisplayDiagnostics.Trace("DockTargetCompleted",
                             "note=" + target.NoteId +
@@ -989,14 +989,19 @@ namespace PennyPet
             }
             bool superseded = session.Mailbox.HasPending;
             bool post;
-            if (!session.QueueLive(value, out post)) return;
+            if (!_placementRuntime.CanAcceptEffective(value.NoteId, value.Facts) ||
+                !session.QueueLive(value, out post)) return;
+            // BoundsChanged is suppressed during this gesture. Keep actual
+            // source facts current; WM_SIZING's requested rect is only a target.
+            _placementRuntime.TryUpdateEffective(value.NoteId, value.Facts, value.Topology);
+            ApplyHostedStickyFactsGeometry(_notes.Find(value.NoteId), value.Facts, value.Topology);
             _hostedRuntime.RecordSequence(value.NoteId, value.Sequence);
             if (superseded)
-                DisplayDiagnostics.Trace("DockDividerLiveSuperseded", "note=" + value.NoteId);
+                DisplayDiagnostics.Trace("DockResizeLiveSuperseded", "note=" + value.NoteId + " kind=" + session.Kind);
             if (post)
             {
-                DisplayDiagnostics.Trace("DockDividerFrame",
-                    "note=" + value.NoteId + " height=" + value.Height);
+                DisplayDiagnostics.Trace("DockResizeFrame",
+                    "note=" + value.NoteId + " kind=" + session.Kind + " width=" + value.Width + " height=" + value.Height);
                 _stickyUiHost.PostLatestResizeBatch(session.Mailbox,
                     result => OnResizeLiveBatchApplied(session, result), _petUiContext);
             }
@@ -1048,7 +1053,7 @@ namespace PennyPet
                 StickyNoteData canonical = _notes.Find(member.NoteId);
                 ApplyHostedStickyFactsGeometry(canonical, member.Facts, topology);
                 if (!_placementRuntime.TryUpdateEffective(member.NoteId, member.Facts, topology))
-                    throw new InvalidOperationException("Divider Effective acceptance changed after preflight.");
+                    throw new InvalidOperationException("Resize Effective acceptance changed after preflight.");
                 _hostedRuntime.RecordSequence(member.NoteId, member.WindowSequence);
                 if (preferences != null)
                 {
