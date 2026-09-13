@@ -902,16 +902,13 @@ namespace PennyPet
 
             List<StickyWindowSession> sessions =
                 new List<StickyWindowSession>();
-            foreach (DockLogicalMember member in request.Group.Members)
+            foreach (string noteId in request.MemberIds)
             {
                 StickyWindowSession session;
-                if (member == null ||
-                    !TryGetSession(member.NoteId, out session))
+                if (!TryGetSession(noteId, out session))
                     return StickyUiCommandResult.NotHandled();
                 sessions.Add(session);
             }
-            if (sessions.Count != request.Group.Members.Count)
-                return StickyUiCommandResult.NotHandled();
 
             foreach (StickyWindowSession session in sessions)
                 if (!session.AdoptTopology(topology))

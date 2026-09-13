@@ -405,10 +405,12 @@ namespace PennyPet
         internal StickyTodoUiSnapshot[] TodoItems { get; private set; }
         internal StickyScheduleUiSnapshot[] ScheduleItems { get; private set; }
 
-        internal static StickyNoteUiSnapshot FromData(StickyNoteData source)
+        internal static StickyNoteUiSnapshot FromData(StickyNoteData source, bool? alwaysOnTop = null)
         {
             if (source == null) throw new ArgumentNullException(nameof(source));
-            return new StickyNoteUiSnapshot(source, true);
+            var snapshot = new StickyNoteUiSnapshot(source, true);
+            if (alwaysOnTop.HasValue) snapshot.AlwaysOnTop = alwaysOnTop.Value;
+            return snapshot;
         }
 
         internal static StickyNoteUiSnapshot FromContentData(

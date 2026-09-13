@@ -13,6 +13,21 @@ namespace PennyPet.Tests
         private const string Coordinator = "Features/StickyNotes/PetStickyWindowCoordinator.cs";
 
         [TestMethod]
+        public void LegacyGeometryUsesTheSameRestoreTransactionWithoutPerWindowCallbacks()
+        {
+            string source = ReadSource(Coordinator);
+            Assert.IsFalse(source.Contains("TryRestoreHostedDockComponentLegacyFallback"));
+            string post = SliceMethod(source, "private bool TryRestoreHostedDockComponent(");
+            foreach (string forbidden in new[] { "member.Visible =", "_hostedRuntime.AddNote(",
+                "Screen.FromRectangle", "StickyUiCommand.Create(", "StickyUiCommand.Show(", "_notes.Save()" })
+                Assert.IsFalse(post.Contains(forbidden), forbidden);
+            string host = SliceMethod(ReadSource("StickyUiHost.cs"), "private StickyUiCommandResult ApplyDockGroupReproject(");
+            Assert.IsTrue(host.Contains("request.MemberIds"));
+            Assert.IsFalse(host.Contains("RecoveryTargets") || host.Contains("LegacyRecovery"),
+                "The native effect pipeline cannot branch on storage format.");
+        }
+
+        [TestMethod]
         public void RestoreRequestsTransactionalVisibilityWithoutOrdinaryShow()
         {
             string source = ReadSource(Coordinator);

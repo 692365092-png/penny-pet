@@ -9,7 +9,8 @@ namespace PennyPet
         CurrentRuntimeRepair,
         PreferredReturn,
         TemporaryRehome,
-        RestorePreferred
+        RestorePreferred,
+        LegacyRecovery
     }
 
     // One detached restore intent. Pet owns its lifetime; the STA reads only
@@ -27,12 +28,10 @@ namespace PennyPet
             _originals = new List<StickyNoteData>(ordered).ToArray();
             _orders = new int[ordered.Count];
             var snapshots = new List<StickyNoteUiSnapshot>(ordered.Count);
-            var ids = new List<string>(ordered.Count);
             for (int index = 0; index < ordered.Count; index++)
             {
                 _orders[index] = ordered[index].DockGroupOrder;
-                snapshots.Add(StickyNoteUiSnapshot.FromData(ordered[index]));
-                ids.Add(ordered[index].Id);
+                snapshots.Add(StickyNoteUiSnapshot.FromData(ordered[index], ordered[0].AlwaysOnTop));
             }
             GroupId = ordered[0].DockGroupId;
             FocusId = focusId;
@@ -43,7 +42,7 @@ namespace PennyPet
             Reason = reason;
             Plan = plan;
             Snapshots = snapshots.AsReadOnly();
-            MemberIds = ids.AsReadOnly();
+            MemberIds = plan.MemberIds;
             Cancellation = _cancellation.Token;
         }
 
@@ -63,19 +62,27 @@ namespace PennyPet
             string focusId, bool focusEditor, bool persistVisibility,
             DisplayTopologySnapshot topology, WindowFacts petFacts, long planSequence)
         {
-            if (!HasCompletePreferred(ordered) || topology == null ||
-                String.IsNullOrWhiteSpace(ordered[0].DockGroupId)) return null;
+            if (ordered == null || ordered.Count < 2 || topology == null ||
+                ordered[0] == null || String.IsNullOrWhiteSpace(ordered[0].DockGroupId)) return null;
             StickyNoteData root = ordered[0];
             var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var members = new List<DockLogicalMember>(ordered.Count);
             foreach (StickyNoteData member in ordered)
             {
-                if (String.IsNullOrWhiteSpace(member.Id) || !ids.Add(member.Id) ||
+                if (member == null || String.IsNullOrWhiteSpace(member.Id) || !ids.Add(member.Id) ||
                     !String.Equals(root.DockGroupId, member.DockGroupId, StringComparison.OrdinalIgnoreCase)) return null;
-                members.Add(new DockLogicalMember(member.Id, root.PreferredLocalLogicalWidth,
-                    member.PreferredLocalLogicalHeight));
             }
             if (focusEditor && !ids.Contains(focusId ?? String.Empty)) return null;
+            if (!HasCompletePreferred(ordered))
+            {
+                DockGroupReprojectPlan recovery = StickyPlacementRecovery.SelectDockPhysical(ordered, topology, planSequence);
+                return new DockRestoreOperation(ordered, focusId, focusEditor, persistVisibility,
+                    topology, topology.FindByRuntimeSurfaceId(recovery.TargetSurfaceId),
+                    DockTopologyReprojectReason.LegacyRecovery, recovery);
+            }
+            var members = new List<DockLogicalMember>(ordered.Count);
+            foreach (StickyNoteData member in ordered)
+                members.Add(new DockLogicalMember(member.Id, root.PreferredLocalLogicalWidth,
+                    member.PreferredLocalLogicalHeight));
             DisplaySurfaceSnapshot target = FindCommonPreferredSurface(ordered, topology);
             DockTopologyReprojectReason reason = DockTopologyReprojectReason.RestorePreferred;
             if (target == null)

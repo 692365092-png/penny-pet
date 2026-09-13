@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace PennyPet
 {
@@ -6,6 +7,35 @@ namespace PennyPet
     // live layout input. Selecting recovery does not commit user preference.
     internal static class StickyPlacementRecovery
     {
+        // Compatibility conversion only: v7 physical sizes keep their units
+        // and the existing root-width / independent-height clamps. Both old
+        // and current formats use the same host transaction after selection.
+        internal static DockGroupReprojectPlan SelectDockPhysical(
+            IList<StickyNoteData> ordered, DisplayTopologySnapshot topology, long planSequence)
+        {
+            StickyNoteData root = ordered[0];
+            int width = Math.Max(280, Math.Min(900, root.Width));
+            var header = new PhysicalRect(root.X, root.Y, width, 32);
+            DisplaySurfaceSnapshot target = FindNearestSurface(topology, header);
+            PhysicalRect work = target.WorkArea;
+            DockPoint shift = StickyDockGeometry.CalculateHeaderReachableTranslation(
+                new DockRect(header.Left, header.Top, header.Width, header.Height),
+                new DockRect(work.Left, work.Top, work.Width, work.Height));
+            var sizes = new List<DockSize>(ordered.Count);
+            foreach (StickyNoteData member in ordered) sizes.Add(new DockSize(member.Width, member.Height));
+            List<DockRect> layout = StickyDockGeometry.CalculateUnifiedDockLayout(
+                sizes, root.X + shift.X, root.Y + shift.Y, width, 1F);
+            var targets = new List<DockWindowTarget>(ordered.Count);
+            for (int index = 0; index < ordered.Count; index++)
+            {
+                DockRect bounds = layout[index];
+                targets.Add(new DockWindowTarget(ordered[index].Id,
+                    new PhysicalRect(bounds.Left, bounds.Top, bounds.Width, bounds.Height)));
+            }
+            return DockGroupReprojectPlan.RecoverPhysical(topology.Generation, planSequence,
+                target.RuntimeSurfaceId, targets);
+        }
+
         internal static WindowPlacementPlan SelectForShow(StickyNoteData note,
             DisplayTopologySnapshot topology)
         {
@@ -63,6 +93,30 @@ namespace PennyPet
                 if (area > bestArea) { bestArea = area; best = surface; }
             }
             return best;
+        }
+
+        // Equivalent selection intent to Screen.FromRectangle, evaluated
+        // against the captured topology: largest overlap, otherwise nearest.
+        private static DisplaySurfaceSnapshot FindNearestSurface(
+            DisplayTopologySnapshot topology, PhysicalRect rect)
+        {
+            DisplaySurfaceSnapshot overlap = LargestIntersection(topology, rect);
+            if (overlap != null) return overlap;
+            DisplaySurfaceSnapshot nearest = null;
+            double bestDistance = Double.PositiveInfinity;
+            foreach (DisplaySurfaceSnapshot surface in topology.Surfaces)
+            {
+                PhysicalRect bounds = surface.Bounds;
+                double dx = Math.Max(0L, Math.Max((long)bounds.Left - rect.Right, (long)rect.Left - bounds.Right));
+                double dy = Math.Max(0L, Math.Max((long)bounds.Top - rect.Bottom, (long)rect.Top - bounds.Bottom));
+                double distance = dx * dx + dy * dy;
+                if (distance < bestDistance || (distance == bestDistance && surface.IsPrimary))
+                {
+                    nearest = surface;
+                    bestDistance = distance;
+                }
+            }
+            return nearest;
         }
     }
 }

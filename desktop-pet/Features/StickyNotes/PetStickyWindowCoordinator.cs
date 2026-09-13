@@ -2102,9 +2102,6 @@ namespace PennyPet
             foreach (StickyNoteData member in ordered)
                 ClearHostedDockResizeSessionIfMember(member.Id);
             if (MigrateDockRestorePreferredIfNeeded(ordered, topology)) _notes.SaveAsync();
-            if (!DockRestoreOperation.HasCompletePreferred(ordered))
-                return TryRestoreHostedDockComponentLegacyFallback(ordered, focus, focusEditor, persistVisibility);
-
             DockRestoreOperation operation = DockRestoreOperation.TryCreate(ordered,
                 focus == null ? null : focus.Id, focusEditor, persistVisibility,
                 topology, CapturePetWindowFacts(topology), _dockPlanMailbox.NextSequence());
@@ -2226,111 +2223,6 @@ namespace PennyPet
                         operation.FocusEditor, operation.PersistVisibility);
             }
         }
-
-        private bool TryRestoreHostedDockComponentLegacyFallback(
-            List<StickyNoteData> ordered, StickyNoteData focus,
-            bool focusEditor, bool persistVisibility)
-        {
-            // Compatibility-only restore path for data that cannot yet
-            // produce a complete durable v11 Dock preference. Normal
-            // current-schema restore must never enter this method.
-            // Scheduled for retirement after PC-3/PC-9.
-            DisplayDiagnostics.Trace("DockRestoreLegacyFallback",
-                "members=" + (ordered == null ? 0 : ordered.Count));
-            if (ordered == null || ordered.Count == 0) return false;
-            StickyNoteData rootData = ordered[0];
-            int rootWidth = Math.Max(280, Math.Min(900, rootData.Width));
-            Rectangle rootHeader = new Rectangle(rootData.X, rootData.Y,
-                rootWidth, 32);
-            Rectangle work = Screen.FromRectangle(rootHeader).WorkingArea;
-            Point translation = CalculateHeaderReachableTranslation(
-                rootHeader, work);
-            int rootLeft = rootData.X + translation.X;
-            int rootTop = rootData.Y + translation.Y;
-            List<Size> sizes = new List<Size>();
-            foreach (StickyNoteData member in ordered)
-            {
-                sizes.Add(new Size(member.Width, member.Height));
-                member.Visible = true;
-                member.AlwaysOnTop = rootData.AlwaysOnTop;
-            }
-            List<Rectangle> layout = CalculateUnifiedDockLayout(sizes,
-                rootLeft, rootTop, rootWidth);
-
-            List<string> componentIds = new List<string>();
-            foreach (StickyNoteData member in ordered)
-                if (member != null) componentIds.Add(member.Id);
-            if (componentIds.Count != ordered.Count) return false;
-
-            int pending = ordered.Count;
-            bool createFailed = false;
-            StickyUiCommandResult failureResult = null;
-            for (int index = 0; index < ordered.Count; index++)
-            {
-                int memberIndex = index;
-                StickyNoteData member = ordered[index];
-                Rectangle bounds = layout[index];
-                bool create = !_hostedRuntime.ContainsNote(member.Id);
-                if (create)
-                {
-                    create = _hostedRuntime.AddNote(member.Id);
-                    if (create) HostedStickyWindowCreatedCount++;
-                }
-                int dividerMinimum = 220;
-                int dividerMaximum = 700;
-                StickyUiCommand initialCommand = create
-                    ? StickyUiCommand.Create(StickyNoteUiSnapshot.FromData(
-                        member), false, _reminders.GetItems(),
-                        CurrentTopologySnapshot())
-                    : StickyUiCommand.Show(member.Id, false,
-                        CurrentTopologySnapshot());
-                PostHostedStickyCommand(
-                    initialCommand,
-                    delegate(StickyUiCommandResult result)
-                    {
-                        if (result == null ||
-                            result.Status != StickyUiCommandStatus.Handled)
-                        {
-                            createFailed = true;
-                            if (failureResult == null) failureResult = result;
-                        }
-                        else
-                        {
-                            ApplyHostedStickySnapshot(result.Snapshot,
-                                result.Sequence, true, result.Facts, result.Topology);
-                            PostHostedStickyCommand(
-                                StickyUiCommand.SetBounds(member.Id,
-                                    new StickyUiBounds(bounds.Left, bounds.Top,
-                                        bounds.Width, bounds.Height)),
-                                delegate(StickyUiCommandResult boundsResult) { });
-                            PostHostedStickyCommand(
-                                StickyUiCommand.SetDockResizeRole(member.Id,
-                                    new StickyUiDockResizeRole(true,
-                                        memberIndex == 0, true,
-                                        memberIndex < ordered.Count - 1,
-                                        dividerMinimum, dividerMaximum)),
-                                delegate(StickyUiCommandResult roleResult) { });
-                            PostHostedStickyCommand(
-                                StickyUiCommand.Show(member.Id, focusEditor &&
-                                    focus != null && String.Equals(member.Id,
-                                        focus.Id,
-                                        StringComparison.OrdinalIgnoreCase),
-                                    CurrentTopologySnapshot()),
-                                delegate(StickyUiCommandResult showResult) { });
-                        }
-                        if (Interlocked.Decrement(ref pending) == 0 &&
-                            createFailed)
-                            HandleHostedStickyFailure(componentIds,
-                                "sticky-hosted-dock-create", failureResult);
-                    });
-            }
-
-            if (persistVisibility) _notes.Save();
-            RefreshMenuText();
-            RefreshNoteTabs();
-            return true;
-        }
-
 
         private void ReorderStickyNoteTab(StickyNoteData note,
             int destinationIndex)

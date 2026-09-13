@@ -111,7 +111,7 @@ namespace PennyPet.Tests
             List<StickyNoteData> group = Group();
             if (invalid == 0) group[1].Id = group[0].Id;
             if (invalid == 1) group[1].DockGroupId = "another-group";
-            if (invalid == 2) group[1].PreferredLocalLogicalHeight = 0;
+            if (invalid == 2) group[1].Id = String.Empty;
             if (invalid == 3) group[1] = null;
             if (invalid == 4) group.RemoveAt(1);
             var operations = new DockRestoreOperations();
@@ -122,7 +122,7 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void FocusMustBelongToTheGroupAndLegacyGeometryStaysAtRecoveryBoundary()
+        public void FocusMustBelongToTheGroupAndLegacyRecoveryDoesNotInventPreference()
         {
             List<StickyNoteData> group = Group();
             Assert.IsNull(DockRestoreOperation.TryCreate(group, "other", true, true,
@@ -131,7 +131,10 @@ namespace PennyPet.Tests
             group[1].DisplayId = "DISPLAY1";
             group[1].LocalLogicalWidth = 320;
             group[1].LocalLogicalHeight = 300;
-            Assert.IsNull(Create(group), "The restore operation must not silently invent a migration.");
+            DockRestoreOperation recovery = Create(group);
+            Assert.AreEqual(DockTopologyReprojectReason.LegacyRecovery, recovery.Reason);
+            Assert.IsNull(recovery.Plan.Group);
+            Assert.IsNotNull(recovery.Plan.RecoveryTargets);
             Assert.AreEqual(String.Empty, group[1].PreferredDisplayTargetKey);
         }
 
