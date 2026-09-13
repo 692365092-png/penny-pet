@@ -1596,29 +1596,33 @@ namespace PennyPet
                     beforeDividerLayout[1].Top + 50 &&
                 afterDividerLayout[2].Top ==
                     beforeDividerLayout[2].Top + 50;
-            List<DockWindowFacts> liveResizeStart =
-                new List<DockWindowFacts>
-                {
-                    new DockWindowFacts("a", 100, 100, 420, 300, true, true),
-                    new DockWindowFacts("b", 100, 400, 420, 300, true, true),
-                    new DockWindowFacts("c", 100, 700, 420, 300, true, true),
-                    new DockWindowFacts("d", 100, 1000, 420, 300, true, true)
-                };
-            int liveSourceHeight = 0;
-            List<DockLayoutTarget> liveTargets = null;
+            List<WindowFacts> liveResizeStart = new List<WindowFacts>();
+            string[] resizeIds = { "a", "b", "c", "d" };
+            for (int index = 0; index < resizeIds.Length; index++)
+                liveResizeStart.Add(new WindowFacts(resizeIds[index], "screen", "DISPLAY1",
+                    new PhysicalRect(100, 100 + 300 * index, 420, 300), 96, 1, 1));
+            DockDividerResizeSession resize = DockDividerResizeSession.TryStart("b", liveResizeStart);
+            StickyNoteUiSnapshot resizeSnapshot = StickyNoteUiSnapshot.FromData(
+                new StickyNoteData { Id = "b", Visible = true });
+            long resizeSequence = 1;
+            bool liveAccepted = true;
             int[] liveCycle = { 450, 250, 600, 300 };
             for (int repeat = 0; repeat < 50; repeat++)
                 foreach (int requested in liveCycle)
-                    liveTargets = PetForm.CalculateDockMemberResizeTargets(
-                        liveResizeStart, "b", requested,
-                        out liveSourceHeight);
-            result.DividerLiveSessionTargetsOk =
-                liveSourceHeight == 300 && liveTargets.Count == 2 &&
-                liveTargets.TrueForAll(target => target.NoteId != "b" &&
-                    target.Height == 300 && target.X == 100 &&
-                    target.Width == 420 && target.TopMost) &&
-                liveTargets[0].NoteId == "c" && liveTargets[0].Y == 700 &&
-                liveTargets[1].NoteId == "d" && liveTargets[1].Y == 1000;
+                {
+                    resizeSequence++;
+                    bool post;
+                    liveAccepted &= resize.QueueLive(StickyUiEvent.DividerResize(
+                        StickyUiEventKind.DockDividerResizing, resizeSnapshot, resizeSequence,
+                        requested, new WindowFacts("b", "screen", "DISPLAY1",
+                            new PhysicalRect(100, 400, 420, requested), 96, 1, resizeSequence)), out post);
+                }
+            DockDividerFollowerBatch liveTargets = resize.Mailbox.TakeLatest();
+            result.DividerLiveSessionTargetsOk = liveAccepted && liveTargets.Targets.Count == 2 &&
+                liveTargets.Targets[0].NoteId == "c" && liveTargets.Targets[0].PhysicalBounds.Top == 700 &&
+                liveTargets.Targets[1].NoteId == "d" && liveTargets.Targets[1].PhysicalBounds.Top == 1000 &&
+                liveTargets.Targets[0].PhysicalBounds.Height == 300 && liveTargets.Targets[1].PhysicalBounds.Height == 300 &&
+                liveTargets.Targets[0].PhysicalBounds.Width == 420 && liveTargets.Targets[1].PhysicalBounds.Width == 420;
             result.WideNarrowDockingOk = PetForm.CanDockBelow(
                 new Rectangle(80, 400, 900, 300),
                 new Rectangle(400, 100, 280, 300), 20) &&

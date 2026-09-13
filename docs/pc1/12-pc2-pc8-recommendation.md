@@ -31,3 +31,9 @@ Historical phase status above describes the earlier checkpoint. The current user
 PR #4 已继续移除 live Parent 权威，正常成员关系只从 GroupId/Order 表示的完整有序组查询；隐藏恢复不改关系。Header gesture 状态迁入 DockInteractionSession，合并先计划后提交，并修正旧 final 回调清理新手势的竞态。
 
 详见 [本轮审查与证据](../architecture-review/2026-09-12-dock-ownership-review.md)。这不关闭 divider resize / restore 编排、整个 Dock 控制器独立化、同步 UI 保存或 PC-7；Windows 验收仍开放。
+
+### 内部接缝 resize 后续实施（2026-09-13）
+
+内部接缝的基准、live / final、更正和结束已由 DockDividerResizeSession 统一管理；邮箱取消可撤销待执行批次，旧 final 不再影响取消后的状态或更正批次。详见 [审查与证据](../architecture-review/2026-09-13-resize-ownership-review.md)。
+
+整组横向 resize 的成组应用与各窗口实际 DPI 下的 preferred 提交仍开放；restore / topology、完整 Sticky 生命周期、同步 UI Save 和 Windows 验收也未关闭。原有历史阶段审批文字不代表本轮完成了这些验收。

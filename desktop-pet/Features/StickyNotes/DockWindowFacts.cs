@@ -87,7 +87,7 @@ namespace PennyPet
             Targets = new List<DockWindowTarget>(
                 targets == null
                     ? new DockWindowTarget[0]
-                    : targets);
+                    : targets).AsReadOnly();
         }
 
         internal long TopologyGeneration { get; private set; }
@@ -100,24 +100,17 @@ namespace PennyPet
     // and supersedes all pending live frames.
     internal sealed class DockDividerFollowerMailbox
     {
-        internal readonly object Gate = new object();
+        private readonly object Gate = new object();
         private DockDividerFollowerBatch _current;
         private bool _applyQueued;
-        private bool _finalPending;
+        private bool _finalStarted;
+        private bool _closed;
 
         internal bool HasPending
         {
             get
             {
                 lock (Gate) return _current != null;
-            }
-        }
-
-        internal bool FinalPending
-        {
-            get
-            {
-                lock (Gate) return _finalPending;
             }
         }
 
@@ -129,7 +122,7 @@ namespace PennyPet
                 throw new ArgumentNullException(nameof(batch));
             lock (Gate)
             {
-                if (_finalPending) return false;
+                if (_closed || _finalStarted) return false;
                 _current = batch;
                 if (_applyQueued) return false;
                 _applyQueued = true;
@@ -145,8 +138,9 @@ namespace PennyPet
                 throw new ArgumentNullException(nameof(batch));
             lock (Gate)
             {
+                if (_closed) return false;
                 _current = batch;
-                _finalPending = true;
+                _finalStarted = true;
                 _applyQueued = true;
                 return true;
             }
@@ -159,7 +153,7 @@ namespace PennyPet
         {
             lock (Gate)
             {
-                if (_finalPending) return null;
+                if (_closed || _finalStarted) return null;
                 DockDividerFollowerBatch batch = _current;
                 _current = null;
                 _applyQueued = false;
@@ -167,21 +161,32 @@ namespace PennyPet
             }
         }
 
-        internal DockDividerFollowerBatch TakeFinal()
+        internal DockDividerFollowerBatch TakeFinal(DockDividerFollowerBatch expected)
         {
             lock (Gate)
             {
-                if (!_finalPending) return null;
-                return _current;
+                return !_closed && _finalStarted && ReferenceEquals(_current, expected)
+                    ? _current : null;
             }
         }
 
-        internal void CompleteFinal()
+        internal void CompleteFinal(DockDividerFollowerBatch expected)
         {
             lock (Gate)
             {
+                if (!ReferenceEquals(_current, expected)) return;
                 _current = null;
-                _finalPending = false;
+                _applyQueued = false;
+                // Live stays closed while Pet accepts/corrects the result.
+            }
+        }
+
+        internal void Cancel()
+        {
+            lock (Gate)
+            {
+                _closed = true;
+                _current = null;
                 _applyQueued = false;
             }
         }

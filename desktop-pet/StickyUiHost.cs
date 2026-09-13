@@ -114,13 +114,14 @@ namespace PennyPet
         }
 
         internal void PostFinalDividerBatch(DockDividerFollowerMailbox mailbox,
+            DockDividerFollowerBatch expected,
             Action<StickyUiCommandResult> completed,
             SynchronizationContext completionContext)
         {
             if (mailbox == null)
                 throw new ArgumentNullException(nameof(mailbox));
             _threadHost.PostDividerBatch(mailbox,
-                ApplyFinalDividerBatch, completed, completionContext);
+                value => ApplyFinalDividerBatch(value, expected), completed, completionContext);
         }
 
         private StickyUiCommandResult ApplyLatestDividerBatch(
@@ -134,10 +135,10 @@ namespace PennyPet
         }
 
         private StickyUiCommandResult ApplyFinalDividerBatch(
-            DockDividerFollowerMailbox mailbox)
+            DockDividerFollowerMailbox mailbox, DockDividerFollowerBatch expected)
         {
             DockDividerFollowerBatch batch = mailbox == null
-                ? null : mailbox.TakeFinal();
+                ? null : mailbox.TakeFinal(expected);
             if (batch == null || batch.Targets.Count == 0)
                 return StickyUiCommandResult.NotHandled();
             try
@@ -146,7 +147,7 @@ namespace PennyPet
             }
             finally
             {
-                mailbox.CompleteFinal();
+                mailbox.CompleteFinal(expected);
             }
         }
 

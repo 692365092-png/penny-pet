@@ -218,7 +218,7 @@ namespace PennyPet.Tests
             string dockCoordinator = ReadSource(
                 "Features/StickyNotes/PetStickyDockCoordinator.cs");
             string liveResize = Between(dockCoordinator,
-                "private bool ResizeHostedStickyDockDivider",
+                "private void ResizeHostedStickyDockDivider",
                 "private void OnDividerLiveBatchApplied");
             string progress = Between(windowCoordinator,
                 "if (value.Kind == StickyUiEventKind.DockDividerResizing)",
@@ -231,9 +231,7 @@ namespace PennyPet.Tests
                 native.Contains("DockDividerResizing") &&
                 native.Contains("DockDividerResizeCompleted"),
                 "Native sizing must publish an explicit divider lifecycle.");
-            Assert.IsTrue(liveResize.Contains(
-                    "CalculateDockMemberResizeTargets") &&
-                liveResize.Contains("QueueLive") &&
+            Assert.IsTrue(liveResize.Contains("session.QueueLive") &&
                 liveResize.Contains("PostLatestDividerBatch") &&
                 !liveResize.Contains("LayoutDockChain") &&
                 !liveResize.Contains("RefreshDockResizeRoles") &&
@@ -246,10 +244,10 @@ namespace PennyPet.Tests
             Assert.IsTrue(windowCoordinator.Contains(
                 "CompleteHostedStickyDockDivider(value)") &&
                 windowCoordinator.Contains("PostFinalDividerBatch") &&
-                windowCoordinator.Contains("DividerStackSeamIsExact") &&
+                windowCoordinator.Contains("session.SeamIsExact") &&
                 windowCoordinator.Contains("ClearHostedDockResizeSession()") &&
                 windowCoordinator.Contains("_notes.SaveAsync();"),
-                "Completion must post one re-anchored final batch, verify the seam, save once, and clear the session only after it resolves.");
+                "Completion must post a final batch, verify the seam, and finish the owning session; source and follower saves may coalesce.");
             int sourceCommit = windowCoordinator.IndexOf(
                 "CommitDividerSourceFinal", StringComparison.Ordinal);
             int finalBatch = windowCoordinator.IndexOf(
@@ -257,7 +255,30 @@ namespace PennyPet.Tests
             Assert.IsTrue(sourceCommit >= 0 && finalBatch > sourceCommit &&
                 windowCoordinator.Contains(
                     "PlacementReason.UserResizeCommit"),
-                "The resized source must persist its final geometry and durable preferred height synchronously before the async follower batch is posted.");
+                "The resized source must commit its preferred height in the Pet turn before posting the async follower batch.");
+        }
+
+        [TestMethod]
+        [TestCategory("ArchitectureSourceBoundary")]
+        public void DividerEffectsCannotBypassSessionOwnershipOrWholeBatchPreflight()
+        {
+            string window = ReadSource("Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string dock = ReadSource("Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string final = Between(window, "private void OnDividerFinalBatchApplied", "private void CommitDividerSourceFinal");
+            int owner = final.IndexOf("session.IsCurrentFinal(expected)", StringComparison.Ordinal);
+            int validate = final.IndexOf("CanAcceptDividerBatch(", StringComparison.Ordinal);
+            int correction = final.IndexOf("session.TryCorrect(", StringComparison.Ordinal);
+            int commit = final.IndexOf("ApplyDividerBatchCanonical(", StringComparison.Ordinal);
+            Assert.IsTrue(owner >= 0 && validate > owner && correction > validate && commit > correction);
+            Assert.IsTrue(final.Contains("!ReferenceEquals(_dockDividerResize, session)"));
+            string preflight = Between(dock, "private bool CanAcceptDividerBatch", "private void ApplyDividerBatchCanonical");
+            Assert.IsTrue(preflight.Contains("HasExpectedFollowers") && preflight.Contains("MatchesMembers") &&
+                preflight.Contains("CanApplySequence") && preflight.Contains("CanAcceptEffective"));
+            string start = Between(window, "if (value.Kind == StickyUiEventKind.DockDividerResizeStarted)",
+                "if (value.Kind == StickyUiEventKind.DockDividerResizing)");
+            Assert.IsFalse(start.Contains("ClearHostedDockResizeSession"), "Rejected events cannot clear a current gesture.");
+            string host = ReadSource("StickyUiHost.cs");
+            Assert.IsTrue(host.Contains("mailbox.TakeFinal(expected)") && host.Contains("mailbox.CompleteFinal(expected)"));
         }
 
         [TestMethod]
