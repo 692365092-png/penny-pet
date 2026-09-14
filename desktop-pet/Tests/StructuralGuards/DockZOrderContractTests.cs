@@ -13,10 +13,9 @@ namespace PennyPet.Tests
         [TestMethod]
         public void BeginDockDrag_QueuesZOrderBeforeEnteringDragging()
         {
-            string source = ReadSource(
-                "Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string source = SourceGuardText.ReadStickyWorkflowSource();
             string method = SliceMethod(source,
-                "private void BeginStickyDockDrag(");
+                "internal void BeginStickyDockDrag(");
             int raise = method.IndexOf("RaiseDockGroupForDrag(",
                 StringComparison.Ordinal);
             int enter = method.IndexOf("TryEnterDragging(",

@@ -115,13 +115,13 @@ namespace PennyPet.Tests
         public void HostedCreateFailure_PreservesDataWithoutLegacyFallback()
         {
             string coordinator =
-                ReadSource("Features/StickyNotes/PetStickyWindowCoordinator.cs");
+                SourceGuardText.ReadStickyWorkflowSource();
             string fallback = Between(coordinator,
                 "private void HandleHostedStickyFailure",
-                "private static void ReportHostedStickyCommandFailure");
+                "internal static void ReportHostedStickyCommandFailure");
 
             Assert.IsTrue(fallback.Contains("note.Visible = false") &&
-                fallback.Contains("_notes.SaveAsync();") &&
+                fallback.Contains("Notes.SaveAsync();") &&
                 fallback.Contains("RefreshNoteTabs();"),
                 "A failed hosted window must keep canonical content accessible in Side Tabs.");
             Assert.IsFalse(fallback.Contains("GetOrCreateStickyNoteWindow") ||
@@ -186,8 +186,7 @@ namespace PennyPet.Tests
         [TestMethod]
         public void Drt6Supplement_CreationDoesNotDependOnDisplayIndexOrCount()
         {
-            string coordinator = ReadSource(
-                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
             string spawn = Between(coordinator,
                 "private StickyNoteData PrepareStickyNoteDraft",
                 "private void ApplyLegacySpawnFallback");
@@ -202,15 +201,14 @@ namespace PennyPet.Tests
         [TestMethod]
         public void Drt67Closeout_SpawnFallbackCentersWithoutDurable()
         {
-            string coordinator = ReadSource(
-                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
             string fallback = Between(coordinator,
                 "private void ApplyLegacySpawnFallback",
                 "private static void TraceSpawnPlacement");
 
             Assert.IsTrue(fallback.Contains(
                     "StickySpawnPolicy.CenterInWorkArea(") &&
-                fallback.Contains("Screen.FromRectangle(Bounds)"),
+                fallback.Contains("Screen.FromRectangle(_pet.Bounds)"),
                 "The degraded spawn fallback must center on Penny's current working area.");
             Assert.IsFalse(fallback.Contains("Left - 332") ||
                 fallback.Contains("Right + 12") ||

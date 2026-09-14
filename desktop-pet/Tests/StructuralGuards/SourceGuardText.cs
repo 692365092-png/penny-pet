@@ -8,11 +8,18 @@ namespace PennyPet.Tests
     {
         internal static string DockCommitValidationSource()
         {
-            string coordinator = ReadSource(
-                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
             return Between(coordinator,
                 "private bool TryPrepareDockCommit",
                 "private static void TraceDockCommitRejected");
+        }
+
+        // Cross-component workflow checks use the actual collaborating owners.
+        // Native/session boundaries continue to read their individual files.
+        internal static string ReadStickyWorkflowSource()
+        {
+            return ReadSource("Features/StickyNotes/StickyWorkspace.cs") + "\n" +
+                ReadSource("Features/StickyNotes/StickyDockController.cs");
         }
 
         internal static string ReadSource(string relativePath)

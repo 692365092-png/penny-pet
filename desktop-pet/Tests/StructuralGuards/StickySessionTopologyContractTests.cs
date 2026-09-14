@@ -51,15 +51,15 @@ namespace PennyPet.Tests
         [TestMethod]
         public void DockFactsBarrier_GuardsRebaseAndFinalizing()
         {
-            string dock = ReadSource("Features/StickyNotes/PetStickyDockCoordinator.cs");
-            string rebase = ReadSource("Features/StickyNotes/PetStickyWindowCoordinator.cs");
-            Assert.IsFalse(SliceMethod(dock, "private void BeginStickyDockDrag(")
+            string dock = SourceGuardText.ReadStickyWorkflowSource();
+            string rebase = SourceGuardText.ReadStickyWorkflowSource();
+            Assert.IsFalse(SliceMethod(dock, "internal void BeginStickyDockDrag(")
                 .Contains("TryApplyDockFactsBarrier("));
             Assert.IsTrue(dock.IndexOf("TryApplyDockFactsBarrier(capture, expectedIds",
                 StringComparison.Ordinal) >= 0);
             Assert.IsTrue(rebase.IndexOf("TryApplyDockFactsBarrier(result, expectedIds",
                 StringComparison.Ordinal) >= 0);
-            Assert.IsTrue(rebase.IndexOf("_dockInteraction.RecordMove(sourceRuntime)",
+            Assert.IsTrue(rebase.IndexOf("Interaction.RecordMove(sourceRuntime)",
                 StringComparison.Ordinal) >= 0);
         }
 

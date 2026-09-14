@@ -17,7 +17,7 @@ namespace PennyPet
             "处理密码、验证码、支付或其他高敏感信息时，请先关闭按键显示。" +
             "是否确认开启？";
 
-        private void RefreshMenuText()
+        internal void RefreshMenuText()
         {
             _cancelItem.DropDownItems.Clear();
             List<ReminderItem> items = _reminders.GetItems();
@@ -223,10 +223,10 @@ namespace PennyPet
             ShowBubble(desired ? "开机自动启动已开启。" : "开机自动启动已关闭。");
         }
 
-        private void BeginExitSequence()
+        internal void BeginExitSequence()
         {
             if (_exiting) return;
-            if (BeginHostedStickyExitIfNeeded()) return;
+            if (_stickyWorkspace.BeginHostedStickyExitIfNeeded()) return;
             if (!FlushPersistenceBeforeExit()) return;
             _exiting = true;
             _reminderTimer.Stop();
@@ -249,7 +249,7 @@ namespace PennyPet
 
         private bool HasFocusedOwnNoteTextInput()
         {
-            return _hostedRuntime.HasInputFocus;
+            return _stickyWorkspace.Hosted.HasInputFocus;
         }
 
         internal static string FormatRemaining(TimeSpan value)

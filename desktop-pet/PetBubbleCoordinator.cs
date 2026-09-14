@@ -297,7 +297,7 @@ namespace PennyPet
     // PetForm remains the thin product integration edge around the runtime owner.
     internal sealed partial class PetForm
     {
-        private void ShowBubble(string text)
+        internal void ShowBubble(string text)
         {
             _bubbleCoordinator.Show(PetBubbleRequest.Feedback(text,
                 KeyboardOverlayForm.TextFontFamilyName,

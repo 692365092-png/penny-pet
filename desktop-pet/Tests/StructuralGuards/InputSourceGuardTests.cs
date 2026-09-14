@@ -113,7 +113,7 @@ namespace PennyPet.Tests
             string coordinator = ReadSource("PetSmallTalkCoordinator.cs");
             string poke = Between(animation,
                 "private async void HandlePetPoked",
-                "private void StartOrdinaryPokeAnimation");
+                "internal void StartOrdinaryPokeAnimation");
 
             Assert.IsTrue(form.Contains(
                     "private readonly PetSmallTalkCoordinator") &&
@@ -281,7 +281,7 @@ namespace PennyPet.Tests
                 "Forecast request must keep the reviewed eight-variable shape.");
             string poke = Between(animation,
                 "private async void HandlePetPoked",
-                "private void StartOrdinaryPokeAnimation");
+                "internal void StartOrdinaryPokeAnimation");
             Assert.IsTrue(poke.IndexOf("StartNotificationPokeAnimation(nowUtc)",
                     StringComparison.Ordinal) <
                 poke.IndexOf(".HandlePetPokedAsync", StringComparison.Ordinal) &&
@@ -334,8 +334,7 @@ namespace PennyPet.Tests
             string menu = ReadSource("PetMenuActions.cs");
             string settings = ReadSource("DailyContentSettingsForm.cs");
             string reminders = ReadSource("PetReminderWindowsCoordinator.cs");
-            string sticky = ReadSource(
-                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string sticky = SourceGuardText.ReadStickyWorkflowSource();
             string bubble = ReadSource("PetBubbleCoordinator.cs");
             string keyboard = ReadSource(
                 "Features/KeyboardOverlay/PetKeyboardOverlayCoordinator.cs");
@@ -359,7 +358,7 @@ namespace PennyPet.Tests
                 reminders.Contains(
                     "_windowLayers.ShowModal(this, dialog)") &&
                 sticky.Contains(
-                    "_windowLayers.ShowModal(this, manager)") &&
+                    "_windowLayers.ShowModal(_pet, manager)") &&
                 !menu.Contains("ShowOwnedModalDialog") &&
                 !menu.Contains("_ownedModalUi"),
                 "Pet-owned Form dialogs, including nested weather settings, must use the shared layer boundary.");
@@ -369,7 +368,7 @@ namespace PennyPet.Tests
                 keyboard.Contains("_keyOverlay.UpdatePosition(this)") &&
                 keyboard.Contains(
                     "_windowLayers.KeepTransientBelowModal(_keyOverlay)") &&
-                keyboard.Contains(
+                keyboard.Contains("_stickyWorkspace.ApplyWindowLayer()") && sticky.Contains(
                     "_windowLayers.KeepTransientBelowModal(_leftNoteTabs)") &&
                 bubble.Contains("ApplyWindowLayer()") &&
                 bubble.Contains(
@@ -417,8 +416,7 @@ namespace PennyPet.Tests
             string closing = Between(form,
                 "protected override void OnFormClosing",
                 "protected override void OnFormClosed");
-            string coordinator = ReadSource(
-                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
 
             Assert.IsTrue(closing.Contains("e.Cancel = true") &&
                 closing.Contains("BeginHostedStickyExitIfNeeded()"),
@@ -428,7 +426,7 @@ namespace PennyPet.Tests
                 "                                finalSnapshot.Snapshot",
                 StringComparison.Ordinal);
             int prepared = coordinator.IndexOf(
-                "_hostedRuntime.PrepareExit()", StringComparison.Ordinal);
+                "Hosted.PrepareExit()", StringComparison.Ordinal);
             Assert.IsTrue(apply >= 0 && prepared > apply,
                 "Final snapshot must reach the canonical owner before close resumes.");
         }

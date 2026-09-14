@@ -365,7 +365,7 @@ namespace PennyPet
             RenderCurrentFrame();
         }
 
-        private void TriggerTypingAnimation()
+        internal void TriggerTypingAnimation()
         {
             DateTime now = DateTime.UtcNow;
             if (!_typingSession)

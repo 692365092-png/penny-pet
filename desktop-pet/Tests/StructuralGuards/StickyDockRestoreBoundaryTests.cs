@@ -10,16 +10,15 @@ namespace PennyPet.Tests
     [TestCategory("ArchitectureSourceBoundary")]
     public sealed class StickyDockRestoreBoundaryTests
     {
-        private const string Coordinator = "Features/StickyNotes/PetStickyWindowCoordinator.cs";
 
         [TestMethod]
         public void LegacyGeometryUsesTheSameRestoreTransactionWithoutPerWindowCallbacks()
         {
-            string source = ReadSource(Coordinator);
+            string source = SourceGuardText.ReadStickyWorkflowSource();
             Assert.IsFalse(source.Contains("TryRestoreHostedDockComponentLegacyFallback"));
-            string post = SliceMethod(source, "private bool TryRestoreHostedDockComponent(");
-            foreach (string forbidden in new[] { "member.Visible =", "_hostedRuntime.AddNote(",
-                "Screen.FromRectangle", "StickyUiCommand.Create(", "StickyUiCommand.Show(", "_notes.Save()" })
+            string post = SliceMethod(source, "internal bool TryRestoreHostedDockComponent(");
+            foreach (string forbidden in new[] { "member.Visible =", "Hosted.AddNote(",
+                "Screen.FromRectangle", "StickyUiCommand.Create(", "StickyUiCommand.Show(", "Notes.Save()" })
                 Assert.IsFalse(post.Contains(forbidden), forbidden);
             string host = SliceMethod(ReadSource("StickyUiHost.cs"), "private StickyUiCommandResult ApplyDockGroupReproject(");
             Assert.IsTrue(host.Contains("request.MemberIds"));
@@ -30,8 +29,8 @@ namespace PennyPet.Tests
         [TestMethod]
         public void RestoreRequestsTransactionalVisibilityWithoutOrdinaryShow()
         {
-            string source = ReadSource(Coordinator);
-            string post = SliceMethod(source, "private bool TryRestoreHostedDockComponent(");
+            string source = SourceGuardText.ReadStickyWorkflowSource();
+            string post = SliceMethod(source, "internal bool TryRestoreHostedDockComponent(");
             Assert.IsTrue(post.Contains("StickyUiCommand.RestoreDockGroup("));
             Assert.IsFalse(post.Contains("StickyUiCommand.EnsureSession("));
             string complete = SliceMethod(source, "private void CompleteHostedDockRestore(");
@@ -85,8 +84,8 @@ namespace PennyPet.Tests
         [TestMethod]
         public void RestoreBatchRegistersSessionsOnlyAfterWholeBatchPreflight()
         {
-            string apply = SliceMethod(ReadSource(Coordinator), "private bool TryApplyDockTopologyResult(");
-            int preflight = apply.IndexOf("_factsReceiver.TryPrepare(member, snapshot, out update, acceptCreatedSessions)", StringComparison.Ordinal);
+            string apply = SliceMethod(SourceGuardText.ReadStickyWorkflowSource(), "private bool TryApplyDockTopologyResult(");
+            int preflight = apply.IndexOf("Facts.TryPrepare(member, snapshot, out update, acceptCreatedSessions)", StringComparison.Ordinal);
             int commit = apply.IndexOf("update.Commit(forceVisible)", StringComparison.Ordinal);
             Assert.IsTrue(preflight >= 0 && commit > preflight);
             Assert.IsTrue(apply.Contains("!remaining.Remove(member.NoteId)"));
@@ -94,27 +93,27 @@ namespace PennyPet.Tests
             string accept = SliceMethod(receiver, "internal void CommitGeometry()");
             Assert.IsTrue(accept.IndexOf("AcceptEffective", StringComparison.Ordinal) <
                 accept.IndexOf("AcceptBatchSequence", StringComparison.Ordinal));
-            Assert.IsFalse(apply.Contains("_hostedRuntime.RemoveNote("));
+            Assert.IsFalse(apply.Contains("Hosted.RemoveNote("));
             string host = SliceMethod(ReadSource("StickyUiHost.cs"), "private StickyUiCommandResult RestoreDockGroup(");
             Assert.IsTrue(host.Contains("if (ensured.SessionCreated) created.Add("));
             Assert.IsTrue(host.Contains("created.ContainsKey(member.NoteId)"));
             Assert.IsTrue(host.Contains("if (!completed)") && host.Contains("in created)"));
-            string completion = SliceMethod(ReadSource(Coordinator), "private void CompleteHostedDockRestore(");
+            string completion = SliceMethod(SourceGuardText.ReadStickyWorkflowSource(), "private void CompleteHostedDockRestore(");
             Assert.IsFalse(completion.Contains("StickyUiCommand.Close("));
         }
 
         [TestMethod]
         public void TopologyAndUserMutationsRetireRestoreBeforeReplacementEffects()
         {
-            string source = ReadSource(Coordinator);
-            string restart = SliceMethod(source, "private void RestartHostedDockRestores(");
+            string source = SourceGuardText.ReadStickyWorkflowSource();
+            string restart = SliceMethod(source, "internal void RestartHostedDockRestores(");
             int cancel = restart.IndexOf("CancelHostedDockRestore(operation)", StringComparison.Ordinal);
             int start = restart.IndexOf("TryRestoreHostedDockComponent(", StringComparison.Ordinal);
             Assert.IsTrue(cancel >= 0 && start > cancel);
-            Assert.IsTrue(SliceMethod(source, "private void ReconcileDockGroups(").Contains("_dockRestores.ContainsGroup("));
-            foreach (string signature in new[] { "private bool BeginHostedStickyExitIfNeeded()",
-                "private void CollapseAllStickyNotes()", "private void ExpandAndTileAllStickyNotesToPetScreen()",
-                "private void CloseHostedStickyRuntimeForReload(" })
+            Assert.IsTrue(SliceMethod(source, "internal void ReconcileDockGroups(").Contains("_dockRestores.ContainsGroup("));
+            foreach (string signature in new[] { "internal bool BeginHostedStickyExitIfNeeded()",
+                "private void CollapseAllStickyNotes()", "internal void ExpandAndTileAllStickyNotesToPetScreen()",
+                "internal void CloseHostedStickyRuntimeForReload(" })
                 Assert.IsTrue(SliceMethod(source, signature).Contains("CancelHostedDockRestores()"), signature);
             string complete = SliceMethod(source, "private void CompleteHostedDockRestore(");
             int owner = complete.IndexOf("_dockRestores.IsCurrent(operation)", StringComparison.Ordinal);
@@ -129,7 +128,7 @@ namespace PennyPet.Tests
         [TestMethod]
         public void DeleteWaitsForNativeCloseEvenBeforeRestoreLeaseRegistration()
         {
-            string dock = ReadSource("Features/StickyNotes/PetStickyDockCoordinator.cs");
+            string dock = SourceGuardText.ReadStickyWorkflowSource();
             string delete = SliceMethod(dock, "private void DeleteStickyNote(StickyNoteData note,");
             Assert.IsTrue(delete.Contains("CancelHostedDockRestores(note.Id)"));
             Assert.IsTrue(delete.Contains("BeginHostedStickyDelete(note, completed)"));

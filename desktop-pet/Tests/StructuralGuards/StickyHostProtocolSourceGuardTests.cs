@@ -10,7 +10,7 @@ namespace PennyPet.Tests
         [TestMethod]
         public void OwnNoteTyping_StillTriggersAnimation()
         {
-            string source = ReadSource("Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string source = SourceGuardText.ReadStickyWorkflowSource();
             string handler = Between(source,
                 "if (value.Kind == StickyUiEventKind.TypingActivity)",
                 "if (value.Kind == StickyUiEventKind.InputFocusChanged)");
@@ -46,8 +46,7 @@ namespace PennyPet.Tests
                 "Features/StickyNotes/StickyUiCommand.cs");
             string host = ReadSource("StickyUiHost.cs");
             string session = ReadSource("StickyWindowSession.cs");
-            string coordinator = ReadSource(
-                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
             string pet = ReadSource("PetForm.cs");
             string runtime = ReadSource(
                 "Features/StickyNotes/StickyHostedRuntime.cs");
@@ -64,8 +63,8 @@ namespace PennyPet.Tests
                 "Only sticky STA sessions may own hosted WPF windows.");
             Assert.IsTrue(coordinator.Contains(
                 "StickyNoteUiSnapshot.FromData(note)") &&
-                coordinator.Contains("_factsReceiver.TryApplySnapshot(") &&
-                pet.Contains("StickyHostedRuntime _hostedRuntime") &&
+                coordinator.Contains("Facts.TryApplySnapshot(") &&
+                coordinator.Contains("StickyHostedRuntime Hosted") && pet.Contains("StickyWorkspace _stickyWorkspace") &&
                 runtime.Contains("Dictionary<string, long> _appliedSequences"),
                 "Pet must apply each note using an independent sequence.");
         }
@@ -76,8 +75,7 @@ namespace PennyPet.Tests
             string threadHost = ReadSource("StickyUiThreadHost.cs");
             string posted = Between(threadHost, "internal void Post(",
                 "internal void StopAcceptingCommands");
-            string coordinator = ReadSource(
-                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
 
             Assert.IsFalse(posted.Contains("Dispatcher.Invoke") ||
                 posted.Contains(".Wait(") || posted.Contains(".Result"),
@@ -95,8 +93,7 @@ namespace PennyPet.Tests
             string commands = ReadSource(
                 "Features/StickyNotes/StickyUiCommand.cs");
             string session = ReadSource("StickyWindowSession.cs");
-            string coordinator = ReadSource(
-                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
             string overlay = ReadSource(
                 "Features/KeyboardOverlay/PetKeyboardOverlayCoordinator.cs");
             string hook = ReadSource(
@@ -105,7 +102,7 @@ namespace PennyPet.Tests
             Assert.IsTrue(commands.Contains("InputFocusChanged") &&
                 session.Contains("_window.HasFocusedTextInput") &&
                 coordinator.Contains(
-                    "_hostedRuntime.SetInputFocus(value.NoteId, value.Flag)"),
+                    "Hosted.SetInputFocus(value.NoteId, value.Flag)"),
                 "Sticky STA must asynchronously report a plain focus flag.");
             Assert.IsTrue(overlay.Contains(
                     "ShouldSuppressOwnApplicationInput(focusSnapshot)") &&
@@ -128,8 +125,8 @@ namespace PennyPet.Tests
             string runtime = ReadSource(
                 "Features/StickyNotes/StickyHostedRuntime.cs");
 
-            Assert.IsTrue(form.Contains(
-                "StickyHostedRuntime _hostedRuntime") &&
+            Assert.IsTrue(ReadSource("Features/StickyNotes/StickyWorkspace.cs").Contains(
+                "StickyHostedRuntime Hosted") &&
                 form.Contains("_expectedFirstRenderNoteIds") &&
                 form.Contains("_renderedFirstRenderNoteIds"),
                 "Hosted runtime must not absorb shared startup readiness state.");
@@ -161,7 +158,7 @@ namespace PennyPet.Tests
         {
             string session = ReadSource("StickyWindowSession.cs");
             string coordinator =
-                ReadSource("Features/StickyNotes/PetStickyWindowCoordinator.cs");
+                SourceGuardText.ReadStickyWorkflowSource();
             string command = ReadSource(
                 "Features/StickyNotes/StickyUiCommand.cs");
 
@@ -272,7 +269,7 @@ namespace PennyPet.Tests
         public void Drt6_RestorePolicyIsSelectedBeforeTheStaBoundary()
         {
             string session = ReadSource("StickyWindowSession.cs");
-            string coordinator = ReadSource("Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
             string host = ReadSource("StickyUiHost.cs");
             Assert.IsFalse(session.Contains("data.PreferredDisplayTargetKey") ||
                 session.Contains("data.LocalLogicalWidth") || session.Contains("ResolvePlacementPlan"));
@@ -300,8 +297,7 @@ namespace PennyPet.Tests
         [TestMethod]
         public void Drt7_TopologyRehomePublishesFreshWindowFacts()
         {
-            string coordinator = ReadSource(
-                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
             string session = ReadSource("StickyWindowSession.cs");
 
             Assert.IsTrue(coordinator.Contains(
@@ -322,11 +318,10 @@ namespace PennyPet.Tests
         [TestMethod]
         public void Drt7_MissingStartupTargetUsesDetachedTemporarySnapshot()
         {
-            string coordinator = ReadSource(
-                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
             string start = Between(coordinator,
                 "private void StartHostedSticky(",
-                "private bool IsHostedSticky(");
+                "internal bool IsHostedSticky(");
 
             Assert.IsTrue(start.Contains(
                     "TryBuildTemporaryRehomeTarget(note") &&
@@ -342,8 +337,7 @@ namespace PennyPet.Tests
         [TestMethod]
         public void Drt67Closeout_RehomeUsesNativeReprojectNotMonitorDpi()
         {
-            string coordinator = ReadSource(
-                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
             string session = ReadSource("StickyWindowSession.cs");
 
             Assert.IsFalse(coordinator.Contains(

@@ -11,7 +11,7 @@ namespace PennyPet.Tests
         [TestCategory("ArchitectureSourceBoundary")]
         public void NormalDrag_EntersDraggingWithoutAsyncFactsBarrier()
         {
-            string method = SliceMethod(ReadSource(Dock), "private void BeginStickyDockDrag(");
+            string method = SliceMethod(ReadSource(Dock), "internal void BeginStickyDockDrag(");
             int begin = method.IndexOf("BeginGesture(", StringComparison.Ordinal);
             Assert.IsTrue(begin >= 0 && method.IndexOf("TryEnterDragging(", StringComparison.Ordinal) > begin);
             Assert.IsTrue(method.Contains("CaptureDockInteractionBaseline("));

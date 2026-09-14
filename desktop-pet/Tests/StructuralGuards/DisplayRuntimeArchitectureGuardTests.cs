@@ -29,9 +29,8 @@ namespace PennyPet.Tests
         public void SideTabsPosition_IsDerivedAndNeverPushesPet()
         {
             string method = SliceMethod(
-                ReadSource(
-                    "Features/StickyNotes/PetStickyWindowCoordinator.cs"),
-                "private void PositionNoteTabs(");
+                SourceGuardText.ReadStickyWorkflowSource(),
+                "internal void PositionNoteTabs(");
 
             StringAssert.Contains(method,
                 "TryGetPetDerivedDisplayContext");
@@ -69,8 +68,8 @@ namespace PennyPet.Tests
             string[] files =
             {
                 "PetDisplayRuntime.cs",
-                "Features/StickyNotes/PetStickyDockCoordinator.cs",
-                "Features/StickyNotes/PetStickyWindowCoordinator.cs",
+                "Features/StickyNotes/StickyDockController.cs",
+                "Features/StickyNotes/StickyWorkspace.cs",
                 "StickyUiHost.cs",
                 "StickyWindowSession.cs"
             };

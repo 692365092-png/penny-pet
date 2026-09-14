@@ -7,15 +7,14 @@ namespace PennyPet.Tests
         [TestMethod]
         public void DerivedPlacementContract_DoesNotMovePetOrUseAnotherDpiOwner()
         {
-            string coordinator = StickySessionTopologyContractTests.ReadSource(
-                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
             string context = StickySessionTopologyContractTests.SliceMethod(
                 coordinator, "private bool TryGetPetDerivedDisplayContext");
             Assert.IsTrue(context.Contains("CapturePetWindowFacts(topology)"));
             Assert.IsTrue(context.Contains("FindByRuntimeGdiName("));
             Assert.IsTrue(context.Contains("SideTabPhysicalMetrics.ForDpi(petFacts.Dpi)"));
             string position = StickySessionTopologyContractTests.SliceMethod(
-                coordinator, "private void PositionNoteTabs()");
+                coordinator, "internal void PositionNoteTabs()");
             Assert.IsTrue(position.Contains("TryGetPetDerivedDisplayContext("));
             Assert.IsTrue(position.Contains("ApplyPhysicalMetrics(metrics)"));
             Assert.IsFalse(position.Contains("Location ="));

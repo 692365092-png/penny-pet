@@ -8,8 +8,8 @@ namespace PennyPet.Tests
     [TestClass]
     public sealed partial class DockDragLifecycleContractTests
     {
-        private const string Dock = "Features/StickyNotes/PetStickyDockCoordinator.cs";
-        private const string Windows = "Features/StickyNotes/PetStickyWindowCoordinator.cs";
+        private const string Dock = "Features/StickyNotes/StickyDockController.cs";
+        private const string Windows = "Features/StickyNotes/StickyWorkspace.cs";
 
 
 

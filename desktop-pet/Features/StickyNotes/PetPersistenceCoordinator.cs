@@ -107,7 +107,7 @@ namespace PennyPet
             }
         }
 
-        private void ExportStickyNotesBackup()
+        internal void ExportStickyNotesBackup()
         {
             using (SaveFileDialog dialog = new SaveFileDialog())
             {
@@ -133,7 +133,7 @@ namespace PennyPet
             }
         }
 
-        private StickyNotesImportPreview PrepareStickyNotesImport()
+        internal StickyNotesImportPreview PrepareStickyNotesImport()
         {
             if (_exiting || IsDisposed || Disposing) return null;
             using (OpenFileDialog dialog = new OpenFileDialog())
@@ -181,7 +181,7 @@ namespace PennyPet
             }
         }
 
-        private bool CommitStickyNotesImport(StickyNotesImportPreview preview)
+        internal bool CommitStickyNotesImport(StickyNotesImportPreview preview)
         {
             if (preview == null || preview.Merge == null ||
                 preview.ImportedNotes == null || preview.ImportedNotes.Count == 0)
@@ -218,7 +218,7 @@ namespace PennyPet
                 return false;
             }
 
-            ReloadImportedStickyRuntime(currentPlan);
+            _stickyWorkspace.ReloadImportedStickyRuntime(currentPlan);
             ShowBubble(BuildStickyImportSummary(currentPlan));
             return true;
         }
@@ -243,7 +243,7 @@ namespace PennyPet
             return true;
         }
 
-        private void RestoreStickyNotesBackup()
+        internal void RestoreStickyNotesBackup()
         {
             if (_exiting || IsDisposed || Disposing) return;
             using (OpenFileDialog dialog = new OpenFileDialog())
@@ -276,7 +276,7 @@ namespace PennyPet
         private void BeginFullStickyRestore(
             List<StickyNoteData> restoredSnapshot)
         {
-            CloseHostedStickyRuntimeForReload(
+            _stickyWorkspace.CloseHostedStickyRuntimeForReload(
                 delegate(StickyUiCommandResult closeResult)
                 {
                     if (closeResult == null || closeResult.Status !=
@@ -295,7 +295,7 @@ namespace PennyPet
                         restoredSnapshot);
                     if (committed == null || !committed.Succeeded)
                     {
-                        ReloadAllHostedStickyRuntime();
+                        _stickyWorkspace.ReloadAllHostedStickyRuntime();
                         ShowStickyImportFailure(
                             "恢复未完成。\n当前便利贴没有被修改。");
                         return;
@@ -304,7 +304,7 @@ namespace PennyPet
                     // portable sticky backup.  Reconcile note-side display
                     // ticks and remove linked reminders whose notes vanished.
                     ReconcileNoteReminders();
-                    ReloadAllHostedStickyRuntime();
+                    _stickyWorkspace.ReloadAllHostedStickyRuntime();
                     ShowBubble("完整恢复完成，共 " +
                         restoredSnapshot.Count + " 张便利贴。");
                 });

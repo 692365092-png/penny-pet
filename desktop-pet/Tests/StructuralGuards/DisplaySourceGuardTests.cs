@@ -10,12 +10,11 @@ namespace PennyPet.Tests
         [TestMethod]
         public void SideTabs_KeepTopMostAndOnlyRebuildForSplitChanges()
         {
-            string source = ReadSource(
-                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string source = SourceGuardText.ReadStickyWorkflowSource();
             string zOrder = Between(source, "private void ApplyNoteTabZOrder",
-                "private void PositionNoteTabs");
-            string position = Between(source, "private void PositionNoteTabs",
-                "private void ShowStickyNotesManager");
+                "internal void PositionNoteTabs");
+            string position = Between(source, "internal void PositionNoteTabs",
+                "internal void ShowStickyNotesManager");
             string tabs = ReadSource(
                 "Features/StickyNotes/StickyNoteTabs.cs");
             string form = ReadSource("PetForm.cs");
@@ -172,15 +171,13 @@ namespace PennyPet.Tests
         [TestMethod]
         public void Drt6Supplement_PetFactsAlignedWithSingleTopologySnapshot()
         {
-            string coordinator = ReadSource(
-                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
 
             Assert.IsTrue(coordinator.Contains(
                     "DisplayTopologySnapshot topology = CurrentTopologySnapshot();") &&
                 coordinator.Contains("CapturePetWindowFacts(topology)") &&
-                coordinator.Contains(
-                    "Handle, PetWindowFactsId,") &&
-                coordinator.Contains("generation, sequence, topology"),
+                ReadSource("PetDisplayRuntime.cs").Contains("Handle, PetWindowFactsId,") &&
+                ReadSource("PetDisplayRuntime.cs").Contains("generation, sequence, topology"),
                 "Pet facts must be captured against the same attempt topology.");
             string fallback = Between(coordinator,
                 "private void ApplyLegacySpawnFallback",
@@ -226,8 +223,7 @@ namespace PennyPet.Tests
         [TestMethod]
         public void ReprojectRuntimeTransitionRequiresAppliedResult()
         {
-            string coordinator = ReadSource(
-                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
             string apply = Between(coordinator,
                 "private bool ApplyReprojectResult",
                 "private static bool TryBuildPreference");

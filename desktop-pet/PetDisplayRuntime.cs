@@ -179,7 +179,7 @@ namespace PennyPet
                     actual.PhysicalBounds.Width + "," +
                     actual.PhysicalBounds.Height + ")");
 
-                PositionNoteTabs();
+                _stickyWorkspace.PositionNoteTabs();
                 return true;
             }
             finally
@@ -226,7 +226,7 @@ namespace PennyPet
                     " target=" + surface.RuntimeSurfaceId +
                     " dpi=" + actual.Dpi);
 
-                PositionNoteTabs();
+                _stickyWorkspace.PositionNoteTabs();
                 return true;
             }
             finally
@@ -342,7 +342,7 @@ namespace PennyPet
                     "StartupPreferred");
 
                 _petTemporaryRehome = false;
-                RefreshNoteTabs();
+                _stickyWorkspace.RefreshNoteTabs();
                 return;
             }
 
@@ -353,7 +353,7 @@ namespace PennyPet
                 TryPlacePetLegacy(topology, legacy))
             {
                 EstablishInitialPetPreference(topology, "LegacyXYMigration");
-                RefreshNoteTabs();
+                _stickyWorkspace.RefreshNoteTabs();
                 return;
             }
 
@@ -382,7 +382,7 @@ namespace PennyPet
                 }
             }
 
-            RefreshNoteTabs();
+            _stickyWorkspace.RefreshNoteTabs();
         }
 
         private void ReconcilePetDisplayPlacement(
@@ -407,7 +407,7 @@ namespace PennyPet
             // User drag owns the HWND until mouse-up.
             if (_dragging)
             {
-                PositionNoteTabs();
+                _stickyWorkspace.PositionNoteTabs();
                 return;
             }
 
@@ -419,7 +419,7 @@ namespace PennyPet
                 if (_petTemporaryRehome &&
                     _petUserMovedSinceTemporaryRehome)
                 {
-                    PositionNoteTabs();
+                    _stickyWorkspace.PositionNoteTabs();
                     return;
                 }
 
@@ -466,7 +466,7 @@ namespace PennyPet
                         " reason=WindowsEffective");
                 }
 
-                PositionNoteTabs();
+                _stickyWorkspace.PositionNoteTabs();
                 return;
             }
 
@@ -572,5 +572,39 @@ namespace PennyPet
             if (after != null)
                 UpdatePetCompatibilityLocation(after, false);
         }
+        internal WindowFacts CapturePetWindowFacts(
+            DisplayTopologySnapshot topology)
+        {
+            if (IsDisposed || Disposing || !IsHandleCreated ||
+                Handle == IntPtr.Zero)
+                return null;
+
+            try
+            {
+                long generation = topology == null ? 0 : topology.Generation;
+                long sequence = ++_petWindowSequence;
+
+                WindowFacts facts = WindowsWindowFactsReader.Capture(
+                    Handle, PetWindowFactsId,
+                    generation, sequence, topology);
+
+                if (facts != null && topology != null &&
+                    facts.TopologyGeneration == topology.Generation)
+                    _petEffectiveFacts = facts;
+
+                return facts;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        internal DisplayTopologySnapshot CurrentTopologySnapshot()
+        {
+            return _displayTopologyRuntime == null
+                ? null : _displayTopologyRuntime.Current;
+        }
+
     }
 }

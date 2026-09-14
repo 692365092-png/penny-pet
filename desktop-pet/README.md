@@ -85,7 +85,7 @@ GitHub 开源发布版使用 `build.ps1` 生成可审查、可自动测试的未
 
 - `Program.cs`：兼容单 EXE 的演示/正常入口；`Infrastructure` 下的共享路由统一承载测试、预览和美术命令。
 - `PennyApplicationHost.cs`：单实例、loading 与正常应用运行。
-- `PetForm.cs`：桌宠 Windows 窗口壳；启动、动画运行时、键盘、气泡、菜单和便利贴窗口协调分别位于对应 `Pet*.cs` partial 文件。
+- `PetForm.cs`：桌宠 Windows 窗口壳；启动、动画、键盘、气泡、菜单位于对应 `Pet*.cs` partial 文件；便利贴由独立的 `StickyWorkspace` 实例管理。
 - `PetContextMenu.cs`：桌宠右键菜单。
 - `Core/Animation`：动画状态、优先级、随机选择、资源预加载退避与恢复规则。
 - `Core/Reminders` / `PetReminderWindowsCoordinator.cs`：纯提醒模型和规则与 Windows UI 协调。
@@ -98,7 +98,9 @@ GitHub 开源发布版使用 `build.ps1` 生成可审查、可自动测试的未
 - `StickyNoteWpf.cs`：WPF 便利贴窗口本体；RichText/IME、链接和原生窗口行为分别位于 `StickyEditorCoordinator.cs`、`StickyLinkCoordinator.cs` 和 `StickyNativeWindowBehavior.cs`。
 - `StickyTodoCoordinator.cs` / `StickyScheduleCoordinator.cs`：待办和日程 UI 逻辑。
 - `StickyReminderCoordinator.cs` / `StickyAppearanceCoordinator.cs`：提醒条和外观 UI 逻辑。
-- `PetStickyDockCoordinator.cs`：Windows 便利贴吸附命中、拖拽、坐标同步与隐藏恢复适配；组关系规则由 Core 持有。
+- `StickyWorkspace.cs`：持有便利贴窗口宿主、运行态、内容接收与侧边页签的生命周期。
+- `StickyDockController.cs`：持有 Dock 拖拽、缩放、恢复操作、邮箱与延迟操作；组关系规则由 Core 持有。
+- `StickyFactsReceiver.cs`：统一校验和提交实际 HWND 几何、捕获拓扑及会话序号。
 - `StickyNotes.cs` / `StickyNoteTabs.cs`：管理界面、IME 辅助控件和侧边页签。
 - `ReminderUi.cs` / `Core/Reminders`：提醒界面以及纯提醒模型和规则。
 - `Core/Settings` / `PetSettings.cs`：设置数据、INI 兼容 codec，以及 Windows 路径/备份/重试适配器。

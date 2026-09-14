@@ -1259,11 +1259,9 @@ namespace PennyPet
                 expandA, expandB, expandC });
             StickyHostedRuntime expandRuntime = new StickyHostedRuntime();
             expandRuntime.AddNote(expandA.Id);
-            List<DockLayoutTarget> expandTargets = PetForm
-                .PrepareStickyExpandAndTileTargets(expandRepository.GetAll(),
+            List<DockLayoutTarget> expandTargets = StickyDockController.PrepareStickyExpandAndTileTargets(expandRepository.GetAll(),
                     new Rectangle(0, 0, 1920, 1040), 1.0);
-            List<DockLayoutTarget> secondaryTargets = PetForm
-                .PrepareStickyExpandAndTileTargets(new StickyNoteData[] {
+            List<DockLayoutTarget> secondaryTargets = StickyDockController.PrepareStickyExpandAndTileTargets(new StickyNoteData[] {
                     new StickyNoteData(), new StickyNoteData() },
                     new Rectangle(-1920, 0, 1920, 1040), 1.0);
             bool planningPreservedActual = expandA.X == -5000 &&
@@ -1546,11 +1544,11 @@ namespace PennyPet
         {
             DockGeometryCheckResult result = new DockGeometryCheckResult();
             result.BottomDockingOk =
-                PetForm.CanDockBelow(new Rectangle(100, 330, 320, 300),
+                StickyDockController.CanDockBelow(new Rectangle(100, 330, 320, 300),
                     new Rectangle(100, 30, 320, 300), 20) &&
-                !PetForm.CanDockBelow(new Rectangle(170, 330, 320, 300),
+                !StickyDockController.CanDockBelow(new Rectangle(170, 330, 320, 300),
                     new Rectangle(100, 30, 320, 300), 20);
-            List<Rectangle> unifiedLayout = PetForm.CalculateUnifiedDockLayout(
+            List<Rectangle> unifiedLayout = StickyDockController.CalculateUnifiedDockLayout(
                 new Size[] { new Size(320, 300), new Size(500, 240),
                     new Size(380, 260) }, 120, 80, 460);
             result.UnifiedGroupResizeOk = unifiedLayout.Count == 3 &&
@@ -1560,7 +1558,7 @@ namespace PennyPet
             result.RootAnchorPreservedOk = unifiedLayout.Count == 3 &&
                 unifiedLayout[0].Location == new Point(120, 80);
             List<DockLayoutTarget> dividerTargets =
-                PetForm.CalculateDockDividerTargets(
+                StickyDockController.CalculateDockDividerTargets(
                     new DockWindowFacts("upper", 120, 80, 420, 500,
                         true, true),
                     new DockWindowFacts("lower", 120, 310, 420, 230,
@@ -1574,16 +1572,16 @@ namespace PennyPet
                 dividerTargets[1].Width == 420 &&
                 dividerTargets[1].TopMost;
             result.DividerIndependentRangeOk =
-                PetForm.CalculateDockDividerHeight(50) == 220 &&
-                PetForm.CalculateDockDividerHeight(500) == 500 &&
-                PetForm.CalculateDockDividerHeight(900) == 700;
+                StickyDockController.CalculateDockDividerHeight(50) == 220 &&
+                StickyDockController.CalculateDockDividerHeight(500) == 500 &&
+                StickyDockController.CalculateDockDividerHeight(900) == 700;
             List<Rectangle> beforeDividerLayout =
-                PetForm.CalculateUnifiedDockLayout(
+                StickyDockController.CalculateUnifiedDockLayout(
                     new Size[] { new Size(420, 300),
                         new Size(420, 300), new Size(420, 300) },
                     120, 80, 420);
             List<Rectangle> afterDividerLayout =
-                PetForm.CalculateUnifiedDockLayout(
+                StickyDockController.CalculateUnifiedDockLayout(
                     new Size[] { new Size(420, 350),
                         new Size(420, 300), new Size(420, 300) },
                     120, 80, 420);
@@ -1623,10 +1621,10 @@ namespace PennyPet
                 liveTargets.Targets[1].NoteId == "d" && liveTargets.Targets[1].PhysicalBounds.Top == 1000 &&
                 liveTargets.Targets[0].PhysicalBounds.Height == 300 && liveTargets.Targets[1].PhysicalBounds.Height == 300 &&
                 liveTargets.Targets[0].PhysicalBounds.Width == 420 && liveTargets.Targets[1].PhysicalBounds.Width == 420;
-            result.WideNarrowDockingOk = PetForm.CanDockBelow(
+            result.WideNarrowDockingOk = StickyDockController.CanDockBelow(
                 new Rectangle(80, 400, 900, 300),
                 new Rectangle(400, 100, 280, 300), 20) &&
-                PetForm.CanDockBelow(new Rectangle(400, 400, 280, 300),
+                StickyDockController.CanDockBelow(new Rectangle(400, 400, 280, 300),
                     new Rectangle(80, 100, 900, 300), 20);
             result.LongCoordinateGuardOk =
                 StickyDockOperations.IsDockCoordinateRangeSafe(100,
@@ -1643,7 +1641,7 @@ namespace PennyPet
                         320, 240, true, false) }
                 };
             List<DockLayoutTarget> translated =
-                PetForm.CalculateDockTranslationTargets(
+                StickyDockController.CalculateDockTranslationTargets(
                     new string[] { "root", "child" }, dragFacts,
                     new DockWindowFacts("root", 115, 190, 320, 300,
                         true, false), 15, -10);
@@ -1659,15 +1657,15 @@ namespace PennyPet
                     new Point(500, 400), new Point(20, 10), true);
             result.FirstDragRecoveryOk = recoveredDrag ==
                 new Rectangle(480, 390, 320, 300);
-            Point reachable = PetForm.CalculateHeaderReachableTranslation(
+            Point reachable = StickyDockController.CalculateHeaderReachableTranslation(
                 new Rectangle(100, -200, 400, 32),
                 new Rectangle(0, 0, 1200, 900));
             result.DetachedGroupReturnsOnScreenOk = reachable.Y == 200;
-            Point recoveredPrimary = PetForm.CalculateStickyRecoveryAnchor(
+            Point recoveredPrimary = StickyWorkspace.CalculateStickyRecoveryAnchor(
                 new Rectangle(0, 0, 1920, 1040),
                 new Rectangle(20, 700, 192, 208),
                 new Size(320, 300), 0);
-            Point recoveredSecondary = PetForm.CalculateStickyRecoveryAnchor(
+            Point recoveredSecondary = StickyWorkspace.CalculateStickyRecoveryAnchor(
                 new Rectangle(-1920, 0, 1920, 1040),
                 new Rectangle(-300, 700, 192, 208),
                 new Size(320, 300), 1);
@@ -1679,10 +1677,10 @@ namespace PennyPet
                 recoveredSecondary.Y >= 0 &&
                 recoveredSecondary.Y <= 1008;
             result.ExecutorNeutralDockVisualSeamOk =
-                PetForm.CalculateDockVisualSeam(new DockWindowFacts(
+                StickyDockController.CalculateDockVisualSeam(new DockWindowFacts(
                     "hosted-note", -860, 140, 420, 310, true, true)) ==
                     new Rectangle(-860, 447, 420, 6) &&
-                PetForm.CalculateDockVisualSeam(null).IsEmpty;
+                StickyDockController.CalculateDockVisualSeam(null).IsEmpty;
             return result;
         }
 
@@ -4949,7 +4947,7 @@ namespace PennyPet
             reprojA.LocalLogicalHeight = 1;
             reprojB.LocalLogicalHeight = 999;
             DockGroupLogicalState runtimeState;
-            bool runtimeOk = PetForm.TryBuildDockTopologyLogicalState(
+            bool runtimeOk = StickyDockController.TryBuildDockTopologyLogicalState(
                 reprojGroup, DockTopologyReprojectReason.CurrentRuntimeRepair,
                 out runtimeState, captureRuntime) &&
                 runtimeState.RootAnchor.X == 10 &&
@@ -4960,7 +4958,7 @@ namespace PennyPet
                 runtimeState.Members[1].Height == 360;
 
             DockGroupLogicalState returnState;
-            bool returnOk = PetForm.TryBuildDockTopologyLogicalState(
+            bool returnOk = StickyDockController.TryBuildDockTopologyLogicalState(
                 reprojGroup, DockTopologyReprojectReason.PreferredReturn,
                 out returnState) &&
                 returnState.RootAnchor.X == 900 &&
@@ -4971,7 +4969,7 @@ namespace PennyPet
                 returnState.Members[1].Height == 700;
 
             DockGroupLogicalState rehomeState;
-            bool rehomeOk = PetForm.TryBuildDockTopologyLogicalState(
+            bool rehomeOk = StickyDockController.TryBuildDockTopologyLogicalState(
                 reprojGroup, DockTopologyReprojectReason.TemporaryRehome,
                 out rehomeState) &&
                 rehomeState.Members[0].Width == 500 &&
@@ -4993,7 +4991,7 @@ namespace PennyPet
             badLocalB.PreferredLocalLogicalHeight = 700;
             DockGroupLogicalState rejectedLocal;
             bool localRejected =
-                !PetForm.TryBuildDockTopologyLogicalState(
+                !StickyDockController.TryBuildDockTopologyLogicalState(
                     new List<StickyNoteData> { badLocalA, badLocalB },
                     DockTopologyReprojectReason.CurrentRuntimeRepair,
                     out rejectedLocal) && rejectedLocal == null;
@@ -5012,7 +5010,7 @@ namespace PennyPet
             badPrefB.PreferredLocalLogicalHeight = 0;
             DockGroupLogicalState rejectedPreferred;
             bool preferredRejected =
-                !PetForm.TryBuildDockTopologyLogicalState(
+                !StickyDockController.TryBuildDockTopologyLogicalState(
                     new List<StickyNoteData> { badPrefA, badPrefB },
                     DockTopologyReprojectReason.PreferredReturn,
                     out rejectedPreferred) && rejectedPreferred == null;
@@ -5475,7 +5473,7 @@ namespace PennyPet
                 DockWindowFacts sourceFacts = sourcePositioned == null ? null :
                     HostedDockFacts(sourcePositioned);
                 bool dockHit = sourceFacts != null && targetFacts != null &&
-                    PetForm.CanDockBelow(new Rectangle(sourceFacts.X,
+                    StickyDockController.CanDockBelow(new Rectangle(sourceFacts.X,
                         sourceFacts.Y, sourceFacts.Width, sourceFacts.Height),
                         new Rectangle(targetFacts.X, targetFacts.Y,
                             targetFacts.Width, targetFacts.Height), 20);
@@ -5484,7 +5482,7 @@ namespace PennyPet
                         new StickyNoteData[] { second }, second,
                         new StickyNoteData[] { canonical })
                     : new List<StickyNoteData>();
-                List<Rectangle> hostedLayout = PetForm.CalculateUnifiedDockLayout(
+                List<Rectangle> hostedLayout = StickyDockController.CalculateUnifiedDockLayout(
                     new Size[] { new Size(targetFacts.Width, targetFacts.Height),
                         new Size(sourceFacts.Width, sourceFacts.Height) },
                     targetFacts.X, targetFacts.Y, targetFacts.Width);
@@ -5506,7 +5504,7 @@ namespace PennyPet
                 // strictly newer sequence with the final geometry immediately
                 // (mixed-width merge normalizes width without a self-heal wait).
                 List<Rectangle> mixedWidthLayout =
-                    PetForm.CalculateUnifiedDockLayout(new Size[]
+                    StickyDockController.CalculateUnifiedDockLayout(new Size[]
                     {
                         new Size(320, 300), new Size(420, 420)
                     }, 80, 140, 320);
@@ -5535,9 +5533,9 @@ namespace PennyPet
                         petContext);
                 setBoundsInFlight = false;
                 bool staleCannotOverwrite =
-                    !PetForm.ShouldApplyHostedSequence(
+                    !StickyWorkspace.ShouldApplyHostedSequence(
                         canonicalBaseline, mixedSource.Sequence) &&
-                    PetForm.ShouldApplyHostedSequence(mixedSource.Sequence,
+                    StickyWorkspace.ShouldApplyHostedSequence(mixedSource.Sequence,
                         canonicalBaseline);
                 check.HostedSetBoundsAtomicOk =
                     mixedRoot != null && mixedSource != null &&
@@ -5558,7 +5556,7 @@ namespace PennyPet
                 DockWindowFacts movedRoot = new DockWindowFacts(second.Id,
                     160, 140, 320, 300, true, false);
                 List<DockLayoutTarget> moveTargets =
-                    PetForm.CalculateDockTranslationTargets(
+                    StickyDockController.CalculateDockTranslationTargets(
                         new string[] { second.Id, canonical.Id }, moveFacts,
                         movedRoot, 60, 40);
                 StickyUiCommandResult targetMoved = PostStickyCommandAndWait(
@@ -5605,7 +5603,7 @@ namespace PennyPet
                         canonical.Id, false, null, null, groupBottomRole),
                     petContext);
                 List<Rectangle> resizedLayout =
-                    PetForm.CalculateUnifiedDockLayout(new Size[]
+                    StickyDockController.CalculateUnifiedDockLayout(new Size[]
                     {
                         new Size(320, 230), new Size(320, 230)
                     }, 80, 140, 420);
@@ -5634,7 +5632,7 @@ namespace PennyPet
                 DockWindowFacts twoUpperRequested = new DockWindowFacts(
                     second.Id, 80, 140, 420, 500, true, true);
                 List<DockLayoutTarget> twoDividerTargets =
-                    PetForm.CalculateDockDividerTargets(twoUpperRequested,
+                    StickyDockController.CalculateDockDividerTargets(twoUpperRequested,
                         HostedDockFacts(sourceResized));
                 StickyUiCommandResult targetDividerResized =
                     PostStickyCommandAndWait(host,
@@ -5664,7 +5662,7 @@ namespace PennyPet
                 // bounds are applied right before hide and the reopen must
                 // preserve exactly those bounds (hide -> reopen == no drift).
                 List<Rectangle> compactLayout =
-                    PetForm.CalculateUnifiedDockLayout(new Size[]
+                    StickyDockController.CalculateUnifiedDockLayout(new Size[]
                     {
                         new Size(420, 230), new Size(420, 230)
                     }, 80, 140, 420);
@@ -5710,7 +5708,7 @@ namespace PennyPet
                         dockOrder, second,
                         new StickyNoteData[] { third });
                 List<Rectangle> threeLayout =
-                    PetForm.CalculateUnifiedDockLayout(new Size[]
+                    StickyDockController.CalculateUnifiedDockLayout(new Size[]
                     {
                         new Size(420, 300), new Size(420, 300),
                         new Size(420, 300)
@@ -5763,12 +5761,12 @@ namespace PennyPet
                             canonical.Id, false, null, null,
                             groupBottomRole), petContext);
                 List<DockLayoutTarget> firstDivider =
-                    PetForm.CalculateDockDividerTargets(
+                    StickyDockController.CalculateDockDividerTargets(
                         new DockWindowFacts(second.Id, 80, 140, 420, 500,
                             true, true),
                         HostedDockFacts(thirdInserted));
                 List<Rectangle> firstDividerLayout =
-                    PetForm.CalculateUnifiedDockLayout(new Size[]
+                    StickyDockController.CalculateUnifiedDockLayout(new Size[]
                     {
                         new Size(420, firstDivider[0].Height),
                         new Size(420, firstDivider[1].Height),
@@ -5792,7 +5790,7 @@ namespace PennyPet
                                 firstDividerLayout[2].Y, 420,
                                 firstDividerLayout[2].Height)), petContext);
                 List<DockLayoutTarget> secondDivider =
-                    PetForm.CalculateDockDividerTargets(
+                    StickyDockController.CalculateDockDividerTargets(
                         new DockWindowFacts(third.Id, 80,
                             firstLower.Facts.PhysicalBounds.Top, 420, 500,
                             true, true),
@@ -5808,12 +5806,12 @@ namespace PennyPet
                             secondDivider[1].Y,
                             420, secondDivider[1].Height)), petContext);
                 List<DockLayoutTarget> dividerMinimum =
-                    PetForm.CalculateDockDividerTargets(
+                    StickyDockController.CalculateDockDividerTargets(
                         new DockWindowFacts(second.Id, 80, 140, 420, 50,
                             true, true),
                         HostedDockFacts(firstLower));
                 List<DockLayoutTarget> dividerMaximum =
-                    PetForm.CalculateDockDividerTargets(
+                    StickyDockController.CalculateDockDividerTargets(
                         new DockWindowFacts(second.Id, 80, 140, 420, 900,
                             true, true),
                         HostedDockFacts(firstLower));
@@ -5899,12 +5897,12 @@ namespace PennyPet
                     finalTarget.Facts.PhysicalBounds.Top == 140;
                 WindowFacts staleProbe = sourceDocked.Facts;
                 long appliedSequence = sourceDocked.Sequence;
-                if (PetForm.ShouldApplyHostedSequence(reopened.Sequence,
+                if (StickyWorkspace.ShouldApplyHostedSequence(reopened.Sequence,
                     appliedSequence)) staleProbe = reopened.Facts;
                 check.PerNoteSequenceOk =
-                    PetForm.ShouldApplyHostedSequence(sourceDocked.Sequence,
+                    StickyWorkspace.ShouldApplyHostedSequence(sourceDocked.Sequence,
                         reopened.Sequence) &&
-                    !PetForm.ShouldApplyHostedSequence(reopened.Sequence,
+                    !StickyWorkspace.ShouldApplyHostedSequence(reopened.Sequence,
                         appliedSequence) &&
                     Object.ReferenceEquals(staleProbe, sourceDocked.Facts);
                 check.HostedDockEffectOk = dockHit && dockOrder.Count == 2 &&

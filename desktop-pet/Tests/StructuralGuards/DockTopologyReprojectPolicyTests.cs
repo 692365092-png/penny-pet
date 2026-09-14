@@ -7,13 +7,12 @@ namespace PennyPet.Tests
     [TestClass]
     public sealed class DockTopologyReprojectPolicyTests
     {
-        private const string Coordinator = "Features/StickyNotes/PetStickyWindowCoordinator.cs";
 
         [TestMethod]
         [TestCategory("ArchitectureSourceBoundary")]
         public void ReprojectReasons_OwnTheirStateTransitions()
         {
-            string source = ReadSource(Coordinator);
+            string source = SourceGuardText.ReadStickyWorkflowSource();
             string reconcile = SliceMethod(source, "private void ReconcileDockGroup(");
             string temporary = SliceMethod(reconcile, "if (temporary)");
             Assert.IsTrue(temporary.Contains("UserMovedSinceRehome("));

@@ -9,16 +9,14 @@ namespace PennyPet.Tests
     [TestCategory("ArchitectureSourceBoundary")]
     public sealed class DockMutationBoundaryTests
     {
-        private const string Dock = "Features/StickyNotes/PetStickyDockCoordinator.cs";
-        private const string Window = "Features/StickyNotes/PetStickyWindowCoordinator.cs";
 
         [TestMethod]
         public void FinalScopeIsCapturedBeforeHiddenMembersAreRemovedFromTheNativePlan()
         {
-            string final = SliceMethod(ReadSource(Dock), "private void StartDockFinalization(");
+            string final = SliceMethod(SourceGuardText.ReadStickyWorkflowSource(), "private void StartDockFinalization(");
             int scope = final.IndexOf("var affectedMembers = new List<StickyNoteData>(finalMembers)", StringComparison.Ordinal);
             int visible = final.IndexOf("finalMembers.RemoveAll(note => !note.Visible)", StringComparison.Ordinal);
-            int begin = final.IndexOf("_dockInteraction.BeginFinalizing(", StringComparison.Ordinal);
+            int begin = final.IndexOf("Interaction.BeginFinalizing(", StringComparison.Ordinal);
             int capture = final.IndexOf("StickyUiCommand.CaptureDockFacts(", StringComparison.Ordinal);
             Assert.IsTrue(scope >= 0 && visible > scope && begin > visible && capture > begin);
             Assert.IsTrue(final.Contains("affectedMembers.AddRange(BuildDockChainOrderIncludingHidden(remainderSeed))"));
@@ -29,13 +27,13 @@ namespace PennyPet.Tests
         [TestMethod]
         public void OrdinaryAndTopologyDrivenRestoresWaitBeforePreparingOrMutatingAnything()
         {
-            string source = ReadSource(Window);
-            string restore = SliceMethod(source, "private bool TryRestoreHostedDockComponent(");
+            string source = SourceGuardText.ReadStickyWorkflowSource();
+            string restore = SliceMethod(source, "internal bool TryRestoreHostedDockComponent(");
             int defer = restore.IndexOf("DeferDockMutation(rootId", StringComparison.Ordinal);
             Assert.IsTrue(defer >= 0 && defer < restore.IndexOf("MigrateDockRestorePreferredIfNeeded", StringComparison.Ordinal));
             Assert.IsTrue(defer < restore.IndexOf("DockRestoreOperation.TryCreate", StringComparison.Ordinal));
             string owner = SliceMethod(source, "private DockMutationQueue FindDockMutationOwner(");
-            Assert.IsTrue(owner.Contains("_dockInteraction.Mutations") && owner.Contains("_dockResize.Mutations"));
+            Assert.IsTrue(owner.Contains("Interaction.Mutations") && owner.Contains("_dockResize.Mutations"));
             Assert.IsFalse(source.Contains("DeferDockResizeMutation"));
             string post = SliceMethod(source, "private void PostDockGroupTopologyReproject(");
             Assert.IsTrue(post.Contains("FindDockMutationOwner(root.Id) != null"));
@@ -46,16 +44,16 @@ namespace PennyPet.Tests
         [TestMethod]
         public void OwnersAndMailboxesAreRetiredBeforeQueuedActionsCanReenter()
         {
-            string dock = ReadSource(Dock);
-            string reset = SliceMethod(dock, "private void ResetDockDragState(");
+            string dock = SourceGuardText.ReadStickyWorkflowSource();
+            string reset = SliceMethod(dock, "internal void ResetDockDragState(");
             int invalidate = reset.IndexOf("SetCurrentDockInteractionEpoch", StringComparison.Ordinal);
             int mailbox = reset.IndexOf("_dockPlanMailbox.Clear()", StringComparison.Ordinal);
             int run = reset.IndexOf("RunDeferredDockMutations(deferred)", StringComparison.Ordinal);
             Assert.IsTrue(invalidate >= 0 && mailbox > invalidate && run > mailbox);
             string final = SliceMethod(dock, "private void StartDockFinalization(");
-            int finish = final.IndexOf("_dockInteraction.TryFinish(epoch, topology.Generation, out invalidatingEpoch, out deferred)", StringComparison.Ordinal);
+            int finish = final.IndexOf("Interaction.TryFinish(epoch, topology.Generation, out invalidatingEpoch, out deferred)", StringComparison.Ordinal);
             Assert.IsTrue(finish >= 0 && final.IndexOf("RunDeferredDockMutations(deferred)", StringComparison.Ordinal) > finish);
-            string clear = SliceMethod(ReadSource(Window), "private void ClearHostedDockResizeSession(");
+            string clear = SliceMethod(SourceGuardText.ReadStickyWorkflowSource(), "internal void ClearHostedDockResizeSession(");
             Assert.IsTrue(clear.IndexOf("_dockResize = null", StringComparison.Ordinal) < clear.IndexOf("previous.Finish()", StringComparison.Ordinal));
             Assert.IsFalse(ReadSource("Features/StickyNotes/DockResizeSession.cs").Contains("_afterFinal"));
         }
@@ -63,17 +61,17 @@ namespace PennyPet.Tests
         [TestMethod]
         public void LifecycleFailuresRetireFinalizationAndDeferredActionsResolveCurrentNotes()
         {
-            string window = ReadSource(Window), dock = ReadSource(Dock);
-            Assert.IsTrue(SliceMethod(window, "private void HostedStickyFaulted(").Contains("ResetDockDragState(true)"));
+            string window = SourceGuardText.ReadStickyWorkflowSource(), dock = SourceGuardText.ReadStickyWorkflowSource();
+            Assert.IsTrue(SliceMethod(window, "internal void HostedStickyFaulted(").Contains("ResetDockDragState(true)"));
             Assert.IsTrue(SliceMethod(window, "private void HandleHostedStickyFailure(").Contains(
-                "cancelHeaderFinal && ReferenceEquals(_dockInteraction.Mutations, failedFinal)"));
+                "cancelHeaderFinal && ReferenceEquals(Dock.Interaction.Mutations, failedFinal)"));
             string closed = SliceMethod(window, "if (value.Kind == StickyUiEventKind.Closed)");
             Assert.IsTrue(closed.IndexOf("if (!ApplyHostedStickyEvent(value)) return", StringComparison.Ordinal) <
-                closed.IndexOf("_hostedRuntime.RemoveNote", StringComparison.Ordinal));
+                closed.IndexOf("Hosted.RemoveNote", StringComparison.Ordinal));
             Assert.IsTrue(SliceMethod(window, "private void PostResizeFinal(").Contains("ClearHostedDockResizeSession(session)"));
-            Assert.IsTrue(window.Contains("ShowHostedSticky(_notes.Find(note.Id), focusEditor, persistVisibility)"));
-            Assert.IsTrue(dock.Contains("DeleteStickyNote(_notes.Find(note.Id), completed)"));
-            string exit = SliceMethod(window, "private bool BeginHostedStickyExitIfNeeded()");
+            Assert.IsTrue(window.Contains("ShowHostedSticky(Notes.Find(note.Id), focusEditor, persistVisibility)"));
+            Assert.IsTrue(dock.Contains("DeleteStickyNote(Notes.Find(note.Id), completed)"));
+            string exit = SliceMethod(window, "internal bool BeginHostedStickyExitIfNeeded()");
             Assert.IsTrue(exit.IndexOf("DeferDockMutation", StringComparison.Ordinal) < exit.IndexOf("CancelHostedDockRestores", StringComparison.Ordinal));
         }
     }

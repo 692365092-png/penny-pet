@@ -62,8 +62,7 @@ namespace PennyPet.Tests
                 "Features/StickyNotes/StickyNotes.cs");
             string persistence = ReadSource(
                 "Features/StickyNotes/PetPersistenceCoordinator.cs");
-            string coordinator = ReadSource(
-                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
 
             Assert.IsTrue(manager.Contains("ManagerMode") &&
                 manager.Contains("ImportPreview") &&
@@ -80,9 +79,9 @@ namespace PennyPet.Tests
                 persistence.Contains("ImportPlansMatch") &&
                 persistence.Contains("CommitImportedMerge"),
                 "Import must read, plan, revalidate, then use the existing commit owner.");
-            Assert.IsTrue(coordinator.Contains("PrepareImport = PrepareStickyNotesImport") &&
-                coordinator.Contains("ConfirmImport = CommitStickyNotesImport") &&
-                coordinator.Contains("FullRestore = RestoreStickyNotesBackup") &&
+            Assert.IsTrue(coordinator.Contains("PrepareImport = _pet.PrepareStickyNotesImport") &&
+                coordinator.Contains("ConfirmImport = _pet.CommitStickyNotesImport") &&
+                coordinator.Contains("FullRestore = _pet.RestoreStickyNotesBackup") &&
                 manager.Contains("高级：完整恢复…"),
                 "The manager must receive typed prepare/confirm commands from PetForm.");
         }
@@ -107,13 +106,12 @@ namespace PennyPet.Tests
         [TestMethod]
         public void Drt6Supplement_SpawnUsesCenteredPolicyWithoutCascade()
         {
-            string coordinator = ReadSource(
-                "Features/StickyNotes/PetStickyWindowCoordinator.cs");
+            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
 
             Assert.IsTrue(coordinator.Contains(
                     "StickySpawnPolicy.PlanCenteredSpawn(") &&
                 coordinator.Contains("PrepareStickyNoteDraft(") &&
-                coordinator.Contains("_notes.CreateDraft(text, Point.Empty)"),
+                coordinator.Contains("Notes.CreateDraft(text, Point.Empty)"),
                 "Spawn must route through the centered pure policy on a draft.");
             Assert.IsFalse(coordinator.Contains("% 7) * 18") ||
                 coordinator.Contains("12 + offset") ||

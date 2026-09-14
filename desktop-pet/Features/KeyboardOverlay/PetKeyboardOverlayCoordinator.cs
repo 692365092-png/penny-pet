@@ -173,8 +173,7 @@ namespace PennyPet
         {
             _keyOverlay.UpdatePosition(this);
             _windowLayers.KeepTransientBelowModal(_keyOverlay);
-            _windowLayers.KeepTransientBelowModal(_leftNoteTabs);
-            _windowLayers.KeepTransientBelowModal(_rightNoteTabs);
+            _stickyWorkspace.ApplyWindowLayer();
             _bubbleCoordinator.ApplyWindowLayer();
         }
 

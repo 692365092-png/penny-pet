@@ -20,10 +20,11 @@ namespace PennyPet
         {
             internal readonly PetForm Pet;
             internal readonly StickyNoteRepository Repository;
-            internal readonly StickyHostedRuntime Hosted = new StickyHostedRuntime();
-            internal readonly StickyPlacementRuntime Placement = new StickyPlacementRuntime();
-            internal readonly DockInteractionSession Interaction = new DockInteractionSession();
-            internal readonly StickyUiHost Host = new StickyUiHost();
+            internal readonly StickyWorkspace Workspace;
+            internal StickyHostedRuntime Hosted { get { return Workspace.Hosted; } }
+            internal StickyPlacementRuntime Placement { get { return Workspace.Placement; } }
+            internal DockInteractionSession Interaction { get { return Workspace.Dock.Interaction; } }
+            internal StickyUiHost Host { get { return Workspace.Host; } }
             internal readonly Pc2Context Context = new Pc2Context();
             internal readonly DisplayTopologyRuntime Display;
             internal readonly List<StickyNoteData> Notes = new List<StickyNoteData>();
@@ -63,24 +64,18 @@ namespace PennyPet
                 bubble = new PetBubbleCoordinator(Pet, () => true, () => false,
                     null, null);
                 Pc2Set(Pet, "_notes", Repository);
-                Pc2Set(Pet, "_hostedRuntime", Hosted);
-                Pc2Set(Pet, "_placementRuntime", Placement);
-                Pc2Set(Pet, "_factsReceiver", new StickyFactsReceiver(Repository, Hosted, Placement));
+
                 Pc2Set(Pet, "_displayTopologyRuntime", Display);
-                Pc2Set(Pet, "_dockInteraction", Interaction);
-                Pc2Set(Pet, "_dockPlanMailbox", new DockPlanMailbox());
-                Pc2Set(Pet, "_lastAppliedDockPlanSequence", -1L);
-                Pc2Set(Pet, "_stickyUiHost", Host);
-                Pc2Set(Pet, "_petUiContext", Context);
+
                 Pc2Set(Pet, "_settings", new PetSettings());
                 Pc2Set(Pet, "_reminders", new ReminderSchedule());
                 Pc2Set(Pet, "_petContextMenu", menu);
                 Pc2Set(Pet, "_bubbleCoordinator", bubble);
-                Pc2Set(Pet, "_dockRestores", new DockRestoreOperations());
-                Pc2Set(Pet, "_pendingDockTopologyGroups", new HashSet<string>());
-                Pc2Set(Pet, "_pendingStandaloneTopologyNotes", new HashSet<string>());
+
                 Pc2Set(Pet, "_expectedFirstRenderNoteIds", new HashSet<string>());
                 Pc2Set(Pet, "_renderedFirstRenderNoteIds", new HashSet<string>());
+                Workspace = new StickyWorkspace(Pet, Repository, Context);
+                Pc2Set(Pet, "_stickyWorkspace", Workspace);
                 for (int i = 0; i < 3; i++)
                 {
                     StickyNoteData note = Repository.CreateDraft("before-" + i,
@@ -152,7 +147,7 @@ namespace PennyPet
             public void Dispose()
             {
                 Pc2Assert(Repository.WaitForPendingSaves().Succeeded, "isolated IO flush");
-                Host.BeginShutdown();
+                Workspace.Dispose();
                 if (started)
                 {
                     object threadHost = Pc2Get(Host, "_threadHost");
@@ -210,7 +205,7 @@ namespace PennyPet
                 long saves = s.Saves;
                 object[] args = { s.Batch(0, s.Member(0), s.Member(1), s.Member(2)),
                     s.Ids, s.Topology, s.Interaction.Epoch, s.Notes[0].Id, true, null };
-                bool accepted = (bool)Pc2Call(s.Pet, "TryApplyDockFactsBarrier", args);
+                bool accepted = (bool)Pc2Call(s.Workspace.Dock, "TryApplyDockFactsBarrier", args);
                 Pc2Assert(!accepted && args[6] == null &&
                     s.Notes.TrueForAll(n => n.X == 100) &&
                     s.Placement.GetEffective(s.Notes[0].Id).WindowSequence == 1 &&
@@ -227,12 +222,12 @@ namespace PennyPet
                 WindowFacts old = s.Facts(1, 100, 100);
                 s.Placement.TryUpdateEffective(s.Notes[1].Id, old);
                 long saves = s.Saves;
-                Pc2Call(s.Pet, "ApplyDockBatchResult", s.Batch(10,
+                Pc2Call(s.Workspace.Dock, "ApplyDockBatchResult", s.Batch(10,
                     s.Member(0), s.Member(1), s.Member(2)).DockBatchResult);
                 Pc2Assert(s.Notes.TrueForAll(n => n.X == 100) &&
                     s.Sequence(0) == 1 && s.Sequence(1) == 1 && s.Sequence(2) == 1 &&
                     ReferenceEquals(s.Placement.GetEffective(s.Notes[1].Id), old) &&
-                    (long)Pc2Get(s.Pet, "_lastAppliedDockPlanSequence") == -1L &&
+                    (long)Pc2Get(s.Workspace.Dock, "_lastAppliedDockPlanSequence") == -1L &&
                     s.Active.Count == 3 && s.Saves == saves,
                     "A3 whole live batch zero mutation, lastApplied unchanged");
                 evidence.Add("A3: void; whole batch rejected; zero canonical/effective/lease/lastApplied mutation; no Save.");
@@ -245,7 +240,7 @@ namespace PennyPet
                 long saves = s.Saves;
                 string beforeText = s.Notes[0].Text;
                 DockBatchMemberResult m = s.Member(0);
-                bool accepted = (bool)Pc2Call(s.Pet, "ApplyReprojectResult",
+                bool accepted = (bool)Pc2Call(s.Workspace, "ApplyReprojectResult",
                     StickyUiCommandResult.Handled(m.Snapshot, m.WindowSequence, m.Facts, s.Topology),
                     m.NoteId, s.Topology);
                 s.Repository.WaitForPendingSaves();
@@ -267,7 +262,7 @@ namespace PennyPet
                 string before = String.Join("\n", s.Notes.ConvertAll(StickyNoteCodec.SerializeLine));
                 WindowFacts old = s.Facts(2, 100, 100);
                 if (scenario == 2) s.Placement.TryUpdateEffective(s.Notes[2].Id, old);
-                Pc2Call(s.Pet, "CompleteDockDurableCommit",
+                Pc2Call(s.Workspace.Dock, "CompleteDockDurableCommit",
                     s.Batch(10, s.Member(0), s.Member(1),
                         s.Member(2, scenario == 1 ? 1 : 2, scenario == 0)),
                     s.Topology, s.Interaction.Epoch, s.Notes[0], null, s.Ids, 10L);
@@ -290,7 +285,7 @@ namespace PennyPet
                 string before = String.Join("\n", s.Notes.ConvertAll(StickyNoteCodec.SerializeLine));
                 object[] args = { s.Batch(7, s.Member(0), s.Member(1), s.Member(2)),
                     s.Topology, s.Surface, s.Ids, 7L, true, true, false };
-                bool accepted = (bool)Pc2Call(s.Pet, "TryApplyDockTopologyResult", args);
+                bool accepted = (bool)Pc2Call(s.Workspace.Dock, "TryApplyDockTopologyResult", args);
                 Pc2Assert(!accepted &&
                     before == String.Join("\n", s.Notes.ConvertAll(StickyNoteCodec.SerializeLine)) &&
                     s.Saves == saves && s.Sequence(0) == 1 && s.Sequence(1) == 1 && s.Sequence(2) == 1 &&
@@ -329,7 +324,7 @@ namespace PennyPet
                 s.Start(c => StickyUiCommandResult.NotHandled());
                 s.Interaction.BeginRebase(s.Topology.Generation);
                 int before = s.Context.Executed;
-                Pc2Call(s.Pet, "ResumeDockDragAfterTopologyChange", s.Topology);
+                Pc2Call(s.Workspace.Dock, "ResumeDockDragAfterTopologyChange", s.Topology);
                 s.Context.PumpUntil(() => s.Context.Executed > before);
                 Pc2Assert(s.Interaction.Phase == DockInteractionPhase.Rebasing && s.Active.Count == 3,
                     "A6 rebase rejection stays Rebasing");
@@ -342,7 +337,7 @@ namespace PennyPet
                     s.Notes[0].Id, s.Surface.RuntimeSurfaceId, 96,
                     s.Notes.ConvertAll(n => new DockWindowTarget(n.Id, new PhysicalRect(400, 100, 300, 230))),
                     s.Interaction.Epoch);
-                Pc2Call(s.Pet, "ApplyLiveDockPlan", plan);
+                Pc2Call(s.Workspace.Dock, "ApplyLiveDockPlan", plan);
                 s.Context.PumpUntil(() => s.Context.Executed > before);
                 Pc2Assert(s.Interaction.Phase == DockInteractionPhase.Dragging &&
                     s.Notes[0].X == 100, "A6 live failure keeps drag/canonical");
@@ -351,7 +346,7 @@ namespace PennyPet
             {
                 s.Start(c => StickyUiCommandResult.NotHandled());
                 int before = s.Context.Executed;
-                Pc2Call(s.Pet, "StartDockFinalization", s.Notes[0], null);
+                Pc2Call(s.Workspace.Dock, "StartDockFinalization", s.Notes[0], null);
                 s.Context.PumpUntil(() => s.Context.Executed > before);
                 Pc2Assert(s.Interaction.Phase == DockInteractionPhase.Idle && s.Active.Count == 0 &&
                     String.IsNullOrEmpty(s.Interaction.SourceNoteId), "A6 final failure resets");
@@ -360,12 +355,12 @@ namespace PennyPet
             {
                 s.Start(c => StickyUiCommandResult.Handled());
                 foreach (StickyNoteData note in s.Notes) note.Visible = false;
-                var restores = (DockRestoreOperations)Pc2Get(s.Pet, "_dockRestores");
+                var restores = (DockRestoreOperations)Pc2Get(s.Workspace.Dock, "_dockRestores");
                 DockRestoreOperation operation = DockRestoreOperation.TryCreate(s.Notes,
                     s.Notes[0].Id, false, true, s.Topology, null, 1);
                 Pc2Assert(restores.TryBegin(operation), "A6 restore registered");
                 long saves = s.Saves;
-                Pc2Call(s.Pet, "CompleteHostedDockRestore", operation, StickyUiCommandResult.NotHandled());
+                Pc2Call(s.Workspace.Dock, "CompleteHostedDockRestore", operation, StickyUiCommandResult.NotHandled());
                 Pc2Assert(restores.Snapshot().Length == 0 && operation.Cancellation.IsCancellationRequested &&
                     s.Hosted.NoteCount == 3 && s.Notes.TrueForAll(n => !n.Visible) &&
                     s.Repository.Count == 3 && s.Saves == saves,
@@ -399,7 +394,7 @@ namespace PennyPet
                 s.Hosted.RecordSequence(note.Id, old.Sequence);
                 s.Placement.TryUpdateEffective(note.Id, old.Facts);
                 StickyUiCommandResult closed = null;
-                Pc2Call(s.Pet, "CloseHostedStickyRuntimeForReload",
+                Pc2Call(s.Workspace, "CloseHostedStickyRuntimeForReload",
                     (Action<StickyUiCommandResult>)(r => closed = r));
                 s.Context.PumpUntil(() => closed != null);
                 Pc2Assert(closed.Status == StickyUiCommandStatus.Handled &&
@@ -418,7 +413,7 @@ namespace PennyPet
                     moved.Sequence < old.Sequence && s.Hosted.CanApplySequence(note.Id, moved.Sequence),
                     "new actual facts pass hosted lease");
                 long saves = s.Saves;
-                Pc2Assert((bool)Pc2Call(s.Pet, "ApplyReprojectResult", moved, note.Id, s.Topology),
+                Pc2Assert((bool)Pc2Call(s.Workspace, "ApplyReprojectResult", moved, note.Id, s.Topology),
                     "real new-session reproject accepted");
                 s.Repository.WaitForPendingSaves();
                 Pc2Assert(ReferenceEquals(s.Placement.GetEffective(note.Id), moved.Facts) &&
@@ -448,7 +443,7 @@ namespace PennyPet
                     second.Status == StickyUiCommandStatus.Handled && !second.SessionCreated,
                     "EnsureSession first created, same-session reuse reported");
                 StickyUiCommandResult closed = null;
-                Pc2Call(s.Pet, "CloseHostedStickyRuntimeForReload",
+                Pc2Call(s.Workspace, "CloseHostedStickyRuntimeForReload",
                     (Action<StickyUiCommandResult>)(r => closed = r));
                 s.Context.PumpUntil(() => closed != null);
                 StickyUiCommandResult third = s.Send(ensure);
@@ -1432,7 +1427,6 @@ namespace PennyPet
                 canvas.Save(outputPath, ImageFormat.Png);
             }
         }
-
 
         [ThreadStatic]
         private static List<bool> _reportedChecks;
