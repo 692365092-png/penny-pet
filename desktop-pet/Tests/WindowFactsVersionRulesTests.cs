@@ -47,7 +47,7 @@ namespace PennyPet.Tests
             Assert.AreNotEqual(first, rebase);
             Assert.IsFalse(session.Matches(first, 5, DockInteractionPhase.Dragging));
             Assert.IsTrue(session.TryEnterDragging(rebase, 6));
-            long reset = session.Reset();
+            long reset = session.Reset(out _);
             Assert.IsFalse(session.Matches(rebase, 6, DockInteractionPhase.Dragging));
             Assert.AreNotEqual(rebase, reset);
         }

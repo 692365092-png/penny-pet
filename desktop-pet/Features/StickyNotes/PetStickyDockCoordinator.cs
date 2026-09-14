@@ -38,9 +38,9 @@ namespace PennyPet
             DockWindowFacts sourceFacts)
         {
             if (sourceData == null || sourceFacts == null) return;
+            if (DeferDockMutation(sourceData.Id,
+                () => CloseStickyDockNote(_notes.Find(sourceData.Id), GetHostedDockFacts(_notes.Find(sourceData.Id)) ?? sourceFacts))) return;
             CancelHostedDockRestores(sourceData.Id);
-            if (DeferDockResizeMutation(sourceData.Id,
-                () => CloseStickyDockNote(sourceData, GetHostedDockFacts(sourceData) ?? sourceFacts))) return;
             ClearHostedDockResizeSessionIfMember(sourceData.Id);
             List<StickyNoteData> ordered =
                 BuildDockChainOrder(sourceData);
@@ -506,54 +506,79 @@ namespace PennyPet
                     ResetDockDragState(true);
                     return;
                 }
-                finalMembers.RemoveAll(note => !note.Visible);
             }
-            else finalMembers = BuildDockChainOrder(seed);
+            else finalMembers = BuildDockChainOrderIncludingHidden(seed);
+            var affectedMembers = new List<StickyNoteData>(finalMembers);
+            if (remainderSeed != null) affectedMembers.AddRange(BuildDockChainOrderIncludingHidden(remainderSeed));
+            foreach (StickyNoteData member in affectedMembers) CancelHostedDockRestores(member.Id);
+            finalMembers.RemoveAll(note => !note.Visible);
             long epoch = _dockInteraction.BeginFinalizing(topology.Generation,
-                _dockInteraction.RemainderNoteId, finalMembers.ConvertAll(note => note.Id));
+                _dockInteraction.RemainderNoteId, finalMembers.ConvertAll(note => note.Id), affectedMembers);
             if (epoch == 0) { ResetDockDragState(true); return; }
             _stickyUiHost.SetCurrentDockInteractionEpoch(epoch);
             string sourceId = seed.Id;
             string[] expectedIds = _dockInteraction.CopyMemberIds();
-            PostHostedStickyCommand(StickyUiCommand.CaptureDockFacts(expectedIds,
-                topology, epoch), delegate(StickyUiCommandResult capture)
-                {
-                    if (!_dockInteraction.Matches(epoch, topology.Generation,
-                        DockInteractionPhase.Finalizing)) return;
-                    WindowFacts sourceFacts;
-                    if (!TryApplyDockFactsBarrier(capture, expectedIds, topology,
-                        epoch, sourceId, false, out sourceFacts))
+            try
+            {
+                PostHostedStickyCommand(StickyUiCommand.CaptureDockFacts(expectedIds,
+                    topology, epoch), delegate(StickyUiCommandResult capture)
                     {
-                        TraceDockCommitRejected("final facts barrier rejected");
-                        ResetDockDragState(true);
-                        return;
-                    }
-                    DockPlacementPlan finalPlan = PlanDockPlan(seed, sourceFacts,
-                        topology, epoch);
-                    if (finalPlan == null) { TraceDockCommitRejected("final capture unavailable"); ResetDockDragState(true); return; }
-                    List<string> expectedMemberIds = CollectExpectedPlanMemberIds(finalPlan);
-                    _dockPlanMailbox.ReplaceWithFinal(finalPlan);
-                    _stickyUiHost.PostFinalDockPlan(_dockPlanMailbox,
-                        finalPlan.PlanSequence, delegate(StickyUiCommandResult result)
+                        if (!_dockInteraction.Matches(epoch, topology.Generation,
+                            DockInteractionPhase.Finalizing)) return;
+                        try
                         {
-                            try
+                            WindowFacts sourceFacts;
+                            if (!TryApplyDockFactsBarrier(capture, expectedIds, topology,
+                                epoch, sourceId, false, out sourceFacts))
                             {
-                                if (_dockInteraction.Matches(epoch,
-                                    topology.Generation,
-                                    DockInteractionPhase.Finalizing))
-                                    CompleteDockDurableCommit(result, topology,
-                                        epoch, seed, remainderSeed,
-                                        expectedMemberIds, finalPlan.PlanSequence);
+                                TraceDockCommitRejected("final facts barrier rejected");
+                                ResetDockDragState(true);
+                                return;
                             }
-                            finally
-                            {
-                                _dockPlanMailbox.CompleteFinal(finalPlan.PlanSequence);
-                                long invalidatingEpoch;
-                                if (_dockInteraction.TryFinish(epoch, topology.Generation, out invalidatingEpoch))
-                                    _stickyUiHost.SetCurrentDockInteractionEpoch(invalidatingEpoch);
-                            }
-                        }, _petUiContext);
-                });
+                            DockPlacementPlan finalPlan = PlanDockPlan(seed, sourceFacts,
+                                topology, epoch);
+                            if (finalPlan == null) { TraceDockCommitRejected("final capture unavailable"); ResetDockDragState(true); return; }
+                            List<string> expectedMemberIds = CollectExpectedPlanMemberIds(finalPlan);
+                            _dockPlanMailbox.ReplaceWithFinal(finalPlan);
+                            _stickyUiHost.PostFinalDockPlan(_dockPlanMailbox,
+                                finalPlan.PlanSequence, delegate(StickyUiCommandResult result)
+                                {
+                                    try
+                                    {
+                                        if (_dockInteraction.Matches(epoch,
+                                            topology.Generation,
+                                            DockInteractionPhase.Finalizing))
+                                            CompleteDockDurableCommit(result, topology,
+                                                epoch, seed, remainderSeed,
+                                                expectedMemberIds, finalPlan.PlanSequence);
+                                    }
+                                    finally
+                                    {
+                                        _dockPlanMailbox.CompleteFinal(finalPlan.PlanSequence);
+                                        long invalidatingEpoch;
+                                        Action[] deferred;
+                                        if (_dockInteraction.TryFinish(epoch, topology.Generation, out invalidatingEpoch, out deferred))
+                                        {
+                                            _stickyUiHost.SetCurrentDockInteractionEpoch(invalidatingEpoch);
+                                            RunDeferredDockMutations(deferred);
+                                        }
+                                    }
+                                }, _petUiContext);
+                        }
+                        catch
+                        {
+                            if (_dockInteraction.Matches(epoch, topology.Generation, DockInteractionPhase.Finalizing))
+                                ResetDockDragState(true);
+                            throw;
+                        }
+                    });
+            }
+            catch
+            {
+                if (_dockInteraction.Matches(epoch, topology.Generation, DockInteractionPhase.Finalizing))
+                    ResetDockDragState(true);
+                throw;
+            }
         }
 
         private static List<string> CollectExpectedPlanMemberIds(
@@ -568,9 +593,11 @@ namespace PennyPet
 
         private void ResetDockDragState(bool clearMailbox)
         {
-            long invalidatingEpoch = _dockInteraction.Reset();
+            Action[] deferred;
+            long invalidatingEpoch = _dockInteraction.Reset(out deferred);
             _stickyUiHost.SetCurrentDockInteractionEpoch(invalidatingEpoch);
             if (clearMailbox) _dockPlanMailbox.Clear();
+            RunDeferredDockMutations(deferred);
         }
 
         // P1-D: a narrow latest-wins frame for a live dock drag. A desired
@@ -967,7 +994,7 @@ namespace PennyPet
             foreach (StickyNoteData note in BuildDockChainOrder(seed))
                 facts.Add(String.Equals(note.Id, value.NoteId, StringComparison.OrdinalIgnoreCase)
                     ? value.Facts : _placementRuntime.GetEffective(note.Id));
-            return DockResizeSession.TryStart(kind, value.NoteId, facts);
+            return DockResizeSession.TryStart(kind, value.NoteId, facts, BuildDockChainOrderIncludingHidden(seed));
         }
 
         private void BeginHostedStickyDockResize(StickyUiEvent value, DockResizeKind kind)
@@ -1382,7 +1409,7 @@ namespace PennyPet
                 if (completed != null) completed(false);
                 return;
             }
-            if (DeferDockResizeMutation(note.Id, () => DeleteStickyNote(note, completed))) return;
+            if (DeferDockMutation(note.Id, () => DeleteStickyNote(_notes.Find(note.Id), completed))) return;
             CancelHostedDockRestores(note.Id);
             // A cancelled restore may have prepared a real HWND before its
             // lease was registered here. Let the STA acknowledge closure.

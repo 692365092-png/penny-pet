@@ -64,14 +64,14 @@ namespace PennyPet.Tests
             long old = session.BeginFinalizing(1, "a");
             long current = session.RestartFinalizing(2);
             long invalidating;
-            Assert.IsFalse(session.TryFinish(old, 1, out invalidating));
+            Assert.IsFalse(session.TryFinish(old, 1, out invalidating, out _));
             Assert.AreEqual(current, session.Epoch);
             Assert.AreEqual(3, session.MemberIds.Count);
-            Assert.IsTrue(session.TryFinish(current, 2, out invalidating));
+            Assert.IsTrue(session.TryFinish(current, 2, out invalidating, out _));
             Assert.AreEqual(0, session.PreviewFacts.Count);
             Assert.IsNull(session.StartFacts);
             session.BeginGesture(Facts("new"), new[] { "new" }, null, 2, Start.AddSeconds(1));
-            Assert.IsFalse(session.TryFinish(current, 2, out invalidating));
+            Assert.IsFalse(session.TryFinish(current, 2, out invalidating, out _));
             Assert.AreEqual("new", session.SourceNoteId);
         }
 

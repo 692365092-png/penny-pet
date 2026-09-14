@@ -311,10 +311,10 @@ namespace PennyPet.Tests
             foreach (string signature in new[] { "private void CollapseAllStickyNotes()",
                 "private void ExpandAndTileAllStickyNotesToPetScreen()", "private bool BeginHostedStickyExitIfNeeded()",
                 "private void CloseHostedStickyRuntimeForReload(" })
-                Assert.IsTrue(RawSource.SliceMethod(window, signature).Contains("DeferDockResizeMutation"), signature);
-            Assert.IsTrue(RawSource.SliceMethod(dock, "private void CloseStickyDockNote(").Contains("DeferDockResizeMutation"));
-            Assert.IsTrue(dock.Contains("DeferDockResizeMutation(note.Id, () => DeleteStickyNote(note, completed))"));
-            Assert.IsTrue(window.Contains("DeferDockResizeMutation(note.Id, () => ShowHostedSticky("));
+                Assert.IsTrue(RawSource.SliceMethod(window, signature).Contains("DeferDockMutation"), signature);
+            Assert.IsTrue(RawSource.SliceMethod(dock, "private void CloseStickyDockNote(").Contains("DeferDockMutation"));
+            Assert.IsTrue(dock.Contains("DeferDockMutation(note.Id, () => DeleteStickyNote(_notes.Find(note.Id), completed))"));
+            Assert.IsTrue(window.Contains("DeferDockMutation(note.Id, () => ShowHostedSticky("));
             string clear = RawSource.SliceMethod(window, "private void ClearHostedDockResizeSession(");
             int releaseOwner = clear.IndexOf("_dockResize = null", StringComparison.Ordinal);
             Assert.IsTrue(releaseOwner >= 0 && clear.IndexOf("previous.Finish()", StringComparison.Ordinal) > releaseOwner);

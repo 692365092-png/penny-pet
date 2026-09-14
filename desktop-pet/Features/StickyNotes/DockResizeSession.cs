@@ -15,9 +15,10 @@ namespace PennyPet
         private bool _corrected;
         private DockResizeBatch _finalBatch;
         private PhysicalRect _finalSource;
-        private List<Action> _afterFinal;
+        private readonly DockMutationQueue _mutations;
 
-        private DockResizeSession(DockResizeKind kind, WindowFacts[] members, int sourceIndex)
+        private DockResizeSession(DockResizeKind kind, WindowFacts[] members, int sourceIndex,
+            IEnumerable<StickyNoteData> affectedMembers)
         {
             Kind = kind;
             _members = members;
@@ -33,6 +34,7 @@ namespace PennyPet
                 _startBounds[index] = new DockRect(rect.Left, rect.Top, rect.Width, rect.Height);
             }
             Mailbox = new DockResizeMailbox();
+            _mutations = new DockMutationQueue(new List<WindowFacts>(members).ConvertAll(member => member.WindowId), affectedMembers);
         }
 
         internal string SourceNoteId { get; private set; }
@@ -41,11 +43,12 @@ namespace PennyPet
         internal DockResizeMailbox Mailbox { get; private set; }
         internal bool IsResizing { get { return !_finished && _finalBatch == null; } }
         internal bool IsFinalizing { get { return !_finished && _finalBatch != null; } }
+        internal DockMutationQueue Mutations { get { return IsFinalizing ? _mutations : null; } }
         private int FollowerCount { get { return Kind == DockResizeKind.Divider
             ? _members.Length - _sourceIndex - 1 : _members.Length - 1; } }
 
         internal static DockResizeSession TryStart(DockResizeKind kind, string sourceId,
-            IList<WindowFacts> orderedFacts)
+            IList<WindowFacts> orderedFacts, IEnumerable<StickyNoteData> affectedMembers = null)
         {
             if (orderedFacts == null || orderedFacts.Count < 2) return null;
             int sourceIndex = -1;
@@ -60,7 +63,7 @@ namespace PennyPet
                 if (String.Equals(facts.WindowId, sourceId, StringComparison.OrdinalIgnoreCase)) sourceIndex = index;
             }
             if (sourceIndex < 0 || (kind == DockResizeKind.Divider && sourceIndex == orderedFacts.Count - 1)) return null;
-            return new DockResizeSession(kind, new List<WindowFacts>(orderedFacts).ToArray(), sourceIndex);
+            return new DockResizeSession(kind, new List<WindowFacts>(orderedFacts).ToArray(), sourceIndex, affectedMembers);
         }
 
         internal bool Contains(string noteId)
@@ -206,22 +209,11 @@ namespace PennyPet
             return _finalBatch;
         }
 
-        // The root's settled width must be committed before hide/restore/delete.
-        internal bool DeferMutation(Action action)
-        {
-            if (Kind != DockResizeKind.Horizontal || !IsFinalizing) return false;
-            if (_afterFinal == null) _afterFinal = new List<Action>();
-            _afterFinal.Add(action);
-            return true;
-        }
-
         internal Action[] Finish()
         {
             _finished = true;
             Mailbox.Cancel();
-            Action[] actions = _afterFinal == null ? new Action[0] : _afterFinal.ToArray();
-            _afterFinal = null;
-            return actions;
+            return _mutations.Release();
         }
     }
 }

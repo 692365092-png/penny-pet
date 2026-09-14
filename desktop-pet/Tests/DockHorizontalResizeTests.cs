@@ -197,10 +197,10 @@ namespace PennyPet.Tests
         {
             DockResizeSession session = Start();
             var observed = new List<string>();
-            Assert.IsFalse(session.DeferMutation(() => observed.Add("live")));
+            Assert.IsNull(session.Mutations);
             DockResizeBatch first = session.BeginFinal(Event(final: true));
-            Assert.IsTrue(session.DeferMutation(() => observed.Add("hide")));
-            Assert.IsTrue(session.DeferMutation(() => observed.Add("reopen")));
+            Assert.IsTrue(session.Mutations.Defer(null, null, () => observed.Add("hide")));
+            Assert.IsTrue(session.Mutations.Defer(null, null, () => observed.Add("reopen")));
             session.Mailbox.CompleteFinal(first);
             Assert.AreEqual(0, observed.Count);
             DockResizeBatch correction = session.TryCorrect(first,
@@ -211,7 +211,7 @@ namespace PennyPet.Tests
             CollectionAssert.AreEqual(new[] { "hide", "reopen" }, observed);
             Assert.AreEqual(0, session.Finish().Length);
             Assert.IsFalse(session.IsCurrentFinal(correction));
-            Assert.IsFalse(session.DeferMutation(() => observed.Add("finished")));
+            Assert.IsNull(session.Mutations);
         }
 
         [TestMethod]
@@ -220,11 +220,11 @@ namespace PennyPet.Tests
             DockResizeSession old = Start();
             DockResizeBatch final = old.BeginFinal(Event(final: true));
             int hidden = 0;
-            old.DeferMutation(() => hidden++);
+            old.Mutations.Defer(null, null, () => hidden++);
             foreach (Action action in old.Finish()) action();
             DockResizeSession current = Start();
             current.BeginFinal(Event(final: true));
-            current.DeferMutation(() => hidden += 10);
+            current.Mutations.Defer(null, null, () => hidden += 10);
             old.Mailbox.CompleteFinal(final);
             foreach (Action action in old.Finish()) action();
             Assert.AreEqual(1, hidden);
@@ -234,13 +234,17 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void DividerDoesNotDelayActionsAfterItsSourceHeightWasCommitted()
+        public void DividerWaitsForFollowerSettlementBeforeReleasingDependentActions()
         {
             DockResizeSession divider = DockResizeSession.TryStart(DockResizeKind.Divider, "b", Baseline());
             StickyUiEvent value = Event();
             divider.BeginFinal(StickyUiEvent.DividerResize(StickyUiEventKind.DockDividerResizeCompleted,
                 value.Snapshot, value.Sequence, 510, value.Facts, value.Topology));
-            Assert.IsFalse(divider.DeferMutation(() => { }));
+            int hidden = 0;
+            Assert.IsTrue(divider.Mutations.Defer(null, null, () => hidden++));
+            Assert.AreEqual(0, hidden);
+            foreach (Action action in divider.Finish()) action();
+            Assert.AreEqual(1, hidden);
         }
 
         [TestMethod]
@@ -268,7 +272,7 @@ namespace PennyPet.Tests
                 StickyUiEvent completed = Event(source.Id, final: true, left: -1800, width: 900);
                 session.BeginFinal(completed);
                 CommitPreference(source, completed.Facts, true);
-                Assert.IsTrue(session.DeferMutation(() => {
+                Assert.IsTrue(session.Mutations.Defer(null, null, () => {
                     Assert.AreEqual(600, root.PreferredLocalLogicalWidth, "Hide must see the settled root width.");
                     root.Visible = source.Visible = false;
                     repository.SaveAsync();

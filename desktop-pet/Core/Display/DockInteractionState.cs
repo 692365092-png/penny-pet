@@ -36,6 +36,7 @@ namespace PennyPet
         internal bool Detached { get; private set; }
         internal string RemainderNoteId { get; private set; }
         internal DockMergePlan PendingMerge { get; private set; }
+        internal DockMutationQueue Mutations { get; private set; }
 
         internal void StageMerge(DockMergePlan merge) { PendingMerge = merge; }
 
@@ -144,11 +145,13 @@ namespace PennyPet
             Phase = DockInteractionPhase.Dragging; return true;
         }
         internal long BeginFinalizing(long generation, string remainderNoteId,
-            IEnumerable<string> members = null)
+            IEnumerable<string> members = null, IEnumerable<StickyNoteData> affectedMembers = null)
         {
             if (generation < 0) throw new ArgumentOutOfRangeException(nameof(generation));
             if (Phase == DockInteractionPhase.Idle) return 0;
             if (members != null) { _members.Clear(); _members.AddRange(members); }
+            if (Mutations == null) Mutations = new DockMutationQueue(_members, affectedMembers);
+            else Mutations.Include(affectedMembers);
             Epoch = NextEpoch(); TopologyGeneration = generation;
             RemainderNoteId = remainderNoteId == null ? String.Empty : remainderNoteId.Trim();
             Phase = DockInteractionPhase.Finalizing; return Epoch;
@@ -163,8 +166,10 @@ namespace PennyPet
         { return Epoch == epoch && TopologyGeneration == generation && Phase == phase; }
         internal bool CanPlan(string sourceNoteId, long generation)
         { return Phase == DockInteractionPhase.Dragging && Epoch > 0 && TopologyGeneration == generation && String.Equals(SourceNoteId, sourceNoteId ?? String.Empty, StringComparison.OrdinalIgnoreCase); }
-        internal long Reset()
+        internal long Reset(out Action[] deferred)
         {
+            deferred = Mutations == null ? new Action[0] : Mutations.Release();
+            Mutations = null;
             Epoch = NextEpoch(); SourceNoteId = RemainderNoteId = String.Empty;
             TopologyGeneration = 0; Phase = DockInteractionPhase.Idle;
             _members.Clear(); _original.Clear(); _current.Clear();
@@ -176,11 +181,12 @@ namespace PennyPet
 
         // Check and clear together: an old final callback cannot finish a
         // rebased finalization or reset a later mouse gesture.
-        internal bool TryFinish(long epoch, long generation, out long invalidatingEpoch)
+        internal bool TryFinish(long epoch, long generation, out long invalidatingEpoch, out Action[] deferred)
         {
             invalidatingEpoch = Epoch;
+            deferred = new Action[0];
             if (!Matches(epoch, generation, DockInteractionPhase.Finalizing)) return false;
-            invalidatingEpoch = Reset();
+            invalidatingEpoch = Reset(out deferred);
             return true;
         }
         private long NextEpoch() { _nextEpoch = _nextEpoch == Int64.MaxValue ? 1 : _nextEpoch + 1; return _nextEpoch <= 0 ? _nextEpoch = 1 : _nextEpoch; }
