@@ -64,7 +64,7 @@ namespace PennyPet.Tests
                 "Only sticky STA sessions may own hosted WPF windows.");
             Assert.IsTrue(coordinator.Contains(
                 "StickyNoteUiSnapshot.FromData(note)") &&
-                coordinator.Contains("ApplyHostedStickyFactsGeometry") &&
+                coordinator.Contains("_factsReceiver.TryApplySnapshot(") &&
                 pet.Contains("StickyHostedRuntime _hostedRuntime") &&
                 runtime.Contains("Dictionary<string, long> _appliedSequences"),
                 "Pet must apply each note using an independent sequence.");

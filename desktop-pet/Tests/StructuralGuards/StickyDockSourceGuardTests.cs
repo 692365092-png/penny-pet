@@ -23,7 +23,7 @@ namespace PennyPet.Tests
                 "NoteChanged must persist note data.");
             Assert.IsTrue(apply.Contains("RefreshMenuText();"),
                 "NoteChanged must refresh menu text.");
-            Assert.IsTrue(apply.Contains("if (visibilityChanged ||") &&
+            Assert.IsTrue(apply.Contains("if (tabsChanged) RefreshNoteTabs();") &&
                 apply.Contains("RefreshNoteTabs();"),
                 "Content autosave must refresh tabs only for visibility or hidden-title changes.");
         }
@@ -273,7 +273,7 @@ namespace PennyPet.Tests
             Assert.IsTrue(final.Contains("!ReferenceEquals(_dockResize, session)"));
             string preflight = Between(dock, "private bool CanAcceptResizeBatch", "private bool ApplyResizeBatchCanonical");
             Assert.IsTrue(preflight.Contains("HasExpectedFollowers") && preflight.Contains("MatchesMembers") &&
-                preflight.Contains("CanApplySequence") && preflight.Contains("CanAcceptEffective"));
+                preflight.Contains("_factsReceiver.TryPrepare(") && preflight.Contains("!seen.Add(member.NoteId)"));
             string start = Between(window, "if (value.Kind == StickyUiEventKind.DockDividerResizeStarted ||",
                 "if (value.Kind == StickyUiEventKind.DockDividerResizing ||");
             Assert.IsFalse(start.Contains("ClearHostedDockResizeSession"), "Rejected events cannot clear a current gesture.");
@@ -297,7 +297,7 @@ namespace PennyPet.Tests
             string live = RawSource.SliceMethod(ReadSource("Features/StickyNotes/PetStickyDockCoordinator.cs"),
                 "private void ResizeHostedStickyDock(");
             int accepted = live.IndexOf("session.QueueLive(value", StringComparison.Ordinal);
-            int facts = live.IndexOf("TryUpdateEffective(value.NoteId, value.Facts, value.Topology)", StringComparison.Ordinal);
+            int facts = live.IndexOf("update.Commit()", StringComparison.Ordinal);
             Assert.IsTrue(accepted >= 0 && facts > accepted);
             Assert.IsFalse(live.Contains("SaveAsync") || live.Contains("CommitHostedStickyPreferred"));
         }
@@ -320,7 +320,7 @@ namespace PennyPet.Tests
             Assert.IsTrue(releaseOwner >= 0 && clear.IndexOf("previous.Finish()", StringComparison.Ordinal) > releaseOwner);
             string apply = RawSource.SliceMethod(dock, "private bool ApplyResizeBatchCanonical(");
             int prepare = apply.IndexOf("StickyResizePreferences.TryBuild", StringComparison.Ordinal);
-            Assert.IsTrue(prepare >= 0 && apply.IndexOf("ApplyHostedStickyFactsGeometry", StringComparison.Ordinal) > prepare);
+            Assert.IsTrue(prepare >= 0 && apply.IndexOf("update.CommitGeometry()", StringComparison.Ordinal) > prepare);
         }
 
         [TestMethod]
@@ -478,11 +478,10 @@ namespace PennyPet.Tests
                 session.Contains("_topology == null ? 0 : _topology.Generation") &&
                 session.Contains("facts, _topology)"),
                 "Facts must be captured with the Pet-owned topology generation.");
-            Assert.IsTrue(coordinator.Contains(
-                    "ApplyHostedStickyFactsGeometry") &&
-                coordinator.Contains("StickyPlacementMath.FromPhysicalRect(") &&
-                coordinator.Contains(
-                    "snapshot.ApplyContentTo(canonical)"),
+            string receiver = ReadSource("Features/StickyNotes/StickyFactsReceiver.cs");
+            Assert.IsTrue(coordinator.Contains("_factsReceiver.TryApplySnapshot(") &&
+                receiver.Contains("StickyPlacementMath.FromPhysicalRect(") &&
+                receiver.Contains("snapshot.ApplyContentTo(canonical)"),
                 "Geometry events must derive v10 geometry from facts, never snapshot.ApplyTo.");
 
             string dragHandler = Between(coordinator,
@@ -697,9 +696,7 @@ namespace PennyPet.Tests
             string apply = Between(coordinator,
                 "private bool ApplyReprojectResult",
                 "private static bool TryBuildPreference");
-            Assert.IsTrue(apply.Contains(
-                    "ApplyHostedStickyFactsGeometry(canonical, result.Facts,") &&
-                apply.Contains("_placementRuntime.TryUpdateEffective("),
+            Assert.IsTrue(apply.Contains("_factsReceiver.TryPrepare(") && apply.Contains("update.Commit()"),
                 "A reproject result must update geometry and Effective from actual facts.");
         }
 
@@ -730,9 +727,8 @@ namespace PennyPet.Tests
             string result = Between(coordinator,
                 "private void ApplyDockBatchResult",
                 "private DockWindowFacts GetHostedDockFacts");
-            Assert.IsTrue(result.Contains("member.Facts") &&
-                result.Contains(
-                    "ApplyHostedStickyFactsGeometry(candidate.Canonical, member.Facts,") &&
+            Assert.IsTrue(result.Contains("_factsReceiver.TryPrepare(member, topology,") &&
+                result.Contains("update.Commit()") &&
                 result.Contains("_lastAppliedDockPlanSequence"),
                 "Only same-generation newest-sequence facts may update the repository.");
         }
@@ -753,13 +749,12 @@ namespace PennyPet.Tests
             string result = Between(coordinator,
                 "private void ApplyDockBatchResult",
                 "private DockWindowFacts GetHostedDockFacts");
-            Assert.IsTrue(result.Contains(
-                    "ApplyHostedStickyFactsGeometry(candidate.Canonical, member.Facts,") &&
+            Assert.IsTrue(result.Contains("update.Commit()") &&
                 !result.Contains("WindowsDisplayResolver"),
                 "Only actual facts derived from the same-generation topology may update geometry.");
             Assert.IsTrue(
-                result.IndexOf("_placementRuntime.CanAcceptEffective(") >= 0 &&
-                result.IndexOf("_placementRuntime.CanAcceptEffective(") <
+                result.IndexOf("_factsReceiver.TryPrepare(") >= 0 &&
+                result.IndexOf("_factsReceiver.TryPrepare(") <
                     result.IndexOf("_lastAppliedDockPlanSequence = batch.PlanSequence"),
                 "The whole live batch must pass acceptance preflight before any plan-sequence advance.");
         }
@@ -850,8 +845,7 @@ namespace PennyPet.Tests
             string validation = DockCommitValidationSource();
             Assert.IsTrue(validation.Contains(
                     "batch.TopologyGeneration != expectedTopology.Generation") &&
-                validation.Contains(
-                    "member.Facts.TopologyGeneration !="));
+                validation.Contains("_factsReceiver.TryPrepare(member, expectedTopology,"));
         }
 
         [TestMethod]
@@ -1075,9 +1069,7 @@ namespace PennyPet.Tests
                 "private bool TryApplyDockTopologyResult(",
                 "private void ReconcileStandaloneSticky(");
 
-            Assert.IsTrue(apply.Contains(
-                    "ApplyHostedStickyFactsGeometry(") &&
-                apply.Contains("_placementRuntime.TryUpdateEffective(") &&
+            Assert.IsTrue(apply.Contains("_factsReceiver.TryPrepare(") && apply.Contains("update.Commit(forceVisible)") &&
                 apply.Contains("_notes.SaveAsync()"));
             Assert.IsFalse(apply.Contains("CommitHostedStickyPreferred(") ||
                 apply.Contains("PreferredLocalLogical") ||
@@ -1115,11 +1107,11 @@ namespace PennyPet.Tests
                 "private void ReconcileStandaloneSticky(");
 
             Assert.IsTrue(apply.Contains(
-                    "CurrentTopologySnapshot().Generation != snapshot.Generation") &&
+                    "!IsTopologyCurrent(snapshot)") &&
                 apply.Contains("batch.Members.Count != expectedIds.Count") &&
                 apply.Contains(
-                    "member.Facts.TopologyGeneration != snapshot.Generation") &&
-                apply.Contains("actual.Count != expected.Count"));
+                    "_factsReceiver.TryPrepare(member, snapshot,") &&
+                apply.Contains("remaining.Count != expectedIds.Count") && apply.Contains("!remaining.Remove(member.NoteId)"));
         }
     }
 }

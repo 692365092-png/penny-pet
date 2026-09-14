@@ -16,6 +16,7 @@
     <Compile Include="Features\StickyNotes\DockRestoreOperation.cs" />
     <Compile Include="Features\StickyNotes\StickyHostedRuntime.cs" />
     <Compile Include="Features\StickyNotes\StickyPlacementRuntime.cs" />
+    <Compile Include="Features\StickyNotes\StickyFactsReceiver.cs" />
     <Compile Include="Features\StickyNotes\StickyUiCommand.cs" />
     <Compile Include="Features\StickyNotes\StickyNoteWriter.cs" />
     <Compile Include="Features\StickyNotes\StickyNoteRepository.cs" />

@@ -69,6 +69,7 @@ namespace PennyPet
         private readonly PetWindowLayerCoordinator _windowLayers =
             new PetWindowLayerCoordinator();
         private readonly StickyNoteRepository _notes;
+        private readonly StickyFactsReceiver _factsReceiver;
         private readonly StickyNoteTabsForm _leftNoteTabs;
         private readonly StickyNoteTabsForm _rightNoteTabs;
         internal static int HostedStickyWindowCreatedCount;
@@ -280,6 +281,7 @@ namespace PennyPet
                 throw _notes.FutureSchemaError;
             _notes.SaveFailed += PersistenceSaveFailed;
             ReconcileNoteReminders();
+            _factsReceiver = new StickyFactsReceiver(_notes, _hostedRuntime, _placementRuntime);
             _leftNoteTabs = new StickyNoteTabsForm(StickyTabSide.Left,
                 delegate(string noteId)
                 {

@@ -19,7 +19,8 @@ namespace PennyPet
 
         internal bool CanAcceptEffective(string noteId, WindowFacts facts)
         {
-            if (String.IsNullOrWhiteSpace(noteId) || facts == null) return false;
+            if (String.IsNullOrWhiteSpace(noteId) || facts == null ||
+                !String.Equals(noteId, facts.WindowId, StringComparison.OrdinalIgnoreCase)) return false;
             WindowFacts current = GetEffective(noteId);
             return current == null || facts.TopologyGeneration > current.TopologyGeneration ||
                 (facts.TopologyGeneration == current.TopologyGeneration &&
@@ -30,10 +31,17 @@ namespace PennyPet
             DisplayTopologySnapshot capturedTopology = null)
         {
             if (!CanAcceptEffective(noteId, facts)) return false;
+            AcceptEffective(noteId, facts, capturedTopology);
+            return true;
+        }
+
+        // Used by the facts receiver after the complete batch has passed preflight.
+        internal void AcceptEffective(string noteId, WindowFacts facts,
+            DisplayTopologySnapshot capturedTopology)
+        {
             NotePlacementState state = GetOrCreate(noteId);
             state.Effective = facts;
             state.CapturedTopology = capturedTopology;
-            return true;
         }
 
         internal bool TryGetEffectiveLogical(string noteId, out LogicalRect logical)

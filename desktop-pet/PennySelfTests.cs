@@ -41,9 +41,7 @@ namespace PennyPet
                 string directory = Path.Combine(root, name);
                 Directory.CreateDirectory(directory);
                 PathName = Path.Combine(directory, "sticky-notes.dat");
-                Repository = (StickyNoteRepository)Activator.CreateInstance(
-                    typeof(StickyNoteRepository), BindingFlags.Instance |
-                    BindingFlags.NonPublic, null, new object[] { PathName }, null);
+                Repository = new StickyNoteRepository(PathName);
                 Pet = (PetForm)System.Runtime.Serialization.FormatterServices
                     .GetUninitializedObject(typeof(PetForm));
                 GC.SuppressFinalize(Pet); // no native Pet resource was created
@@ -67,6 +65,7 @@ namespace PennyPet
                 Pc2Set(Pet, "_notes", Repository);
                 Pc2Set(Pet, "_hostedRuntime", Hosted);
                 Pc2Set(Pet, "_placementRuntime", Placement);
+                Pc2Set(Pet, "_factsReceiver", new StickyFactsReceiver(Repository, Hosted, Placement));
                 Pc2Set(Pet, "_displayTopologyRuntime", Display);
                 Pc2Set(Pet, "_dockInteraction", Interaction);
                 Pc2Set(Pet, "_dockPlanMailbox", new DockPlanMailbox());
@@ -77,7 +76,9 @@ namespace PennyPet
                 Pc2Set(Pet, "_reminders", new ReminderSchedule());
                 Pc2Set(Pet, "_petContextMenu", menu);
                 Pc2Set(Pet, "_bubbleCoordinator", bubble);
-                Pc2Set(Pet, "_pendingHostedDockRestoreGroups", new HashSet<string>());
+                Pc2Set(Pet, "_dockRestores", new DockRestoreOperations());
+                Pc2Set(Pet, "_pendingDockTopologyGroups", new HashSet<string>());
+                Pc2Set(Pet, "_pendingStandaloneTopologyNotes", new HashSet<string>());
                 Pc2Set(Pet, "_expectedFirstRenderNoteIds", new HashSet<string>());
                 Pc2Set(Pet, "_renderedFirstRenderNoteIds", new HashSet<string>());
                 for (int i = 0; i < 3; i++)
@@ -288,7 +289,7 @@ namespace PennyPet
                 long saves = s.Saves;
                 string before = String.Join("\n", s.Notes.ConvertAll(StickyNoteCodec.SerializeLine));
                 object[] args = { s.Batch(7, s.Member(0), s.Member(1), s.Member(2)),
-                    s.Topology, s.Surface, s.Ids, 7L, true };
+                    s.Topology, s.Surface, s.Ids, 7L, true, true, false };
                 bool accepted = (bool)Pc2Call(s.Pet, "TryApplyDockTopologyResult", args);
                 Pc2Assert(!accepted &&
                     before == String.Join("\n", s.Notes.ConvertAll(StickyNoteCodec.SerializeLine)) &&
@@ -358,18 +359,19 @@ namespace PennyPet
             using (Pc2Scene s = new Pc2Scene(root, "A6-restore"))
             {
                 s.Start(c => StickyUiCommandResult.Handled());
-                HashSet<string> gates = (HashSet<string>)Pc2Get(s.Pet, "_pendingHostedDockRestoreGroups");
-                gates.Add("test-group");
-                Type stateType = typeof(PetForm).GetNestedType("HostedDockRestorePreparation", BindingFlags.NonPublic);
-                object state = Activator.CreateInstance(stateType, BindingFlags.Instance | BindingFlags.NonPublic,
-                    null, new object[] { s.Notes, s.Notes[0], false, true, "test-group" }, null);
+                foreach (StickyNoteData note in s.Notes) note.Visible = false;
+                var restores = (DockRestoreOperations)Pc2Get(s.Pet, "_dockRestores");
+                DockRestoreOperation operation = DockRestoreOperation.TryCreate(s.Notes,
+                    s.Notes[0].Id, false, true, s.Topology, null, 1);
+                Pc2Assert(restores.TryBegin(operation), "A6 restore registered");
                 long saves = s.Saves;
-                Pc2Call(s.Pet, "FailHostedDockRestore", state, "test-rejection", StickyUiCommandResult.NotHandled());
-                Pc2Assert(gates.Count == 0 && s.Hosted.NoteCount == 0 &&
-                    s.Notes.TrueForAll(n => !n.Visible) && s.Repository.Count == 3 && s.Saves == saves + 1,
-                    "A6 restore keeps data, hides canonical, removes membership, saves, releases gate");
+                Pc2Call(s.Pet, "CompleteHostedDockRestore", operation, StickyUiCommandResult.NotHandled());
+                Pc2Assert(restores.Snapshot().Length == 0 && operation.Cancellation.IsCancellationRequested &&
+                    s.Hosted.NoteCount == 3 && s.Notes.TrueForAll(n => !n.Visible) &&
+                    s.Repository.Count == 3 && s.Saves == saves,
+                    "A6 rejected restore preserves canonical/session state, releases operation, queues hides");
             }
-            evidence.Add("A6: rebase remains Rebasing; live failure remains Dragging; final rejection resets Idle/maps; restore hides/retains/saves data and releases gate.");
+            evidence.Add("A6: rebase remains Rebasing; live failure remains Dragging; final rejection resets Idle/maps; restore retains canonical/session state without saving and releases its operation.");
         }
 
         private static void RunPc2Recreation(string root, List<string> evidence)

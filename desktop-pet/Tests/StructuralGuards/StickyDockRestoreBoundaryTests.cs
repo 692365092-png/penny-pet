@@ -86,12 +86,14 @@ namespace PennyPet.Tests
         public void RestoreBatchRegistersSessionsOnlyAfterWholeBatchPreflight()
         {
             string apply = SliceMethod(ReadSource(Coordinator), "private bool TryApplyDockTopologyResult(");
-            int preflight = apply.IndexOf("CanApplyBatchSequence(member, acceptCreatedSessions)", StringComparison.Ordinal);
-            int complete = apply.IndexOf("if (actual.Count != expected.Count) return false", StringComparison.Ordinal);
-            int invalidate = apply.IndexOf("_placementRuntime.InvalidateEffective(member.NoteId)", StringComparison.Ordinal);
-            int register = apply.IndexOf("AcceptBatchSequence(member, acceptCreatedSessions)", StringComparison.Ordinal);
-            Assert.IsTrue(preflight >= 0 && complete > preflight && invalidate > complete && register > invalidate);
-            Assert.IsTrue(apply.Contains("if (acceptCreatedSessions && member.SessionCreated)"));
+            int preflight = apply.IndexOf("_factsReceiver.TryPrepare(member, snapshot, out update, acceptCreatedSessions)", StringComparison.Ordinal);
+            int commit = apply.IndexOf("update.Commit(forceVisible)", StringComparison.Ordinal);
+            Assert.IsTrue(preflight >= 0 && commit > preflight);
+            Assert.IsTrue(apply.Contains("!remaining.Remove(member.NoteId)"));
+            string receiver = ReadSource("Features/StickyNotes/StickyFactsReceiver.cs");
+            string accept = SliceMethod(receiver, "internal void CommitGeometry()");
+            Assert.IsTrue(accept.IndexOf("AcceptEffective", StringComparison.Ordinal) <
+                accept.IndexOf("AcceptBatchSequence", StringComparison.Ordinal));
             Assert.IsFalse(apply.Contains("_hostedRuntime.RemoveNote("));
             string host = SliceMethod(ReadSource("StickyUiHost.cs"), "private StickyUiCommandResult RestoreDockGroup(");
             Assert.IsTrue(host.Contains("if (ensured.SessionCreated) created.Add("));
