@@ -148,7 +148,7 @@ namespace PennyPet
         private void TracePlacementMismatch(PhysicalRect requested,
             WindowFacts facts)
         {
-            if (facts == null) return;
+            if (!DisplayDiagnostics.Enabled || facts == null) return;
             DisplayDiagnostics.Trace("PlacementResolved",
                 "note=" + _noteId + " correctiveMismatch requested=(" +
                 requested.Left + "," + requested.Top + "," +
@@ -968,7 +968,7 @@ namespace PennyPet
 
         private void TraceWindowFacts(WindowFacts facts)
         {
-            if (facts == null) return;
+            if (!DisplayDiagnostics.Enabled || facts == null) return;
             DisplayDiagnostics.Trace("WindowFacts",
                 "note=" + _noteId + " seq=" + facts.WindowSequence +
                 " dpi=" + facts.Dpi + " gdi=" + facts.RuntimeGdiName +
@@ -980,7 +980,7 @@ namespace PennyPet
 
         private StickyNoteUiSnapshot CaptureSnapshot()
         {
-            return StickyNoteUiSnapshot.FromContentData(_window.Data);
+            return StickyNoteUiSnapshot.FromContentData(_window.Data, _lastSnapshot);
         }
 
         private void Raise(StickyUiEvent value)

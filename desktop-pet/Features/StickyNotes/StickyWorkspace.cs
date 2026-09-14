@@ -203,60 +203,25 @@ namespace PennyPet
             DeleteStickyNote(note);
         }
 
-        internal void CreateStickyNote(string text)
-        {
-            StickyNoteData note = null;
-            try
-            {
-                note = PrepareStickyNoteDraft(text,
-                    new DockSize(320, 300), false, false);
-                if (note == null) return;
-                Notes.Save();
-                StartHostedSticky(note, true);
-                RefreshMenuText();
-            }
-            catch (Exception error)
-            {
-                RollBackFailedStickyCreation(note);
-                ShowStickyWindowFailure("便利贴", error);
-            }
-        }
+        internal void CreateStickyNote(string text) { CreateStickyNote(text, false, false); }
+        internal void CreateTodoStickyNote() { CreateStickyNote(String.Empty, true, false); }
+        internal void CreateScheduleStickyNote() { CreateStickyNote(String.Empty, false, true); }
 
-        internal void CreateTodoStickyNote()
+        private void CreateStickyNote(string text, bool todo, bool schedule)
         {
             StickyNoteData note = null;
             try
             {
-                note = PrepareStickyNoteDraft(String.Empty,
-                    new DockSize(320, 300), true, false);
+                note = PrepareStickyNoteDraft(text, new DockSize(320, schedule ? 360 : 300), todo, schedule);
                 if (note == null) return;
-                Notes.Save();
+                Notes.SaveAsync();
                 StartHostedSticky(note, true);
                 RefreshMenuText();
             }
             catch (Exception error)
             {
                 RollBackFailedStickyCreation(note);
-                ShowStickyWindowFailure("待办清单", error);
-            }
-        }
-
-        internal void CreateScheduleStickyNote()
-        {
-            StickyNoteData note = null;
-            try
-            {
-                note = PrepareStickyNoteDraft(String.Empty,
-                    new DockSize(320, 360), false, true);
-                if (note == null) return;
-                Notes.Save();
-                StartHostedSticky(note, true);
-                RefreshMenuText();
-            }
-            catch (Exception error)
-            {
-                RollBackFailedStickyCreation(note);
-                ShowStickyWindowFailure("日程", error);
+                ShowStickyWindowFailure(schedule ? "日程" : todo ? "待办清单" : "便利贴", error);
             }
         }
 
@@ -1004,7 +969,7 @@ namespace PennyPet
 
         private void TraceHostedWindowFacts(StickyUiEvent value)
         {
-            if (value.Facts == null) return;
+            if (!DisplayDiagnostics.Enabled || value.Facts == null) return;
             WindowFacts facts = value.Facts;
             DisplayDiagnostics.Trace("WindowFacts",
                 "note=" + facts.WindowId + " topology=" +
@@ -1360,7 +1325,7 @@ namespace PennyPet
             }
             if (PostHostedStickyShow(note, focusEditor)) return;
             StartHostedSticky(note, focusEditor);
-            if (!focusEditor && persistVisibility) Notes.Save();
+            if (!focusEditor && persistVisibility) Notes.SaveAsync();
             RefreshNoteTabs();
         }
 
@@ -1415,7 +1380,7 @@ namespace PennyPet
                     PostHostedStickyHide(member);
                 }
             }
-            Notes.Save();
+            Notes.SaveAsync();
             Dock.RefreshDockResizeRoles();
             RefreshNoteTabs();
             RefreshMenuText();

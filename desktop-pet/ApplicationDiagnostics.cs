@@ -66,7 +66,7 @@ namespace PennyPet
         internal static void WriteWindowLayerEvent(string operation,
             string reason)
         {
-            if (_initialized == 0) return;
+            if (_initialized == 0 || !DisplayDiagnostics.Enabled) return;
             try
             {
                 lock (LogGate)

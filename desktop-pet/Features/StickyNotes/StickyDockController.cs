@@ -43,7 +43,7 @@ namespace PennyPet
                     rootFacts.Width);
             }
             finally { _synchronizingDockLayout = false; }
-            _workspace.Notes.Save();
+            _workspace.Notes.SaveAsync();
             RefreshDockResizeRoles();
             _workspace.RefreshNoteTabs();
         }
@@ -147,7 +147,7 @@ namespace PennyPet
                 }
                 finally { _synchronizingDockLayout = false; }
             }
-            _workspace.Notes.Save();
+            _workspace.Notes.SaveAsync();
             RefreshDockResizeRoles();
             _workspace.RefreshNoteTabs();
             _workspace.RefreshMenuText();
@@ -1370,9 +1370,9 @@ namespace PennyPet
                 StickyNoteData note = _workspace.Notes.Find(target.NoteId);
                 if (note != null) CommitExpandedPreferred(note, target, surface, scale);
             }
-            // Persist the complete canonical transition before asynchronous
+            // Queue the complete canonical snapshot before asynchronous
             // hosted effects can report their detached snapshots back.
-            _workspace.Notes.Save();
+            _workspace.Notes.SaveAsync();
             _movingDockGroup = true;
             try
             {

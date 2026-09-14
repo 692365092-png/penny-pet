@@ -318,9 +318,11 @@ namespace PennyPet
     // mutable working copy; the repository-owned model never crosses threads.
     internal sealed class StickyNoteUiSnapshot
     {
+        private readonly bool _includesPlacement;
         private StickyNoteUiSnapshot(StickyNoteData source,
             bool includePlacement)
         {
+            _includesPlacement = includePlacement;
             NoteId = source.Id ?? String.Empty;
             Title = source.Title ?? String.Empty;
             Text = source.Text ?? String.Empty;
@@ -363,13 +365,13 @@ namespace PennyPet
             foreach (StickyTodoItem item in source.TodoItems)
                 if (item != null) todos.Add(
                     new StickyTodoUiSnapshot(item));
-            TodoItems = todos.ToArray();
+            TodoItems = Array.AsReadOnly(todos.ToArray());
             List<StickyScheduleUiSnapshot> schedules =
                 new List<StickyScheduleUiSnapshot>();
             foreach (StickyScheduleItem item in source.ScheduleItems)
                 if (item != null) schedules.Add(
                     new StickyScheduleUiSnapshot(item));
-            ScheduleItems = schedules.ToArray();
+            ScheduleItems = Array.AsReadOnly(schedules.ToArray());
         }
 
         internal string NoteId { get; private set; }
@@ -402,8 +404,8 @@ namespace PennyPet
         internal long CreatedUtcTicks { get; private set; }
         internal long ModifiedUtcTicks { get; private set; }
         internal long ReminderUtcTicks { get; private set; }
-        internal StickyTodoUiSnapshot[] TodoItems { get; private set; }
-        internal StickyScheduleUiSnapshot[] ScheduleItems { get; private set; }
+        internal IReadOnlyList<StickyTodoUiSnapshot> TodoItems { get; private set; }
+        internal IReadOnlyList<StickyScheduleUiSnapshot> ScheduleItems { get; private set; }
 
         internal static StickyNoteUiSnapshot FromData(StickyNoteData source, bool? alwaysOnTop = null)
         {
@@ -414,10 +416,51 @@ namespace PennyPet
         }
 
         internal static StickyNoteUiSnapshot FromContentData(
-            StickyNoteData source)
+            StickyNoteData source, StickyNoteUiSnapshot previous = null)
         {
             if (source == null) throw new ArgumentNullException(nameof(source));
-            return new StickyNoteUiSnapshot(source, false);
+            if (previous == null || previous._includesPlacement ||
+                !String.Equals(previous.NoteId, source.Id, StringComparison.Ordinal) ||
+                !previous.MatchesContent(source)) return new StickyNoteUiSnapshot(source, false);
+            if (previous.Visible == source.Visible && previous.AlwaysOnTop == source.AlwaysOnTop) return previous;
+            var snapshot = (StickyNoteUiSnapshot)previous.MemberwiseClone();
+            snapshot.Visible = source.Visible;
+            snapshot.AlwaysOnTop = source.AlwaysOnTop;
+            return snapshot;
+        }
+
+        // Compare values, not ModifiedUtcTicks: pending editor input, appearance
+        // previews and uncommitted list edits can change before the save timer.
+        private bool MatchesContent(StickyNoteData source)
+        {
+            if (Title != (source.Title ?? String.Empty) || Text != (source.Text ?? String.Empty) ||
+                RichTextRtf != (source.RichTextRtf ?? String.Empty) ||
+                FontFamilyName != (source.FontFamilyName ?? String.Empty) ||
+                FontSizeTwips != source.FontSizeTwips || ColorArgb != source.ColorArgb ||
+                BackgroundOpacityPercent != source.BackgroundOpacityPercent ||
+                TextColorArgb != source.TextColorArgb || IsTodoList != source.IsTodoList ||
+                IsSchedule != source.IsSchedule || CreatedUtcTicks != source.CreatedUtcTicks ||
+                ModifiedUtcTicks != source.ModifiedUtcTicks || ReminderUtcTicks != source.ReminderUtcTicks) return false;
+            int index = 0;
+            foreach (StickyTodoItem item in source.TodoItems)
+            {
+                if (item == null) continue;
+                if (index == TodoItems.Count) return false;
+                StickyTodoUiSnapshot snapshot = TodoItems[index++];
+                if (snapshot.Text != (item.Text ?? String.Empty) || snapshot.State != item.State ||
+                    snapshot.IsPinned != item.IsPinned) return false;
+            }
+            if (index != TodoItems.Count) return false;
+            index = 0;
+            foreach (StickyScheduleItem item in source.ScheduleItems)
+            {
+                if (item == null) continue;
+                if (index == ScheduleItems.Count) return false;
+                StickyScheduleUiSnapshot snapshot = ScheduleItems[index++];
+                if (snapshot.Text != (item.Text ?? String.Empty) || snapshot.TargetDateTicks != item.TargetDateTicks ||
+                    snapshot.IsPinned != item.IsPinned) return false;
+            }
+            return index == ScheduleItems.Count;
         }
 
         internal StickyNoteData CreateWorkingCopy()
@@ -471,6 +514,7 @@ namespace PennyPet
 
         private void ApplyContentFields(StickyNoteData target)
         {
+            if (MatchesContent(target)) return;
             target.Title = Title;
             target.Text = Text;
             target.RichTextRtf = RichTextRtf;
