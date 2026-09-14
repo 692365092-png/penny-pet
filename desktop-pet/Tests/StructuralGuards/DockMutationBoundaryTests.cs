@@ -65,7 +65,11 @@ namespace PennyPet.Tests
         {
             string window = ReadSource(Window), dock = ReadSource(Dock);
             Assert.IsTrue(SliceMethod(window, "private void HostedStickyFaulted(").Contains("ResetDockDragState(true)"));
-            Assert.IsTrue(SliceMethod(window, "private void HandleHostedStickyFailure(").Contains("if (cancelHeaderFinal) ResetDockDragState(true)"));
+            Assert.IsTrue(SliceMethod(window, "private void HandleHostedStickyFailure(").Contains(
+                "cancelHeaderFinal && ReferenceEquals(_dockInteraction.Mutations, failedFinal)"));
+            string closed = SliceMethod(window, "if (value.Kind == StickyUiEventKind.Closed)");
+            Assert.IsTrue(closed.IndexOf("if (!ApplyHostedStickyEvent(value)) return", StringComparison.Ordinal) <
+                closed.IndexOf("_hostedRuntime.RemoveNote", StringComparison.Ordinal));
             Assert.IsTrue(SliceMethod(window, "private void PostResizeFinal(").Contains("ClearHostedDockResizeSession(session)"));
             Assert.IsTrue(window.Contains("ShowHostedSticky(_notes.Find(note.Id), focusEditor, persistVisibility)"));
             Assert.IsTrue(dock.Contains("DeleteStickyNote(_notes.Find(note.Id), completed)"));

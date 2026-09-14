@@ -1251,7 +1251,7 @@ namespace PennyPet
             }
             if (value.Kind == StickyUiEventKind.Closed)
             {
-                ApplyHostedStickyEvent(value);
+                if (!ApplyHostedStickyEvent(value)) return;
                 _hostedRuntime.RemoveNote(value.NoteId);
                 _placementRuntime.Remove(value.NoteId);
                 _renderedFirstRenderNoteIds.Remove(value.NoteId);
@@ -1910,6 +1910,7 @@ namespace PennyPet
             string context, StickyUiCommandResult result)
         {
             ReportHostedStickyCommandFailure(context, result);
+            DockMutationQueue failedFinal = _dockInteraction.Mutations;
             bool cancelHeaderFinal = false;
             if (noteIds != null)
             {
@@ -1917,7 +1918,7 @@ namespace PennyPet
                 {
                     if (String.IsNullOrEmpty(noteId)) continue;
                     StickyNoteData note = _notes.Find(noteId);
-                    if (_dockInteraction.Mutations != null && _dockInteraction.Mutations.Contains(
+                    if (failedFinal != null && failedFinal.Contains(
                         noteId, note == null ? null : note.DockGroupId)) cancelHeaderFinal = true;
                     CancelHostedDockRestores(noteId);
                     _hostedRuntime.RemoveNote(noteId);
@@ -1930,7 +1931,7 @@ namespace PennyPet
                     ClearHostedDockResizeSessionIfMember(noteId);
                 }
             }
-            if (cancelHeaderFinal) ResetDockDragState(true);
+            if (cancelHeaderFinal && ReferenceEquals(_dockInteraction.Mutations, failedFinal)) ResetDockDragState(true);
             _notes.SaveAsync();
             RefreshNoteTabs();
             RefreshMenuText();
