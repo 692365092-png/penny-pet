@@ -234,6 +234,8 @@ namespace PennyPet.Tests
                 "Core/DailyContent/Weather/WeatherWordingCatalog.cs");
             string source = ReadSource(
                 "Infrastructure/Weather/PetWeatherSource.cs");
+            string cache = ReadSource(
+                "Core/DailyContent/Weather/WeatherForecastCache.cs");
             string geocoding = ReadSource(
                 "Infrastructure/Weather/OpenMeteoGeocodingClient.cs");
             string client = ReadSource(
@@ -257,12 +259,12 @@ namespace PennyPet.Tests
                 source.Contains("TimeSpan.FromSeconds(3)") &&
                 source.Contains("TimeSpan.FromSeconds(8)") &&
                 source.Contains("CancellationTokenSource.CreateLinkedTokenSource") &&
-                source.Contains("FailureCooldown") &&
-                source.Contains("TimeSpan.FromMinutes(15)") &&
-                source.Contains("Queue<string>") &&
-                source.Contains("_cacheOrder.Count >= 3") &&
-                source.Contains("_inFlightKey == key"),
-                "Weather transport must own one bounded cache/in-flight/cooldown.");
+                source.Contains("new WeatherForecastCache(FetchForecastAsync, _utcNow)") &&
+                source.Contains("return _cache.GetAsync(location)") &&
+                !source.Contains("Task.Delay(") &&
+                !cache.Contains("HttpClient") &&
+                !cache.Contains("System.Windows"),
+                "Transport owns request deadlines; the shared Core cache owns request reuse without timing delays.");
             Assert.IsTrue(geocoding.Contains("CancellationToken") &&
                 geocoding.Contains("HttpCompletionOption.ResponseContentRead") &&
                 geocoding.Contains("EnsureSuccessStatusCode"),

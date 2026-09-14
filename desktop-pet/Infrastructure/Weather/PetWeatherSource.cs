@@ -12,21 +12,12 @@ namespace PennyPet
             TimeSpan.FromSeconds(3);
         internal static readonly TimeSpan GeocodingRequestTimeout =
             TimeSpan.FromSeconds(8);
-        private static readonly TimeSpan FailureCooldown =
-            TimeSpan.FromMinutes(15);
         private readonly object _gate = new object();
         private readonly HttpClient _httpClient;
         private readonly OpenMeteoGeocodingClient _geocoding;
         private readonly OpenMeteoForecastClient _forecast;
         private readonly Func<DateTimeOffset> _utcNow;
-        private readonly Dictionary<string, WeatherForecastWindow> _cache =
-            new Dictionary<string, WeatherForecastWindow>(
-                StringComparer.Ordinal);
-        private readonly Queue<string> _cacheOrder = new Queue<string>();
-        private string _inFlightKey;
-        private Task<WeatherForecastWindow> _inFlight;
-        private string _failedKey;
-        private DateTimeOffset _retryAfterUtc;
+        private readonly WeatherForecastCache _cache;
         private int _forecastRequestCount;
         private bool _disposed;
 
@@ -54,6 +45,7 @@ namespace PennyPet
                 throw new InvalidOperationException("Invalid user agent.");
             _geocoding = new OpenMeteoGeocodingClient(_httpClient);
             _forecast = new OpenMeteoForecastClient(_httpClient);
+            _cache = new WeatherForecastCache(FetchForecastAsync, _utcNow);
         }
 
         internal Task<IReadOnlyList<WeatherLocation>> SearchLocationsAsync(
@@ -88,39 +80,11 @@ namespace PennyPet
         internal Task<WeatherForecastWindow> GetForecastAsync(
             WeatherLocation location)
         {
-            if (location == null)
-                throw new ArgumentNullException(nameof(location));
             ThrowIfDisposed();
-            string key = location.StableKey;
-            DateTimeOffset utcNow = _utcNow();
-            lock (_gate)
-            {
-                WeatherForecastWindow cached;
-                if (_cache.TryGetValue(key, out cached) &&
-                    cached.Today != null &&
-                    cached.Today.Date == CityLocalDate(utcNow,
-                        cached.UtcOffsetSeconds))
-                    return Task.FromResult(cached);
-                if (_failedKey == key && _utcNow() < _retryAfterUtc)
-                    return Task.FromResult<WeatherForecastWindow>(null);
-                if (_inFlightKey == key && _inFlight != null)
-                    return _inFlight;
-                _inFlightKey = key;
-                _inFlight = FetchAndStoreAsync(location, key);
-                return _inFlight;
-            }
+            return _cache.GetAsync(location);
         }
 
-        internal void InvalidateCache()
-        {
-            lock (_gate)
-            {
-                _cache.Clear();
-                _cacheOrder.Clear();
-                _failedKey = null;
-                _retryAfterUtc = DateTimeOffset.MinValue;
-            }
-        }
+        internal void InvalidateCache() { _cache.Invalidate(); }
 
         internal int ForecastRequestCountForTest
         {
@@ -137,66 +101,22 @@ namespace PennyPet
             _httpClient.Dispose();
         }
 
-        private async Task<WeatherForecastWindow> FetchAndStoreAsync(
-            WeatherLocation location, string key)
+        private async Task<WeatherForecastWindow> FetchForecastAsync(WeatherLocation location)
         {
-            // Ensure the shared task is registered before even an in-memory
-            // handler can complete, without returning to a caller's UI context.
-            await Task.Delay(1).ConfigureAwait(false);
             try
             {
                 lock (_gate) _forecastRequestCount++;
-                WeatherForecastWindow value;
-                using (CancellationTokenSource timeout =
-                    new CancellationTokenSource())
+                using (CancellationTokenSource timeout = new CancellationTokenSource())
                 {
                     timeout.CancelAfter(ForecastRequestTimeout);
-                    value = await _forecast.FetchAsync(location, _utcNow(),
-                        timeout.Token).ConfigureAwait(false);
+                    return await _forecast.FetchAsync(location, _utcNow(), timeout.Token).ConfigureAwait(false);
                 }
-                lock (_gate)
-                {
-                    if (!_cache.ContainsKey(key))
-                    {
-                        while (_cacheOrder.Count >= 3)
-                            _cache.Remove(_cacheOrder.Dequeue());
-                        _cacheOrder.Enqueue(key);
-                    }
-                    _cache[key] = value;
-                    _failedKey = null;
-                    _retryAfterUtc = DateTimeOffset.MinValue;
-                }
-                return value;
             }
             catch (Exception error)
             {
-                ApplicationDiagnostics.ReportNonFatal("weather-forecast",
-                    error);
-                lock (_gate)
-                {
-                    _failedKey = key;
-                    _retryAfterUtc = _utcNow().Add(FailureCooldown);
-                }
+                ApplicationDiagnostics.ReportNonFatal("weather-forecast", error);
                 return null;
             }
-            finally
-            {
-                lock (_gate)
-                {
-                    if (_inFlightKey == key)
-                    {
-                        _inFlightKey = null;
-                        _inFlight = null;
-                    }
-                }
-            }
-        }
-
-        private static DateTime CityLocalDate(DateTimeOffset utcNow,
-            int utcOffsetSeconds)
-        {
-            return utcNow.ToOffset(
-                TimeSpan.FromSeconds(utcOffsetSeconds)).Date;
         }
 
         private void ThrowIfDisposed()
