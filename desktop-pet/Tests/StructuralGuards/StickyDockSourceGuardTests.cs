@@ -854,9 +854,8 @@ namespace PennyPet.Tests
                 "private void Raise");
             Assert.IsTrue(capture.Contains(
                     "CaptureSnapshot()") &&
-                helper.Contains("StickyNoteUiSnapshot.FromContentData("));
+                helper.Contains("StickyNoteUiSnapshot.Capture("));
             Assert.IsFalse(capture.Contains("CaptureCanonicalPlacement") ||
-                helper.Contains("StickyNoteUiSnapshot.FromData(") ||
                 helper.Contains("CaptureCanonicalPlacement") ||
                 helper.Contains("WindowsDisplayResolver"));
         }

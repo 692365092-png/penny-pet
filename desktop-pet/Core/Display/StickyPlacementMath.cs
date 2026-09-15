@@ -2,10 +2,9 @@ using System;
 
 namespace PennyPet
 {
-    // Canonical placement for a Sticky. The source of truth is the
-    // display-local logical rect (in DIP units) plus the display identity.
-    // The physical rect is a derived compatibility projection used by the
-    // existing Dock/legacy runtime which still reads X/Y/Width/Height.
+    // Transitional placement fields for StickyNoteData. A captured physical
+    // rect stays exact; its integer-DIP fields are a lossy compatibility view.
+    // Spawn plans can also supply these fields before an HWND exists.
     internal sealed class StickyCanonicalPlacement
     {
         internal StickyCanonicalPlacement(string displayId,
@@ -34,10 +33,8 @@ namespace PennyPet
         internal int PhysicalWidth { get; private set; }
         internal int PhysicalHeight { get; private set; }
 
-        // Write the placement into canonical StickyNoteData fields. The
-        // compatibility X/Y/Width/Height are the projection of that same
-        // placement back to physical pixels, which is what the existing
-        // Dock/legacy runtime and the native WPF placement executor expect.
+        // Update the model's physical and v10 compatibility fields together.
+        // This never commits a durable user preference.
         internal void ApplyTo(StickyNoteData note)
         {
             if (note == null) throw new ArgumentNullException(nameof(note));
@@ -92,18 +89,12 @@ namespace PennyPet
             int localHeight = Math.Max(1,
                 (int)Math.Round(Math.Max(1, physicalHeight) / safeScale,
                     MidpointRounding.AwayFromZero));
-            PhysicalPoint compatTopLeft = DisplayGeometry.LocalToPhysical(
-                localTopLeft.X, localTopLeft.Y, physicalOriginX,
-                physicalOriginY, safeScale);
+            // Do not project rounded DIP values back over the actual pixels.
             return new StickyCanonicalPlacement(
                 displayId ?? String.Empty,
                 localTopLeft.X, localTopLeft.Y,
                 localWidth, localHeight,
-                compatTopLeft.X, compatTopLeft.Y,
-                (int)Math.Round(localWidth * safeScale,
-                    MidpointRounding.AwayFromZero),
-                (int)Math.Round(localHeight * safeScale,
-                    MidpointRounding.AwayFromZero));
+                physicalLeft, physicalTop, physicalWidth, physicalHeight);
         }
 
         internal static StickyCanonicalPlacement FromSpawn(

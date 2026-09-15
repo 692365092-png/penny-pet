@@ -31,7 +31,7 @@ namespace PennyPet
             for (int index = 0; index < ordered.Count; index++)
             {
                 _orders[index] = ordered[index].DockGroupOrder;
-                snapshots.Add(StickyNoteUiSnapshot.FromData(ordered[index], ordered[0].AlwaysOnTop));
+                snapshots.Add(StickyNoteUiSnapshot.Capture(ordered[index], alwaysOnTop: ordered[0].AlwaysOnTop));
             }
             GroupId = ordered[0].DockGroupId;
             FocusId = focusId;

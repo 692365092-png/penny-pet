@@ -320,11 +320,9 @@ namespace PennyPet
     // mutable working copy; the repository-owned model never crosses threads.
     internal sealed class StickyNoteUiSnapshot
     {
-        private readonly bool _includesPlacement;
         private StickyNoteUiSnapshot(StickyNoteData source,
-            bool includePlacement)
+            bool alwaysOnTop)
         {
-            _includesPlacement = includePlacement;
             NoteId = source.Id ?? String.Empty;
             Title = source.Title ?? String.Empty;
             Text = source.Text ?? String.Empty;
@@ -335,30 +333,9 @@ namespace PennyPet
             BackgroundOpacityPercent = source.BackgroundOpacityPercent;
             TextColorArgb = source.TextColorArgb;
             Visible = source.Visible;
-            AlwaysOnTop = source.AlwaysOnTop;
+            AlwaysOnTop = alwaysOnTop;
             IsTodoList = source.IsTodoList;
             IsSchedule = source.IsSchedule;
-            DisplayId = String.Empty;
-            PreferredDisplayTargetKey = String.Empty;
-            if (includePlacement)
-            {
-                X = source.X;
-                Y = source.Y;
-                Width = source.Width;
-                Height = source.Height;
-                DisplayId = source.DisplayId ?? String.Empty;
-                LocalLogicalX = source.LocalLogicalX;
-                LocalLogicalY = source.LocalLogicalY;
-                LocalLogicalWidth = source.LocalLogicalWidth;
-                LocalLogicalHeight = source.LocalLogicalHeight;
-                PreferredDisplayTargetKey =
-                    source.PreferredDisplayTargetKey ?? String.Empty;
-                PreferredLocalLogicalX = source.PreferredLocalLogicalX;
-                PreferredLocalLogicalY = source.PreferredLocalLogicalY;
-                PreferredLocalLogicalWidth = source.PreferredLocalLogicalWidth;
-                PreferredLocalLogicalHeight =
-                    source.PreferredLocalLogicalHeight;
-            }
             CreatedUtcTicks = source.CreatedUtcTicks;
             ModifiedUtcTicks = source.ModifiedUtcTicks;
             ReminderUtcTicks = source.ReminderUtcTicks;
@@ -389,45 +366,24 @@ namespace PennyPet
         internal bool AlwaysOnTop { get; private set; }
         internal bool IsTodoList { get; private set; }
         internal bool IsSchedule { get; private set; }
-        internal int X { get; private set; }
-        internal int Y { get; private set; }
-        internal int Width { get; private set; }
-        internal int Height { get; private set; }
-        internal string DisplayId { get; private set; }
-        internal int LocalLogicalX { get; private set; }
-        internal int LocalLogicalY { get; private set; }
-        internal int LocalLogicalWidth { get; private set; }
-        internal int LocalLogicalHeight { get; private set; }
-        internal string PreferredDisplayTargetKey { get; private set; }
-        internal int PreferredLocalLogicalX { get; private set; }
-        internal int PreferredLocalLogicalY { get; private set; }
-        internal int PreferredLocalLogicalWidth { get; private set; }
-        internal int PreferredLocalLogicalHeight { get; private set; }
         internal long CreatedUtcTicks { get; private set; }
         internal long ModifiedUtcTicks { get; private set; }
         internal long ReminderUtcTicks { get; private set; }
         internal IReadOnlyList<StickyTodoUiSnapshot> TodoItems { get; private set; }
         internal IReadOnlyList<StickyScheduleUiSnapshot> ScheduleItems { get; private set; }
 
-        internal static StickyNoteUiSnapshot FromData(StickyNoteData source, bool? alwaysOnTop = null)
+        internal static StickyNoteUiSnapshot Capture(StickyNoteData source,
+            StickyNoteUiSnapshot previous = null, bool? alwaysOnTop = null)
         {
             if (source == null) throw new ArgumentNullException(nameof(source));
-            var snapshot = new StickyNoteUiSnapshot(source, true);
-            if (alwaysOnTop.HasValue) snapshot.AlwaysOnTop = alwaysOnTop.Value;
-            return snapshot;
-        }
-
-        internal static StickyNoteUiSnapshot FromContentData(
-            StickyNoteData source, StickyNoteUiSnapshot previous = null)
-        {
-            if (source == null) throw new ArgumentNullException(nameof(source));
-            if (previous == null || previous._includesPlacement ||
+            bool topMost = alwaysOnTop ?? source.AlwaysOnTop;
+            if (previous == null ||
                 !String.Equals(previous.NoteId, source.Id, StringComparison.Ordinal) ||
-                !previous.MatchesContent(source)) return new StickyNoteUiSnapshot(source, false);
-            if (previous.Visible == source.Visible && previous.AlwaysOnTop == source.AlwaysOnTop) return previous;
+                !previous.MatchesContent(source)) return new StickyNoteUiSnapshot(source, topMost);
+            if (previous.Visible == source.Visible && previous.AlwaysOnTop == topMost) return previous;
             var snapshot = (StickyNoteUiSnapshot)previous.MemberwiseClone();
             snapshot.Visible = source.Visible;
-            snapshot.AlwaysOnTop = source.AlwaysOnTop;
+            snapshot.AlwaysOnTop = topMost;
             return snapshot;
         }
 
@@ -468,42 +424,11 @@ namespace PennyPet
         internal StickyNoteData CreateWorkingCopy()
         {
             StickyNoteData copy = new StickyNoteData();
-            ApplyTo(copy);
-            ApplyPreferredTo(copy);
+            ApplyContentFields(copy);
+            copy.Id = NoteId;
+            copy.Visible = Visible;
+            copy.AlwaysOnTop = AlwaysOnTop;
             return copy;
-        }
-
-        internal void ApplyTo(StickyNoteData target)
-        {
-            if (target == null) throw new ArgumentNullException(nameof(target));
-            ApplyContentFields(target);
-            target.Id = NoteId;
-            target.Visible = Visible;
-            target.AlwaysOnTop = AlwaysOnTop;
-            target.X = X;
-            target.Y = Y;
-            target.Width = Width;
-            target.Height = Height;
-            target.DisplayId = DisplayId ?? String.Empty;
-            target.LocalLogicalX = LocalLogicalX;
-            target.LocalLogicalY = LocalLogicalY;
-            target.LocalLogicalWidth = LocalLogicalWidth;
-            target.LocalLogicalHeight = LocalLogicalHeight;
-        }
-
-        // Preferred placement is deliberately separate from ApplyTo: full
-        // snapshot application paths (dock/lifecycle acks) must never let a
-        // stale working-copy preference overwrite a preference the Pet runtime
-        // committed from real user gestures.
-        internal void ApplyPreferredTo(StickyNoteData target)
-        {
-            if (target == null) throw new ArgumentNullException(nameof(target));
-            target.PreferredDisplayTargetKey =
-                PreferredDisplayTargetKey ?? String.Empty;
-            target.PreferredLocalLogicalX = PreferredLocalLogicalX;
-            target.PreferredLocalLogicalY = PreferredLocalLogicalY;
-            target.PreferredLocalLogicalWidth = PreferredLocalLogicalWidth;
-            target.PreferredLocalLogicalHeight = PreferredLocalLogicalHeight;
         }
 
         // Content-only apply: never touches identity, visibility, topmost or

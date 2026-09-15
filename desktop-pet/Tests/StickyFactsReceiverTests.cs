@@ -27,7 +27,7 @@ namespace PennyPet.Tests
             {
                 return new DockBatchMemberResult(Note.Id, sequence,
                     StickyGeometryAuthorityTests.Facts(sequence: sequence),
-                    StickyNoteUiSnapshot.FromContentData(new StickyNoteData {
+                    StickyNoteUiSnapshot.Capture(new StickyNoteData {
                         Id = snapshotId, Text = "after", Visible = true, AlwaysOnTop = true }), created);
             }
         }
@@ -52,6 +52,47 @@ namespace PennyPet.Tests
             Assert.IsFalse(s.Hosted.CanApplySequence("note", 10));
             Assert.AreEqual("mdp:missing", s.Note.PreferredDisplayTargetKey);
             Assert.AreEqual(700, s.Note.PreferredLocalLogicalX);
+        }
+
+        [TestMethod]
+        [DataRow(120, 2, false)]
+        [DataRow(120, 2, true)]
+        [DataRow(144, 1, false)]
+        [DataRow(144, 1, true)]
+        [DataRow(192, 1, false)]
+        [DataRow(192, 1, true)]
+        public void MixedDpiFactsKeepExactPixelsAcrossBothCommitPaths(int dpi, int offset, bool batch)
+        {
+            var s = new Scene();
+            var topology = StickyGeometryAuthorityTests.Topology();
+            var bounds = new PhysicalRect(-1920 + offset, -1080 + offset, 643, 451);
+            var facts = new WindowFacts("note", "mdp:one", "DISPLAY1", bounds, dpi,
+                topology.Generation, 10);
+            if (batch)
+            {
+                StickyFactsReceiver.Update update;
+                Assert.IsTrue(s.Receiver.TryPrepare(new DockBatchMemberResult("note", 10,
+                    facts, null), topology, out update));
+                update.Commit();
+            }
+            else
+            {
+                bool tabsChanged;
+                Assert.IsTrue(s.Receiver.TryApplySnapshot(StickyNoteUiSnapshot.Capture(s.Note),
+                    10, facts, topology, topology, out tabsChanged));
+            }
+            Assert.AreEqual(bounds.Left, s.Note.X);
+            Assert.AreEqual(bounds.Top, s.Note.Y);
+            Assert.AreEqual(bounds.Width, s.Note.Width);
+            Assert.AreEqual(bounds.Height, s.Note.Height);
+            Assert.AreSame(facts, s.Placement.GetEffective("note"));
+            Assert.AreEqual("mdp:missing", s.Note.PreferredDisplayTargetKey);
+            Assert.AreEqual(700, s.Note.PreferredLocalLogicalX);
+            Assert.AreEqual("DISPLAY1", s.Note.DisplayId);
+            Assert.AreEqual((int)Math.Round(offset / facts.Scale,
+                MidpointRounding.AwayFromZero), s.Note.LocalLogicalX);
+            Assert.AreEqual((int)Math.Round(643 / facts.Scale,
+                MidpointRounding.AwayFromZero), s.Note.LocalLogicalWidth);
         }
 
         [TestMethod]

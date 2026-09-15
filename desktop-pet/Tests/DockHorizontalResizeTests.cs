@@ -28,7 +28,7 @@ namespace PennyPet.Tests
         private static StickyUiEvent Event(string id = "b", long sequence = 2,
             int left = -1600, int width = 1200, bool final = false, long generation = 7)
         {
-            var snapshot = StickyNoteUiSnapshot.FromContentData(new StickyNoteData { Id = id, Visible = true });
+            var snapshot = StickyNoteUiSnapshot.Capture(new StickyNoteData { Id = id, Visible = true });
             // During WM_SIZING the requested rect can differ from actual HWND facts.
             WindowFacts facts = Facts(id, -480, 510, sequence, final ? left : -1800,
                 final ? width : 640, generation: generation);

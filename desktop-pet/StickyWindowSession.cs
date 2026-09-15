@@ -921,7 +921,7 @@ namespace PennyPet
         {
             if (_eventsSuppressed) return;
             StickyNoteUiSnapshot snapshot =
-                StickyNoteUiSnapshot.FromContentData(_window.Data);
+                StickyNoteUiSnapshot.Capture(_window.Data);
             _lastSnapshot = snapshot;
             _sequence++;
             UnwireEvents();
@@ -986,7 +986,7 @@ namespace PennyPet
 
         private StickyNoteUiSnapshot CaptureSnapshot()
         {
-            return StickyNoteUiSnapshot.FromContentData(_window.Data, _lastSnapshot);
+            return StickyNoteUiSnapshot.Capture(_window.Data, _lastSnapshot);
         }
 
         private void Raise(StickyUiEvent value)

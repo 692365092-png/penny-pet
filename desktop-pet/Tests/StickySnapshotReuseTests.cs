@@ -18,25 +18,42 @@ namespace PennyPet.Tests
         public void MovingAndResizingReuseContentWithoutRetainingPlacement()
         {
             var note = Note();
-            var initial = StickyNoteUiSnapshot.FromData(note);
-            var content = StickyNoteUiSnapshot.FromContentData(note, initial);
-            Assert.AreNotSame(initial, content);
+            var initial = StickyNoteUiSnapshot.Capture(note);
+            var content = StickyNoteUiSnapshot.Capture(note, initial);
+            Assert.AreSame(initial, content);
             note.X = -1500; note.LocalLogicalWidth = 300;
             note.PreferredDisplayTargetKey = "disconnected";
-            var moved = StickyNoteUiSnapshot.FromContentData(note, content);
+            var moved = StickyNoteUiSnapshot.Capture(note, content);
             Assert.AreSame(content, moved);
-            Assert.AreEqual(0, moved.X);
-            Assert.AreEqual(0, moved.LocalLogicalWidth);
-            Assert.AreEqual(String.Empty, moved.PreferredDisplayTargetKey);
+            var editor = moved.CreateWorkingCopy();
+            Assert.AreEqual(new StickyNoteData().X, editor.X);
+            Assert.AreEqual(0, editor.LocalLogicalWidth);
+            Assert.AreEqual(String.Empty, editor.PreferredDisplayTargetKey);
+        }
+
+        [TestMethod]
+        public void RestoreTopMostOverrideDoesNotChangeCanonicalOrRebuildContent()
+        {
+            var note = Note();
+            var before = StickyNoteUiSnapshot.Capture(note);
+            var restore = StickyNoteUiSnapshot.Capture(note, before, alwaysOnTop: true);
+            Assert.IsFalse(note.AlwaysOnTop);
+            Assert.IsFalse(before.AlwaysOnTop);
+            Assert.IsTrue(restore.AlwaysOnTop);
+            Assert.IsTrue(restore.CreateWorkingCopy().AlwaysOnTop);
+            Assert.AreSame(before.TodoItems, restore.TodoItems);
+            Assert.AreSame(before.ScheduleItems, restore.ScheduleItems);
+            Assert.AreSame(restore, StickyNoteUiSnapshot.Capture(note, restore, alwaysOnTop: true));
+            Assert.IsFalse(StickyNoteUiSnapshot.Capture(note, restore).AlwaysOnTop);
         }
 
         [TestMethod]
         public void WindowFlagsDoNotModifyAnAlreadyPostedSnapshot()
         {
             var note = Note();
-            var before = StickyNoteUiSnapshot.FromContentData(note);
+            var before = StickyNoteUiSnapshot.Capture(note);
             note.Visible = false; note.AlwaysOnTop = true;
-            var after = StickyNoteUiSnapshot.FromContentData(note, before);
+            var after = StickyNoteUiSnapshot.Capture(note, before);
             Assert.AreNotSame(before, after);
             Assert.IsTrue(before.Visible);
             Assert.IsFalse(before.AlwaysOnTop);
@@ -50,10 +67,10 @@ namespace PennyPet.Tests
         public void PendingTextAndRichTextChangesDoNotNeedASaveRevision()
         {
             var note = Note();
-            var before = StickyNoteUiSnapshot.FromContentData(note);
+            var before = StickyNoteUiSnapshot.Capture(note);
             note.Text = "中文输入中的内容";
             note.RichTextRtf = "{\\rtf1 pending}";
-            var after = StickyNoteUiSnapshot.FromContentData(note, before);
+            var after = StickyNoteUiSnapshot.Capture(note, before);
             Assert.AreEqual(before.ModifiedUtcTicks, after.ModifiedUtcTicks);
             Assert.AreNotSame(before, after);
             Assert.AreEqual("before", before.Text);
@@ -65,11 +82,11 @@ namespace PennyPet.Tests
         public void ListEditsWithUnchangedCountAndTimestampAreCaptured()
         {
             var note = Note();
-            var before = StickyNoteUiSnapshot.FromContentData(note);
+            var before = StickyNoteUiSnapshot.Capture(note);
             note.TodoItems[0].Text = "edited";
             note.TodoItems[0].IsPinned = true;
             note.ScheduleItems[0].TargetDateTicks = new DateTime(2026, 9, 15).Ticks;
-            var after = StickyNoteUiSnapshot.FromContentData(note, before);
+            var after = StickyNoteUiSnapshot.Capture(note, before);
             Assert.AreNotSame(before, after);
             Assert.AreEqual("todo", before.TodoItems[0].Text);
             Assert.AreEqual("edited", after.TodoItems[0].Text);
@@ -81,11 +98,11 @@ namespace PennyPet.Tests
         public void AppearancePreviewAndReminderChangesAreCapturedBeforeSave()
         {
             var note = Note();
-            var before = StickyNoteUiSnapshot.FromContentData(note);
+            var before = StickyNoteUiSnapshot.Capture(note);
             note.BackgroundOpacityPercent = 25;
             note.FontSizeTwips = 500;
             note.ReminderUtcTicks = 123;
-            var after = StickyNoteUiSnapshot.FromContentData(note, before);
+            var after = StickyNoteUiSnapshot.Capture(note, before);
             Assert.AreNotSame(before, after);
             Assert.AreEqual(25, after.BackgroundOpacityPercent);
             Assert.AreEqual(500, after.FontSizeTwips);
@@ -96,9 +113,9 @@ namespace PennyPet.Tests
         public void SameContentCannotReuseAnotherNotesIdentity()
         {
             var note = Note();
-            var before = StickyNoteUiSnapshot.FromContentData(note);
+            var before = StickyNoteUiSnapshot.Capture(note);
             note.Id = "other";
-            var after = StickyNoteUiSnapshot.FromContentData(note, before);
+            var after = StickyNoteUiSnapshot.Capture(note, before);
             Assert.AreNotSame(before, after);
             Assert.AreEqual("other", after.NoteId);
         }
@@ -108,19 +125,19 @@ namespace PennyPet.Tests
         {
             var note = Note();
             for (int i = 1; i < 100; i++) note.TodoItems.Add(new StickyTodoItem("todo-" + i, false));
-            var snapshot = StickyNoteUiSnapshot.FromContentData(note);
+            var snapshot = StickyNoteUiSnapshot.Capture(note);
             var canonical = snapshot.CreateWorkingCopy();
             var firstRow = canonical.TodoItems[0];
             for (int i = 0; i < 100; i++)
             {
-                snapshot = StickyNoteUiSnapshot.FromContentData(note, snapshot);
+                snapshot = StickyNoteUiSnapshot.Capture(note, snapshot);
                 snapshot.ApplyContentTo(canonical);
             }
             long before = GC.GetAllocatedBytesForCurrentThread();
             for (int i = 0; i < 10000; i++)
             {
                 note.X = i;
-                snapshot = StickyNoteUiSnapshot.FromContentData(note, snapshot);
+                snapshot = StickyNoteUiSnapshot.Capture(note, snapshot);
                 snapshot.ApplyContentTo(canonical);
             }
             long allocated = GC.GetAllocatedBytesForCurrentThread() - before;

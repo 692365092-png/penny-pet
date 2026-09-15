@@ -62,7 +62,7 @@ namespace PennyPet.Tests
                 session.Contains("snapshot.CreateWorkingCopy()"),
                 "Only sticky STA sessions may own hosted WPF windows.");
             Assert.IsTrue(coordinator.Contains(
-                "StickyNoteUiSnapshot.FromData(note)") &&
+                "StickyNoteUiSnapshot.Capture(note)") &&
                 coordinator.Contains("Facts.TryApplySnapshot(") &&
                 coordinator.Contains("StickyHostedRuntime Hosted") && pet.Contains("StickyWorkspace _stickyWorkspace") &&
                 runtime.Contains("Dictionary<string, long> _appliedSequences"),
@@ -278,20 +278,22 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void Drt6_PreferredStaysOutsideFullSnapshotApply()
+        public void Drt6_ContentSnapshotHasNoPlacementPayloadOrGeometryApply()
         {
             string commands = ReadSource(
                 "Features/StickyNotes/StickyUiCommand.cs");
-            string apply = Between(commands,
-                "internal void ApplyTo(StickyNoteData target)",
-                "internal void ApplyPreferredTo(StickyNoteData target)");
-
-            Assert.IsTrue(commands.Contains(
-                    "internal void ApplyPreferredTo(StickyNoteData target)") &&
-                commands.Contains("ApplyPreferredTo(copy)"),
-                "Working copies must carry the preferred placement separately.");
-            Assert.IsFalse(apply.Contains("PreferredDisplayTargetKey"),
-                "Full snapshot application must never clobber preferred placement.");
+            string snapshot = Between(commands,
+                "internal sealed class StickyNoteUiSnapshot",
+                "internal sealed class StickyTodoUiSnapshot");
+            foreach (string geometry in new[] { "DisplayId", "LocalLogical", "Preferred",
+                "source.X", "source.Y", "source.Width", "source.Height",
+                "target.X", "target.Y", "target.Width", "target.Height", "internal void ApplyTo(" })
+                Assert.IsFalse(snapshot.Contains(geometry),
+                    "UI content must not carry or apply geometry: " + geometry);
+            StringAssert.Contains(snapshot, "ApplyContentFields(copy)");
+            StringAssert.Contains(snapshot, "copy.Id = NoteId");
+            StringAssert.Contains(snapshot, "copy.Visible = Visible");
+            StringAssert.Contains(snapshot, "copy.AlwaysOnTop = AlwaysOnTop");
         }
 
         [TestMethod]

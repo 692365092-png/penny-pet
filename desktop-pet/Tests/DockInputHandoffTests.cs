@@ -30,7 +30,7 @@ namespace PennyPet.Tests
         private static StickyUiEvent ResizeEvent(DockInput input, int kind, bool final = false,
             long sequence = 2, long generation = 7)
         {
-            var snapshot = StickyNoteUiSnapshot.FromData(new StickyNoteData { Id = "a", Visible = true });
+            var snapshot = StickyNoteUiSnapshot.Capture(new StickyNoteData { Id = "a", Visible = true });
             var topology = StickyGeometryAuthorityTests.Topology(generation);
             StickyUiEvent value = kind == 0
                 ? final ? StickyUiEvent.FromSnapshot(StickyUiEventKind.DockHorizontalResizeCompleted,

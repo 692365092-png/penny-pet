@@ -625,7 +625,7 @@ namespace PennyPet
                 topology, CapturePetWindowFacts(topology), false,
                 out fallback, out rehomeTarget, Placement.GetEffective(note.Id));
             StickyNoteUiSnapshot createSnapshot =
-                StickyNoteUiSnapshot.FromData(note);
+                StickyNoteUiSnapshot.Capture(note);
             StickyUiCommand command = StickyUiCommand.Create(
                 createSnapshot, focusEditor, _pet._reminders.GetItems(), topology,
                 rehomeTarget, StickyPlacementRecovery.SelectForShow(note, topology));

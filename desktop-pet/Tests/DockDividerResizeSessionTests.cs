@@ -25,7 +25,7 @@ namespace PennyPet.Tests
         private static StickyUiEvent Event(bool final = false, string id = "b", long seq = 2,
             long gen = 7, int top = -170, int height = 900)
         {
-            StickyNoteUiSnapshot snapshot = StickyNoteUiSnapshot.FromData(new StickyNoteData { Id = id, Visible = true });
+            StickyNoteUiSnapshot snapshot = StickyNoteUiSnapshot.Capture(new StickyNoteData { Id = id, Visible = true });
             return StickyUiEvent.DividerResize(final ? StickyUiEventKind.DockDividerResizeCompleted :
                 StickyUiEventKind.DockDividerResizing, snapshot, seq, height,
                 Facts(id, top, height, seq, gen), StickyGeometryAuthorityTests.Topology(gen));

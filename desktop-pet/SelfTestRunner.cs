@@ -1591,7 +1591,7 @@ namespace PennyPet
                 liveResizeStart.Add(new WindowFacts(resizeIds[index], "screen", "DISPLAY1",
                     new PhysicalRect(100, 100 + 300 * index, 420, 300), 96, 1, 1));
             DockResizeSession resize = DockResizeSession.TryStart(DockResizeKind.Divider, "b", liveResizeStart);
-            StickyNoteUiSnapshot resizeSnapshot = StickyNoteUiSnapshot.FromData(
+            StickyNoteUiSnapshot resizeSnapshot = StickyNoteUiSnapshot.Capture(
                 new StickyNoteData { Id = "b", Visible = true });
             long resizeSequence = 1;
             bool liveAccepted = true;
@@ -4545,8 +4545,12 @@ namespace PennyPet
             source.LocalLogicalY = 20;
             source.LocalLogicalWidth = 320;
             source.LocalLogicalHeight = 300;
+            source.PreferredDisplayTargetKey = "mdp:preferred";
+            source.PreferredLocalLogicalWidth = 640;
+            source.Visible = false;
+            source.AlwaysOnTop = false;
             StickyNoteUiSnapshot snapshot =
-                StickyNoteUiSnapshot.FromData(source);
+                StickyNoteUiSnapshot.Capture(source);
 
             StickyNoteData target = new StickyNoteData();
             target.X = 999;
@@ -4570,15 +4574,17 @@ namespace PennyPet
                 target.LocalLogicalWidth == 123 &&
                 target.LocalLogicalHeight == 456;
 
-            snapshot.ApplyTo(target);
-            bool fullApply = target.Id == "separation-source" &&
-                target.X == 100 && target.Y == 200 &&
-                target.Width == 320 && target.Height == 300 &&
-                target.DisplayId == "\\\\.\\DISPLAY1" &&
-                target.LocalLogicalX == 10 &&
-                target.LocalLogicalY == 20 &&
-                target.LocalLogicalWidth == 320 &&
-                target.LocalLogicalHeight == 300;
+            StickyNoteData editor = snapshot.CreateWorkingCopy();
+            StickyNoteData defaults = new StickyNoteData();
+            bool editorCopyOnly = editor.Id == "separation-source" &&
+                editor.Title == source.Title && editor.Text == source.Text &&
+                !editor.Visible && !editor.AlwaysOnTop &&
+                editor.X == defaults.X && editor.Y == defaults.Y &&
+                editor.Width == defaults.Width && editor.Height == defaults.Height &&
+                String.IsNullOrEmpty(editor.DisplayId) &&
+                editor.LocalLogicalWidth == 0 &&
+                String.IsNullOrEmpty(editor.PreferredDisplayTargetKey) &&
+                editor.PreferredLocalLogicalWidth == 0;
 
             WindowFacts facts = new WindowFacts("sep-note", "mdp:sep",
                 "\\\\.\\DISPLAY2",
@@ -4591,7 +4597,7 @@ namespace PennyPet
             foreach (System.Reflection.PropertyInfo property in
                 typeof(StickyUiEvent).GetProperties())
                 if (property.CanWrite) eventCarrierImmutable = false;
-            return contentOnly && fullApply && factsImmutable &&
+            return contentOnly && editorCopyOnly && factsImmutable &&
                 eventCarrierImmutable && facts.Scale == 1.5 &&
                 facts.WindowId == "sep-note";
         }
@@ -4832,19 +4838,21 @@ namespace PennyPet
                 PreferredLocalLogicalHeight = 480
             };
             StickyNoteUiSnapshot contentOnly =
-                StickyNoteUiSnapshot.FromContentData(snapshotSource);
+                StickyNoteUiSnapshot.Capture(snapshotSource);
+            StickyNoteData contentCopy = contentOnly.CreateWorkingCopy();
+            StickyNoteData defaultCopy = new StickyNoteData();
             bool contentSnapshotIsNarrow =
                 contentOnly.NoteId == snapshotSource.Id &&
                 contentOnly.Title == "content-only" &&
                 contentOnly.Visible && contentOnly.AlwaysOnTop &&
-                contentOnly.X == 0 && contentOnly.Y == 0 &&
-                contentOnly.Width == 0 && contentOnly.Height == 0 &&
-                contentOnly.DisplayId == String.Empty &&
-                contentOnly.LocalLogicalWidth == 0 &&
-                contentOnly.LocalLogicalHeight == 0 &&
-                contentOnly.PreferredDisplayTargetKey == String.Empty &&
-                contentOnly.PreferredLocalLogicalWidth == 0 &&
-                contentOnly.PreferredLocalLogicalHeight == 0;
+                contentCopy.X == defaultCopy.X && contentCopy.Y == defaultCopy.Y &&
+                contentCopy.Width == defaultCopy.Width && contentCopy.Height == defaultCopy.Height &&
+                contentCopy.DisplayId == String.Empty &&
+                contentCopy.LocalLogicalWidth == 0 &&
+                contentCopy.LocalLogicalHeight == 0 &&
+                contentCopy.PreferredDisplayTargetKey == String.Empty &&
+                contentCopy.PreferredLocalLogicalWidth == 0 &&
+                contentCopy.PreferredLocalLogicalHeight == 0;
 
             bool planImmutable = true;
             foreach (System.Reflection.PropertyInfo property in
@@ -5343,7 +5351,7 @@ namespace PennyPet
             canonical.Width = 320;
             canonical.Height = 300;
             StickyNoteUiSnapshot detached =
-                StickyNoteUiSnapshot.FromData(canonical);
+                StickyNoteUiSnapshot.Capture(canonical);
             canonical.Text = "pet-owned-after-post";
             StickyNoteData second = new StickyNoteData();
             second.Text = "second-detached";
@@ -5413,27 +5421,27 @@ namespace PennyPet
                     PostStickyCommandAndWait(host,
                         new StickyUiCommand(StickyUiCommandKind.Create,
                             second.Id, false,
-                            StickyNoteUiSnapshot.FromData(second)), petContext);
+                            StickyNoteUiSnapshot.Capture(second)), petContext);
                 StickyUiCommandResult thirdCreated =
                     PostStickyCommandAndWait(host,
                         new StickyUiCommand(StickyUiCommandKind.Create,
                             third.Id, false,
-                            StickyNoteUiSnapshot.FromData(third)), petContext);
+                            StickyNoteUiSnapshot.Capture(third)), petContext);
                 StickyUiCommandResult todoCreated =
                     PostStickyCommandAndWait(host,
                         new StickyUiCommand(StickyUiCommandKind.Create,
                             todo.Id, false,
-                            StickyNoteUiSnapshot.FromData(todo)), petContext);
+                            StickyNoteUiSnapshot.Capture(todo)), petContext);
                 StickyUiCommandResult scheduleCreated =
                     PostStickyCommandAndWait(host,
                         new StickyUiCommand(StickyUiCommandKind.Create,
                             schedule.Id, false,
-                            StickyNoteUiSnapshot.FromData(schedule)), petContext);
+                            StickyNoteUiSnapshot.Capture(schedule)), petContext);
                 StickyUiCommandResult reminderCreated =
                     PostStickyCommandAndWait(host,
                         new StickyUiCommand(StickyUiCommandKind.Create,
                             reminder.Id, false,
-                            StickyNoteUiSnapshot.FromData(reminder)), petContext);
+                            StickyNoteUiSnapshot.Capture(reminder)), petContext);
 
                 StickyUiCommandResult hidden = PostStickyCommandAndWait(host,
                     new StickyUiCommand(StickyUiCommandKind.Hide,

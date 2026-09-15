@@ -121,10 +121,10 @@ namespace PennyPet
             }
             internal DockBatchMemberResult Member(int i, long seq = 2, bool nullFacts = false)
             {
-                StickyNoteData copy = StickyNoteUiSnapshot.FromData(Notes[i]).CreateWorkingCopy();
+                StickyNoteData copy = StickyNoteUiSnapshot.Capture(Notes[i]).CreateWorkingCopy();
                 copy.Text = "after-" + i;
                 return new DockBatchMemberResult(copy.Id, seq,
-                    nullFacts ? null : Facts(i, seq, 400), StickyNoteUiSnapshot.FromData(copy));
+                    nullFacts ? null : Facts(i, seq, 400), StickyNoteUiSnapshot.Capture(copy));
             }
             internal StickyUiCommandResult Batch(long plan, params DockBatchMemberResult[] members)
             { return StickyUiCommandResult.Handled(new DockBatchResult(plan,
@@ -326,7 +326,7 @@ namespace PennyPet
                 long old = s.Interaction.BeginFinalizing(s.Topology.Generation, null);
                 var input = new DockInput();
                 var start = StickyUiEvent.FromSnapshot(StickyUiEventKind.HeaderDragStarted,
-                    StickyNoteUiSnapshot.FromContentData(s.Notes[0]), 2, s.Facts(0, 2, 140), s.Topology);
+                    StickyNoteUiSnapshot.Capture(s.Notes[0]), 2, s.Facts(0, 2, 140), s.Topology);
                 start.Input = input;
                 s.Workspace.HostedStickyEventReceived(start);
                 Pc2Assert(s.Workspace.Dock.Gestures.Matches(input) &&
@@ -334,7 +334,7 @@ namespace PennyPet
                     !s.Interaction.TryFinish(old, s.Topology.Generation, out _, out _),
                     "A8 real workspace accepts a new header while the old final is pending");
                 var late = StickyUiEvent.FromSnapshot(StickyUiEventKind.HeaderDragCompleted,
-                    StickyNoteUiSnapshot.FromContentData(s.Notes[0]), 100, s.Facts(0, 100, 900), s.Topology);
+                    StickyNoteUiSnapshot.Capture(s.Notes[0]), 100, s.Facts(0, 100, 900), s.Topology);
                 // The preceding fixture gesture has the default null identity.
                 s.Workspace.HostedStickyEventReceived(late);
                 Pc2Assert(s.Sequence(0) == 2 && s.Notes[0].X == 140 &&
@@ -346,7 +346,7 @@ namespace PennyPet
                 s.Interaction.BeginFinalizing(s.Topology.Generation, null);
                 s.Interaction.Mutations.Defer(s.Notes[0].Id, null, () => s.Notes[0].Visible = false);
                 start = StickyUiEvent.FromSnapshot(StickyUiEventKind.HeaderDragStarted,
-                    StickyNoteUiSnapshot.FromContentData(s.Notes[0]), 3, s.Facts(0, 3, 160), s.Topology);
+                    StickyNoteUiSnapshot.Capture(s.Notes[0]), 3, s.Facts(0, 3, 160), s.Topology);
                 start.Input = new DockInput();
                 s.Workspace.HostedStickyEventReceived(start);
                 Pc2Assert(!s.Notes[0].Visible && !s.Interaction.IsActive && s.Sequence(0) == 2,
@@ -414,7 +414,7 @@ namespace PennyPet
                 s.Start();
                 StickyNoteData note = s.Notes[0];
                 StickyUiCommand ensure = StickyUiCommand.EnsureSession(
-                    StickyNoteUiSnapshot.FromData(note), null, s.Topology);
+                    StickyNoteUiSnapshot.Capture(note), null, s.Topology);
                 StickyUiCommandResult ensured = s.Send(ensure);
                 Pc2Assert(ensured.Status == StickyUiCommandStatus.Handled &&
                     ensured.SessionCreated, "first real EnsureSession reports created");
@@ -474,7 +474,7 @@ namespace PennyPet
                 s.Start();
                 StickyNoteData note = s.Notes[0];
                 StickyUiCommand ensure = StickyUiCommand.EnsureSession(
-                    StickyNoteUiSnapshot.FromData(note), null, s.Topology);
+                    StickyNoteUiSnapshot.Capture(note), null, s.Topology);
                 StickyUiCommandResult first = s.Send(ensure);
                 StickyUiCommandResult second = s.Send(ensure);
                 Pc2Assert(first.Status == StickyUiCommandStatus.Handled && first.SessionCreated &&

@@ -206,7 +206,7 @@ namespace PennyPet.Tests
             var facts = new[] { Facts("a1", 1), Facts("a2", 1) };
             DockResizeSession session = DockResizeSession.TryStart(kind, "a1", facts, group);
             Assert.IsNull(session.Mutations);
-            var snapshot = StickyNoteUiSnapshot.FromContentData(group[0]);
+            var snapshot = StickyNoteUiSnapshot.Capture(group[0]);
             StickyUiEvent completed = kind == DockResizeKind.Horizontal
                 ? StickyUiEvent.FromSnapshot(StickyUiEventKind.DockHorizontalResizeCompleted,
                     snapshot, 2, Facts("a1", 2), StickyGeometryAuthorityTests.Topology())

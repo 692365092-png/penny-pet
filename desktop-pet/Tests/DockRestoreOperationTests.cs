@@ -218,7 +218,7 @@ namespace PennyPet.Tests
         {
             return new DockBatchMemberResult("n", sequence,
                 StickyGeometryAuthorityTests.Facts("n", sequence: sequence),
-                StickyNoteUiSnapshot.FromContentData(new StickyNoteData { Id = "n" }), created);
+                StickyNoteUiSnapshot.Capture(new StickyNoteData { Id = "n" }), created);
         }
 
         [TestMethod]

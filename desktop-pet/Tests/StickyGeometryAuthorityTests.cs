@@ -176,7 +176,7 @@ namespace PennyPet.Tests
         public void DividerAndExit_CarryFactsIndependentlyOfContentOrLiveResizeIntent()
         {
             StickyNoteData note = ConflictingNote();
-            StickyNoteUiSnapshot content = StickyNoteUiSnapshot.FromContentData(note);
+            StickyNoteUiSnapshot content = StickyNoteUiSnapshot.Capture(note);
             WindowFacts facts = Facts(height: 666);
             DisplayTopologySnapshot topology = Topology();
             StickyUiEvent completed = StickyUiEvent.DividerResize(
@@ -187,7 +187,8 @@ namespace PennyPet.Tests
             Assert.AreEqual(666, completed.Facts.PhysicalBounds.Height);
             Assert.AreSame(facts, exit.Facts);
             Assert.AreSame(topology, exit.Topology);
-            Assert.AreEqual(0, content.Height, "UI content cannot present a second actual height.");
+            Assert.AreEqual(new StickyNoteData().Height, content.CreateWorkingCopy().Height,
+                "The editor copy must not inherit stored geometry.");
             Assert.AreEqual(10L, exit.Facts.WindowSequence);
             content.ApplyContentTo(note);
             Assert.AreEqual(700, note.Height);
