@@ -72,7 +72,7 @@ namespace PennyPet.Tests
             int preflight = populate.IndexOf(
                 "InspectSchemaVersions(lines, filePath)",
                 StringComparison.Ordinal);
-            int parse = populate.IndexOf("AddParsedLine(repository, line)",
+            int parse = populate.IndexOf("AddParsedLine(repository, line, legacyParents)",
                 StringComparison.Ordinal);
             Assert.IsTrue(preflight >= 0 && parse > preflight,
                 "Every file must be version-preflighted before payload parsing.");

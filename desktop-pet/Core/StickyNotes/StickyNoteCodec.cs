@@ -27,7 +27,7 @@ namespace PennyPet
 
         internal static string SerializeLine(StickyNoteData note)
         {
-            return SerializeLine(note, note == null ? null : note.DockParentId);
+            return SerializeLine(note, String.Empty);
         }
 
         internal static string SerializeLine(StickyNoteData note, string legacyParentId)
@@ -83,6 +83,15 @@ namespace PennyPet
 
         internal static StickyNoteData ParseLine(string line)
         {
+            return ParseLine(line, out _);
+        }
+
+        // The compatibility link belongs to the file being read, never to the
+        // live note or its persistence snapshot. Whole-file readers migrate it
+        // before returning notes to runtime workflows.
+        internal static StickyNoteData ParseLine(string line, out string legacyParentId)
+        {
+            legacyParentId = String.Empty;
             if (String.IsNullOrWhiteSpace(line)) return null;
             string[] fields = line.Split('|');
             int version;
@@ -144,7 +153,7 @@ namespace PennyPet
                         note.TextColorArgb = NormalizeTextColor(number);
                 }
                 if (version >= 7)
-                    note.DockParentId = Decode(fields[22]);
+                    legacyParentId = Decode(fields[22]);
                 if (version >= 8)
                 {
                     note.DockGroupId = Decode(fields[23]);

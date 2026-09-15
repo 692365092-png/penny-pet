@@ -74,14 +74,8 @@ namespace PennyPet
                     !File.Exists(legacyPath)) continue;
                 StickyNoteRepository legacy = LoadFromFile(legacyPath);
                 if (!legacy.LoadSucceeded || legacy.Count == 0) continue;
-                current._notes.Clear();
-                foreach (StickyNoteData note in legacy._notes)
-                {
-                    RepairForDisplay(note, false);
-                    current._notes.Add(note);
-                }
-                current.NormalizeTabOrders();
-                StickyDockGroups.NormalizeAll(current._notes);
+                // LoadFromFile already repaired content, order and file relations.
+                current._notes.AddRange(legacy._notes);
                 current.SaveToFile(currentPath);
                 break;
             }
@@ -210,10 +204,11 @@ namespace PennyPet
                 string[] lines = File.ReadAllLines(filePath, Encoding.UTF8);
                 Exception schemaError = InspectSchemaVersions(lines, filePath);
                 if (schemaError != null) throw schemaError;
+                var legacyParents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 foreach (string line in lines)
-                    AddParsedLine(repository, line);
+                    AddParsedLine(repository, line, legacyParents);
                 repository.NormalizeTabOrders();
-                StickyDockGroups.NormalizeAll(repository._notes);
+                StickyDockFileRelations.Normalize(repository._notes, legacyParents);
                 return true;
             }
             catch (Exception caught)
@@ -225,10 +220,11 @@ namespace PennyPet
         }
 
         private static void AddParsedLine(StickyNoteRepository repository,
-            string line)
+            string line, IDictionary<string, string> legacyParents)
         {
             if (String.IsNullOrWhiteSpace(line)) return;
-            StickyNoteData note = StickyNoteCodec.ParseLine(line);
+            string parent;
+            StickyNoteData note = StickyNoteCodec.ParseLine(line, out parent);
             if (note == null || String.IsNullOrEmpty(note.Id))
                 throw new InvalidDataException("便利贴数据格式不完整。");
             foreach (StickyNoteData existing in repository._notes)
@@ -239,6 +235,7 @@ namespace PennyPet
             if (repository._notes.Count >= StickyNoteLimits.MaximumNotes)
                 throw new InvalidDataException("Too many sticky notes.");
             repository._notes.Add(note);
+            legacyParents.Add(note.Id, parent);
         }
 
         private static Exception InspectSchemaVersions(
@@ -277,6 +274,7 @@ namespace PennyPet
             if (new FileInfo(filePath).Length >
                 StickyNoteLimits.MaximumDataFileBytes) return false;
             List<StickyNoteData> salvaged = new List<StickyNoteData>();
+            var legacyParents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             HashSet<string> ids = new HashSet<string>(
                 StringComparer.OrdinalIgnoreCase);
             string[] lines = File.ReadAllLines(filePath, Encoding.UTF8);
@@ -297,12 +295,14 @@ namespace PennyPet
                     // Strict raw-field validation must run before the codec so
                     // corrupt Base64 cannot be fail-soft-decoded into empty text.
                     StickyImportBackupValidator.ValidateRawLine(line);
-                    StickyNoteData note = StickyNoteCodec.ParseLine(line);
+                    string parent;
+                    StickyNoteData note = StickyNoteCodec.ParseLine(line, out parent);
                     if (note == null || String.IsNullOrWhiteSpace(note.Id) ||
                         !ids.Add(note.Id))
                         throw new InvalidDataException(
                             "Salvage line has an invalid or duplicate NoteId.");
                     salvaged.Add(note);
+                    legacyParents.Add(note.Id, parent);
                 }
                 catch (Exception)
                 {
@@ -314,7 +314,7 @@ namespace PennyPet
             foreach (StickyNoteData note in salvaged)
                 repository._notes.Add(note);
             repository.NormalizeTabOrders();
-            StickyDockGroups.NormalizeAll(repository._notes);
+            StickyDockFileRelations.Normalize(repository._notes, legacyParents);
             salvagedCount = salvaged.Count;
             return true;
         }
@@ -716,7 +716,7 @@ namespace PennyPet
             IEnumerable<StickyNoteData> snapshot)
         {
             List<string> lines = new List<string>();
-            Dictionary<string, string> parents = StickyDockGroups.BuildLegacyParents(snapshot);
+            Dictionary<string, string> parents = StickyDockFileRelations.BuildLegacyParents(snapshot);
             if (snapshot != null)
                 foreach (StickyNoteData note in snapshot)
                 {
@@ -742,7 +742,7 @@ namespace PennyPet
                     throw new InvalidDataException(
                         "Merged sticky-note data contains invalid NoteIds.");
             }
-            StickyDockGroups.NormalizeAll(result);
+            StickyDockFileRelations.Normalize(result);
             return result;
         }
 

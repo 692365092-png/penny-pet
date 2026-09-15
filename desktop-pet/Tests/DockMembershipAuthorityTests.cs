@@ -16,11 +16,11 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void VisibleOrderIgnoresStaleParentsAndPhysicalPosition()
+        public void VisibleOrderIgnoresPhysicalPosition()
         {
             StickyNoteData[] notes = Group("a", "b", "c", "d");
             notes[1].Visible = false;
-            foreach (StickyNoteData note in notes) { note.DockParentId = "d"; note.Y = -note.DockGroupOrder; }
+            foreach (StickyNoteData note in notes) note.Y = -note.DockGroupOrder;
             StickyNoteData[] shuffled = { notes[3], notes[1], notes[0], notes[2] };
             CollectionAssert.AreEqual(new[] { "a", "c", "d" },
                 StickyDockGroups.GetVisibleGroup(shuffled, notes[2]).Select(n => n.Id).ToArray());
@@ -32,13 +32,13 @@ namespace PennyPet.Tests
         public void LegacyLinksAreConsumedOnlyAtImport()
         {
             StickyNoteData a = new StickyNoteData { Id = "a" };
-            StickyNoteData b = new StickyNoteData { Id = "b", DockParentId = "a" };
-            StickyNoteData c = new StickyNoteData { Id = "c", DockParentId = "b", Visible = false };
+            StickyNoteData b = new StickyNoteData { Id = "b" };
+            StickyNoteData c = new StickyNoteData { Id = "c", Visible = false };
             StickyNoteData[] notes = { c, b, a };
             Assert.AreEqual(1, StickyDockGroups.GetOrderedGroup(notes, a).Count);
-            StickyDockGroups.NormalizeAll(notes);
+            StickyDockFileRelations.Normalize(notes, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+                ["b"] = "a", ["c"] = "b" });
             CollectionAssert.AreEqual(new[] { a, b, c }, StickyDockGroups.GetOrderedGroup(notes, b));
-            Assert.IsTrue(notes.All(n => String.IsNullOrEmpty(n.DockParentId)));
             c.Visible = true;
             Assert.AreSame(b, StickyDockGroups.GetVisibleNeighbor(notes, c, -1));
         }
@@ -48,10 +48,9 @@ namespace PennyPet.Tests
         {
             StickyNoteData[] first = Group("a", "b");
             StickyNoteData[] second = Group("c", "d");
-            first[1].DockParentId = "c";
-            second[0].DockParentId = "a";
             StickyNoteData[] notes = first.Concat(second).ToArray();
-            StickyDockGroups.NormalizeAll(notes);
+            StickyDockFileRelations.Normalize(notes, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+                ["b"] = "c", ["c"] = "a" });
             CollectionAssert.AreEqual(first, StickyDockGroups.GetOrderedGroup(notes, first[1]));
             CollectionAssert.AreEqual(second, StickyDockGroups.GetOrderedGroup(notes, second[0]));
         }
@@ -75,14 +74,14 @@ namespace PennyPet.Tests
         {
             StickyNoteData[] notes = Group("a", "b", "c");
             notes[1].Visible = false;
-            foreach (StickyNoteData note in notes) note.DockParentId = "poison";
-            Dictionary<string, string> parents = StickyDockGroups.BuildLegacyParents(notes);
+            string[] before = notes.Select(StickyNoteCodec.SerializeLine).ToArray();
+            Dictionary<string, string> parents = StickyDockFileRelations.BuildLegacyParents(notes);
             Assert.AreEqual(String.Empty, parents["a"]);
             Assert.AreEqual(String.Empty, parents["b"]);
             Assert.AreEqual("a", parents["c"]);
-            Assert.IsTrue(notes.All(n => n.DockParentId == "poison"));
-            StickyNoteData serialized = StickyNoteCodec.ParseLine(StickyNoteCodec.SerializeLine(notes[2], parents["c"]));
-            Assert.AreEqual("a", serialized.DockParentId);
+            CollectionAssert.AreEqual(before, notes.Select(StickyNoteCodec.SerializeLine).ToArray());
+            StickyNoteData serialized = StickyNoteCodec.ParseLine(StickyNoteCodec.SerializeLine(notes[2], parents["c"]), out string parent);
+            Assert.AreEqual("a", parent);
             Assert.AreEqual(2, serialized.DockGroupOrder);
         }
 
@@ -138,13 +137,14 @@ namespace PennyPet.Tests
         [TestMethod]
         public void CorruptLegacyCycleRecoversDeterministically()
         {
-            StickyNoteData a = new StickyNoteData { Id = "a", DockParentId = "b", Y = 20 };
-            StickyNoteData b = new StickyNoteData { Id = "b", DockParentId = "a", Y = 10 };
+            StickyNoteData a = new StickyNoteData { Id = "a", Y = 20 };
+            StickyNoteData b = new StickyNoteData { Id = "b", Y = 10 };
             StickyNoteData[] notes = { a, b };
-            StickyDockGroups.NormalizeAll(notes);
+            StickyDockFileRelations.Normalize(notes, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+                ["a"] = "b", ["b"] = "a" });
             CollectionAssert.AreEqual(new[] { b, a }, StickyDockGroups.GetOrderedGroup(notes, a));
             string[] before = notes.Select(StickyNoteCodec.SerializeLine).ToArray();
-            StickyDockGroups.NormalizeAll(notes);
+            StickyDockFileRelations.Normalize(notes);
             CollectionAssert.AreEqual(before, notes.Select(StickyNoteCodec.SerializeLine).ToArray());
         }
     }

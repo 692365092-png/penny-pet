@@ -809,7 +809,6 @@ namespace PennyPet
             ancientDisplayData.BackgroundOpacityPercent = -1;
             ancientDisplayData.IsTodoList = true;
             ancientDisplayData.IsSchedule = true;
-            ancientDisplayData.DockParentId = ancientDisplayData.Id;
             result.AncientCacheDisplayRepairOk =
                 StickyNoteRepository.RepairForDisplay(
                     ancientDisplayData, true) &&
@@ -820,7 +819,6 @@ namespace PennyPet
                 ancientDisplayData.BackgroundOpacityPercent == 10 &&
                 ancientDisplayData.IsSchedule &&
                 !ancientDisplayData.IsTodoList &&
-                String.IsNullOrEmpty(ancientDisplayData.DockParentId) &&
                 !ancientDisplayData.Visible;
             versionFourRepository.SaveToFile(versionFourStickyPath);
             result.VersionFourMigrationOk = result.VersionFourMigrationOk &&
@@ -1164,20 +1162,17 @@ namespace PennyPet
                 Object.ReferenceEquals(storedDockOrder[0], dockParent) &&
                 Object.ReferenceEquals(storedDockOrder[1], dockInsertedTodo) &&
                 Object.ReferenceEquals(storedDockOrder[2], dockChild);
-            string savedMiddleParent = dockInsertedTodo.DockParentId;
-            string savedChildParent = dockChild.DockParentId;
-            dockInsertedTodo.DockParentId = "broken-parent";
-            dockChild.DockParentId = String.Empty;
+            StickyImportValidationResult brokenLinks = StickyImportBackupValidator.Validate(new[] {
+                StickyNoteCodec.SerializeLine(dockChild, String.Empty),
+                StickyNoteCodec.SerializeLine(dockInsertedTodo, "broken-parent"),
+                StickyNoteCodec.SerializeLine(dockParent) });
             List<StickyNoteData> snapshotOrder = StickyDockGroups
-                .GetOrderedGroup(new StickyNoteData[] { dockChild,
-                    dockInsertedTodo, dockParent }, dockInsertedTodo);
+                .GetOrderedGroup(brokenLinks.Notes, brokenLinks.Notes[1]);
             result.SnapshotSurvivesBrokenParentLinksOk =
-                snapshotOrder.Count == 3 &&
-                Object.ReferenceEquals(snapshotOrder[0], dockParent) &&
-                Object.ReferenceEquals(snapshotOrder[1], dockInsertedTodo) &&
-                Object.ReferenceEquals(snapshotOrder[2], dockChild);
-            dockInsertedTodo.DockParentId = savedMiddleParent;
-            dockChild.DockParentId = savedChildParent;
+                brokenLinks.Succeeded && snapshotOrder.Count == 3 &&
+                snapshotOrder[0].Id == dockParent.Id &&
+                snapshotOrder[1].Id == dockInsertedTodo.Id &&
+                snapshotOrder[2].Id == dockChild.Id;
             dockRepository.SaveToFile(dockPath);
             StickyNoteRepository persistedDockRepository =
                 StickyNoteRepository.LoadFromFile(dockPath);
@@ -1310,7 +1305,6 @@ namespace PennyPet
                 restoredExpanded.TrueForAll(delegate(StickyNoteData note)
                 {
                     return note.Visible &&
-                        String.IsNullOrEmpty(note.DockParentId) &&
                         String.IsNullOrEmpty(note.DockGroupId) &&
                         note.DockGroupOrder == -1 &&
                         note.X >= 0 && note.Y >= 0 &&
@@ -1382,7 +1376,6 @@ namespace PennyPet
                 Object.ReferenceEquals(afterMiddleExtraction[2], extractD) &&
                 StickyDockGroups.GetVisibleNeighbor(afterMiddleExtraction, extractC, -1) == extractA &&
                 StickyDockGroups.GetVisibleNeighbor(afterMiddleExtraction, extractD, -1) == extractC &&
-                String.IsNullOrEmpty(extractB.DockParentId) &&
                 String.IsNullOrEmpty(extractB.DockGroupId) &&
                 extractB.DockGroupOrder == -1;
 
@@ -1398,7 +1391,6 @@ namespace PennyPet
             hideB.Visible = false;
             result.HiddenSlotPreservedOk = hideB.DockGroupId == hiddenGroupId &&
                 hideB.DockGroupOrder == 1 &&
-                String.IsNullOrEmpty(hideB.DockParentId) &&
                 StickyDockGroups.GetVisibleNeighbor(hideSnapshot, hideC, -1) == hideA &&
                 StickyDockGroups.GetVisibleNeighbor(hideSnapshot, hideD, -1) == hideC;
             List<StickyNoteData> hiddenMemberOpenOrder =
@@ -1443,13 +1435,10 @@ namespace PennyPet
                 Object.ReferenceEquals(mergedPartialSnapshots[3], mergeB) &&
                 Object.ReferenceEquals(mergedPartialSnapshots[4], mergeC) &&
                 StickyDockGroups.GetVisibleNeighbor(mergedPartialSnapshots, mergeD, -1) == mergeA &&
-                StickyDockGroups.GetVisibleNeighbor(mergedPartialSnapshots, mergeC, -1) == mergeD &&
-                String.IsNullOrEmpty(mergeE.DockParentId) &&
-                String.IsNullOrEmpty(mergeB.DockParentId);
+                StickyDockGroups.GetVisibleNeighbor(mergedPartialSnapshots, mergeC, -1) == mergeD;
 
             StickyDockOperations.MergeDockSnapshotsAfterParent(
                 afterMiddleExtraction, extractA, new[] { extractB });
-            extractC.DockParentId = "stale-legacy-parent";
             List<StickyNoteData> closeSecondCycleOrder = StickyDockGroups.GetVisibleGroup(
                 new[] { extractD, extractC, extractA, extractB }, extractD);
             result.SecondRestoreCycleOk = closeSecondCycleOrder.Count == 4 &&

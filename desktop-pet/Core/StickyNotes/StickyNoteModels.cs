@@ -171,8 +171,6 @@ namespace PennyPet
         public int PreferredLocalLogicalY;
         public int PreferredLocalLogicalWidth;
         public int PreferredLocalLogicalHeight;
-        // Legacy file input only; runtime never follows this link.
-        public string DockParentId = String.Empty;
         // The sole ordered Dock relation, including hidden slots.
         public string DockGroupId = String.Empty;
         public int DockGroupOrder = -1;
@@ -230,7 +228,6 @@ namespace PennyPet
             copy.PreferredLocalLogicalY = PreferredLocalLogicalY;
             copy.PreferredLocalLogicalWidth = PreferredLocalLogicalWidth;
             copy.PreferredLocalLogicalHeight = PreferredLocalLogicalHeight;
-            copy.DockParentId = DockParentId;
             copy.DockGroupId = DockGroupId;
             copy.DockGroupOrder = DockGroupOrder;
             copy.TabOrder = TabOrder;

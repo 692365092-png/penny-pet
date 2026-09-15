@@ -45,6 +45,7 @@ namespace PennyPet
             List<StickyNoteData> notes = new List<StickyNoteData>();
             HashSet<string> ids = new HashSet<string>(
                 StringComparer.OrdinalIgnoreCase);
+            var legacyParents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             try
             {
                 if (lines == null) return StickyImportValidationResult.Success(notes);
@@ -54,15 +55,18 @@ namespace PennyPet
                     if (notes.Count >= StickyNoteLimits.MaximumNotes)
                         throw new InvalidDataException("Too many sticky notes.");
                     ValidateRawLine(line);
-                    StickyNoteData note = StickyNoteCodec.ParseLine(line);
+                    string parent;
+                    StickyNoteData note = StickyNoteCodec.ParseLine(line, out parent);
                     if (note == null || String.IsNullOrWhiteSpace(note.Id))
                         throw new InvalidDataException(
                             "Sticky-note data is missing a NoteId.");
                     if (!ids.Add(note.Id))
                         throw new InvalidDataException(
                             "Backup contains duplicate NoteIds.");
-                    notes.Add(note.CloneForPersistence());
+                    notes.Add(note);
+                    legacyParents.Add(note.Id, parent);
                 }
+                StickyDockFileRelations.Normalize(notes, legacyParents);
                 return StickyImportValidationResult.Success(notes);
             }
             catch (Exception error)

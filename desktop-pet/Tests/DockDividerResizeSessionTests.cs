@@ -160,7 +160,7 @@ namespace PennyPet.Tests
             DockResizeSession session = Start();
             List<StickyNoteData> members = new List<StickyNoteData>();
             foreach (string id in new[] { "a", "b", "c", "d" })
-                members.Add(new StickyNoteData { Id = id, Visible = true, Height = 123, DockParentId = "stale" });
+                members.Add(new StickyNoteData { Id = id, Visible = true, Height = 123 });
             Assert.IsTrue(session.MatchesMembers(members));
             members[2].Visible = false;
             Assert.IsFalse(session.MatchesMembers(members));

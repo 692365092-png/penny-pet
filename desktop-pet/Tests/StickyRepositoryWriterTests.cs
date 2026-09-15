@@ -203,7 +203,8 @@ namespace PennyPet.Tests
                     Assert.AreEqual(notes[i].PreferredLocalLogicalHeight, saved[i].PreferredLocalLogicalHeight);
                 }
                 Assert.IsFalse(saved[1].Visible);
-                Assert.AreEqual(saved[0].Id, saved[2].DockParentId);
+                StickyNoteCodec.ParseLine(File.ReadAllLines(primary)[2], out string parent);
+                Assert.AreEqual(saved[0].Id, parent);
             }
             finally { Directory.Delete(directory, true); }
         }

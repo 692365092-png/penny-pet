@@ -2,6 +2,7 @@
 
 后续进展：[共享写入器与异步重试](2026-09-15-shared-writer-review.md)处理 UI 同步重试；
 [Dock 手势接替](2026-09-15-dock-input-review.md)统一前台输入所有权并阻止旧原生计划抢占新输入。
+[旧关系的文件边界](2026-09-15-dock-file-relations-review.md)从运行时模型删除 `DockParentId`，并修复旧备份在合并前未迁移分组的问题。
 下文五节点表为当时的审查快照。
 
 审查对象：`codex/geometry-authority`，远端基线

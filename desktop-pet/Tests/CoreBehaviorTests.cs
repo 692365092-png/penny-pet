@@ -332,9 +332,7 @@ namespace PennyPet.Tests
             Assert.AreEqual(410, resultA.Height);
             Assert.AreEqual("current-group", resultA.DockGroupId);
             Assert.AreEqual(String.Empty, resultB.DockGroupId);
-            Assert.AreEqual(String.Empty, resultB.DockParentId);
             Assert.AreEqual(String.Empty, resultC.DockGroupId);
-            Assert.AreEqual(String.Empty, resultC.DockParentId);
 
             StickyImportMergeResult repeated =
                 StickyImportMergePlanner.Calculate(result.MergedSnapshot,
@@ -669,16 +667,14 @@ namespace PennyPet.Tests
             StickyNoteData root = new StickyNoteData { Id = "root" };
             StickyNoteData middle = new StickyNoteData
             {
-                Id = "middle",
-                DockParentId = "root"
+                Id = "middle"
             };
             StickyNoteData tail = new StickyNoteData
             {
-                Id = "tail",
-                DockParentId = "middle"
+                Id = "tail"
             };
 
-            StickyDockGroups.NormalizeAll(new[] { root, middle, tail });
+            StickyDockGroups.ApplyOrderedGroup(new[] { root, middle, tail });
             StickyNoteData found = StickyDockOperations.FindActiveDockTail(
                 new[] { root, middle, tail },
                 new[] { root, middle, tail },
@@ -1017,7 +1013,6 @@ namespace PennyPet.Tests
             Assert.AreEqual(0, first.DockGroupOrder);
             Assert.AreEqual(1, hidden.DockGroupOrder);
             Assert.AreEqual(2, last.DockGroupOrder);
-            Assert.AreEqual(String.Empty, hidden.DockParentId);
             Assert.AreSame(first, StickyDockGroups.GetVisibleNeighbor(ordered, last, -1));
             CollectionAssert.AreEqual(ordered,
                 StickyDockGroups.GetOrderedGroup(ordered, last));
@@ -1129,7 +1124,6 @@ namespace PennyPet.Tests
                 Assert.AreEqual(index, merged[index].DockGroupOrder);
             }
             Assert.AreEqual(ordinary.Id, ordinary.DockGroupId);
-            Assert.AreEqual(String.Empty, ordinary.DockParentId);
         }
 
         [TestMethod]
@@ -1463,7 +1457,7 @@ namespace PennyPet.Tests
             string fixture = Path.Combine(AppContext.BaseDirectory,
                 "Tests", "Fixtures", "sticky-v" + version + ".txt");
             StickyNoteData restored = StickyNoteCodec.ParseLine(
-                File.ReadAllText(fixture, Encoding.UTF8).Trim());
+                File.ReadAllText(fixture, Encoding.UTF8).Trim(), out string legacyParent);
 
             Assert.IsNotNull(restored, "Fixture v" + version +
                 " must remain readable.");
@@ -1481,7 +1475,7 @@ namespace PennyPet.Tests
             if (version >= 5)
                 Assert.AreEqual("Arial", restored.FontFamilyName);
             if (version >= 7)
-                Assert.AreEqual("group-root", restored.DockParentId);
+                Assert.AreEqual("group-root", legacyParent);
             if (version >= 8)
             {
                 Assert.AreEqual("group-root", restored.DockGroupId);
