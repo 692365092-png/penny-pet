@@ -18,7 +18,9 @@
     <Compile Include="Features\StickyNotes\StickyPlacementRuntime.cs" />
     <Compile Include="Features\StickyNotes\StickyFactsReceiver.cs" />
     <Compile Include="Features\StickyNotes\StickyUiCommand.cs" />
-    <Compile Include="Features\StickyNotes\StickyNoteWriter.cs" />
+    <Compile Include="Features\StickyNotes\StickyWriteRequest.cs" />
+    <Compile Include="Infrastructure\Persistence\PersistenceWriter.cs" />
+    <Compile Include="PetSettings.cs" />
     <Compile Include="Features\StickyNotes\StickyNoteRepository.cs" />
     <Compile Include="Features\StickyNotes\UnsupportedStickySchemaException.cs" />
     <Compile Include="Infrastructure\Persistence\AtomicTextFile.cs" />

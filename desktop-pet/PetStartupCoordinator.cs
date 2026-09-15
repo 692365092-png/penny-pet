@@ -61,7 +61,7 @@ namespace PennyPet
                             "deferred-startup-registration",
                             new InvalidOperationException(startupError));
                     }
-                    _settings.Save();
+                    _settings.SaveAsync();
                     ReminderTick(null, EventArgs.Empty);
                     _startupVisibleNotes = BuildStartupRestoreQueue();
                 }

@@ -291,6 +291,8 @@ namespace PennyPet
             retrySettings.SaveFailed += delegate { settingsFailureEvents++; };
             PersistenceResult failedSettingsSave = retrySettings.SaveToFile(
                 settingsRetryPath + "\0");
+            retrySettings.WaitForPendingSaves();
+            System.Windows.Forms.Application.DoEvents();
             result.FailureDirtyRetryOk = !failedSettingsSave.Succeeded &&
                 retrySettings.HasUnsavedChanges &&
                 retrySettings.LastSaveError != null &&
@@ -414,7 +416,7 @@ namespace PennyPet
             using (var entered = new System.Threading.ManualResetEventSlim())
             using (var release = new System.Threading.ManualResetEventSlim())
             {
-                var writer = new StickyNoteWriter(delegate(StickyWriteRequest request)
+                var writer = new PersistenceWriter<StickyWriteRequest>(delegate(StickyWriteRequest request)
                 {
                     entered.Set();
                     if (!release.Wait(TimeSpan.FromSeconds(5)))

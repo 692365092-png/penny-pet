@@ -214,7 +214,7 @@ namespace PennyPet
                 delegate(string date)
                 {
                     _settings.LastDailyBriefingDate = date;
-                    _settings.Save();
+                    _settings.SaveAsync();
                 });
             _settings.SaveFailed += PersistenceSaveFailed;
             if (PetKeyboardPrivacyPolicy.ShouldDisableUnacknowledgedLegacyOptIn(
@@ -224,7 +224,7 @@ namespace PennyPet
                 // Older versions could enable the hook without the explicit
                 // first-use notice. Require a fresh opt-in after this upgrade.
                 _settings.ShowKeyOverlay = false;
-                _settings.Save();
+                _settings.SaveAsync();
             }
             _art = PetArtPackage.Load(CellWidth, CellHeight);
             Text = _art.DisplayName;
@@ -253,7 +253,7 @@ namespace PennyPet
                 // that enables the registry entry.
                 _settings.StartupPreferenceInitialized = true;
                 _settings.StartAtLogin = false;
-                _settings.Save();
+                _settings.SaveAsync();
             }
             _settings.ScalePercent = _scalePercent;
             _settings.KeyOverlayScalePercent =
@@ -709,7 +709,7 @@ namespace PennyPet
             _settings.X = Left;
             _settings.Y = Top;
             _settings.ScalePercent = _scalePercent;
-            _settings.Save();
+            _settings.SaveAsync();
         }
 
     }

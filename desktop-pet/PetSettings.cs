@@ -1,6 +1,8 @@
 using System;
 using System.IO;
 using System.Text;
+using System.Collections.Generic;
+using System.Threading;
 
 namespace PennyPet
 {
@@ -11,14 +13,28 @@ namespace PennyPet
         private const long MaximumSettingsFileBytes = 1024L * 1024L;
         private string _unreadablePrimaryPath;
         private string _unreadableBackupPath;
-        private bool _hasUnsavedChanges;
-        private Exception _lastSaveError;
-        private int _consecutiveSaveFailures;
+        private readonly PersistenceWriter<SettingsWriteRequest> _writer;
+        private readonly SynchronizationContext _uiContext;
+
+        internal PetSettings(Func<SettingsWriteRequest, PersistenceResult> write = null)
+        {
+            _uiContext = SynchronizationContext.Current;
+            _writer = new PersistenceWriter<SettingsWriteRequest>(write ?? WriteSnapshot);
+            _writer.Failed += delegate(object sender, PersistenceFailedEventArgs e)
+            {
+                EventHandler<PersistenceFailedEventArgs> handler = SaveFailed;
+                if (handler == null) return;
+                if (_uiContext == null || SynchronizationContext.Current == _uiContext)
+                    handler(this, e);
+                else _uiContext.Post(delegate { handler(this, e); }, null);
+            };
+        }
 
         internal event EventHandler<PersistenceFailedEventArgs> SaveFailed;
 
-        internal bool HasUnsavedChanges { get { return _hasUnsavedChanges; } }
-        internal Exception LastSaveError { get { return _lastSaveError; } }
+        internal bool HasUnsavedChanges { get { return _writer.IsDirty; } }
+        internal bool HasPendingSaves { get { return _writer.HasPending; } }
+        internal Exception LastSaveError { get { return _writer.LastError; } }
 
         private static string FilePath
         {
@@ -129,38 +145,46 @@ namespace PennyPet
 
         internal PersistenceResult SaveToFile(string filePath)
         {
-            _hasUnsavedChanges = true;
+            return _writer.Enqueue(CaptureWrite(filePath)).GetAwaiter().GetResult();
+        }
+
+        internal void SaveAsync()
+        {
+            _writer.Enqueue(CaptureWrite(FilePath), coalesce: true);
+        }
+
+        internal PersistenceResult WaitForPendingSaves()
+        {
+            return WaitForPendingSaves(TimeSpan.FromSeconds(5));
+        }
+
+        internal PersistenceResult WaitForPendingSaves(TimeSpan timeout)
+        {
+            return _writer.Flush(timeout);
+        }
+
+        private SettingsWriteRequest CaptureWrite(string filePath)
+        {
+            // Capture on the model thread. The worker never enumerates mutable
+            // settings or reminder items, including during a retry.
+            return new SettingsWriteRequest(filePath, PetSettingsCodec.Serialize(this));
+        }
+
+        private PersistenceResult WriteSnapshot(SettingsWriteRequest request)
+        {
             try
             {
-                if (!PreserveUnreadableSources(filePath))
+                if (!PreserveUnreadableSources(request.FilePath))
                     throw new IOException(
                         "Unreadable settings could not be preserved safely.");
-                AtomicTextFile.WriteAllLines(filePath,
-                    PetSettingsCodec.Serialize(this), true);
-                _hasUnsavedChanges = false;
-                _lastSaveError = null;
-                _consecutiveSaveFailures = 0;
+                AtomicTextFile.WriteAllLines(request.FilePath, request.Lines, true);
                 return PersistenceResult.Success();
             }
             catch (Exception error)
             {
-                // Losing preferences must never make the pet unusable.
                 ApplicationDiagnostics.ReportNonFatal("settings-save", error);
-                return RecordSaveFailure(error);
+                return PersistenceResult.Failure(error);
             }
-        }
-
-        private PersistenceResult RecordSaveFailure(Exception error)
-        {
-            _hasUnsavedChanges = true;
-            _lastSaveError = error;
-            _consecutiveSaveFailures++;
-            PersistenceResult result = PersistenceResult.Failure(error);
-            EventHandler<PersistenceFailedEventArgs> handler = SaveFailed;
-            if (handler != null)
-                handler(this, new PersistenceFailedEventArgs(result,
-                    _consecutiveSaveFailures));
-            return result;
         }
 
         private bool PreserveUnreadableSources(string destinationPath)
@@ -194,5 +218,16 @@ namespace PennyPet
             }
         }
 
+    }
+    internal sealed class SettingsWriteRequest
+    {
+        internal readonly string FilePath;
+        internal readonly IReadOnlyList<string> Lines;
+
+        internal SettingsWriteRequest(string filePath, List<string> lines)
+        {
+            FilePath = filePath;
+            Lines = lines.AsReadOnly();
+        }
     }
 }

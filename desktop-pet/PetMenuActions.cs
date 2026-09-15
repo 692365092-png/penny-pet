@@ -97,7 +97,7 @@ namespace PennyPet
                 if (!String.Equals(previousLocationKey, nextLocationKey,
                     StringComparison.Ordinal))
                     _weatherSource.InvalidateCache();
-                _settings.Save();
+                _settings.SaveAsync();
             }
         }
 
@@ -153,7 +153,7 @@ namespace PennyPet
                 {
                     _keyboardItem.Checked = false;
                     _settings.ShowKeyOverlay = false;
-                    _settings.Save();
+                    _settings.SaveAsync();
                     RefreshKeyboardMenuText();
                     return;
                 }
@@ -176,7 +176,7 @@ namespace PennyPet
                 _keyboard.Dispose();
             _keyboardItem.Checked = desired;
             _settings.ShowKeyOverlay = desired;
-            _settings.Save();
+            _settings.SaveAsync();
             if (!_settings.ShowKeyOverlay) _keyOverlay.HideImmediately();
             RefreshKeyboardMenuText();
         }
@@ -184,7 +184,7 @@ namespace PennyPet
         private void SilentItemClick(object sender, EventArgs e)
         {
             _settings.SilentMode = _silentItem.Checked;
-            _settings.Save();
+            _settings.SaveAsync();
             if (_settings.SilentMode) HideHoverBubble();
         }
 
@@ -219,7 +219,7 @@ namespace PennyPet
             }
             _settings.StartupPreferenceInitialized = true;
             _settings.StartAtLogin = desired;
-            _settings.Save();
+            _settings.SaveAsync();
             ShowBubble(desired ? "开机自动启动已开启。" : "开机自动启动已关闭。");
         }
 

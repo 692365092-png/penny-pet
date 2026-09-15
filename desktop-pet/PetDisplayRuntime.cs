@@ -81,7 +81,7 @@ namespace PennyPet
             _settings.Y = facts.PhysicalBounds.Top;
             _settings.ScalePercent = _scalePercent;
 
-            if (save) _settings.Save();
+            if (save) _settings.SaveAsync();
         }
 
         private bool CommitPetPreferredFromFacts(
@@ -111,7 +111,7 @@ namespace PennyPet
             _petTemporaryRehome = false;
             _petUserMovedSinceTemporaryRehome = false;
 
-            _settings.Save();
+            _settings.SaveAsync();
 
             DisplayDiagnostics.Trace("UserPlacementCommitted",
                 "window=pet reason=" + (reason ?? String.Empty) +

@@ -26,7 +26,7 @@ namespace PennyPet.Tests
             {
                 var writes = new ConcurrentQueue<string>();
                 int active = 0;
-                var writer = new StickyNoteWriter(request =>
+                var writer = new PersistenceWriter<StickyWriteRequest>(request =>
                 {
                     Assert.AreEqual(1, Interlocked.Increment(ref active));
                     string text = request.Snapshot[0].Text;
@@ -68,7 +68,7 @@ namespace PennyPet.Tests
             using (var release = new ManualResetEventSlim())
             {
                 int failures = 0;
-                var writer = new StickyNoteWriter(request =>
+                var writer = new PersistenceWriter<StickyWriteRequest>(request =>
                 {
                     if (request.Snapshot[0].Text == "fail")
                     {
@@ -97,7 +97,7 @@ namespace PennyPet.Tests
         public void RetryClearsFailureOnlyAfterItsWriteSucceeds()
         {
             int count = 0;
-            var writer = new StickyNoteWriter(request => ++count == 1
+            var writer = new PersistenceWriter<StickyWriteRequest>(request => ++count == 1
                 ? PersistenceResult.Failure(new IOException("busy"))
                 : PersistenceResult.Success());
             Assert.IsFalse(writer.Enqueue(Request("first")).Result.Succeeded);
@@ -113,7 +113,7 @@ namespace PennyPet.Tests
             using (var entered = new ManualResetEventSlim())
             using (var release = new ManualResetEventSlim())
             {
-                var writer = new StickyNoteWriter(request =>
+                var writer = new PersistenceWriter<StickyWriteRequest>(request =>
                 {
                     entered.Set();
                     Assert.IsTrue(release.Wait(TimeSpan.FromSeconds(5)));
@@ -137,7 +137,7 @@ namespace PennyPet.Tests
         [TestMethod]
         public void ObserverExceptionCannotStrandTheQueue()
         {
-            var writer = new StickyNoteWriter(request => request.Snapshot[0].Text == "fail"
+            var writer = new PersistenceWriter<StickyWriteRequest>(request => request.Snapshot[0].Text == "fail"
                 ? PersistenceResult.Failure(new IOException()) : PersistenceResult.Success());
             writer.Failed += (sender, args) => throw new InvalidOperationException("observer");
             writer.Enqueue(Request("fail"));

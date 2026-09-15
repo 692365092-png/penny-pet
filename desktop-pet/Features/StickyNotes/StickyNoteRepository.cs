@@ -21,7 +21,7 @@ namespace PennyPet
         private int _skippedCorruptLineCount;
         private string _recoveryBackupPath = String.Empty;
         private UnsupportedStickySchemaException _futureSchemaError;
-        private readonly StickyNoteWriter _writer;
+        private readonly PersistenceWriter<StickyWriteRequest> _writer;
         private readonly SynchronizationContext _uiContext;
         private Exception _blockedSaveError;
         private int _blockedSaveFailures;
@@ -33,7 +33,7 @@ namespace PennyPet
         {
             _filePath = filePath;
             _uiContext = SynchronizationContext.Current;
-            _writer = new StickyNoteWriter(write ?? WriteSnapshot);
+            _writer = new PersistenceWriter<StickyWriteRequest>(write ?? WriteSnapshot);
             _writer.Failed += delegate(object sender, PersistenceFailedEventArgs e)
             {
                 NotifySaveFailed(e.Result, e.ConsecutiveFailures);

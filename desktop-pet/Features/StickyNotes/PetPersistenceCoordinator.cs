@@ -12,15 +12,18 @@ namespace PennyPet
         private void PersistenceSaveFailed(object sender,
             PersistenceFailedEventArgs e)
         {
+            if (IsDisposed || Disposing || _exiting) return;
+            bool settingsFailed = Object.ReferenceEquals(sender, _settings);
+            if (!(settingsFailed ? _settings.HasUnsavedChanges : _notes.HasUnsavedChanges))
+                return;
             if (_persistenceRetryTimer != null &&
                 !_persistenceRetryTimer.Enabled) _persistenceRetryTimer.Start();
             DateTime now = DateTime.UtcNow;
-            if (!IsHandleCreated || IsDisposed || _exiting ||
+            if (!IsHandleCreated ||
                 now - _lastPersistenceWarningUtc < TimeSpan.FromSeconds(30))
                 return;
             _lastPersistenceWarningUtc = now;
-            string dataName = Object.ReferenceEquals(sender, _settings)
-                ? "设置" : "便利贴";
+            string dataName = settingsFailed ? "设置" : "便利贴";
             ShowBubble(dataName +
                 "尚未保存，Penny 会自动重试。请暂时不要退出。");
         }
@@ -32,13 +35,16 @@ namespace PennyPet
             if (!hadUnsavedChanges)
             {
                 _persistenceRetryTimer.Stop();
+                if (!_exiting) ShowBubble("未保存的数据已重新写入磁盘。");
                 return;
             }
-            if (_notes.HasUnsavedChanges && !_notes.Save().Succeeded) return;
-            if (_settings.HasUnsavedChanges && !_settings.Save().Succeeded) return;
-            if (_notes.HasUnsavedChanges || _settings.HasUnsavedChanges) return;
-            _persistenceRetryTimer.Stop();
-            if (!_exiting) ShowBubble("未保存的数据已重新写入磁盘。");
+            // Each writer already owns its pending state. A timer tick only
+            // retries idle failures; it never waits for I/O or queues behind a
+            // stalled attempt. The next tick observes successful completion.
+            if (_notes.HasUnsavedChanges && !_notes.HasPendingSaves)
+                _notes.SaveAsync();
+            if (_settings.HasUnsavedChanges && !_settings.HasPendingSaves)
+                _settings.SaveAsync();
         }
 
         private bool FlushPersistenceBeforeExit()
@@ -52,8 +58,11 @@ namespace PennyPet
                 PersistenceResult noteResult = notesResolved
                     ? PersistenceResult.Success()
                     : pending.Error is TimeoutException ? pending : _notes.Save();
+                PersistenceResult settingsPending = settingsResolved
+                    ? PersistenceResult.Success() : _settings.WaitForPendingSaves();
                 PersistenceResult settingsResult = settingsResolved
-                    ? PersistenceResult.Success() : _settings.Save();
+                    ? PersistenceResult.Success()
+                    : settingsPending.Error is TimeoutException ? settingsPending : _settings.Save();
                 if (noteResult.Succeeded && settingsResult.Succeeded)
                     return true;
 

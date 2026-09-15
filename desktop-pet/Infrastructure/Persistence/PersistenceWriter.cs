@@ -8,19 +8,19 @@ namespace PennyPet
 {
     // Owns write ordering and dirty state. Callers capture a detached snapshot
     // on the model thread; this worker never reads or repairs the live model.
-    internal sealed class StickyNoteWriter
+    internal sealed class PersistenceWriter<T> where T : class
     {
         private readonly object _gate = new object();
         private readonly LinkedList<PendingWrite> _pending =
             new LinkedList<PendingWrite>();
-        private readonly Func<StickyWriteRequest, PersistenceResult> _write;
+        private readonly Func<T, PersistenceResult> _write;
         private bool _running;
         private long _requestedRevision;
         private long _savedRevision;
         private int _consecutiveFailures;
         private PersistenceResult _lastResult = PersistenceResult.Success();
 
-        internal StickyNoteWriter(Func<StickyWriteRequest, PersistenceResult> write)
+        internal PersistenceWriter(Func<T, PersistenceResult> write)
         {
             _write = write ?? throw new ArgumentNullException(nameof(write));
         }
@@ -36,7 +36,7 @@ namespace PennyPet
             get { lock (_gate) return _lastResult.Error; }
         }
 
-        internal Task<PersistenceResult> Enqueue(StickyWriteRequest request,
+        internal Task<PersistenceResult> Enqueue(T request,
             bool coalesce = false)
         {
             if (request == null) throw new ArgumentNullException(nameof(request));
@@ -76,7 +76,7 @@ namespace PennyPet
                     TimeSpan remaining = timeout - elapsed.Elapsed;
                     if (remaining <= TimeSpan.Zero)
                         return PersistenceResult.Failure(new TimeoutException(
-                            "Timed out waiting for pending sticky-note saves."));
+                            "Timed out waiting for pending saves."));
                     Monitor.Wait(_gate, remaining);
                 }
                 return _lastResult;
@@ -126,7 +126,7 @@ namespace PennyPet
                     catch (Exception error)
                     {
                         // A notification failure must not abandon queued saves.
-                        Trace.TraceError("Sticky save notification failed: {0}", error);
+                        Trace.TraceError("Save notification failed: {0}", error);
                     }
                 }
             }
@@ -134,14 +134,14 @@ namespace PennyPet
 
         private sealed class PendingWrite
         {
-            internal StickyWriteRequest Request;
+            internal T Request;
             internal long Revision;
             internal readonly bool Coalesce;
             internal readonly TaskCompletionSource<PersistenceResult> Completion =
                 new TaskCompletionSource<PersistenceResult>(
                     TaskCreationOptions.RunContinuationsAsynchronously);
 
-            internal PendingWrite(StickyWriteRequest request, long revision,
+            internal PendingWrite(T request, long revision,
                 bool coalesce)
             {
                 Request = request;
@@ -151,19 +151,4 @@ namespace PennyPet
         }
     }
 
-    internal sealed class StickyWriteRequest
-    {
-        internal readonly IReadOnlyList<StickyNoteData> Snapshot;
-        internal readonly string BackupPath;
-        internal readonly IReadOnlyList<StickyNoteData> BackupSnapshot;
-
-        internal StickyWriteRequest(IReadOnlyList<StickyNoteData> snapshot,
-            string backupPath = null,
-            IReadOnlyList<StickyNoteData> backupSnapshot = null)
-        {
-            Snapshot = snapshot;
-            BackupPath = backupPath;
-            BackupSnapshot = backupSnapshot;
-        }
-    }
 }

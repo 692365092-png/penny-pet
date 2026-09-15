@@ -24,21 +24,21 @@ namespace PennyPet
                 if (future.Count != _settings.Reminders.Count)
                 {
                     _settings.SetReminders(_reminders.GetItems());
-                    _settings.Save();
+                    _settings.SaveAsync();
                 }
             }
             catch
             {
                 _reminders.Cancel();
                 _settings.SetReminders(_reminders.GetItems());
-                _settings.Save();
+                _settings.SaveAsync();
             }
         }
 
         private void SaveReminders()
         {
             _settings.SetReminders(_reminders.GetItems());
-            _settings.Save();
+            _settings.SaveAsync();
             _stickyWorkspace.UpdateAllStickyNoteReminderBanners();
         }
 

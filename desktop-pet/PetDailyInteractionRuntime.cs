@@ -50,7 +50,7 @@ namespace PennyPet
             _settings.DailyLedgerUsedMeaningfulIds =
                 PetDailyInteractionLedger.EncodeUsedIds(
                     _dailyLedger.UsedMeaningfulIds());
-            _settings.Save();
+            _settings.SaveAsync();
         }
     }
 }

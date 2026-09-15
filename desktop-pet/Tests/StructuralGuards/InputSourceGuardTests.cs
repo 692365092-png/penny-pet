@@ -51,7 +51,7 @@ namespace PennyPet.Tests
         {
             string repository = ReadSource(
                 "Features/StickyNotes/StickyNoteRepository.cs");
-            string writer = ReadSource("Features/StickyNotes/StickyNoteWriter.cs");
+            string writer = ReadSource("Infrastructure/Persistence/PersistenceWriter.cs");
             string wait = RawSource.SliceMethod(writer,
                 "internal PersistenceResult Flush(TimeSpan timeout)");
             string commit = Between(repository,
