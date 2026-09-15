@@ -1053,9 +1053,8 @@ namespace PennyPet
                 if (preferences != null)
                 {
                     WindowPlacementPreference preference = preferences[index];
-                    LogicalRect local = preference.LocalLogicalRect;
-                    _workspace.CommitHostedStickyPreferred(canonical, preference.PreferredTargetKey,
-                        local.X, local.Y, local.Width, local.Height, PlacementReason.UserResizeCommit);
+                    StickyPlacementRules.TryCommitPreferred(canonical, preference,
+                        PlacementReason.UserResizeCommit);
                     _workspace.Placement.MarkUserPlacementCommit(member.NoteId);
                 }
                 index++;
@@ -1392,13 +1391,12 @@ namespace PennyPet
         {
             if (note == null || surface == null) return;
             string key = DisplayTopologyRules.SelectPreferredTargetKey(
-                surface, note.PreferredDisplayTargetKey);
+                surface, note.PreferredPlacement?.PreferredTargetKey);
+            if (String.IsNullOrWhiteSpace(key)) return;
             WindowPlacementPreference preference = StickyPlacementMath.PreferenceFromPhysicalRect(
                 key, surface.Bounds.Left, surface.Bounds.Top, scale,
                 new PhysicalRect(target.X, target.Y, target.Width, target.Height));
-            LogicalRect local = preference.LocalLogicalRect;
-            if (_workspace.CommitHostedStickyPreferred(note, key, local.X, local.Y,
-                local.Width, local.Height, PlacementReason.ExpandAndTile))
+            if (StickyPlacementRules.TryCommitPreferred(note, preference, PlacementReason.ExpandAndTile))
                 _workspace.Placement.MarkUserPlacementCommit(note.Id);
         }
 
@@ -1576,7 +1574,7 @@ namespace PennyPet
             StickyNoteData root = group[0];
             DisplaySurfaceSnapshot fallback =
                 FallbackDisplayPolicy.ResolveFallbackSurface(snapshot,
-                    root.PreferredDisplayTargetKey,
+                    root.PreferredPlacement?.PreferredTargetKey,
                     _workspace.Placement.GetEffective(root.Id) == null
                         ? new PhysicalRect() : _workspace.Placement.GetEffective(root.Id).PhysicalBounds,
                     petFacts == null ? String.Empty :
@@ -1601,9 +1599,7 @@ namespace PennyPet
                 if (member == null || String.IsNullOrWhiteSpace(member.Id)) return false;
                 LogicalRect local;
                 if (usePreferred)
-                    local = new LogicalRect {
-                        X = member.PreferredLocalLogicalX, Y = member.PreferredLocalLogicalY,
-                        Width = member.PreferredLocalLogicalWidth, Height = member.PreferredLocalLogicalHeight };
+                    local = member.PreferredPlacement?.LocalLogicalRect ?? new LogicalRect();
                 else if (runtime == null || !runtime.TryGetEffectiveLogical(member.Id, out local)) return false;
                 if (local.Width <= 0 || local.Height <= 0) return false;
                 if (members.Count == 0) { anchor = new LogicalPoint { X = local.X, Y = local.Y }; unifiedWidth = local.Width; }
@@ -1777,10 +1773,7 @@ namespace PennyPet
             {
                 StickyNoteData canonical = candidate.Update.Canonical;
                 candidate.Update.Commit();
-                LogicalRect local = candidate.Preference.LocalLogicalRect;
-                _workspace.CommitHostedStickyPreferred(canonical,
-                    candidate.Preference.PreferredTargetKey,
-                    local.X, local.Y, local.Width, local.Height,
+                StickyPlacementRules.TryCommitPreferred(canonical, candidate.Preference,
                     PlacementReason.DockCommit);
             }
             if (merged)
@@ -1875,9 +1868,8 @@ namespace PennyPet
                 if (canonical == null ||
                     !StickyPlacementRules.TryBuildPreferredPlacement(
                         member.Facts, expectedTopology,
-                        canonical.PreferredDisplayTargetKey,
-                        out preference) || preference == null ||
-                    !preference.IsValid)
+                        canonical.PreferredPlacement?.PreferredTargetKey,
+                        out preference))
                 {
                     rejection = "final batch preference unavailable";
                     return false;
@@ -2054,9 +2046,8 @@ namespace PennyPet
             try
             {
                 update.Commit();
-                LogicalRect local = preference.LocalLogicalRect;
-                _workspace.CommitHostedStickyPreferred(update.Canonical, preference.PreferredTargetKey,
-                    local.X, local.Y, local.Width, local.Height, PlacementReason.UserResizeCommit);
+                StickyPlacementRules.TryCommitPreferred(update.Canonical, preference,
+                    PlacementReason.UserResizeCommit);
                 _workspace.Placement.MarkUserPlacementCommit(update.Member.NoteId);
                 _workspace.Notes.SaveAsync();
             }
@@ -2103,8 +2094,6 @@ namespace PennyPet
             bool changed = false;
             foreach (StickyNoteData member in group)
             {
-                if (!String.IsNullOrWhiteSpace(member.PreferredDisplayTargetKey) &&
-                    member.PreferredLocalLogicalWidth > 0 && member.PreferredLocalLogicalHeight > 0) continue;
                 if (StickyPlacementRules.MigrateV10Preferred(member, topology)) changed = true;
             }
             return changed;

@@ -12,11 +12,11 @@ namespace PennyPet.Tests
             return new List<StickyNoteData> {
                 new StickyNoteData { Id = "a", DockGroupId = "group", DockGroupOrder = 0, Visible = true,
                     Text = "visible root", X = 8000, Y = 9000, Width = 900, Height = 700,
-                    PreferredDisplayTargetKey = "mdp:one", PreferredLocalLogicalX = 40,
-                    PreferredLocalLogicalY = 60, PreferredLocalLogicalWidth = 320, PreferredLocalLogicalHeight = 300 },
+                    PreferredPlacement = new WindowPlacementPreference("mdp:one",
+                        new LogicalRect { X = 40, Y = 60, Width = 320, Height = 300 })},
                 new StickyNoteData { Id = "b", DockGroupId = "group", DockGroupOrder = 1, Visible = false,
-                    Text = "hidden member", PreferredDisplayTargetKey = "mdp:one",
-                    PreferredLocalLogicalWidth = 900, PreferredLocalLogicalHeight = 450 } };
+                    Text = "hidden member", PreferredPlacement = new WindowPlacementPreference("mdp:one",
+                        new LogicalRect { X = 0, Y = 0, Width = 900, Height = 450 })} };
         }
 
         private static DockRestoreOperation Create(IList<StickyNoteData> group, long generation = 7, long sequence = 1)
@@ -52,7 +52,8 @@ namespace PennyPet.Tests
             List<StickyNoteData> group = Group();
             DockRestoreOperation operation = Create(group);
             group[1].Text = "edited later";
-            group[0].PreferredLocalLogicalWidth = 500;
+            group[0].PreferredPlacement = new WindowPlacementPreference("mdp:one",
+                new LogicalRect { X = 40, Y = 60, Width = 500, Height = 300 });
             Assert.AreEqual("hidden member", operation.Snapshots[1].Text);
             Assert.AreEqual(320, operation.Plan.Group.Members[0].Width);
             Assert.IsTrue(operation.MatchesMembers(group));
@@ -66,13 +67,13 @@ namespace PennyPet.Tests
         public void MissingPreferredDisplayCentersTemporarilyWithoutOverwritingIntent()
         {
             List<StickyNoteData> group = Group();
-            foreach (StickyNoteData note in group) note.PreferredDisplayTargetKey = "mdp:unplugged";
+            foreach (StickyNoteData note in group) note.PreferredPlacement = new WindowPlacementPreference("mdp:unplugged", note.PreferredPlacement.LocalLogicalRect);
             DockRestoreOperation operation = Create(group);
             Assert.AreEqual(DockTopologyReprojectReason.TemporaryRehome, operation.Reason);
             Assert.IsTrue(operation.Plan.CenterInWorkArea);
             Assert.AreEqual("surface", operation.Target.RuntimeSurfaceId);
-            Assert.AreEqual("mdp:unplugged", group[0].PreferredDisplayTargetKey);
-            Assert.AreEqual(40, group[0].PreferredLocalLogicalX);
+            Assert.AreEqual("mdp:unplugged", group[0].PreferredPlacement.PreferredTargetKey);
+            Assert.AreEqual(40, group[0].PreferredPlacement.LocalLogicalRect.X);
         }
 
         [TestMethod]
@@ -127,7 +128,7 @@ namespace PennyPet.Tests
             List<StickyNoteData> group = Group();
             Assert.IsNull(DockRestoreOperation.TryCreate(group, "other", true, true,
                 StickyGeometryAuthorityTests.Topology(), null, 1));
-            group[1].PreferredDisplayTargetKey = String.Empty;
+            group[1].PreferredPlacement = null;
             group[1].DisplayId = "DISPLAY1";
             group[1].LocalLogicalWidth = 320;
             group[1].LocalLogicalHeight = 300;
@@ -135,7 +136,7 @@ namespace PennyPet.Tests
             Assert.AreEqual(DockTopologyReprojectReason.LegacyRecovery, recovery.Reason);
             Assert.IsNull(recovery.Plan.Group);
             Assert.IsNotNull(recovery.Plan.RecoveryTargets);
-            Assert.AreEqual(String.Empty, group[1].PreferredDisplayTargetKey);
+            Assert.IsNull(group[1].PreferredPlacement);
         }
 
         [TestMethod]

@@ -96,8 +96,8 @@ namespace PennyPet.Tests
                 codec.Contains("CurrentVersion = VersionEleven"),
                 "The codec must emit the documented v11 format; historical parsing is covered by fixture tests.");
             Assert.IsTrue(codec.Contains(
-                    "Encode(note.PreferredDisplayTargetKey") &&
-                codec.Contains("note.PreferredLocalLogicalWidth.ToString("),
+                    "Encode(preferred?.PreferredTargetKey") &&
+                codec.Contains("local.Width.ToString("),
                 "v11 must persist the durable preferred target and local rect.");
         }
 

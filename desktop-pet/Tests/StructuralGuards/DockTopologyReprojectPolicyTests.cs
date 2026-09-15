@@ -28,7 +28,7 @@ namespace PennyPet.Tests
             string runtimeRepair = apply.Replace(returned, "").Replace(rehomed, "");
             Assert.IsFalse(runtimeRepair.Contains("MarkReturnedToPreferred("));
             Assert.IsFalse(runtimeRepair.Contains("MarkTemporaryRehome("));
-            Assert.IsFalse(apply.Contains("CommitHostedStickyPreferred("));
+            Assert.IsFalse(apply.Contains("TryCommitPreferred("));
             Assert.IsFalse(apply.Contains("MarkUserPlacementCommit("));
             Assert.IsTrue(apply.Contains("bool centerInWorkArea = reason == DockTopologyReprojectReason.TemporaryRehome"));
         }

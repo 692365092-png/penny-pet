@@ -17,8 +17,9 @@ namespace PennyPet.Tests
         private static StickyNoteData Note(string id, string group, int order, bool visible)
         {
             return new StickyNoteData { Id = id, DockGroupId = group, DockGroupOrder = order, Visible = visible,
-                PreferredDisplayTargetKey = "mdp:one", PreferredLocalLogicalX = 40,
-                PreferredLocalLogicalY = 60, PreferredLocalLogicalWidth = 320, PreferredLocalLogicalHeight = 240 };
+                PreferredPlacement = new WindowPlacementPreference("mdp:one",
+                    new LogicalRect { X = 40, Y = 60, Width = 320, Height = 240 })
+            };
         }
 
         private static DockInteractionSession Header(List<StickyNoteData> group)
@@ -162,7 +163,8 @@ namespace PennyPet.Tests
             Assert.IsNull(restore);
             // Simulate the accepted Pet-side preferred commit before releasing
             // actions; native HWND capture itself is outside this test.
-            group[0].PreferredLocalLogicalWidth = 600;
+            group[0].PreferredPlacement = new WindowPlacementPreference("mdp:one",
+                new LogicalRect { X = 40, Y = 60, Width = 600, Height = 240 });
             Assert.IsTrue(session.TryFinish(epoch, 7, out _, out Action[] ready));
             foreach (Action action in ready) action();
             DockPlacementPlan plan = DockPlacementPlanner.PlanReproject(restore.Plan, restore.Target, 144);

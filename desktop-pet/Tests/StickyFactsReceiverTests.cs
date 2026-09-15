@@ -18,8 +18,8 @@ namespace PennyPet.Tests
             {
                 Note = Notes.CreateDraft("before", new Point(9000, 8000));
                 Note.Id = "note";
-                Note.PreferredDisplayTargetKey = "mdp:missing";
-                Note.PreferredLocalLogicalX = 700;
+                Note.PreferredPlacement = new WindowPlacementPreference("mdp:missing",
+                    new LogicalRect { X = 700, Y = 0, Width = 320, Height = 240 });
                 Hosted.AddNote(Note.Id);
                 Receiver = new StickyFactsReceiver(Notes, Hosted, Placement);
             }
@@ -50,8 +50,8 @@ namespace PennyPet.Tests
             Assert.AreEqual(320, s.Note.LocalLogicalWidth);
             Assert.AreSame(member.Facts, s.Placement.GetEffective("note"));
             Assert.IsFalse(s.Hosted.CanApplySequence("note", 10));
-            Assert.AreEqual("mdp:missing", s.Note.PreferredDisplayTargetKey);
-            Assert.AreEqual(700, s.Note.PreferredLocalLogicalX);
+            Assert.AreEqual("mdp:missing", s.Note.PreferredPlacement.PreferredTargetKey);
+            Assert.AreEqual(700, s.Note.PreferredPlacement.LocalLogicalRect.X);
         }
 
         [TestMethod]
@@ -86,8 +86,8 @@ namespace PennyPet.Tests
             Assert.AreEqual(bounds.Width, s.Note.Width);
             Assert.AreEqual(bounds.Height, s.Note.Height);
             Assert.AreSame(facts, s.Placement.GetEffective("note"));
-            Assert.AreEqual("mdp:missing", s.Note.PreferredDisplayTargetKey);
-            Assert.AreEqual(700, s.Note.PreferredLocalLogicalX);
+            Assert.AreEqual("mdp:missing", s.Note.PreferredPlacement.PreferredTargetKey);
+            Assert.AreEqual(700, s.Note.PreferredPlacement.LocalLogicalRect.X);
             Assert.AreEqual("DISPLAY1", s.Note.DisplayId);
             Assert.AreEqual((int)Math.Round(offset / facts.Scale,
                 MidpointRounding.AwayFromZero), s.Note.LocalLogicalX);
@@ -163,7 +163,7 @@ namespace PennyPet.Tests
             Assert.AreSame(accepted, s.Placement.GetEffective("note"));
             Assert.IsTrue(s.Placement.IsTemporaryRehome("note"));
             Assert.IsFalse(s.Hosted.CanApplySequence("note", 11));
-            Assert.AreEqual("mdp:missing", s.Note.PreferredDisplayTargetKey);
+            Assert.AreEqual("mdp:missing", s.Note.PreferredPlacement.PreferredTargetKey);
         }
 
         [TestMethod]

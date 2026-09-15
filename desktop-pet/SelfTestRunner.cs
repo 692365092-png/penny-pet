@@ -4545,8 +4545,8 @@ namespace PennyPet
             source.LocalLogicalY = 20;
             source.LocalLogicalWidth = 320;
             source.LocalLogicalHeight = 300;
-            source.PreferredDisplayTargetKey = "mdp:preferred";
-            source.PreferredLocalLogicalWidth = 640;
+            source.PreferredPlacement = new WindowPlacementPreference("mdp:preferred",
+                new LogicalRect { X = 0, Y = 0, Width = 640, Height = 240 });
             source.Visible = false;
             source.AlwaysOnTop = false;
             StickyNoteUiSnapshot snapshot =
@@ -4583,8 +4583,7 @@ namespace PennyPet
                 editor.Width == defaults.Width && editor.Height == defaults.Height &&
                 String.IsNullOrEmpty(editor.DisplayId) &&
                 editor.LocalLogicalWidth == 0 &&
-                String.IsNullOrEmpty(editor.PreferredDisplayTargetKey) &&
-                editor.PreferredLocalLogicalWidth == 0;
+                editor.PreferredPlacement == null;
 
             WindowFacts facts = new WindowFacts("sep-note", "mdp:sep",
                 "\\\\.\\DISPLAY2",
@@ -4665,11 +4664,8 @@ namespace PennyPet
             StickyNoteData source = new StickyNoteData
             {
                 Id = "v11-check",
-                PreferredDisplayTargetKey = "mdp:home",
-                PreferredLocalLogicalX = -10,
-                PreferredLocalLogicalY = 30,
-                PreferredLocalLogicalWidth = 320,
-                PreferredLocalLogicalHeight = 300
+                PreferredPlacement = new WindowPlacementPreference("mdp:home",
+                    new LogicalRect { X = -10, Y = 30, Width = 320, Height = 300 })
             };
             string line = StickyNoteCodec.SerializeLine(source);
             bool headerAndFields =
@@ -4678,9 +4674,9 @@ namespace PennyPet
                     StickyNoteCodec.CurrentFieldCount;
             StickyNoteData parsed = StickyNoteCodec.ParseLine(line);
             bool roundTrip = parsed != null &&
-                parsed.PreferredDisplayTargetKey == "mdp:home" &&
-                parsed.PreferredLocalLogicalX == -10 &&
-                parsed.PreferredLocalLogicalWidth == 320;
+                parsed.PreferredPlacement.PreferredTargetKey == "mdp:home" &&
+                parsed.PreferredPlacement.LocalLogicalRect.X == -10 &&
+                parsed.PreferredPlacement.LocalLogicalRect.Width == 320;
 
             bool reasonGuard =
                 StickyPlacementRules.CanCommitPreferred(
@@ -4713,9 +4709,9 @@ namespace PennyPet
                 });
             bool migrated = StickyPlacementRules.MigrateV10Preferred(
                 v10, topology) &&
-                v10.PreferredDisplayTargetKey == "mdp:fake-2" &&
-                v10.PreferredLocalLogicalX == 5 &&
-                v10.PreferredLocalLogicalWidth == 320;
+                v10.PreferredPlacement.PreferredTargetKey == "mdp:fake-2" &&
+                v10.PreferredPlacement.LocalLogicalRect.X == 5 &&
+                v10.PreferredPlacement.LocalLogicalRect.Width == 320;
 
             return headerAndFields && roundTrip && reasonGuard && migrated;
         }
@@ -4833,9 +4829,8 @@ namespace PennyPet
                 DisplayId = "legacy-display",
                 LocalLogicalWidth = 360,
                 LocalLogicalHeight = 480,
-                PreferredDisplayTargetKey = "preferred-target",
-                PreferredLocalLogicalWidth = 360,
-                PreferredLocalLogicalHeight = 480
+                PreferredPlacement = new WindowPlacementPreference("preferred-target",
+                    new LogicalRect { X = 0, Y = 0, Width = 360, Height = 480 })
             };
             StickyNoteUiSnapshot contentOnly =
                 StickyNoteUiSnapshot.Capture(snapshotSource);
@@ -4850,9 +4845,7 @@ namespace PennyPet
                 contentCopy.DisplayId == String.Empty &&
                 contentCopy.LocalLogicalWidth == 0 &&
                 contentCopy.LocalLogicalHeight == 0 &&
-                contentCopy.PreferredDisplayTargetKey == String.Empty &&
-                contentCopy.PreferredLocalLogicalWidth == 0 &&
-                contentCopy.PreferredLocalLogicalHeight == 0;
+                contentCopy.PreferredPlacement == null;
 
             bool planImmutable = true;
             foreach (System.Reflection.PropertyInfo property in
@@ -4915,20 +4908,16 @@ namespace PennyPet
             reprojA.LocalLogicalY = 20;
             reprojA.LocalLogicalWidth = 320;
             reprojA.LocalLogicalHeight = 300;
-            reprojA.PreferredLocalLogicalX = 900;
-            reprojA.PreferredLocalLogicalY = 800;
-            reprojA.PreferredLocalLogicalWidth = 500;
-            reprojA.PreferredLocalLogicalHeight = 600;
+            reprojA.PreferredPlacement = new WindowPlacementPreference("mdp:one",
+                new LogicalRect { X = 900, Y = 800, Width = 500, Height = 600 });
             StickyNoteData reprojB = new StickyNoteData();
             reprojB.Id = "reproj-b";
             reprojB.LocalLogicalX = 10;
             reprojB.LocalLogicalY = 320;
             reprojB.LocalLogicalWidth = 320;
             reprojB.LocalLogicalHeight = 360;
-            reprojB.PreferredLocalLogicalX = 900;
-            reprojB.PreferredLocalLogicalY = 1400;
-            reprojB.PreferredLocalLogicalWidth = 500;
-            reprojB.PreferredLocalLogicalHeight = 700;
+            reprojB.PreferredPlacement = new WindowPlacementPreference("mdp:one",
+                new LogicalRect { X = 900, Y = 1400, Width = 500, Height = 700 });
             List<StickyNoteData> reprojGroup =
                 new List<StickyNoteData> { reprojA, reprojB };
 
@@ -4980,14 +4969,14 @@ namespace PennyPet
             badLocalA.Id = "reproj-bad-local-a";
             badLocalA.LocalLogicalWidth = 0;
             badLocalA.LocalLogicalHeight = 0;
-            badLocalA.PreferredLocalLogicalWidth = 500;
-            badLocalA.PreferredLocalLogicalHeight = 600;
+            badLocalA.PreferredPlacement = new WindowPlacementPreference("mdp:one",
+                new LogicalRect { Width = 500, Height = 600 });
             StickyNoteData badLocalB = new StickyNoteData();
             badLocalB.Id = "reproj-bad-local-b";
             badLocalB.LocalLogicalWidth = 0;
             badLocalB.LocalLogicalHeight = 0;
-            badLocalB.PreferredLocalLogicalWidth = 500;
-            badLocalB.PreferredLocalLogicalHeight = 700;
+            badLocalB.PreferredPlacement = new WindowPlacementPreference("mdp:one",
+                new LogicalRect { Width = 500, Height = 700 });
             DockGroupLogicalState rejectedLocal;
             bool localRejected =
                 !StickyDockController.TryBuildDockTopologyLogicalState(
@@ -4999,14 +4988,10 @@ namespace PennyPet
             badPrefA.Id = "reproj-bad-pref-a";
             badPrefA.LocalLogicalWidth = 320;
             badPrefA.LocalLogicalHeight = 300;
-            badPrefA.PreferredLocalLogicalWidth = 0;
-            badPrefA.PreferredLocalLogicalHeight = 0;
             StickyNoteData badPrefB = new StickyNoteData();
             badPrefB.Id = "reproj-bad-pref-b";
             badPrefB.LocalLogicalWidth = 320;
             badPrefB.LocalLogicalHeight = 360;
-            badPrefB.PreferredLocalLogicalWidth = 0;
-            badPrefB.PreferredLocalLogicalHeight = 0;
             DockGroupLogicalState rejectedPreferred;
             bool preferredRejected =
                 !StickyDockController.TryBuildDockTopologyLogicalState(

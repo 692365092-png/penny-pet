@@ -370,10 +370,12 @@ namespace PennyPet
                 string preferredKey =
                     DisplayTopologyRules.SelectPreferredTargetKey(
                         targetSurface, null);
-                CommitHostedStickyPreferred(note, preferredKey,
-                    placement.LocalX, placement.LocalY,
-                    placement.LocalWidth, placement.LocalHeight,
-                    PlacementReason.Spawn);
+                if (!String.IsNullOrWhiteSpace(preferredKey))
+                    StickyPlacementRules.TryCommitPreferred(note,
+                        new WindowPlacementPreference(preferredKey, new LogicalRect {
+                            X = placement.LocalX, Y = placement.LocalY,
+                            Width = placement.LocalWidth, Height = placement.LocalHeight }),
+                        PlacementReason.Spawn);
                 TraceSpawnPlacement(note, petFacts, targetSurface,
                     preferredKey);
             }
@@ -479,13 +481,9 @@ namespace PennyPet
         private void ReconcileStandaloneSticky(StickyNoteData note,
             DisplayTopologySnapshot snapshot, WindowFacts petFacts)
         {
-            bool hasPreferred =
-                !String.IsNullOrWhiteSpace(note.PreferredDisplayTargetKey) &&
-                note.PreferredLocalLogicalWidth > 0 &&
-                note.PreferredLocalLogicalHeight > 0;
-            DisplaySurfaceSnapshot preferredSurface = hasPreferred
-                ? snapshot.FindByTargetKey(note.PreferredDisplayTargetKey)
-                : null;
+            WindowPlacementPreference preferred = note.PreferredPlacement;
+            DisplaySurfaceSnapshot preferredSurface = preferred == null
+                ? null : snapshot.FindByTargetKey(preferred.PreferredTargetKey);
             if (preferredSurface != null)
             {
                 // Preferred display is active again. Only a note the user did
@@ -497,10 +495,10 @@ namespace PennyPet
                     StickyUiReprojectTarget returnTarget =
                         new StickyUiReprojectTarget(
                             preferredSurface.RuntimeGdiName,
-                            note.PreferredLocalLogicalX,
-                            note.PreferredLocalLogicalY,
-                            note.PreferredLocalLogicalWidth,
-                            note.PreferredLocalLogicalHeight,
+                            preferred.LocalLogicalRect.X,
+                            preferred.LocalLogicalRect.Y,
+                            preferred.LocalLogicalRect.Width,
+                            preferred.LocalLogicalRect.Height,
                             false, true);
                     PostHostedStickyCommand(StickyUiCommand.Reproject(
                         noteId, returnTarget, snapshot),
@@ -559,16 +557,12 @@ namespace PennyPet
         {
             fallback = null;
             target = null;
-            if (note == null || topology == null ||
+            WindowPlacementPreference preferred = note?.PreferredPlacement;
+            if (preferred == null || topology == null ||
                 !String.IsNullOrEmpty(note.DockGroupId) ||
-                String.IsNullOrWhiteSpace(
-                    note.PreferredDisplayTargetKey) ||
-                note.PreferredLocalLogicalWidth <= 0 ||
-                note.PreferredLocalLogicalHeight <= 0 ||
-                topology.FindByTargetKey(
-                    note.PreferredDisplayTargetKey) != null) return false;
+                topology.FindByTargetKey(preferred.PreferredTargetKey) != null) return false;
             fallback = FallbackDisplayPolicy.ResolveFallbackSurface(topology,
-                note.PreferredDisplayTargetKey,
+                preferred.PreferredTargetKey,
                 actual == null
                     ? new PhysicalRect(note.X, note.Y, note.Width, note.Height)
                     : actual.PhysicalBounds,
@@ -576,8 +570,8 @@ namespace PennyPet
             if (fallback == null) return false;
             target = new StickyUiReprojectTarget(
                 fallback.RuntimeGdiName, 0, 0,
-                note.PreferredLocalLogicalWidth,
-                note.PreferredLocalLogicalHeight,
+                preferred.LocalLogicalRect.Width,
+                preferred.LocalLogicalRect.Height,
                 true, showAfter);
             return true;
         }
@@ -720,7 +714,7 @@ namespace PennyPet
                             result.Sequence, true, result.Facts, result.Topology);
                         if (Placement.IsTemporaryRehome(noteId) &&
                             topology != null && topology.FindByTargetKey(
-                                note.PreferredDisplayTargetKey) != null)
+                                note.PreferredPlacement?.PreferredTargetKey) != null)
                             Placement.MarkReturnedToPreferred(noteId);
                         return;
                     }
@@ -920,13 +914,11 @@ namespace PennyPet
                     return;
                 }
                 StickyNoteData canonical = Notes.Find(value.NoteId);
-                string targetKey;
-                LogicalRect local;
-                if (canonical != null && TryBuildPreference(value.Facts,
-                    value.Topology, canonical.PreferredDisplayTargetKey,
-                    out targetKey, out local) &&
-                    CommitHostedStickyPreferred(canonical, targetKey,
-                        local.X, local.Y, local.Width, local.Height,
+                WindowPlacementPreference preference;
+                if (canonical != null && StickyPlacementRules.TryBuildPreferredPlacement(value.Facts,
+                    value.Topology, canonical.PreferredPlacement?.PreferredTargetKey,
+                    out preference) &&
+                    StickyPlacementRules.TryCommitPreferred(canonical, preference,
                         PlacementReason.UserResizeCommit))
                 {
                     Placement.MarkUserPlacementCommit(
@@ -1074,36 +1066,6 @@ namespace PennyPet
             });
         }
 
-        private static bool TryBuildPreference(WindowFacts facts,
-            DisplayTopologySnapshot topology, string existingKey,
-            out string targetKey, out LogicalRect localRect)
-        {
-            targetKey = null;
-            localRect = new LogicalRect();
-            WindowPlacementPreference preference;
-            if (!StickyPlacementRules.TryBuildPreferredPlacement(facts,
-                topology, existingKey, out preference)) return false;
-            targetKey = preference.PreferredTargetKey;
-            localRect = preference.LocalLogicalRect;
-            return true;
-        }
-
-        internal bool CommitHostedStickyPreferred(StickyNoteData canonical,
-            string targetKey, int localX, int localY, int localWidth,
-            int localHeight, PlacementReason reason)
-        {
-            if (canonical == null ||
-                !StickyPlacementRules.CanCommitPreferred(reason)) return false;
-            if (String.IsNullOrWhiteSpace(targetKey) ||
-                localWidth <= 0 || localHeight <= 0) return false;
-            canonical.PreferredDisplayTargetKey = targetKey;
-            canonical.PreferredLocalLogicalX = localX;
-            canonical.PreferredLocalLogicalY = localY;
-            canonical.PreferredLocalLogicalWidth = localWidth;
-            canonical.PreferredLocalLogicalHeight = localHeight;
-            return true;
-        }
-
         // Fills a missing preference only. v10 migration is attempted first
         // (preserving the persisted display-local intent), then the actual
         // shown WindowFacts when the saved display is not resolvable. An
@@ -1111,27 +1073,17 @@ namespace PennyPet
         private void AdoptPreferredIfEmpty(StickyNoteData canonical,
             WindowFacts facts, DisplayTopologySnapshot topology)
         {
-            if (canonical == null ||
-                !String.IsNullOrWhiteSpace(
-                    canonical.PreferredDisplayTargetKey)) return;
+            if (canonical == null || canonical.PreferredPlacement != null) return;
             if (StickyPlacementRules.MigrateV10Preferred(canonical,
                 topology))
             {
                 Notes.SaveAsync();
                 return;
             }
-            string targetKey;
-            LogicalRect local;
-            if (TryBuildPreference(facts, topology, String.Empty,
-                out targetKey, out local) &&
-                !String.IsNullOrWhiteSpace(targetKey) &&
-                local.Width > 0 && local.Height > 0)
+            WindowPlacementPreference preference;
+            if (StickyPlacementRules.TryBuildPreferredPlacement(facts, topology, null, out preference))
             {
-                canonical.PreferredDisplayTargetKey = targetKey;
-                canonical.PreferredLocalLogicalX = local.X;
-                canonical.PreferredLocalLogicalY = local.Y;
-                canonical.PreferredLocalLogicalWidth = local.Width;
-                canonical.PreferredLocalLogicalHeight = local.Height;
+                canonical.PreferredPlacement = preference;
                 Notes.SaveAsync();
             }
         }

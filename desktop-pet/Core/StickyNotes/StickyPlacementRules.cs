@@ -71,6 +71,14 @@ namespace PennyPet
             catch (ArgumentException) { return false; }
         }
 
+        internal static bool TryCommitPreferred(StickyNoteData note,
+            WindowPlacementPreference preference, PlacementReason reason)
+        {
+            if (note == null || preference == null || !CanCommitPreferred(reason)) return false;
+            note.PreferredPlacement = preference;
+            return true;
+        }
+
         internal static bool CanCommitPreferred(PlacementReason reason)
         {
             switch (reason)
@@ -96,8 +104,7 @@ namespace PennyPet
             DisplayTopologySnapshot topology)
         {
             if (note == null || topology == null) return false;
-            if (!String.IsNullOrWhiteSpace(note.PreferredDisplayTargetKey))
-                return false;
+            if (note.PreferredPlacement != null) return false;
             if (String.IsNullOrWhiteSpace(note.DisplayId) ||
                 note.LocalLogicalWidth <= 0 ||
                 note.LocalLogicalHeight <= 0) return false;
@@ -107,11 +114,9 @@ namespace PennyPet
             string key = DisplayTopologyRules.SelectPreferredTargetKey(
                 surface, null);
             if (String.IsNullOrEmpty(key)) return false;
-            note.PreferredDisplayTargetKey = key;
-            note.PreferredLocalLogicalX = note.LocalLogicalX;
-            note.PreferredLocalLogicalY = note.LocalLogicalY;
-            note.PreferredLocalLogicalWidth = note.LocalLogicalWidth;
-            note.PreferredLocalLogicalHeight = note.LocalLogicalHeight;
+            note.PreferredPlacement = new WindowPlacementPreference(key, new LogicalRect {
+                X = note.LocalLogicalX, Y = note.LocalLogicalY,
+                Width = note.LocalLogicalWidth, Height = note.LocalLogicalHeight });
             return true;
         }
 
@@ -124,7 +129,8 @@ namespace PennyPet
             out WindowPlacementPreference preference)
         {
             preference = null;
-            if (facts == null || topology == null ||
+            if (facts == null || topology == null || facts.Dpi <= 0 ||
+                !facts.PhysicalBounds.IsValid ||
                 facts.TopologyGeneration != topology.Generation) return false;
             DisplaySurfaceSnapshot surface =
                 topology.FindByTargetKey(facts.ActiveTargetKey);

@@ -33,6 +33,8 @@ namespace PennyPet
         internal static string SerializeLine(StickyNoteData note, string legacyParentId)
         {
             if (note == null) throw new ArgumentNullException(nameof(note));
+            WindowPlacementPreference preferred = note.PreferredPlacement;
+            LogicalRect local = preferred == null ? new LogicalRect() : preferred.LocalLogicalRect;
             return String.Join("|", new string[]
             {
                 CurrentVersion.ToString(CultureInfo.InvariantCulture),
@@ -69,14 +71,14 @@ namespace PennyPet
                 note.LocalLogicalY.ToString(CultureInfo.InvariantCulture),
                 note.LocalLogicalWidth.ToString(CultureInfo.InvariantCulture),
                 note.LocalLogicalHeight.ToString(CultureInfo.InvariantCulture),
-                Encode(note.PreferredDisplayTargetKey ?? String.Empty),
-                note.PreferredLocalLogicalX.ToString(
+                Encode(preferred?.PreferredTargetKey ?? String.Empty),
+                local.X.ToString(
                     CultureInfo.InvariantCulture),
-                note.PreferredLocalLogicalY.ToString(
+                local.Y.ToString(
                     CultureInfo.InvariantCulture),
-                note.PreferredLocalLogicalWidth.ToString(
+                local.Width.ToString(
                     CultureInfo.InvariantCulture),
-                note.PreferredLocalLogicalHeight.ToString(
+                local.Height.ToString(
                     CultureInfo.InvariantCulture)
             });
         }
@@ -179,17 +181,7 @@ namespace PennyPet
                         note.LocalLogicalHeight = number;
                 }
                 if (version >= 11)
-                {
-                    note.PreferredDisplayTargetKey = Decode(fields[32]);
-                    if (Int32.TryParse(fields[33], out number))
-                        note.PreferredLocalLogicalX = number;
-                    if (Int32.TryParse(fields[34], out number))
-                        note.PreferredLocalLogicalY = number;
-                    if (Int32.TryParse(fields[35], out number))
-                        note.PreferredLocalLogicalWidth = number;
-                    if (Int32.TryParse(fields[36], out number))
-                        note.PreferredLocalLogicalHeight = number;
-                }
+                    note.PreferredPlacement = ReadPreferredPlacement(fields);
             }
 
             if (version < 6)
@@ -204,6 +196,22 @@ namespace PennyPet
                     "Sticky-note content exceeds safety limits.");
             RepairForDisplay(note, false);
             return note;
+        }
+
+        // Invalid or incomplete file fields mean no preference. Input repair
+        // and size caps stay here; runtime preferences are complete values.
+        private static WindowPlacementPreference ReadPreferredPlacement(string[] fields)
+        {
+            string key = Decode(fields[32]).Trim();
+            int x, y, width, height;
+            if (key.Length == 0 || key.Length > MaximumDisplayIdCharacters ||
+                !Int32.TryParse(fields[35], out width) || width <= 0 ||
+                !Int32.TryParse(fields[36], out height) || height <= 0) return null;
+            Int32.TryParse(fields[33], out x);
+            Int32.TryParse(fields[34], out y);
+            return new WindowPlacementPreference(key, new LogicalRect {
+                X = x, Y = y, Width = Math.Min(width, MaximumLocalLogicalValue),
+                Height = Math.Min(height, MaximumLocalLogicalValue) });
         }
 
         internal static bool RepairForDisplay(StickyNoteData note,
@@ -282,64 +290,6 @@ namespace PennyPet
                 if (note.LocalLogicalHeight != localHeight)
                 {
                     note.LocalLogicalHeight = localHeight;
-                    changed = true;
-                }
-            }
-            // v11 preferred placement safety mirrors the v10 canonical rule:
-            // an empty target key means no preference, and a valid preference
-            // clamps its local rect to a plausible window size so a corrupt
-            // value can never overflow the display scale projection.
-            note.PreferredDisplayTargetKey =
-                (note.PreferredDisplayTargetKey ?? String.Empty).Trim();
-            if (note.PreferredDisplayTargetKey.Length >
-                MaximumDisplayIdCharacters)
-            {
-                note.PreferredDisplayTargetKey = String.Empty;
-                changed = true;
-            }
-            if (String.IsNullOrWhiteSpace(note.PreferredDisplayTargetKey))
-            {
-                if (note.PreferredLocalLogicalX != 0 ||
-                    note.PreferredLocalLogicalY != 0 ||
-                    note.PreferredLocalLogicalWidth != 0 ||
-                    note.PreferredLocalLogicalHeight != 0)
-                {
-                    note.PreferredLocalLogicalX = 0;
-                    note.PreferredLocalLogicalY = 0;
-                    note.PreferredLocalLogicalWidth = 0;
-                    note.PreferredLocalLogicalHeight = 0;
-                    changed = true;
-                }
-            }
-            else if (note.PreferredLocalLogicalWidth <= 0 ||
-                note.PreferredLocalLogicalHeight <= 0)
-            {
-                // Strict state: a durable key without a positive local rect is
-                // not a valid preference and must degrade to unset instead of
-                // being repaired into a fake 1x1 placement.
-                note.PreferredDisplayTargetKey = String.Empty;
-                note.PreferredLocalLogicalX = 0;
-                note.PreferredLocalLogicalY = 0;
-                note.PreferredLocalLogicalWidth = 0;
-                note.PreferredLocalLogicalHeight = 0;
-                changed = true;
-            }
-            else
-            {
-                int preferredWidth = Math.Max(1,
-                    Math.Min(note.PreferredLocalLogicalWidth,
-                        MaximumLocalLogicalValue));
-                int preferredHeight = Math.Max(1,
-                    Math.Min(note.PreferredLocalLogicalHeight,
-                        MaximumLocalLogicalValue));
-                if (note.PreferredLocalLogicalWidth != preferredWidth)
-                {
-                    note.PreferredLocalLogicalWidth = preferredWidth;
-                    changed = true;
-                }
-                if (note.PreferredLocalLogicalHeight != preferredHeight)
-                {
-                    note.PreferredLocalLogicalHeight = preferredHeight;
                     changed = true;
                 }
             }

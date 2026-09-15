@@ -182,7 +182,7 @@ namespace PennyPet.Tests
             string fallback = Between(coordinator,
                 "private void ApplyLegacySpawnFallback",
                 "private static void TraceSpawnPlacement");
-            Assert.IsFalse(fallback.Contains("PreferredDisplayTargetKey"),
+            Assert.IsFalse(fallback.Contains("PreferredPlacement"),
                 "The legacy fallback must never fabricate a durable preference.");
         }
 

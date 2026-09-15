@@ -271,7 +271,7 @@ namespace PennyPet.Tests
             string session = ReadSource("StickyWindowSession.cs");
             string coordinator = SourceGuardText.ReadStickyWorkflowSource();
             string host = ReadSource("StickyUiHost.cs");
-            Assert.IsFalse(session.Contains("data.PreferredDisplayTargetKey") ||
+            Assert.IsFalse(session.Contains("data.PreferredPlacement") ||
                 session.Contains("data.LocalLogicalWidth") || session.Contains("ResolvePlacementPlan"));
             StringAssert.Contains(coordinator, "StickyPlacementRecovery.SelectForShow(note, topology)");
             StringAssert.Contains(host, "command.Placement");
@@ -357,7 +357,7 @@ namespace PennyPet.Tests
                 reproject.Contains("MoveHiddenToSurface(") &&
                 reproject.Contains("SetWindowPosExact(projected)"),
                 "The reproject must use the real window DPI on the sticky STA.");
-            Assert.IsFalse(reproject.Contains("PreferredDisplayTargetKey"),
+            Assert.IsFalse(reproject.Contains("PreferredPlacement"),
                 "Reprojection must never modify the durable preferred fields.");
         }
 

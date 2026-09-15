@@ -52,9 +52,8 @@ namespace PennyPet.Tests
                 {
                     Assert.IsTrue(entered.Wait(TimeSpan.FromSeconds(5)));
                     note.Text = "newer content";
-                    note.PreferredDisplayTargetKey = "mdp:one";
-                    note.PreferredLocalLogicalWidth = 320;
-                    note.PreferredLocalLogicalHeight = 333;
+                    note.PreferredPlacement = new WindowPlacementPreference("mdp:one",
+                        new LogicalRect { X = 0, Y = 0, Width = 320, Height = 333 });
                     repository.SaveAsync();
                     exported = Task.Run(() => repository.ExportSnapshot(export));
                     independent = exported.Wait(TimeSpan.FromSeconds(2));
@@ -75,7 +74,7 @@ namespace PennyPet.Tests
                     StickyNoteData rescued = StickyNoteRepository.LoadFromFile(export).Find(note.Id);
                     Assert.AreEqual("newer content", saved.Text);
                     Assert.AreEqual("newer content", rescued.Text);
-                    Assert.AreEqual(333, rescued.PreferredLocalLogicalHeight);
+                    Assert.AreEqual(333, rescued.PreferredPlacement.LocalLogicalRect.Height);
                 }
                 finally { Directory.Delete(directory, true); }
             }
@@ -181,9 +180,8 @@ namespace PennyPet.Tests
                 for (int i = 0; i < notes.Length; i++)
                 {
                     notes[i].Height = 310 + i * 60;
-                    notes[i].PreferredDisplayTargetKey = "mdp:one";
-                    notes[i].PreferredLocalLogicalWidth = 320;
-                    notes[i].PreferredLocalLogicalHeight = notes[i].Height;
+                    notes[i].PreferredPlacement = new WindowPlacementPreference("mdp:one",
+                        new LogicalRect { X = 0, Y = 0, Width = 320, Height = notes[i].Height });
                 }
                 StickyDockGroups.ApplyOrderedGroup(notes);
                 notes[1].Visible = false;
@@ -200,7 +198,7 @@ namespace PennyPet.Tests
                     Assert.AreEqual(notes[i].Id, saved[i].Id);
                     Assert.AreEqual(i, saved[i].DockGroupOrder);
                     Assert.AreEqual(notes[i].Height, saved[i].Height);
-                    Assert.AreEqual(notes[i].PreferredLocalLogicalHeight, saved[i].PreferredLocalLogicalHeight);
+                    Assert.AreEqual(notes[i].PreferredPlacement.LocalLogicalRect.Height, saved[i].PreferredPlacement.LocalLogicalRect.Height);
                 }
                 Assert.IsFalse(saved[1].Visible);
                 StickyNoteCodec.ParseLine(File.ReadAllLines(primary)[2], out string parent);

@@ -287,7 +287,7 @@ namespace PennyPet.Tests
             int accepted = live.IndexOf("session.QueueLive(value", StringComparison.Ordinal);
             int facts = live.IndexOf("update.Commit()", StringComparison.Ordinal);
             Assert.IsTrue(accepted >= 0 && facts > accepted);
-            Assert.IsFalse(live.Contains("SaveAsync") || live.Contains("CommitHostedStickyPreferred"));
+            Assert.IsFalse(live.Contains("SaveAsync") || live.Contains("TryCommitPreferred"));
         }
 
         [TestMethod]
@@ -514,8 +514,8 @@ namespace PennyPet.Tests
                     "FallbackDisplayPolicy.ResolveFallbackSurface("),
                 "DRT-7 must rehome standalone notes only through the Core fallback policy.");
             Assert.IsFalse(reconcile.Contains(
-                    "CommitHostedStickyPreferred") ||
-                reconcile.Contains("PreferredDisplayTargetKey ="),
+                    "TryCommitPreferred") ||
+                reconcile.Contains("PreferredPlacement ="),
                 "Temporary rehome must never commit or rewrite the durable preferred.");
         }
 
@@ -587,8 +587,8 @@ namespace PennyPet.Tests
             string batch = Between(coordinator,
                 "private void ApplyLiveDockPlan",
                 "private void ApplyDockBatchResult");
-            Assert.IsFalse(batch.Contains("PreferredDisplayTargetKey") ||
-                batch.Contains("CommitHostedStickyPreferred"),
+            Assert.IsFalse(batch.Contains("PreferredPlacement") ||
+                batch.Contains("TryCommitPreferred"),
                 "A live drag batch must never commit the durable preferred placement.");
 
             string host = ReadSource("StickyUiHost.cs");
@@ -713,7 +713,7 @@ namespace PennyPet.Tests
                 "private void ApplyDockBatchResult");
 
             Assert.IsFalse(live.Contains("ApplyDockCanonicalFromPhysical") ||
-                live.Contains("PreferredDisplayTargetKey") ||
+                live.Contains("PreferredPlacement") ||
                 live.Contains("WindowsDisplayResolver"),
                 "A live frame must only deposit the desired plan into the mailbox.");
             string result = Between(coordinator,
@@ -1029,9 +1029,8 @@ namespace PennyPet.Tests
 
             Assert.IsTrue(apply.Contains("Facts.TryPrepare(") && apply.Contains("update.Commit(forceVisible)") &&
                 apply.Contains("Notes.SaveAsync()"));
-            Assert.IsFalse(apply.Contains("CommitHostedStickyPreferred(") ||
-                apply.Contains("PreferredLocalLogical") ||
-                apply.Contains("PreferredDisplayTargetKey"),
+            Assert.IsFalse(apply.Contains("TryCommitPreferred(") ||
+                apply.Contains("PreferredPlacement"),
                 "Temporary group geometry must never overwrite preference.");
         }
 

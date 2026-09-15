@@ -1236,6 +1236,14 @@ namespace PennyPet.Tests
                 restored.TodoItems[2].State);
         }
 
+        private static StickyNoteData ParsePreferredFile(string key, string x, string y, string width, string height)
+        {
+            string[] fields = StickyNoteCodec.SerializeLine(new StickyNoteData { Id = "v11-input" }).Split('|');
+            fields[32] = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(key));
+            fields[33] = x; fields[34] = y; fields[35] = width; fields[36] = height;
+            return StickyNoteCodec.ParseLine(String.Join("|", fields));
+        }
+
         [TestMethod]
         public void StickyNoteCodec_V11RoundTripsPreferredPlacement()
         {
@@ -1247,11 +1255,8 @@ namespace PennyPet.Tests
                 LocalLogicalY = 40,
                 LocalLogicalWidth = 320,
                 LocalLogicalHeight = 300,
-                PreferredDisplayTargetKey = "mdp:home",
-                PreferredLocalLogicalX = -150,
-                PreferredLocalLogicalY = 40,
-                PreferredLocalLogicalWidth = 320,
-                PreferredLocalLogicalHeight = 300
+                PreferredPlacement = new WindowPlacementPreference("mdp:home",
+                    new LogicalRect { X = -150, Y = 40, Width = 320, Height = 300 })
             };
             string line = StickyNoteCodec.SerializeLine(source);
             Assert.IsTrue(line.StartsWith("11|", StringComparison.Ordinal));
@@ -1260,72 +1265,33 @@ namespace PennyPet.Tests
 
             StickyNoteData restored = StickyNoteCodec.ParseLine(line);
             Assert.AreEqual("mdp:home",
-                restored.PreferredDisplayTargetKey);
-            Assert.AreEqual(-150, restored.PreferredLocalLogicalX);
-            Assert.AreEqual(40, restored.PreferredLocalLogicalY);
-            Assert.AreEqual(320, restored.PreferredLocalLogicalWidth);
-            Assert.AreEqual(300, restored.PreferredLocalLogicalHeight);
+                restored.PreferredPlacement.PreferredTargetKey);
+            Assert.AreEqual(-150, restored.PreferredPlacement.LocalLogicalRect.X);
+            Assert.AreEqual(40, restored.PreferredPlacement.LocalLogicalRect.Y);
+            Assert.AreEqual(320, restored.PreferredPlacement.LocalLogicalRect.Width);
+            Assert.AreEqual(300, restored.PreferredPlacement.LocalLogicalRect.Height);
         }
 
         [TestMethod]
         public void StickyNoteCodec_V11InvalidPreferredKeyClearsLocalRect()
         {
-            StickyNoteData note = new StickyNoteData
-            {
-                Id = "v11-invalid-key",
-                PreferredDisplayTargetKey = String.Empty,
-                PreferredLocalLogicalX = 10,
-                PreferredLocalLogicalY = 20,
-                PreferredLocalLogicalWidth = 320,
-                PreferredLocalLogicalHeight = 300
-            };
-            StickyNoteData restored = StickyNoteCodec.ParseLine(
-                StickyNoteCodec.SerializeLine(note));
-            Assert.AreEqual(String.Empty,
-                restored.PreferredDisplayTargetKey);
-            Assert.AreEqual(0, restored.PreferredLocalLogicalX);
-            Assert.AreEqual(0, restored.PreferredLocalLogicalY);
-            Assert.AreEqual(0, restored.PreferredLocalLogicalWidth);
-            Assert.AreEqual(0, restored.PreferredLocalLogicalHeight);
+            StickyNoteData restored = ParsePreferredFile(String.Empty, "10", "20", "320", "300");
+            Assert.IsNull(restored.PreferredPlacement);
         }
 
         [TestMethod]
         public void StickyNoteCodec_V11HugePreferredSizeIsClamped()
         {
-            StickyNoteData note = new StickyNoteData
-            {
-                Id = "v11-huge",
-                PreferredDisplayTargetKey = "mdp:huge",
-                PreferredLocalLogicalWidth = 123456789,
-                PreferredLocalLogicalHeight = 300
-            };
-            StickyNoteData restored = StickyNoteCodec.ParseLine(
-                StickyNoteCodec.SerializeLine(note));
-            Assert.AreEqual(StickyNoteCodec.MaximumLocalLogicalValue,
-                restored.PreferredLocalLogicalWidth);
-            Assert.AreEqual(300, restored.PreferredLocalLogicalHeight);
+            StickyNoteData restored = ParsePreferredFile("mdp:huge", "0", "0", "123456789", "300");
+            Assert.AreEqual(StickyNoteCodec.MaximumLocalLogicalValue, restored.PreferredPlacement.LocalLogicalRect.Width);
+            Assert.AreEqual(300, restored.PreferredPlacement.LocalLogicalRect.Height);
         }
 
         [TestMethod]
         public void StickyNoteCodec_V11KeyWithNonPositiveSizeDegradesToUnset()
         {
-            StickyNoteData note = new StickyNoteData
-            {
-                Id = "v11-negative",
-                PreferredDisplayTargetKey = "mdp:negative",
-                PreferredLocalLogicalX = 5,
-                PreferredLocalLogicalY = 6,
-                PreferredLocalLogicalWidth = 320,
-                PreferredLocalLogicalHeight = -987654321
-            };
-            StickyNoteData restored = StickyNoteCodec.ParseLine(
-                StickyNoteCodec.SerializeLine(note));
-            Assert.AreEqual(String.Empty,
-                restored.PreferredDisplayTargetKey);
-            Assert.AreEqual(0, restored.PreferredLocalLogicalX);
-            Assert.AreEqual(0, restored.PreferredLocalLogicalY);
-            Assert.AreEqual(0, restored.PreferredLocalLogicalWidth);
-            Assert.AreEqual(0, restored.PreferredLocalLogicalHeight);
+            StickyNoteData restored = ParsePreferredFile("mdp:negative", "5", "6", "320", "-987654321");
+            Assert.IsNull(restored.PreferredPlacement);
         }
 
         [TestMethod]
@@ -1357,11 +1323,11 @@ namespace PennyPet.Tests
             Assert.IsTrue(
                 StickyPlacementRules.MigrateV10Preferred(note, topology));
             Assert.AreEqual("mdp:screen-b",
-                note.PreferredDisplayTargetKey);
-            Assert.AreEqual(-150, note.PreferredLocalLogicalX);
-            Assert.AreEqual(40, note.PreferredLocalLogicalY);
-            Assert.AreEqual(320, note.PreferredLocalLogicalWidth);
-            Assert.AreEqual(300, note.PreferredLocalLogicalHeight);
+                note.PreferredPlacement.PreferredTargetKey);
+            Assert.AreEqual(-150, note.PreferredPlacement.LocalLogicalRect.X);
+            Assert.AreEqual(40, note.PreferredPlacement.LocalLogicalRect.Y);
+            Assert.AreEqual(320, note.PreferredPlacement.LocalLogicalRect.Width);
+            Assert.AreEqual(300, note.PreferredPlacement.LocalLogicalRect.Height);
         }
 
         [TestMethod]
@@ -1392,8 +1358,7 @@ namespace PennyPet.Tests
             };
             Assert.IsFalse(
                 StickyPlacementRules.MigrateV10Preferred(missing, topology));
-            Assert.AreEqual(String.Empty,
-                missing.PreferredDisplayTargetKey);
+            Assert.IsNull(missing.PreferredPlacement);
 
             StickyNoteData existing = new StickyNoteData
             {
@@ -1403,40 +1368,85 @@ namespace PennyPet.Tests
                 LocalLogicalY = 6,
                 LocalLogicalWidth = 320,
                 LocalLogicalHeight = 300,
-                PreferredDisplayTargetKey = "mdp:keep",
-                PreferredLocalLogicalWidth = 280,
-                PreferredLocalLogicalHeight = 260
+                PreferredPlacement = new WindowPlacementPreference("mdp:keep",
+                    new LogicalRect { X = 0, Y = 0, Width = 280, Height = 260 })
             };
             Assert.IsFalse(
                 StickyPlacementRules.MigrateV10Preferred(existing, topology));
             Assert.AreEqual("mdp:keep",
-                existing.PreferredDisplayTargetKey);
-            Assert.AreEqual(280, existing.PreferredLocalLogicalWidth);
+                existing.PreferredPlacement.PreferredTargetKey);
+            Assert.AreEqual(280, existing.PreferredPlacement.LocalLogicalRect.Width);
         }
 
         [TestMethod]
-        public void StickyPlacementRules_OnlyUserReasonsCommitPreferred()
+        [DataRow((int)PlacementReason.UserMoveCommit, true)]
+        [DataRow((int)PlacementReason.UserResizeCommit, true)]
+        [DataRow((int)PlacementReason.Spawn, true)]
+        [DataRow((int)PlacementReason.DockCommit, true)]
+        [DataRow((int)PlacementReason.ExpandAndTile, true)]
+        [DataRow((int)PlacementReason.Restore, false)]
+        [DataRow((int)PlacementReason.TemporaryRehome, false)]
+        [DataRow((int)PlacementReason.PreferredDisplayReturned, false)]
+        [DataRow((int)PlacementReason.DockLiveFollower, false)]
+        [DataRow((int)PlacementReason.Recovery, false)]
+        public void StickyPlacementRules_OnlyUserReasonsCommitPreferred(int reason, bool accepted)
         {
-            Assert.IsTrue(StickyPlacementRules.CanCommitPreferred(
-                PlacementReason.UserMoveCommit));
-            Assert.IsTrue(StickyPlacementRules.CanCommitPreferred(
-                PlacementReason.UserResizeCommit));
-            Assert.IsTrue(StickyPlacementRules.CanCommitPreferred(
-                PlacementReason.Spawn));
-            Assert.IsTrue(StickyPlacementRules.CanCommitPreferred(
-                PlacementReason.DockCommit));
-            Assert.IsTrue(StickyPlacementRules.CanCommitPreferred(
-                PlacementReason.ExpandAndTile));
-            Assert.IsFalse(StickyPlacementRules.CanCommitPreferred(
-                PlacementReason.Restore));
-            Assert.IsFalse(StickyPlacementRules.CanCommitPreferred(
-                PlacementReason.TemporaryRehome));
-            Assert.IsFalse(StickyPlacementRules.CanCommitPreferred(
-                PlacementReason.PreferredDisplayReturned));
-            Assert.IsFalse(StickyPlacementRules.CanCommitPreferred(
-                PlacementReason.DockLiveFollower));
-            Assert.IsFalse(StickyPlacementRules.CanCommitPreferred(
-                PlacementReason.Recovery));
+            var previous = new WindowPlacementPreference("mdp:home",
+                new LogicalRect { X = 100, Y = 200, Width = 320, Height = 300 });
+            var next = new WindowPlacementPreference("mdp:other",
+                new LogicalRect { X = 10, Y = 20, Width = 600, Height = 450 });
+            var note = new StickyNoteData { PreferredPlacement = previous, X = 9000, LocalLogicalWidth = 700 };
+            Assert.AreEqual(accepted, StickyPlacementRules.TryCommitPreferred(note, next, (PlacementReason)reason));
+            Assert.AreSame(accepted ? next : previous, note.PreferredPlacement);
+            Assert.AreEqual(9000, note.X);
+            Assert.AreEqual(700, note.LocalLogicalWidth);
+        }
+
+        [TestMethod]
+        public void StickyNote_PersistenceCopyRetainsItsCompletePreferenceAcrossLaterMoves()
+        {
+            var local = new LogicalRect { X = -10, Y = 20, Width = 320, Height = 300 };
+            var original = new WindowPlacementPreference("mdp:home", local);
+            var note = new StickyNoteData { PreferredPlacement = original };
+            var captured = note.CloneForPersistence();
+            local.Width = 600;
+            var detachedRect = original.LocalLogicalRect;
+            detachedRect.Height = 900;
+            note.PreferredPlacement = new WindowPlacementPreference("mdp:other", local);
+            Assert.AreSame(original, captured.PreferredPlacement);
+            var saved = StickyNoteCodec.ParseLine(StickyNoteCodec.SerializeLine(captured));
+            Assert.AreEqual("mdp:home", saved.PreferredPlacement.PreferredTargetKey);
+            Assert.AreEqual(-10, saved.PreferredPlacement.LocalLogicalRect.X);
+            Assert.AreEqual(320, saved.PreferredPlacement.LocalLogicalRect.Width);
+            Assert.AreEqual(300, saved.PreferredPlacement.LocalLogicalRect.Height);
+            Assert.AreEqual(600, note.PreferredPlacement.LocalLogicalRect.Width);
+        }
+
+        [TestMethod]
+        [DataRow("bad", "30", "320", "300", true, 0, 30)]
+        [DataRow("-10", "bad", "320", "300", true, -10, 0)]
+        [DataRow("10", "20", "bad", "300", false, 0, 0)]
+        [DataRow("10", "20", "320", "0", false, 0, 0)]
+        public void StickyNoteCodec_PreferredFieldsRetainHistoricalMalformedNumberRules(
+            string x, string y, string width, string height, bool valid, int expectedX, int expectedY)
+        {
+            var note = ParsePreferredFile("  mdp:home  ", x, y, width, height);
+            if (!valid) { Assert.IsNull(note.PreferredPlacement); return; }
+            Assert.AreEqual("mdp:home", note.PreferredPlacement.PreferredTargetKey);
+            Assert.AreEqual(expectedX, note.PreferredPlacement.LocalLogicalRect.X);
+            Assert.AreEqual(expectedY, note.PreferredPlacement.LocalLogicalRect.Y);
+        }
+
+        [TestMethod]
+        [DataRow(1024, true)]
+        [DataRow(1025, false)]
+        public void StickyNoteCodec_PreferredKeyLimitIsCheckedAtTheFileBoundary(int length, bool valid)
+        {
+            var note = ParsePreferredFile(new string('k', length), "-10", "20", "320", "300");
+            Assert.AreEqual(valid, note.PreferredPlacement != null);
+            var saved = StickyNoteCodec.SerializeLine(note).Split('|');
+            if (!valid) CollectionAssert.AreEqual(new[] { "", "0", "0", "0", "0" },
+                saved.Skip(32).ToArray());
         }
 
         [TestMethod]
@@ -1500,11 +1510,11 @@ namespace PennyPet.Tests
             if (version >= 11)
             {
                 Assert.AreEqual("mdp:legacy-1",
-                    restored.PreferredDisplayTargetKey);
-                Assert.AreEqual(10, restored.PreferredLocalLogicalX);
-                Assert.AreEqual(20, restored.PreferredLocalLogicalY);
-                Assert.AreEqual(300, restored.PreferredLocalLogicalWidth);
-                Assert.AreEqual(240, restored.PreferredLocalLogicalHeight);
+                    restored.PreferredPlacement.PreferredTargetKey);
+                Assert.AreEqual(10, restored.PreferredPlacement.LocalLogicalRect.X);
+                Assert.AreEqual(20, restored.PreferredPlacement.LocalLogicalRect.Y);
+                Assert.AreEqual(300, restored.PreferredPlacement.LocalLogicalRect.Width);
+                Assert.AreEqual(240, restored.PreferredPlacement.LocalLogicalRect.Height);
             }
         }
 

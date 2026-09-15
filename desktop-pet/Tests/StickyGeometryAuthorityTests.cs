@@ -32,10 +32,9 @@ namespace PennyPet.Tests
                 Width = 900, Height = 700, DisplayId = "DISPLAY1",
                 LocalLogicalX = 999, LocalLogicalY = 888,
                 LocalLogicalWidth = 700, LocalLogicalHeight = 600,
-                PreferredDisplayTargetKey = "mdp:one",
-                PreferredLocalLogicalX = 40, PreferredLocalLogicalY = 60,
-                PreferredLocalLogicalWidth = 320,
-                PreferredLocalLogicalHeight = 240 };
+                PreferredPlacement = new WindowPlacementPreference("mdp:one",
+                    new LogicalRect { X = 40, Y = 60, Width = 320, Height = 240 })
+            };
         }
 
         [TestMethod]
@@ -63,18 +62,18 @@ namespace PennyPet.Tests
         public void Restore_V10IsOnlyAnInputWhenPreferredIsAbsent()
         {
             StickyNoteData note = ConflictingNote();
-            note.PreferredDisplayTargetKey = String.Empty;
+            note.PreferredPlacement = null;
             WindowPlacementPlan plan = StickyPlacementRecovery.SelectForShow(note, Topology());
             Assert.AreEqual(999, plan.Logical.X);
             Assert.AreEqual(700, plan.Logical.Width);
-            Assert.AreEqual(String.Empty, note.PreferredDisplayTargetKey);
+            Assert.IsNull(note.PreferredPlacement);
         }
 
         [TestMethod]
         public void Restore_MissingDisplayClampsPhysicalRecoveryWithoutChangingPreference()
         {
             StickyNoteData note = ConflictingNote();
-            note.PreferredDisplayTargetKey = "mdp:missing";
+            note.PreferredPlacement = new WindowPlacementPreference("mdp:missing", note.PreferredPlacement.LocalLogicalRect);
             note.DisplayId = "missing";
             WindowPlacementPlan plan = StickyPlacementRecovery.SelectForShow(note, Topology());
             PhysicalRect target = plan.Resolve(192);
@@ -82,8 +81,8 @@ namespace PennyPet.Tests
             Assert.AreEqual(-900, target.Left);
             Assert.AreEqual(-700, target.Top);
             Assert.AreEqual(900, target.Width);
-            Assert.AreEqual("mdp:missing", note.PreferredDisplayTargetKey);
-            Assert.AreEqual(40, note.PreferredLocalLogicalX);
+            Assert.AreEqual("mdp:missing", note.PreferredPlacement.PreferredTargetKey);
+            Assert.AreEqual(40, note.PreferredPlacement.LocalLogicalRect.X);
             Assert.AreEqual(9000, note.X);
         }
 
@@ -111,6 +110,20 @@ namespace PennyPet.Tests
             WindowPlacementPreference preferred;
             Assert.IsFalse(StickyPlacementRules.TryBuildPreferredPlacement(Facts(),
                 Topology(8, 0, 0), "mdp:one", out preferred));
+            Assert.IsNull(preferred);
+        }
+
+        [TestMethod]
+        [DataRow(0, 640, 480)]
+        [DataRow(144, 0, 480)]
+        [DataRow(144, 640, -1)]
+        public void IncompleteNativeFactsCannotInventAValidPreference(int dpi, int width, int height)
+        {
+            var facts = new WindowFacts("note", "mdp:one", "DISPLAY1",
+                new PhysicalRect(-1840, -960, width, height), dpi, 7, 10);
+            WindowPlacementPreference preferred;
+            Assert.IsFalse(StickyPlacementRules.TryBuildPreferredPlacement(facts,
+                Topology(), "mdp:one", out preferred));
             Assert.IsNull(preferred);
         }
 
@@ -192,7 +205,7 @@ namespace PennyPet.Tests
             Assert.AreEqual(10L, exit.Facts.WindowSequence);
             content.ApplyContentTo(note);
             Assert.AreEqual(700, note.Height);
-            Assert.AreEqual(240, note.PreferredLocalLogicalHeight);
+            Assert.AreEqual(240, note.PreferredPlacement.LocalLogicalRect.Height);
         }
     }
 }

@@ -81,20 +81,20 @@ namespace PennyPet
             }
             var members = new List<DockLogicalMember>(ordered.Count);
             foreach (StickyNoteData member in ordered)
-                members.Add(new DockLogicalMember(member.Id, root.PreferredLocalLogicalWidth,
-                    member.PreferredLocalLogicalHeight));
+                members.Add(new DockLogicalMember(member.Id, root.PreferredPlacement.LocalLogicalRect.Width,
+                    member.PreferredPlacement.LocalLogicalRect.Height));
             DisplaySurfaceSnapshot target = FindCommonPreferredSurface(ordered, topology);
             DockTopologyReprojectReason reason = DockTopologyReprojectReason.RestorePreferred;
             if (target == null)
             {
-                target = FallbackDisplayPolicy.ResolveFallbackSurface(topology, root.PreferredDisplayTargetKey,
+                target = FallbackDisplayPolicy.ResolveFallbackSurface(topology, root.PreferredPlacement.PreferredTargetKey,
                     new PhysicalRect(root.X, root.Y, root.Width, root.Height),
                     petFacts == null ? String.Empty : petFacts.RuntimeGdiName);
                 reason = DockTopologyReprojectReason.TemporaryRehome;
             }
             if (target == null) return null;
             var logical = new DockGroupLogicalState(new LogicalPoint {
-                X = root.PreferredLocalLogicalX, Y = root.PreferredLocalLogicalY }, members);
+                X = root.PreferredPlacement.LocalLogicalRect.X, Y = root.PreferredPlacement.LocalLogicalRect.Y }, members);
             var plan = new DockGroupReprojectPlan(topology.Generation, planSequence, target.RuntimeSurfaceId,
                 logical, reason == DockTopologyReprojectReason.TemporaryRehome);
             return new DockRestoreOperation(ordered, focusId, focusEditor, persistVisibility, topology, target, reason, plan);
@@ -104,8 +104,7 @@ namespace PennyPet
         {
             if (group == null || group.Count < 2) return false;
             foreach (StickyNoteData note in group)
-                if (note == null || String.IsNullOrWhiteSpace(note.PreferredDisplayTargetKey) ||
-                    note.PreferredLocalLogicalWidth <= 0 || note.PreferredLocalLogicalHeight <= 0) return false;
+                if (note?.PreferredPlacement == null) return false;
             return true;
         }
 
@@ -116,7 +115,7 @@ namespace PennyPet
             DisplaySurfaceSnapshot target = null;
             foreach (StickyNoteData note in group)
             {
-                DisplaySurfaceSnapshot surface = topology.FindByTargetKey(note.PreferredDisplayTargetKey);
+                DisplaySurfaceSnapshot surface = topology.FindByTargetKey(note.PreferredPlacement.PreferredTargetKey);
                 if (surface == null || (target != null && !String.Equals(target.RuntimeSurfaceId,
                     surface.RuntimeSurfaceId, StringComparison.OrdinalIgnoreCase))) return null;
                 target = surface;

@@ -22,13 +22,14 @@ namespace PennyPet.Tests
             var content = StickyNoteUiSnapshot.Capture(note, initial);
             Assert.AreSame(initial, content);
             note.X = -1500; note.LocalLogicalWidth = 300;
-            note.PreferredDisplayTargetKey = "disconnected";
+            note.PreferredPlacement = new WindowPlacementPreference("disconnected",
+                new LogicalRect { Width = 320, Height = 240 });
             var moved = StickyNoteUiSnapshot.Capture(note, content);
             Assert.AreSame(content, moved);
             var editor = moved.CreateWorkingCopy();
             Assert.AreEqual(new StickyNoteData().X, editor.X);
             Assert.AreEqual(0, editor.LocalLogicalWidth);
-            Assert.AreEqual(String.Empty, editor.PreferredDisplayTargetKey);
+            Assert.IsNull(editor.PreferredPlacement);
         }
 
         [TestMethod]

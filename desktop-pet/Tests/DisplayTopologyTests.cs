@@ -203,7 +203,6 @@ namespace PennyPet.Tests
                 new WindowPlacementRuntimeState(preferred, effective, true,
                     false, "preferred-target-missing");
 
-            Assert.IsTrue(preferred.IsValid);
             Assert.AreEqual(2D, effective.Scale, 0.0001D);
             Assert.AreSame(preferred, state.Preferred);
             Assert.AreSame(effective, state.Effective);
@@ -332,7 +331,6 @@ namespace PennyPet.Tests
             Assert.AreEqual(40, preference.LocalLogicalRect.Y);
             Assert.AreEqual(320, preference.LocalLogicalRect.Width);
             Assert.AreEqual(300, preference.LocalLogicalRect.Height);
-            Assert.IsTrue(preference.IsValid);
         }
 
         [TestMethod]

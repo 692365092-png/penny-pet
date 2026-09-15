@@ -263,9 +263,8 @@ namespace PennyPet.Tests
                 source.DockGroupOrder = 1;
                 foreach (StickyNoteData note in new[] { root, source })
                 {
-                    note.PreferredDisplayTargetKey = "mdp:one";
-                    note.PreferredLocalLogicalWidth = 320;
-                    note.PreferredLocalLogicalHeight = 240;
+                    note.PreferredPlacement = new WindowPlacementPreference("mdp:one",
+                        new LogicalRect { X = 0, Y = 0, Width = 320, Height = 240 });
                 }
                 DockResizeSession session = DockResizeSession.TryStart(DockResizeKind.Horizontal, source.Id,
                     new[] { Facts(root.Id, -900, 360, dpi: 144), Facts(source.Id, -540, 480) });
@@ -273,12 +272,12 @@ namespace PennyPet.Tests
                 session.BeginFinal(completed);
                 CommitPreference(source, completed.Facts, true);
                 Assert.IsTrue(session.Mutations.Defer(null, null, () => {
-                    Assert.AreEqual(600, root.PreferredLocalLogicalWidth, "Hide must see the settled root width.");
+                    Assert.AreEqual(600, root.PreferredPlacement.LocalLogicalRect.Width, "Hide must see the settled root width.");
                     root.Visible = source.Visible = false;
                     repository.SaveAsync();
                 }));
                 Assert.IsTrue(root.Visible);
-                Assert.AreEqual(320, root.PreferredLocalLogicalWidth);
+                Assert.AreEqual(320, root.PreferredPlacement.LocalLogicalRect.Width);
                 DockBatchResult actual = Result(Facts(root.Id, -900, 360, 3, width: 900, dpi: 144));
                 Assert.IsTrue(session.LayoutIsExact(actual));
                 CommitPreference(root, actual.Members[0].Facts);
@@ -287,8 +286,8 @@ namespace PennyPet.Tests
                 StickyNoteRepository restored = StickyNoteRepository.LoadFromFile(Path.Combine(directory, "notes.dat"));
                 StickyNoteData savedRoot = restored.Find(root.Id), savedSource = restored.Find(source.Id);
                 Assert.IsFalse(savedRoot.Visible);
-                Assert.AreEqual(600, savedRoot.PreferredLocalLogicalWidth);
-                Assert.AreEqual(450, savedSource.PreferredLocalLogicalWidth);
+                Assert.AreEqual(600, savedRoot.PreferredPlacement.LocalLogicalRect.Width);
+                Assert.AreEqual(450, savedSource.PreferredPlacement.LocalLogicalRect.Width);
                 Assert.AreEqual(savedRoot.DockGroupId, savedSource.DockGroupId);
                 Assert.AreEqual(0, savedRoot.DockGroupOrder);
                 Assert.AreEqual(1, savedSource.DockGroupOrder);
@@ -305,11 +304,7 @@ namespace PennyPet.Tests
             WindowPlacementPreference preference;
             Assert.IsTrue(StickyResizePreferences.TryBuild(note, facts, StickyGeometryAuthorityTests.Topology(),
                 DockResizeKind.Horizontal, source, out preference));
-            note.PreferredDisplayTargetKey = preference.PreferredTargetKey;
-            note.PreferredLocalLogicalX = preference.LocalLogicalRect.X;
-            note.PreferredLocalLogicalY = preference.LocalLogicalRect.Y;
-            note.PreferredLocalLogicalWidth = preference.LocalLogicalRect.Width;
-            note.PreferredLocalLogicalHeight = preference.LocalLogicalRect.Height;
+            note.PreferredPlacement = preference;
         }
     }
 }

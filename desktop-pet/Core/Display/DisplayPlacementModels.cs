@@ -8,21 +8,15 @@ namespace PennyPet
             LogicalRect localLogicalRect)
         {
             PreferredTargetKey = (preferredTargetKey ?? String.Empty).Trim();
+            if (PreferredTargetKey.Length == 0)
+                throw new ArgumentException("A preferred display is required.", nameof(preferredTargetKey));
+            if (localLogicalRect.Width <= 0 || localLogicalRect.Height <= 0)
+                throw new ArgumentOutOfRangeException(nameof(localLogicalRect));
             LocalLogicalRect = localLogicalRect;
         }
 
-        internal string PreferredTargetKey { get; private set; }
-        internal LogicalRect LocalLogicalRect { get; private set; }
-
-        internal bool IsValid
-        {
-            get
-            {
-                return !String.IsNullOrWhiteSpace(PreferredTargetKey) &&
-                    LocalLogicalRect.Width > 0 &&
-                    LocalLogicalRect.Height > 0;
-            }
-        }
+        internal string PreferredTargetKey { get; }
+        internal LogicalRect LocalLogicalRect { get; }
     }
 
     // Detached facts captured from an actual window. No HWND or UI object may

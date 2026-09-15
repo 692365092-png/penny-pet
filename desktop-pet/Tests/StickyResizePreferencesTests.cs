@@ -9,8 +9,9 @@ namespace PennyPet.Tests
         {
             return new StickyNoteData { Id = "note", X = 9000, Y = 8000, Width = 900, Height = 700,
                 LocalLogicalX = 999, LocalLogicalY = 888, LocalLogicalWidth = 700, LocalLogicalHeight = 600,
-                PreferredDisplayTargetKey = "mdp:one", PreferredLocalLogicalX = 40, PreferredLocalLogicalY = 60,
-                PreferredLocalLogicalWidth = 320, PreferredLocalLogicalHeight = 240 };
+                PreferredPlacement = new WindowPlacementPreference("mdp:one",
+                    new LogicalRect { X = 40, Y = 60, Width = 320, Height = 240 })
+            };
         }
 
         private static WindowFacts Facts(int dpi = 192, string id = "note", long generation = 7)
@@ -35,7 +36,7 @@ namespace PennyPet.Tests
             Assert.AreEqual(width, result.LocalLogicalRect.Width);
             Assert.AreEqual(60, result.LocalLogicalRect.Y);
             Assert.AreEqual(240, result.LocalLogicalRect.Height);
-            Assert.AreEqual(320, note.PreferredLocalLogicalWidth, "Building a preference is pure.");
+            Assert.AreEqual(320, note.PreferredPlacement.LocalLogicalRect.Width, "Building a preference is pure.");
             Assert.AreEqual(9000, note.X);
             Assert.AreEqual(700, note.LocalLogicalWidth);
         }
@@ -70,7 +71,7 @@ namespace PennyPet.Tests
         public void ChangingSurfaceRebuildsLocalCoordinatesFromActualFacts(bool horizontal)
         {
             StickyNoteData note = Note();
-            note.PreferredDisplayTargetKey = "mdp:removed";
+            note.PreferredPlacement = new WindowPlacementPreference("mdp:removed", note.PreferredPlacement.LocalLogicalRect);
             WindowPlacementPreference result;
             Assert.IsTrue(StickyResizePreferences.TryBuild(note, Facts(), StickyGeometryAuthorityTests.Topology(),
                 horizontal ? DockResizeKind.Horizontal : DockResizeKind.Divider, false, out result));
@@ -79,14 +80,14 @@ namespace PennyPet.Tests
             Assert.AreEqual(100, result.LocalLogicalRect.Y);
             Assert.AreEqual(450, result.LocalLogicalRect.Width);
             Assert.AreEqual(300, result.LocalLogicalRect.Height);
-            Assert.AreEqual("mdp:removed", note.PreferredDisplayTargetKey);
+            Assert.AreEqual("mdp:removed", note.PreferredPlacement.PreferredTargetKey);
         }
 
         [TestMethod]
         public void MissingPreferenceRecoversAllDimensionsFromActualFacts()
         {
             StickyNoteData note = Note();
-            note.PreferredLocalLogicalHeight = 0;
+            note.PreferredPlacement = null;
             WindowPlacementPreference result;
             Assert.IsTrue(StickyResizePreferences.TryBuild(note, Facts(), StickyGeometryAuthorityTests.Topology(),
                 DockResizeKind.Horizontal, false, out result));
@@ -104,8 +105,8 @@ namespace PennyPet.Tests
             Assert.IsFalse(StickyResizePreferences.TryBuild(note, Facts(id: id, generation: generation),
                 StickyGeometryAuthorityTests.Topology(), DockResizeKind.Horizontal, true, out result));
             Assert.IsNull(result);
-            Assert.AreEqual(40, note.PreferredLocalLogicalX);
-            Assert.AreEqual(320, note.PreferredLocalLogicalWidth);
+            Assert.AreEqual(40, note.PreferredPlacement.LocalLogicalRect.X);
+            Assert.AreEqual(320, note.PreferredPlacement.LocalLogicalRect.Width);
         }
     }
 }

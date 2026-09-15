@@ -215,9 +215,6 @@ namespace PennyPet.Tests
 
             Assert.AreEqual(key, moved.PreferredTargetKey,
                 "user move target seed=" + seed);
-            Assert.IsTrue(moved.IsValid,
-                "invalid moved preference seed=" + seed);
-
             PhysicalRect projected = DisplayGeometry.ProjectLocalRect(
                 moved.LocalLogicalRect, surface.Bounds.Left,
                 surface.Bounds.Top, dpi / 96.0);

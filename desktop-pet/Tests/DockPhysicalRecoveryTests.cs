@@ -51,7 +51,7 @@ namespace PennyPet.Tests
             Assert.AreEqual(String.Empty, plan.SourceNoteId);
             Assert.IsFalse(group[0].Visible);
             Assert.AreEqual(8000, group[1].X);
-            Assert.AreEqual(String.Empty, group[0].PreferredDisplayTargetKey);
+            Assert.IsNull(group[0].PreferredPlacement);
         }
 
         [TestMethod]
@@ -137,9 +137,8 @@ namespace PennyPet.Tests
         public void RecoveryCaptureDoesNotReadLaterChangesOrCommitAPartialPreference()
         {
             List<StickyNoteData> group = Group();
-            group[0].PreferredDisplayTargetKey = "mdp:unplugged";
-            group[0].PreferredLocalLogicalWidth = 700;
-            group[0].PreferredLocalLogicalHeight = 500;
+            group[0].PreferredPlacement = new WindowPlacementPreference("mdp:unplugged",
+                new LogicalRect { X = 0, Y = 0, Width = 700, Height = 500 });
             group[1].DisplayId = "DISPLAY-old";
             group[1].LocalLogicalWidth = 800;
             group[1].LocalLogicalHeight = 600;
@@ -151,9 +150,9 @@ namespace PennyPet.Tests
             Assert.AreEqual(-1819, plan.WindowTargets[0].PhysicalBounds.Left);
             Assert.AreEqual(421, plan.WindowTargets[0].PhysicalBounds.Width);
             Assert.AreEqual(617, plan.WindowTargets[1].PhysicalBounds.Height);
-            Assert.AreEqual("mdp:unplugged", group[0].PreferredDisplayTargetKey);
-            Assert.AreEqual(700, group[0].PreferredLocalLogicalWidth);
-            Assert.AreEqual(String.Empty, group[1].PreferredDisplayTargetKey);
+            Assert.AreEqual("mdp:unplugged", group[0].PreferredPlacement.PreferredTargetKey);
+            Assert.AreEqual(700, group[0].PreferredPlacement.LocalLogicalRect.Width);
+            Assert.IsNull(group[1].PreferredPlacement);
             Assert.IsTrue(operation.Snapshots[1].AlwaysOnTop, "New sessions inherit the root pin state.");
             Assert.IsFalse(group[1].AlwaysOnTop, "Canonical pin state waits for acceptance.");
         }
@@ -165,9 +164,8 @@ namespace PennyPet.Tests
             DockRestoreOperation old = Create(group);
             foreach (StickyNoteData member in group)
             {
-                member.PreferredDisplayTargetKey = "mdp:one";
-                member.PreferredLocalLogicalWidth = 320;
-                member.PreferredLocalLogicalHeight = 300;
+                member.PreferredPlacement = new WindowPlacementPreference("mdp:one",
+                    new LogicalRect { X = 0, Y = 0, Width = 320, Height = 300 });
             }
             DockRestoreOperation next = Create(group, sequence: 18);
             var operations = new DockRestoreOperations();

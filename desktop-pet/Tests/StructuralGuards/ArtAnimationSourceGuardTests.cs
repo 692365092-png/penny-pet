@@ -212,7 +212,7 @@ namespace PennyPet.Tests
                 "The degraded spawn fallback must center on Penny's current working area.");
             Assert.IsFalse(fallback.Contains("Left - 332") ||
                 fallback.Contains("Right + 12") ||
-                fallback.Contains("PreferredDisplayTargetKey"),
+                fallback.Contains("PreferredPlacement"),
                 "The fallback must not use beside-pet placement or fabricate a durable identity.");
         }
     }

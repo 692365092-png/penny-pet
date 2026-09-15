@@ -16,21 +16,21 @@ namespace PennyPet
             if (note == null || facts == null ||
                 !String.Equals(note.Id, facts.WindowId, StringComparison.OrdinalIgnoreCase) ||
                 !StickyPlacementRules.TryBuildPreferredPlacement(facts, topology,
-                    note.PreferredDisplayTargetKey, out preference)) return false;
+                    note.PreferredPlacement?.PreferredTargetKey, out preference)) return false;
             LogicalRect actual = preference.LocalLogicalRect;
-            bool samePreferredSurface = !String.IsNullOrWhiteSpace(note.PreferredDisplayTargetKey) &&
-                String.Equals(preference.PreferredTargetKey, note.PreferredDisplayTargetKey, StringComparison.OrdinalIgnoreCase) &&
-                note.PreferredLocalLogicalWidth > 0 && note.PreferredLocalLogicalHeight > 0;
+            WindowPlacementPreference previous = note.PreferredPlacement;
+            bool samePreferredSurface = previous != null && String.Equals(
+                preference.PreferredTargetKey, previous.PreferredTargetKey, StringComparison.OrdinalIgnoreCase);
             if (kind == DockResizeKind.Divider && samePreferredSurface)
-                actual = new LogicalRect { X = note.PreferredLocalLogicalX, Y = note.PreferredLocalLogicalY,
-                    Width = note.PreferredLocalLogicalWidth, Height = actual.Height };
+                actual = new LogicalRect { X = previous.LocalLogicalRect.X, Y = previous.LocalLogicalRect.Y,
+                    Width = previous.LocalLogicalRect.Width, Height = actual.Height };
             else if (kind == DockResizeKind.Horizontal && !source && samePreferredSurface)
-                actual = new LogicalRect { X = actual.X, Y = note.PreferredLocalLogicalY,
-                    Width = actual.Width, Height = note.PreferredLocalLogicalHeight };
+                actual = new LogicalRect { X = actual.X, Y = previous.LocalLogicalRect.Y,
+                    Width = actual.Width, Height = previous.LocalLogicalRect.Height };
             // On another surface the old display-local Y is not meaningful;
             // a source corner resize may also change Y/height, so keep its full rect.
             preference = new WindowPlacementPreference(preference.PreferredTargetKey, actual);
-            return preference.IsValid;
+            return true;
         }
     }
 }

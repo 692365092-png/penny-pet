@@ -85,12 +85,8 @@ namespace PennyPet
                     note.DisplayId = Surface.RuntimeGdiName;
                     note.LocalLogicalX = 100; note.LocalLogicalY = 100 + 230 * i;
                     note.LocalLogicalWidth = 300; note.LocalLogicalHeight = 230;
-                    note.PreferredDisplayTargetKey = DisplayTopologyRules
-                        .SelectPreferredTargetKey(Surface, null);
-                    note.PreferredLocalLogicalX = 100;
-                    note.PreferredLocalLogicalY = 100 + 230 * i;
-                    note.PreferredLocalLogicalWidth = 300;
-                    note.PreferredLocalLogicalHeight = 230;
+                    note.PreferredPlacement = new WindowPlacementPreference(DisplayTopologyRules
+                        .SelectPreferredTargetKey(Surface, null), new LogicalRect { X = 100, Y = 100 + 230 * i, Width = 300, Height = 230 });
                     note.AlwaysOnTop = false; note.Visible = true;
                     Notes.Add(note); Hosted.AddNote(note.Id);
                     Hosted.RecordSequence(note.Id, 1);
@@ -249,7 +245,7 @@ namespace PennyPet
                     s.Notes[0].Visible && !s.Notes[0].AlwaysOnTop &&
                     s.Sequence(0) == 1 &&
                     ReferenceEquals(s.Placement.GetEffective(m.NoteId), old) &&
-                    s.Notes[0].PreferredLocalLogicalX == 100 &&
+                    s.Notes[0].PreferredPlacement.LocalLogicalRect.X == 100 &&
                     s.Placement.IsTemporaryRehome(m.NoteId) && s.Saves == saves,
                     "A4 rejected reproject leaves canonical/content/lease/Save/preferred/temp untouched");
                 evidence.Add("A4: false; zero canonical/content/lease/Save mutation; preferred/temp/effective unchanged.");
@@ -270,7 +266,7 @@ namespace PennyPet
                     s.Saves == saves && s.Sequence(0) == 1 &&
                     s.Placement.GetEffective(s.Notes[0].Id).WindowSequence == 1 &&
                     (scenario != 2 || (ReferenceEquals(s.Placement.GetEffective(s.Notes[2].Id), old) &&
-                        s.Notes[2].PreferredLocalLogicalX == 100)),
+                        s.Notes[2].PreferredPlacement.LocalLogicalRect.X == 100)),
                     "A5 whole-set zero mutation for structural/hosted/effective rejection");
                 evidence.Add("A5-" + scenario + ": " + (scenario < 2
                     ? "invalid final member: zero canonical/preferred/lease/effective/order/Save mutation."
