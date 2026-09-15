@@ -14,6 +14,7 @@ namespace PennyPet
     {
         private readonly string _filePath;
         private readonly List<StickyNoteData> _notes = new List<StickyNoteData>();
+        private readonly IReadOnlyList<StickyNoteData> _notesView;
         private bool _loadSucceeded = true;
         private bool _recoveredFromLoadFailure;
         private bool _recoveredFromPartialSalvage;
@@ -32,6 +33,7 @@ namespace PennyPet
             Func<StickyWriteRequest, PersistenceResult> write = null)
         {
             _filePath = filePath;
+            _notesView = _notes.AsReadOnly();
             _uiContext = SynchronizationContext.Current;
             _writer = new PersistenceWriter<StickyWriteRequest>(write ?? WriteSnapshot);
             _writer.Failed += delegate(object sender, PersistenceFailedEventArgs e)
@@ -451,6 +453,13 @@ namespace PennyPet
             note.TabOrder = NextTabOrder();
             _notes.Add(note);
             return note;
+        }
+
+        // Pet-thread-only live view for order-independent reads. Do not retain
+        // across repository mutations or pass it to a worker thread.
+        internal IReadOnlyList<StickyNoteData> InStorageOrder
+        {
+            get { return _notesView; }
         }
 
         public List<StickyNoteData> GetAll()

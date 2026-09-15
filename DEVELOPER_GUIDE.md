@@ -162,6 +162,10 @@ Dock 修改必须同时检查：组关系、组内顺序、持久化快照、统
 - `sticky-notes.dat` / `.bak`：便利贴、待办、日程、显示状态和 Dock。
 - `diagnostics.log`：本地异常诊断。
 
+显示器和窗口层的详细事件跟踪默认关闭。排查 DPI、窗口位置或层级问题时，
+启动前设置 `PENNY_DISPLAY_TRACE=1`；未设置或设为 `0` 时关闭。
+该开关不影响致命异常和可恢复异常的日志记录。
+
 `.pennysticky` v1 导出的是 Sticky dataset，不是整个 Penny 数据目录。完整 reminder records（包含文本、deadline、pre-alert 和 `SourceNoteId`）由 `settings.ini` 持有；Sticky 内的 `ReminderUtcTicks` 只是下一次提醒投影。因此当前 Sticky Backup 不承诺 linked reminder 或 standalone reminder 跨设备迁移。未来若增加 linked reminder portability，必须单独设计有界格式，并在 conflict copy 时重映射目标 NoteId。
 
 兼容逻辑仍会从旧品牌目录导入数据。读取失败时先尝试 `.bak`，无法读取的源文件会保留为损坏备份。写入失败时保持 dirty 并重试；退出前仍失败时允许重试、导出快照或取消退出。不要用默认值覆盖尚未安全保留的旧数据。

@@ -1521,7 +1521,7 @@ namespace PennyPet
         {
             if (tabs == null || tabs.IsDisposed || !tabs.Visible) return false;
             Rectangle stripBounds = tabs.Bounds;
-            foreach (StickyNoteData note in Notes.GetAll())
+            foreach (StickyNoteData note in Notes.InStorageOrder)
             {
                 if (note == null || !note.Visible) continue;
                 WindowFacts facts = Placement.GetEffective(note.Id);

@@ -50,7 +50,7 @@ namespace PennyPet
             _setReminderItem.Enabled = items.Count < ReminderSchedule.MaximumItems;
             _setReminderItem.Text = "添加提醒…（" + items.Count + "/" +
                 ReminderSchedule.MaximumItems + "）";
-            _manageNotesItem.Text = "便利贴管理…（" + _notes.GetAll().Count + "张）";
+            _manageNotesItem.Text = "便利贴管理…（" + _notes.Count + "张）";
             _silentItem.Checked = _settings.SilentMode;
             _scaleItem.Text = "调整大小…（桌宠 " + _scalePercent + "% / 按键" +
                 KeyTextSizeName(_settings.KeyOverlayScalePercent) + "）";

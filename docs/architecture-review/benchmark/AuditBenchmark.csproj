@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>PennyPet.SelfTests</AssemblyName><ImplicitUsings>enable</ImplicitUsings>
+    <PennySource Condition="'$(PennySource)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../..'))</PennySource>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(PennySource)/desktop-pet/Features/StickyNotes/DockWindowFacts.cs" />
+    <Compile Include="$(PennySource)/desktop-pet/Features/StickyNotes/StickyHostedRuntime.cs" />
+    <Compile Include="$(PennySource)/desktop-pet/Features/StickyNotes/StickyPlacementRuntime.cs" />
+    <Compile Include="$(PennySource)/desktop-pet/Features/StickyNotes/StickyUiCommand.cs" />
+    <ProjectReference Include="$(PennySource)/desktop-pet/PennyPet.Core.csproj" />
+  </ItemGroup>
+</Project>
