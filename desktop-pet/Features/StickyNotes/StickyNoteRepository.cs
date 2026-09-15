@@ -493,7 +493,7 @@ namespace PennyPet
                 if (!all[i].Visible) all[i] = hidden[hiddenIndex++];
             }
             for (int i = 0; i < all.Count; i++) all[i].TabOrder = i;
-            Save();
+            SaveAsync();
         }
 
         public StickyNoteData Find(string id)
@@ -512,7 +512,7 @@ namespace PennyPet
             StickyDockOperations.ExtractSingleDockMember(
                 StickyDockGroups.GetOrderedGroup(_notes, note), note);
             _notes.Remove(note);
-            Save();
+            SaveAsync();
             return true;
         }
 

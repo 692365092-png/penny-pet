@@ -93,10 +93,8 @@ namespace PennyPet.Tests
 
             Assert.IsTrue(codec.Contains(
                     "internal const int VersionElevenFieldCount = 37") &&
-                codec.Contains("CurrentVersion = VersionEleven") &&
-                codec.Contains("bool versionEleven = fields.Length >= 37") &&
-                codec.Contains("versionTen || versionEleven"),
-                "The codec must emit v11 and keep v1-v10 parsing paths intact.");
+                codec.Contains("CurrentVersion = VersionEleven"),
+                "The codec must emit the documented v11 format; historical parsing is covered by fixture tests.");
             Assert.IsTrue(codec.Contains(
                     "Encode(note.PreferredDisplayTargetKey") &&
                 codec.Contains("note.PreferredLocalLogicalWidth.ToString("),

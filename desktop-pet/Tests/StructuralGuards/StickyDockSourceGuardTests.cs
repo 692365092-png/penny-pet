@@ -84,7 +84,6 @@ namespace PennyPet.Tests
             string menu = ReadSource("PetMenuActions.cs");
             string host = ReadSource("StickyUiHost.cs");
             string session = ReadSource("StickyWindowSession.cs");
-            string codec = ReadSource("Core/StickyNotes/StickyNoteCodec.cs");
             string petOwned = startup + form + coordinator + dock +
                 persistence + reminder + menu;
 
@@ -102,9 +101,6 @@ namespace PennyPet.Tests
             Assert.IsFalse(host.Contains("StickyNoteRepository") ||
                 host.Contains("IsTodoList") || host.Contains("IsSchedule"),
                 "The host must own sessions, not canonical persistence or content modes.");
-            Assert.IsTrue(codec.Contains("versionOne") &&
-                codec.Contains("versionNine"),
-                "Removing the executor must retain legacy persistence readers.");
         }
 
         [TestMethod]

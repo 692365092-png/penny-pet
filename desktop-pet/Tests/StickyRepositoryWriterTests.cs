@@ -225,6 +225,7 @@ namespace PennyPet.Tests
                 notes[1].Visible = notes[3].Visible = false;
                 string hiddenId = notes[1].Id;
                 Assert.IsTrue(repository.Remove(notes[deletedIndex]));
+                Assert.IsTrue(repository.WaitForPendingSaves().Succeeded);
                 StickyNoteRepository restored = StickyNoteRepository.LoadFromFile(primary);
                 List<StickyNoteData> group = StickyDockGroups.GetOrderedGroup(restored.GetAll(), restored.Find(hiddenId));
                 Assert.AreEqual(3, group.Count);
@@ -234,6 +235,64 @@ namespace PennyPet.Tests
                 Assert.IsNull(restored.Find(notes[deletedIndex].Id));
             }
             finally { Directory.Delete(directory, true); }
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void DeleteAndReorderReturnWhileThePrimaryWriterIsBusy(bool delete)
+        {
+            string directory = DirectoryForTest();
+            using (var entered = new ManualResetEventSlim())
+            using (var release = new ManualResetEventSlim())
+            {
+                var written = new ConcurrentQueue<StickyWriteRequest>();
+                var repository = new StickyNoteRepository(Path.Combine(directory, "notes.dat"), request =>
+                {
+                    entered.Set();
+                    if (!release.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException();
+                    written.Enqueue(request);
+                    return PersistenceResult.Success();
+                });
+                StickyNoteData first = repository.CreateDraft("first", Point.Empty);
+                StickyNoteData second = repository.CreateDraft("second", Point.Empty);
+                first.Visible = second.Visible = false;
+                repository.SaveAsync();
+                Task mutation = null;
+                bool returned = false;
+                try
+                {
+                    Assert.IsTrue(entered.Wait(TimeSpan.FromSeconds(5)));
+                    mutation = Task.Run(() =>
+                    {
+                        if (delete) Assert.IsTrue(repository.Remove(first));
+                        else repository.ReorderHidden(first, 2);
+                    });
+                    returned = mutation.Wait(TimeSpan.FromSeconds(2));
+                }
+                finally
+                {
+                    release.Set();
+                    if (mutation != null) Assert.IsTrue(mutation.Wait(TimeSpan.FromSeconds(5)));
+                    Assert.IsTrue(repository.WaitForPendingSaves().Succeeded);
+                    Directory.Delete(directory, true);
+                }
+                Assert.IsTrue(returned, "A UI mutation must enqueue its save without waiting for disk.");
+                StickyWriteRequest[] requests = written.ToArray();
+                Assert.AreEqual(2, requests.Length);
+                Assert.AreEqual(2, requests[0].Snapshot.Count, "The first snapshot must stay detached.");
+                var saved = requests[1].Snapshot;
+                if (delete)
+                {
+                    Assert.AreEqual(1, saved.Count);
+                    Assert.AreEqual(second.Id, saved[0].Id);
+                }
+                else
+                {
+                    Assert.AreEqual(1, saved[0].TabOrder);
+                    Assert.AreEqual(0, saved[1].TabOrder);
+                }
+            }
         }
 
         [TestMethod]

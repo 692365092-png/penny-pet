@@ -93,7 +93,7 @@ GitHub 开源发布版使用 `build.ps1` 生成可审查、可自动测试的未
 - `PetArt.cs`：外置美术包读取、GIF 时长解析、完整分辨率发布资源包与运行时缓存。
 - `Features/Art`：Windows/GDI 动画帧生命周期、画布适配和可选内描边。
 - `LayeredSpriteRenderer.cs`：Windows 透明分层窗口渲染。
-- `Core/StickyNotes`：便利贴、待办、日程与 Dock 的纯数据、v1-v9 编解码、组关系变更及页签拖放会话，不引用桌面 UI。
+- `Core/StickyNotes`：便利贴、待办、日程与 Dock 的纯数据、v1-v11 编解码、组关系变更及页签拖放会话，不引用桌面 UI。
 - `Features/StickyNotes`：便利贴窗口、编辑、Dock 协调、持久化、dirty 状态、自动重试与紧急导出。
 - `StickyNoteWpf.cs`：WPF 便利贴窗口本体；RichText/IME、链接和原生窗口行为分别位于 `StickyEditorCoordinator.cs`、`StickyLinkCoordinator.cs` 和 `StickyNativeWindowBehavior.cs`。
 - `StickyTodoCoordinator.cs` / `StickyScheduleCoordinator.cs`：待办和日程 UI 逻辑。

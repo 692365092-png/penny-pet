@@ -20,6 +20,10 @@ namespace PennyPet
         internal const int MaximumLocalLogicalValue = 20000;
 
         private static readonly char[] LineSeparators = new char[] { '\n' };
+        // File revisions append fields (v1's text position is the exception).
+        // Validate the complete historical layout once before reading fields.
+        private static readonly int[] MinimumFieldCounts =
+            { 0, 13, 16, 17, 18, 20, 22, 23, 25, 27, 32, 37 };
 
         internal static string SerializeLine(StickyNoteData note)
         {
@@ -81,21 +85,12 @@ namespace PennyPet
         {
             if (String.IsNullOrWhiteSpace(line)) return null;
             string[] fields = line.Split('|');
-            bool versionOne = fields.Length >= 13 && fields[0] == "1";
-            bool versionTwo = fields.Length >= 16 && fields[0] == "2";
-            bool versionThree = fields.Length >= 17 && fields[0] == "3";
-            bool versionFour = fields.Length >= 18 && fields[0] == "4";
-            bool versionFive = fields.Length >= 20 && fields[0] == "5";
-            bool versionSix = fields.Length >= 22 && fields[0] == "6";
-            bool versionSeven = fields.Length >= 23 && fields[0] == "7";
-            bool versionEight = fields.Length >= 25 && fields[0] == "8";
-            bool versionNine = fields.Length >= 27 && fields[0] == "9";
-            bool versionTen = fields.Length >= 32 && fields[0] == "10";
-            bool versionEleven = fields.Length >= 37 &&
-                fields[0] == "11";
-            if (!versionOne && !versionTwo && !versionThree && !versionFour &&
-                !versionFive && !versionSix && !versionSeven && !versionEight &&
-                !versionNine && !versionTen && !versionEleven) return null;
+            int version;
+            if (!Int32.TryParse(fields[0], NumberStyles.None,
+                    CultureInfo.InvariantCulture, out version) ||
+                version < 1 || version > CurrentVersion ||
+                fields[0] != version.ToString(CultureInfo.InvariantCulture) ||
+                fields.Length < MinimumFieldCounts[version]) return null;
 
             int number;
             long ticks;
@@ -120,7 +115,7 @@ namespace PennyPet
                 note.ModifiedUtcTicks = ticks;
             if (Int64.TryParse(fields[11], out ticks) && ticks > 0)
                 note.ReminderUtcTicks = ticks;
-            if (versionOne)
+            if (version == 1)
             {
                 note.Text = Decode(fields[12]);
             }
@@ -130,47 +125,39 @@ namespace PennyPet
                 note.Title = Decode(fields[13]);
                 DecodeTodos(fields[14], note.TodoItems);
                 note.Text = Decode(fields[15]);
-                if ((versionThree || versionFour || versionFive || versionSix ||
-                    versionSeven || versionEight || versionNine ||
-                    versionTen || versionEleven) &&
+                if (version >= 3 &&
                     Int32.TryParse(fields[16], out number))
                     note.TabOrder = Math.Max(0, number);
-                if (versionFour || versionFive || versionSix || versionSeven ||
-                    versionEight || versionNine || versionTen ||
-                    versionEleven)
+                if (version >= 4)
                     note.RichTextRtf = NormalizeRtf(Decode(fields[17]));
-                if (versionFive || versionSix || versionSeven || versionEight ||
-                    versionNine || versionTen || versionEleven)
+                if (version >= 5)
                 {
                     note.FontFamilyName = NormalizeFontFamily(Decode(fields[18]));
                     if (Int32.TryParse(fields[19], out number))
                         note.FontSizeTwips = Clamp(number, 120, 1440);
                 }
-                if (versionSix || versionSeven || versionEight || versionNine ||
-                    versionTen || versionEleven)
+                if (version >= 6)
                 {
                     if (Int32.TryParse(fields[20], out number))
                         note.BackgroundOpacityPercent = Clamp(number, 10, 100);
                     if (Int32.TryParse(fields[21], out number))
                         note.TextColorArgb = NormalizeTextColor(number);
                 }
-                if (versionSeven || versionEight || versionNine ||
-                    versionTen || versionEleven)
+                if (version >= 7)
                     note.DockParentId = Decode(fields[22]);
-                if (versionEight || versionNine || versionTen ||
-                    versionEleven)
+                if (version >= 8)
                 {
                     note.DockGroupId = Decode(fields[23]);
                     if (Int32.TryParse(fields[24], out number))
                         note.DockGroupOrder = Math.Max(-1, number);
                 }
-                if (versionNine || versionTen || versionEleven)
+                if (version >= 9)
                 {
                     note.IsSchedule = fields[25] == "1";
                     DecodeSchedules(fields[26], note.ScheduleItems);
                     if (note.IsSchedule) note.IsTodoList = false;
                 }
-                if (versionTen || versionEleven)
+                if (version >= 10)
                 {
                     note.DisplayId = Decode(fields[27]);
                     if (Int32.TryParse(fields[28], out number))
@@ -182,7 +169,7 @@ namespace PennyPet
                     if (Int32.TryParse(fields[31], out number))
                         note.LocalLogicalHeight = number;
                 }
-                if (versionEleven)
+                if (version >= 11)
                 {
                     note.PreferredDisplayTargetKey = Decode(fields[32]);
                     if (Int32.TryParse(fields[33], out number))
@@ -196,8 +183,7 @@ namespace PennyPet
                 }
             }
 
-            if (!versionSix && !versionSeven && !versionEight && !versionNine &&
-                !versionTen && !versionEleven)
+            if (version < 6)
                 note.TextColorArgb = IsLightPaper(note.ColorArgb)
                     ? WhiteArgb : BlackArgb;
             if (note.Title.Length > StickyNoteLimits.MaximumTitleCharacters ||
