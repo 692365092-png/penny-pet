@@ -1109,6 +1109,9 @@ namespace PennyPet
             tabC.Visible = false;
             tabOrderRepository.SaveToFile(tabOrderPath);
             tabOrderRepository.ReorderHidden(tabA, 3);
+            // ReorderHidden persists through the nonblocking writer; flush
+            // before reloading so the round trip observes the new order.
+            tabOrderRepository.WaitForPendingSaves();
             StickyNoteRepository restoredTabOrder =
                 StickyNoteRepository.LoadFromFile(tabOrderPath);
             List<StickyNoteData> orderedTabs =
