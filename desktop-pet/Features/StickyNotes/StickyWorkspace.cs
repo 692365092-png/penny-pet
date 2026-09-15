@@ -780,6 +780,23 @@ namespace PennyPet
             if (value == null || IsDisposed ||
                 !Hosted.ContainsNote(value.NoteId)) return;
             TraceHostedWindowFacts(value);
+            if (value.IsDockInput)
+            {
+                if (value.BeginsDockInput)
+                {
+                    if (value.Snapshot == null || !String.Equals(value.NoteId,
+                        value.Snapshot.NoteId, StringComparison.OrdinalIgnoreCase) ||
+                        !Hosted.CanApplySequence(value.NoteId, value.Sequence)) return;
+                    // Input ownership is independent of topology. Retire the old
+                    // gesture even if this start's geometry needs a later rebase.
+                    Dock.BeginDockInput(value.Input);
+                    if (!Dock.Gestures.Matches(value.Input)) return;
+                    StickyNoteData source = Notes.Find(value.NoteId);
+                    // Released mutations may have hidden or deleted the source.
+                    if (source == null || !source.Visible || !Hosted.ContainsNote(value.NoteId)) return;
+                }
+                else if (!Dock.Gestures.Matches(value.Input)) return;
+            }
             if (value.Kind == StickyUiEventKind.TypingActivity)
             {
                 if (!_pet._exiting) _pet.TriggerTypingAnimation();
@@ -885,6 +902,11 @@ namespace PennyPet
                         value.Snapshot.AlwaysOnTop, value.NoteId);
                     Notes.SaveAsync();
                 }
+                return;
+            }
+            if (value.Kind == StickyUiEventKind.UserResizeStarted)
+            {
+                ApplyHostedStickyEvent(value, false);
                 return;
             }
             if (value.Kind == StickyUiEventKind.UserResizeCompleted)

@@ -15,6 +15,7 @@ namespace PennyPet
             _eventHandler;
         private StickyNoteUiSnapshot _lastSnapshot;
         private long _sequence;
+        private DockInput _dockInput;
         private bool _hideAfterImeComposition;
         private bool _applyingBounds;
         private bool _eventsSuppressed;
@@ -687,6 +688,7 @@ namespace PennyPet
             _window.HeaderDragStarted += HeaderDragStarted;
             _window.HeaderDragMoved += HeaderDragMoved;
             _window.HeaderDragCompleted += HeaderDragCompleted;
+            _window.UserResizeStarted += UserResizeStarted;
             _window.UserResizeCompleted += UserResizeCompleted;
             _window.DockHorizontalResizeStarted += DockHorizontalResizeStarted;
             _window.DockHorizontalResizeCompleted += DockHorizontalResizeCompleted;
@@ -717,6 +719,7 @@ namespace PennyPet
             _window.HeaderDragStarted -= HeaderDragStarted;
             _window.HeaderDragMoved -= HeaderDragMoved;
             _window.HeaderDragCompleted -= HeaderDragCompleted;
+            _window.UserResizeStarted -= UserResizeStarted;
             _window.UserResizeCompleted -= UserResizeCompleted;
             _window.DockHorizontalResizeStarted -= DockHorizontalResizeStarted;
             _window.DockHorizontalResizeCompleted -= DockHorizontalResizeCompleted;
@@ -797,6 +800,9 @@ namespace PennyPet
         {
             EmitSnapshot(StickyUiEventKind.HeaderDragCompleted);
         }
+
+        private void UserResizeStarted(object sender, EventArgs e)
+        { EmitSnapshot(StickyUiEventKind.UserResizeStarted); }
 
         private void UserResizeCompleted(object sender, EventArgs e)
         {
@@ -986,6 +992,8 @@ namespace PennyPet
         private void Raise(StickyUiEvent value)
         {
             if (_eventsSuppressed || _eventHandler == null) return;
+            if (value.BeginsDockInput) _dockInput = new DockInput();
+            if (value.IsDockInput) value.Input = _dockInput;
             _eventHandler(this, value);
         }
 

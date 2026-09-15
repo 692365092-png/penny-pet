@@ -1,6 +1,8 @@
 # Penny pet 全面架构审查与重构记录
 
-后续进展：[共享写入器与异步重试](2026-09-15-shared-writer-review.md)继续解决本文列出的 UI 同步重试问题。下文五节点表为当时的审查快照。
+后续进展：[共享写入器与异步重试](2026-09-15-shared-writer-review.md)处理 UI 同步重试；
+[Dock 手势接替](2026-09-15-dock-input-review.md)统一前台输入所有权并阻止旧原生计划抢占新输入。
+下文五节点表为当时的审查快照。
 
 审查对象：`codex/geometry-authority`，远端基线
 `f5bd7859654b955b2cf21978d660ca4c21bfd114`。本报告覆盖 2026-09-14 至
@@ -25,7 +27,7 @@
 上述判断可在 [模型](../../desktop-pet/Core/StickyNotes/StickyNoteModels.cs)、
 [组关系](../../desktop-pet/Core/StickyNotes/StickyDockGroups.cs)、
 [仓库](../../desktop-pet/Features/StickyNotes/StickyNoteRepository.cs)、
-[单写入器](../../desktop-pet/Features/StickyNotes/StickyNoteWriter.cs)中逐项核对。
+[单写入器](../../desktop-pet/Infrastructure/Persistence/PersistenceWriter.cs)中逐项核对。
 
 **由外到内的功能审查**
 

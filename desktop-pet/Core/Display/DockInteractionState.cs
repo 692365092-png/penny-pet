@@ -4,6 +4,11 @@ using System.Collections.ObjectModel;
 
 namespace PennyPet
 {
+    // Identity of one native pointer gesture, created on the Sticky STA before
+    // posting its start. Reference identity also survives window-sequence resets;
+    // mouse-up does not make an older input current again.
+    internal sealed class DockInput { }
+
     internal enum DockInteractionPhase { Idle, Preparing, Dragging, Rebasing, Finalizing }
 
     internal enum DockSplitDecision { None, Cancelled, Detach }
@@ -196,7 +201,9 @@ namespace PennyPet
     {
         internal static bool IsSameGeneration(WindowFacts facts, DisplayTopologySnapshot topology)
         { return facts != null && topology != null && facts.TopologyGeneration == topology.Generation; }
-        internal static bool CanExecute(DockPlacementPlan plan, long currentGeneration, long currentEpoch)
-        { return plan != null && plan.InteractionEpoch > 0 && plan.InteractionEpoch == currentEpoch && plan.TopologyGeneration == currentGeneration; }
+        internal static bool CanExecute(DockPlacementPlan plan, long currentGeneration, long currentEpoch,
+            DockInput currentInput = null)
+        { return plan != null && plan.InteractionEpoch > 0 && plan.InteractionEpoch == currentEpoch &&
+            plan.TopologyGeneration == currentGeneration && ReferenceEquals(plan.Input, currentInput); }
     }
 }

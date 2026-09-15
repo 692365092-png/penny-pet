@@ -18,9 +18,10 @@ namespace PennyPet
         private readonly DockMutationQueue _mutations;
 
         private DockResizeSession(DockResizeKind kind, WindowFacts[] members, int sourceIndex,
-            IEnumerable<StickyNoteData> affectedMembers)
+            IEnumerable<StickyNoteData> affectedMembers, DockInput input)
         {
             Kind = kind;
+            Input = input;
             _members = members;
             _sourceIndex = sourceIndex;
             WindowFacts source = members[sourceIndex];
@@ -38,6 +39,7 @@ namespace PennyPet
         }
 
         internal string SourceNoteId { get; private set; }
+        internal DockInput Input { get; private set; }
         internal DockResizeKind Kind { get; private set; }
         internal long TopologyGeneration { get; private set; }
         internal DockResizeMailbox Mailbox { get; private set; }
@@ -48,7 +50,8 @@ namespace PennyPet
             ? _members.Length - _sourceIndex - 1 : _members.Length - 1; } }
 
         internal static DockResizeSession TryStart(DockResizeKind kind, string sourceId,
-            IList<WindowFacts> orderedFacts, IEnumerable<StickyNoteData> affectedMembers = null)
+            IList<WindowFacts> orderedFacts, IEnumerable<StickyNoteData> affectedMembers = null,
+            DockInput input = null)
         {
             if (orderedFacts == null || orderedFacts.Count < 2) return null;
             int sourceIndex = -1;
@@ -63,7 +66,7 @@ namespace PennyPet
                 if (String.Equals(facts.WindowId, sourceId, StringComparison.OrdinalIgnoreCase)) sourceIndex = index;
             }
             if (sourceIndex < 0 || (kind == DockResizeKind.Divider && sourceIndex == orderedFacts.Count - 1)) return null;
-            return new DockResizeSession(kind, new List<WindowFacts>(orderedFacts).ToArray(), sourceIndex, affectedMembers);
+            return new DockResizeSession(kind, new List<WindowFacts>(orderedFacts).ToArray(), sourceIndex, affectedMembers, input);
         }
 
         internal bool Contains(string noteId)
@@ -85,6 +88,7 @@ namespace PennyPet
         private bool MatchesSource(StickyUiEvent value)
         {
             return IsResizing && value != null && value.Facts != null &&
+                ReferenceEquals(value.Input, Input) &&
                 String.Equals(value.NoteId, SourceNoteId, StringComparison.OrdinalIgnoreCase) &&
                 String.Equals(value.Facts.WindowId, SourceNoteId, StringComparison.OrdinalIgnoreCase) &&
                 value.Sequence == value.Facts.WindowSequence && value.Facts.TopologyGeneration == TopologyGeneration;
@@ -137,7 +141,7 @@ namespace PennyPet
                 targets.Add(new DockWindowTarget(_members[_sourceIndex + index + 1].WindowId,
                     new PhysicalRect(rect.Left, rect.Top, rect.Width, rect.Height)));
             }
-            return new DockResizeBatch(TopologyGeneration, targets);
+            return new DockResizeBatch(TopologyGeneration, targets, Input);
         }
 
         private int FollowerIndex(int index)
@@ -152,7 +156,7 @@ namespace PennyPet
                 targets.Add(new DockWindowTarget(facts.WindowId,
                     new PhysicalRect(left, facts.PhysicalBounds.Top, width, facts.PhysicalBounds.Height)));
             }
-            return new DockResizeBatch(TopologyGeneration, targets);
+            return new DockResizeBatch(TopologyGeneration, targets, Input);
         }
 
         internal bool IsCurrentFinal(DockResizeBatch batch)
@@ -204,7 +208,7 @@ namespace PennyPet
                 bottom += rect.Height;
             }
             _corrected = true;
-            _finalBatch = new DockResizeBatch(TopologyGeneration, targets);
+            _finalBatch = new DockResizeBatch(TopologyGeneration, targets, Input);
             Mailbox.QueueFinal(_finalBatch);
             return _finalBatch;
         }

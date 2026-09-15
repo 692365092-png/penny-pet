@@ -13,6 +13,7 @@
     <!-- Exercise the actual platform-neutral protocol/runtime implementations. -->
     <Compile Include="Features\StickyNotes\DockWindowFacts.cs" />
     <Compile Include="Features\StickyNotes\DockResizeSession.cs" />
+    <Compile Include="Features\StickyNotes\DockGestureOwner.cs" />
     <Compile Include="Features\StickyNotes\DockRestoreOperation.cs" />
     <Compile Include="Features\StickyNotes\StickyHostedRuntime.cs" />
     <Compile Include="Features\StickyNotes\StickyPlacementRuntime.cs" />

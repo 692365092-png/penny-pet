@@ -276,6 +276,7 @@ namespace PennyPet
                         CurrentPhysicalHeight());
                 }
                 else if (DockHorizontalResizeActive) Raise(DockHorizontalResizeStarted);
+                else if (!_headerDragInProgress) Raise(UserResizeStarted);
                 return IntPtr.Zero;
             }
             if (message == WmExitSizeMove)

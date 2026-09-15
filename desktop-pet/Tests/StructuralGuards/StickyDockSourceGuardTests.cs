@@ -258,7 +258,7 @@ namespace PennyPet.Tests
             int correction = final.IndexOf("session.TryCorrect(", StringComparison.Ordinal);
             int commit = final.IndexOf("ApplyResizeBatchCanonical(", StringComparison.Ordinal);
             Assert.IsTrue(owner >= 0 && validate > owner && correction > validate && commit > correction);
-            Assert.IsTrue(final.Contains("!ReferenceEquals(_dockResize, session)"));
+            Assert.IsTrue(final.Contains("!ReferenceEquals(Gestures.Resize, session)"));
             string preflight = Between(dock, "private bool CanAcceptResizeBatch", "private bool ApplyResizeBatchCanonical");
             Assert.IsTrue(preflight.Contains("HasExpectedFollowers") && preflight.Contains("MatchesMembers") &&
                 preflight.Contains("Facts.TryPrepare(") && preflight.Contains("!seen.Add(member.NoteId)"));
@@ -304,8 +304,7 @@ namespace PennyPet.Tests
             Assert.IsTrue(dock.Contains("DeferDockMutation(note.Id, () => DeleteStickyNote(Notes.Find(note.Id), completed))"));
             Assert.IsTrue(window.Contains("DeferDockMutation(note.Id, () => ShowHostedSticky("));
             string clear = RawSource.SliceMethod(window, "internal void ClearHostedDockResizeSession(");
-            int releaseOwner = clear.IndexOf("_dockResize = null", StringComparison.Ordinal);
-            Assert.IsTrue(releaseOwner >= 0 && clear.IndexOf("previous.Finish()", StringComparison.Ordinal) > releaseOwner);
+            Assert.IsTrue(clear.Contains("RunDeferredDockMutations(Gestures.FinishResize(expected))"));
             string apply = RawSource.SliceMethod(dock, "private bool ApplyResizeBatchCanonical(");
             int prepare = apply.IndexOf("StickyResizePreferences.TryBuild", StringComparison.Ordinal);
             Assert.IsTrue(prepare >= 0 && apply.IndexOf("update.CommitGeometry()", StringComparison.Ordinal) > prepare);
@@ -639,7 +638,7 @@ namespace PennyPet.Tests
                 batch.Contains("DockPlacementPlanner.Plan(") &&
                 batch.Contains("sourceFacts.Dpi") &&
                 batch.Contains("Interaction.CanPlan(") &&
-                batch.Contains("_dockPlanMailbox.NextSequence()"),
+                batch.Contains("Gestures.Plans.NextSequence()"),
                 "One plan must carry one capture-time generation, surface, DPI and sequence.");
             Assert.IsFalse(batch.Contains("WindowsDisplayResolver") ||
                 batch.Contains("MonitorFromRect"),
@@ -747,7 +746,7 @@ namespace PennyPet.Tests
                 "internal void ReplaceWithFinal(");
 
             Assert.IsTrue(complete.Contains(
-                    "_dockPlanMailbox.ReplaceWithFinal(finalPlan)") &&
+                    "Gestures.Plans.ReplaceWithFinal(finalPlan)") &&
                 complete.Contains("Host.PostFinalDockPlan("),
                 "Mouse-up must replace pending live work with a final plan.");
             Assert.IsFalse(takeFinal.Contains("Current = null") ||
@@ -983,7 +982,7 @@ namespace PennyPet.Tests
                     StringComparison.Ordinal) < changed.IndexOf(
                     "ReconcileDockGroups(snapshot, petFacts)",
                     StringComparison.Ordinal));
-            Assert.IsTrue(invalidate.Contains("_dockPlanMailbox.Clear()") &&
+            Assert.IsTrue(invalidate.Contains("Gestures.Plans.Clear()") &&
                 invalidate.Contains("Interaction.BeginRebase("));
         }
 

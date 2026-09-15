@@ -574,6 +574,7 @@ namespace PennyPet
         public event EventHandler HeaderDragStarted;
         public event EventHandler HeaderDragMoved;
         public event EventHandler HeaderDragCompleted;
+        public event EventHandler UserResizeStarted;
         public event EventHandler UserResizeCompleted;
         public event EventHandler DockHorizontalResizeStarted;
         public event EventHandler DockHorizontalResizeCompleted;

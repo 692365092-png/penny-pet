@@ -63,14 +63,11 @@ namespace PennyPet
         private DockPulseIndicatorForm _splitGuideIndicator;
         private bool _movingDockGroup;
         private bool _synchronizingDockLayout;
-        private readonly DockPlanMailbox _dockPlanMailbox =
-            new DockPlanMailbox();
-        internal readonly DockInteractionSession Interaction =
-            new DockInteractionSession();
+        internal readonly DockGestureOwner Gestures = new DockGestureOwner();
+        internal DockInteractionSession Interaction { get { return Gestures.Drag; } }
         private long _lastAppliedDockPlanSequence = -1;
         private readonly HashSet<string> _pendingDockTopologyGroups =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        private DockResizeSession _dockResize;
         internal void ApplyDockComponentTopMost(StickyNoteData seed,
             bool alwaysOnTop, string alreadyAppliedNoteId)
         {
@@ -257,25 +254,30 @@ namespace PennyPet
             return result.ToArray();
         }
 
+        internal void BeginDockInput(DockInput input)
+        {
+            Action[] deferred = Gestures.BeginInput(input);
+            _workspace.Host.SetCurrentDockInteractionEpoch(Interaction.Epoch);
+            ClearDockPreview();
+            ClearSplitGuide();
+            RunDeferredDockMutations(deferred);
+        }
+
         internal void BeginStickyDockDrag(DockWindowFacts facts,
             WindowFacts sourceFacts, DisplayTopologySnapshot topology)
         {
             if (facts == null || sourceFacts == null || topology == null ||
                 !DockExecutionRules.IsSameGeneration(sourceFacts, topology)) return;
-            ClearHostedDockResizeSession();
             CancelHostedDockRestores(facts.NoteId);
             StickyNoteData seed = _workspace.Notes.Find(facts.NoteId);
             if (seed == null || !seed.Visible) return;
             List<string> memberIds = BuildDockChainOrder(seed).ConvertAll(note => note.Id);
             Dictionary<string, DockWindowFacts> groupFacts = CaptureDockInteractionBaseline(memberIds, topology);
             groupFacts[facts.NoteId] = facts;
-            long epoch = Interaction.BeginGesture(facts, memberIds,
+            long epoch = Gestures.BeginDrag(facts, memberIds,
                 groupFacts, topology.Generation, DateTime.UtcNow);
             if (epoch == 0) return;
             _workspace.Host.SetCurrentDockInteractionEpoch(epoch);
-            _dockPlanMailbox.Clear();
-            ClearDockPreview();
-            ClearSplitGuide();
             if (Interaction.SplitEligible) ShowSplitGuide(seed, groupFacts);
             // One drag-start Z-order transaction: restore the contiguous
             // moving-group band before the live geometry drag is armed. Only
@@ -285,7 +287,7 @@ namespace PennyPet
             {
                 _workspace.PostHostedStickyCommand(
                     StickyUiCommand.RaiseDockGroupForDrag(zOrderIds,
-                        facts.NoteId, topology, epoch),
+                        facts.NoteId, topology, epoch, Gestures.Input),
                     delegate(StickyUiCommandResult result)
                     {
                         if (result != null && result.Status ==
@@ -361,11 +363,6 @@ namespace PennyPet
         }
 
         // DRT-10: the live drag is driven by the pure planner and the source
-        // window's actual facts. Followers never choose a target display;
-        // when the source crosses a DPI boundary the next plan naturally
-        // re-scales the whole group to the new surface. A stale generation
-        // or missing facts drops this frame instead of chasing old coordinates.
-        // DRT-10: the live drag is driven by the pure planner and the source
         // window's actual facts. The plan is built exactly once with one
         // capture-time topology generation and one mailbox sequence; nothing
         // downstream may re-stamp it against a later Current generation.
@@ -416,7 +413,7 @@ namespace PennyPet
                 plan = DockPlacementPlanner.Plan(group, sourceFacts,
                     surface, sourceFacts.Dpi,
                     sourceFacts.TopologyGeneration,
-                    _dockPlanMailbox.NextSequence(), interactionEpoch);
+                    Gestures.Plans.NextSequence(), interactionEpoch, Gestures.Input);
             }
             catch (ArgumentException)
             {
@@ -519,7 +516,7 @@ namespace PennyPet
             try
             {
                 _workspace.PostHostedStickyCommand(StickyUiCommand.CaptureDockFacts(expectedIds,
-                    topology, epoch), delegate(StickyUiCommandResult capture)
+                    topology, epoch, Gestures.Input), delegate(StickyUiCommandResult capture)
                     {
                         if (!Interaction.Matches(epoch, topology.Generation,
                             DockInteractionPhase.Finalizing)) return;
@@ -537,8 +534,8 @@ namespace PennyPet
                                 topology, epoch);
                             if (finalPlan == null) { TraceDockCommitRejected("final capture unavailable"); ResetDockDragState(true); return; }
                             List<string> expectedMemberIds = CollectExpectedPlanMemberIds(finalPlan);
-                            _dockPlanMailbox.ReplaceWithFinal(finalPlan);
-                            _workspace.Host.PostFinalDockPlan(_dockPlanMailbox,
+                            Gestures.Plans.ReplaceWithFinal(finalPlan);
+                            _workspace.Host.PostFinalDockPlan(Gestures.Plans,
                                 finalPlan.PlanSequence, delegate(StickyUiCommandResult result)
                                 {
                                     try
@@ -552,7 +549,7 @@ namespace PennyPet
                                     }
                                     finally
                                     {
-                                        _dockPlanMailbox.CompleteFinal(finalPlan.PlanSequence);
+                                        Gestures.Plans.CompleteFinal(finalPlan.PlanSequence);
                                         long invalidatingEpoch;
                                         Action[] deferred;
                                         if (Interaction.TryFinish(epoch, topology.Generation, out invalidatingEpoch, out deferred))
@@ -591,10 +588,8 @@ namespace PennyPet
 
         internal void ResetDockDragState(bool clearMailbox)
         {
-            Action[] deferred;
-            long invalidatingEpoch = Interaction.Reset(out deferred);
-            _workspace.Host.SetCurrentDockInteractionEpoch(invalidatingEpoch);
-            if (clearMailbox) _dockPlanMailbox.Clear();
+            Action[] deferred = Gestures.ResetDrag(clearMailbox);
+            _workspace.Host.SetCurrentDockInteractionEpoch(Interaction.Epoch);
             RunDeferredDockMutations(deferred);
         }
 
@@ -607,7 +602,7 @@ namespace PennyPet
             if (plan == null || !Interaction.Matches(
                 plan.InteractionEpoch, plan.TopologyGeneration,
                 DockInteractionPhase.Dragging)) return;
-            DockPlanMailbox mailbox = _dockPlanMailbox;
+            DockPlanMailbox mailbox = Gestures.Plans;
             lock (mailbox.Gate)
             {
                 // Diagnostic-only evidence for latest-wins: a newer plan
@@ -782,20 +777,20 @@ namespace PennyPet
         // Desired targets cross the STA boundary; only acknowledged actual
         // facts advance runtime geometry and its persistence mirrors.
         private void ApplyDockTargets(IEnumerable<DockLayoutTarget> targets,
-            string alreadyAppliedNoteId)
+            string alreadyAppliedNoteId, DockInput input = null)
         {
             if (targets == null) return;
             foreach (DockLayoutTarget target in targets)
-                ApplyDockTarget(target, alreadyAppliedNoteId);
+                ApplyDockTarget(target, alreadyAppliedNoteId, input);
         }
 
         private void ApplyDockTarget(DockLayoutTarget target,
-            string alreadyAppliedNoteId)
+            string alreadyAppliedNoteId, DockInput input = null)
         {
             if (target == null) return;
             StickyNoteData note = _workspace.Notes.Find(target.NoteId);
             if (note == null) return;
-            bool traceResize = _dockResize != null;
+            bool traceResize = Gestures.Resize != null;
             note.Visible = target.Visible;
             note.AlwaysOnTop = target.TopMost;
             if (String.Equals(target.NoteId, alreadyAppliedNoteId,
@@ -808,9 +803,10 @@ namespace PennyPet
                     target.Width + "," + target.Height + ")");
             _workspace.PostHostedStickyCommand(StickyUiCommand.SetBounds(
                 target.NoteId, new StickyUiBounds(target.X, target.Y,
-                    target.Width, target.Height)),
+                    target.Width, target.Height), input: input),
                 delegate(StickyUiCommandResult result)
                 {
+                    if (input != null && !Gestures.Matches(input)) return;
                     if (traceResize || result == null ||
                         result.Status != StickyUiCommandStatus.Handled)
                         DisplayDiagnostics.Trace("DockTargetCompleted",
@@ -957,7 +953,7 @@ namespace PennyPet
             foreach (StickyNoteData note in BuildDockChainOrder(seed))
                 facts.Add(String.Equals(note.Id, value.NoteId, StringComparison.OrdinalIgnoreCase)
                     ? value.Facts : _workspace.Placement.GetEffective(note.Id));
-            return DockResizeSession.TryStart(kind, value.NoteId, facts, BuildDockChainOrderIncludingHidden(seed));
+            return DockResizeSession.TryStart(kind, value.NoteId, facts, BuildDockChainOrderIncludingHidden(seed), value.Input);
         }
 
         internal void BeginHostedStickyDockResize(StickyUiEvent value, DockResizeKind kind)
@@ -965,13 +961,12 @@ namespace PennyPet
             DockResizeSession next = CaptureHostedResizeSession(value, kind);
             if (next == null) return;
             CancelHostedDockRestores(value.NoteId);
-            ClearHostedDockResizeSession();
-            if (next.MatchesMembers(BuildDockChainOrder(_workspace.Notes.Find(value.NoteId)))) _dockResize = next;
+            if (next.MatchesMembers(BuildDockChainOrder(_workspace.Notes.Find(value.NoteId)))) Gestures.TryBeginResize(next);
         }
 
         internal void ResizeHostedStickyDock(StickyUiEvent value)
         {
-            DockResizeSession session = _dockResize;
+            DockResizeSession session = Gestures.Resize;
             if (session == null || !session.IsResizing ||
                 !String.Equals(session.SourceNoteId, value.NoteId, StringComparison.OrdinalIgnoreCase)) return;
             if (_synchronizingDockLayout || _movingDockGroup || Interaction.IsActive ||
@@ -1002,7 +997,7 @@ namespace PennyPet
         private void OnResizeLiveBatchApplied(DockResizeSession session,
             StickyUiCommandResult result)
         {
-            if (!ReferenceEquals(_dockResize, session) || !session.IsResizing) return;
+            if (!ReferenceEquals(Gestures.Resize, session) || !session.IsResizing) return;
             DockBatchResult batch = result != null && result.Status == StickyUiCommandStatus.Handled
                 ? result.DockBatchResult : null;
             DisplayTopologySnapshot topology = _workspace.CurrentTopologySnapshot();
@@ -1149,7 +1144,7 @@ namespace PennyPet
                     targets.Add(original.ToTarget(original.X, original.Y));
             }
             _movingDockGroup = true;
-            try { ApplyDockTargets(targets, null); }
+            try { ApplyDockTargets(targets, null, Gestures.Input); }
             finally { _movingDockGroup = false; }
         }
 
@@ -1453,7 +1448,7 @@ namespace PennyPet
         internal void InvalidateDockPlansForTopologyChange(
             DisplayTopologySnapshot snapshot)
         {
-            _dockPlanMailbox.Clear();
+            Gestures.Plans.Clear();
             ClearHostedDockResizeSession();
             if (Interaction.IsActive)
             {
@@ -1484,7 +1479,7 @@ namespace PennyPet
                 DockInteractionPhase.Rebasing)) return;
             string[] expectedIds = Interaction.CopyMemberIds();
             _workspace.PostHostedStickyCommand(StickyUiCommand.CaptureDockFacts(
-                expectedIds, snapshot, epoch), delegate(StickyUiCommandResult result)
+                expectedIds, snapshot, epoch, Gestures.Input), delegate(StickyUiCommandResult result)
                 {
                     if (!Interaction.Matches(epoch, snapshot.Generation,
                         DockInteractionPhase.Rebasing) ||
@@ -1639,7 +1634,7 @@ namespace PennyPet
             }
             bool centerInWorkArea = reason == DockTopologyReprojectReason.TemporaryRehome;
             DockGroupReprojectPlan plan = new DockGroupReprojectPlan(
-                snapshot.Generation, _dockPlanMailbox.NextSequence(),
+                snapshot.Generation, Gestures.Plans.NextSequence(),
                 targetSurface.RuntimeSurfaceId, logicalState, centerInWorkArea);
             List<string> expectedIds = new List<string>();
             foreach (DockLogicalMember member in logicalState.Members)
@@ -1930,7 +1925,7 @@ namespace PennyPet
             string groupId = note == null ? null : note.DockGroupId;
             DockMutationQueue header = Interaction.Mutations;
             if (header != null && header.Contains(noteId, groupId)) return header;
-            DockMutationQueue resize = _dockResize == null ? null : _dockResize.Mutations;
+            DockMutationQueue resize = Gestures.Resize == null ? null : Gestures.Resize.Mutations;
             return resize != null && resize.Contains(noteId, groupId) ? resize : null;
         }
 
@@ -1956,15 +1951,12 @@ namespace PennyPet
 
         internal void ClearHostedDockResizeSession(DockResizeSession expected = null)
         {
-            if (expected != null && !ReferenceEquals(_dockResize, expected)) return;
-            DockResizeSession previous = _dockResize;
-            _dockResize = null;
-            if (previous != null) RunDeferredDockMutations(previous.Finish());
+            RunDeferredDockMutations(Gestures.FinishResize(expected));
         }
 
         internal void ClearHostedDockResizeSessionIfMember(string noteId)
         {
-            if (_dockResize != null && _dockResize.Contains(noteId))
+            if (Gestures.Resize != null && Gestures.Resize.Contains(noteId))
                 ClearHostedDockResizeSession();
         }
 
@@ -1981,7 +1973,7 @@ namespace PennyPet
                 ? DockResizeKind.Horizontal : DockResizeKind.Divider;
             WindowPlacementPreference sourcePreference;
             if (!StickyResizePreferences.TryBuild(source, value.Facts, value.Topology, kind, true, out sourcePreference)) return;
-            DockResizeSession session = _dockResize;
+            DockResizeSession session = Gestures.Resize;
             if (session != null && (session.Kind != kind || !session.IsResizing ||
                 !String.Equals(session.SourceNoteId, value.NoteId, StringComparison.OrdinalIgnoreCase))) return;
             // A topology barrier retires the old gesture. A current completion
@@ -1989,7 +1981,7 @@ namespace PennyPet
             if (session == null)
             {
                 session = CaptureHostedResizeSession(value, kind);
-                _dockResize = session;
+                if (session != null && !Gestures.TryBeginResize(session)) return;
             }
             if (session == null || !session.MatchesMembers(BuildDockChainOrder(source)))
             {
@@ -2028,7 +2020,7 @@ namespace PennyPet
         private void OnResizeFinalBatchApplied(DockResizeSession session,
             DockResizeBatch expected, StickyUiCommandResult result)
         {
-            if (!ReferenceEquals(_dockResize, session) || !session.IsCurrentFinal(expected)) return;
+            if (!ReferenceEquals(Gestures.Resize, session) || !session.IsCurrentFinal(expected)) return;
             DockBatchResult batch = result != null && result.Status == StickyUiCommandStatus.Handled
                 ? result.DockBatchResult : null;
             DisplayTopologySnapshot topology = _workspace.CurrentTopologySnapshot();
@@ -2090,7 +2082,7 @@ namespace PennyPet
             if (MigrateDockRestorePreferredIfNeeded(ordered, topology)) _workspace.Notes.SaveAsync();
             DockRestoreOperation operation = DockRestoreOperation.TryCreate(ordered,
                 focus == null ? null : focus.Id, focusEditor, persistVisibility,
-                topology, _workspace.CapturePetWindowFacts(topology), _dockPlanMailbox.NextSequence());
+                topology, _workspace.CapturePetWindowFacts(topology), Gestures.Plans.NextSequence());
             if (!_dockRestores.TryBegin(operation)) return false;
             try
             {

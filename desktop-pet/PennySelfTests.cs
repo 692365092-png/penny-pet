@@ -295,6 +295,7 @@ namespace PennyPet
                 evidence.Add("A7: false; zero canonical/effective/lease/visibility/topmost/Save mutation.");
             }
             RunPc2FailurePolicies(root, evidence);
+            RunPc2InputHandoff(root, evidence);
             // Last: establish a real session recreation path, not just seeded counters.
             RunPc2Recreation(root, evidence);
             RunPc2EnsureSessionRuntime(root, evidence);
@@ -315,6 +316,43 @@ namespace PennyPet
                     rejectionAtomicityClosed = true,
                     pc2b = "PENDING_HUMAN", observations = evidence.ToArray()
                 }), new UTF8Encoding(false));
+        }
+
+        private static void RunPc2InputHandoff(string root, List<string> evidence)
+        {
+            using (Pc2Scene s = new Pc2Scene(root, "A8-input-handoff"))
+            {
+                s.Start(c => StickyUiCommandResult.Handled());
+                long old = s.Interaction.BeginFinalizing(s.Topology.Generation, null);
+                var input = new DockInput();
+                var start = StickyUiEvent.FromSnapshot(StickyUiEventKind.HeaderDragStarted,
+                    StickyNoteUiSnapshot.FromContentData(s.Notes[0]), 2, s.Facts(0, 2, 140), s.Topology);
+                start.Input = input;
+                s.Workspace.HostedStickyEventReceived(start);
+                Pc2Assert(s.Workspace.Dock.Gestures.Matches(input) &&
+                    s.Interaction.Phase == DockInteractionPhase.Dragging && s.Sequence(0) == 2 &&
+                    !s.Interaction.TryFinish(old, s.Topology.Generation, out _, out _),
+                    "A8 real workspace accepts a new header while the old final is pending");
+                var late = StickyUiEvent.FromSnapshot(StickyUiEventKind.HeaderDragCompleted,
+                    StickyNoteUiSnapshot.FromContentData(s.Notes[0]), 100, s.Facts(0, 100, 900), s.Topology);
+                // The preceding fixture gesture has the default null identity.
+                s.Workspace.HostedStickyEventReceived(late);
+                Pc2Assert(s.Sequence(0) == 2 && s.Notes[0].X == 140 &&
+                    s.Interaction.Phase == DockInteractionPhase.Dragging,
+                    "A8 old input cannot consume a sequence or finalize the new header");
+
+                // Release of a queued hide must not let the new start's snapshot
+                // make that note visible again.
+                s.Interaction.BeginFinalizing(s.Topology.Generation, null);
+                s.Interaction.Mutations.Defer(s.Notes[0].Id, null, () => s.Notes[0].Visible = false);
+                start = StickyUiEvent.FromSnapshot(StickyUiEventKind.HeaderDragStarted,
+                    StickyNoteUiSnapshot.FromContentData(s.Notes[0]), 3, s.Facts(0, 3, 160), s.Topology);
+                start.Input = new DockInput();
+                s.Workspace.HostedStickyEventReceived(start);
+                Pc2Assert(!s.Notes[0].Visible && !s.Interaction.IsActive && s.Sequence(0) == 2,
+                    "A8 deferred hide wins before new source validation");
+            }
+            evidence.Add("A8: real workspace input handoff accepts new headers, rejects old input before facts, and preserves a deferred hide.");
         }
 
         private static void RunPc2FailurePolicies(string root, List<string> evidence)

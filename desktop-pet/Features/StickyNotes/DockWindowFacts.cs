@@ -80,9 +80,10 @@ namespace PennyPet
     {
         internal DockResizeBatch(
             long topologyGeneration,
-            IList<DockWindowTarget> targets)
+            IList<DockWindowTarget> targets, DockInput input = null)
         {
             TopologyGeneration = topologyGeneration;
+            Input = input;
             Targets = new List<DockWindowTarget>(
                 targets == null
                     ? new DockWindowTarget[0]
@@ -90,6 +91,7 @@ namespace PennyPet
         }
 
         internal long TopologyGeneration { get; private set; }
+        internal DockInput Input { get; private set; }
         internal IReadOnlyList<DockWindowTarget> Targets { get; private set; }
     }
 

@@ -33,7 +33,7 @@ namespace PennyPet.Tests
             Assert.IsTrue(defer >= 0 && defer < restore.IndexOf("MigrateDockRestorePreferredIfNeeded", StringComparison.Ordinal));
             Assert.IsTrue(defer < restore.IndexOf("DockRestoreOperation.TryCreate", StringComparison.Ordinal));
             string owner = SliceMethod(source, "private DockMutationQueue FindDockMutationOwner(");
-            Assert.IsTrue(owner.Contains("Interaction.Mutations") && owner.Contains("_dockResize.Mutations"));
+            Assert.IsTrue(owner.Contains("Interaction.Mutations") && owner.Contains("Gestures.Resize.Mutations"));
             Assert.IsFalse(source.Contains("DeferDockResizeMutation"));
             string post = SliceMethod(source, "private void PostDockGroupTopologyReproject(");
             Assert.IsTrue(post.Contains("FindDockMutationOwner(root.Id) != null"));
@@ -46,15 +46,15 @@ namespace PennyPet.Tests
         {
             string dock = SourceGuardText.ReadStickyWorkflowSource();
             string reset = SliceMethod(dock, "internal void ResetDockDragState(");
+            int retire = reset.IndexOf("Gestures.ResetDrag(clearMailbox)", StringComparison.Ordinal);
             int invalidate = reset.IndexOf("SetCurrentDockInteractionEpoch", StringComparison.Ordinal);
-            int mailbox = reset.IndexOf("_dockPlanMailbox.Clear()", StringComparison.Ordinal);
             int run = reset.IndexOf("RunDeferredDockMutations(deferred)", StringComparison.Ordinal);
-            Assert.IsTrue(invalidate >= 0 && mailbox > invalidate && run > mailbox);
+            Assert.IsTrue(retire >= 0 && invalidate > retire && run > invalidate);
             string final = SliceMethod(dock, "private void StartDockFinalization(");
             int finish = final.IndexOf("Interaction.TryFinish(epoch, topology.Generation, out invalidatingEpoch, out deferred)", StringComparison.Ordinal);
             Assert.IsTrue(finish >= 0 && final.IndexOf("RunDeferredDockMutations(deferred)", StringComparison.Ordinal) > finish);
             string clear = SliceMethod(SourceGuardText.ReadStickyWorkflowSource(), "internal void ClearHostedDockResizeSession(");
-            Assert.IsTrue(clear.IndexOf("_dockResize = null", StringComparison.Ordinal) < clear.IndexOf("previous.Finish()", StringComparison.Ordinal));
+            Assert.IsTrue(clear.Contains("RunDeferredDockMutations(Gestures.FinishResize(expected))"));
             Assert.IsFalse(ReadSource("Features/StickyNotes/DockResizeSession.cs").Contains("_afterFinal"));
         }
 

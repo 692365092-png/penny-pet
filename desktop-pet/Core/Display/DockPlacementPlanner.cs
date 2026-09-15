@@ -78,7 +78,7 @@ namespace PennyPet
         internal DockPlacementPlan(long topologyGeneration,
             long planSequence, string sourceNoteId, string targetSurfaceId,
             int targetDpi, IEnumerable<DockWindowTarget> windowTargets,
-            long interactionEpoch = 0)
+            long interactionEpoch = 0, DockInput input = null)
         {
             TopologyGeneration = topologyGeneration;
             PlanSequence = planSequence;
@@ -86,6 +86,7 @@ namespace PennyPet
             TargetSurfaceId = targetSurfaceId ?? String.Empty;
             TargetDpi = targetDpi;
             InteractionEpoch = interactionEpoch;
+            Input = input;
             _windowTargets = windowTargets == null
                 ? new DockWindowTarget[0]
                 : new List<DockWindowTarget>(windowTargets).ToArray();
@@ -98,6 +99,7 @@ namespace PennyPet
         internal string TargetSurfaceId { get; private set; }
         internal int TargetDpi { get; private set; }
         internal long InteractionEpoch { get; private set; }
+        internal DockInput Input { get; private set; }
         internal IReadOnlyList<DockWindowTarget> WindowTargets
             { get; private set; }
     }
@@ -233,7 +235,7 @@ namespace PennyPet
             DockGroupLogicalState group, WindowFacts sourceFacts,
             DisplaySurfaceSnapshot targetSurface, int targetDpi,
             long topologyGeneration, long planSequence,
-            long interactionEpoch = 0)
+            long interactionEpoch = 0, DockInput input = null)
         {
             if (group == null) throw new ArgumentNullException(nameof(group));
             if (sourceFacts == null)
@@ -293,7 +295,7 @@ namespace PennyPet
 
             return new DockPlacementPlan(topologyGeneration, planSequence,
                 sourceFacts.WindowId, targetSurface.RuntimeSurfaceId,
-                targetDpi, targets, interactionEpoch);
+                targetDpi, targets, interactionEpoch, input);
         }
 
         private static int ProjectEdge(int physicalOrigin,

@@ -41,7 +41,7 @@ namespace PennyPet
             string[] dockNoteIds = null,
             DockGroupReprojectPlan dockGroupReprojectPlan = null,
             long interactionEpoch = 0, WindowPlacementPlan placement = null,
-            DockRestoreOperation dockRestore = null)
+            DockRestoreOperation dockRestore = null, DockInput input = null)
         {
             Kind = kind;
             NoteId = noteId ?? String.Empty;
@@ -59,6 +59,7 @@ namespace PennyPet
             InteractionEpoch = interactionEpoch;
             Placement = placement;
             DockRestore = dockRestore;
+            Input = input;
         }
 
         internal static StickyUiCommand Create(StickyNoteUiSnapshot snapshot,
@@ -139,7 +140,7 @@ namespace PennyPet
             IEnumerable<string> orderedNoteIds,
             string sourceNoteId,
             DisplayTopologySnapshot topology,
-            long interactionEpoch)
+            long interactionEpoch, DockInput input = null)
         {
             if (String.IsNullOrWhiteSpace(sourceNoteId))
                 throw new ArgumentException(
@@ -198,16 +199,16 @@ namespace PennyPet
                 null,
                 ids.ToArray(),
                 null,
-                interactionEpoch);
+                interactionEpoch, input: input);
         }
 
         internal static StickyUiCommand SetBounds(string noteId,
             StickyUiBounds bounds,
-            DisplayTopologySnapshot topology = null)
+            DisplayTopologySnapshot topology = null, DockInput input = null)
         {
             if (bounds == null) throw new ArgumentNullException(nameof(bounds));
             return new StickyUiCommand(StickyUiCommandKind.SetBounds, noteId,
-                false, null, bounds, null, null, topology);
+                false, null, bounds, null, null, topology, input: input);
         }
 
         internal static StickyUiCommand Reproject(string noteId,
@@ -221,7 +222,7 @@ namespace PennyPet
 
         internal static StickyUiCommand CaptureDockFacts(
             IEnumerable<string> noteIds, DisplayTopologySnapshot topology,
-            long interactionEpoch)
+            long interactionEpoch, DockInput input = null)
         {
             List<string> ids = new List<string>();
             if (noteIds != null)
@@ -231,7 +232,7 @@ namespace PennyPet
                 StickyUiCommandKind.CaptureDockFacts,
                 ids.Count > 0 ? ids[0] : String.Empty, false,
                 null, null, null, null, topology, null, ids.ToArray(), null,
-                interactionEpoch);
+                interactionEpoch, input: input);
         }
 
         internal static StickyUiCommand CaptureWindowFacts(string noteId,
@@ -291,6 +292,7 @@ namespace PennyPet
         internal long InteractionEpoch { get; private set; }
         internal WindowPlacementPlan Placement { get; private set; }
         internal DockRestoreOperation DockRestore { get; private set; }
+        internal DockInput Input { get; private set; }
 
         private static ReminderItem[] CopyReminders(
             IEnumerable<ReminderItem> reminders)
@@ -653,6 +655,7 @@ namespace PennyPet
         DockHorizontalResizeStarted,
         DockHorizontalResizing,
         DockHorizontalResizeCompleted,
+        UserResizeStarted,
         UserResizeCompleted,
         DockDividerResizeStarted,
         DockDividerResizing,
@@ -670,6 +673,17 @@ namespace PennyPet
 
     internal sealed class StickyUiEvent
     {
+        // Stamped once by the emitting session, before crossing to the Pet thread.
+        internal DockInput Input { get; set; }
+        internal bool BeginsDockInput { get { return Kind == StickyUiEventKind.HeaderDragStarted ||
+            Kind == StickyUiEventKind.DockHorizontalResizeStarted ||
+            Kind == StickyUiEventKind.DockDividerResizeStarted || Kind == StickyUiEventKind.UserResizeStarted; } }
+        internal bool IsDockInput { get { return BeginsDockInput ||
+            Kind == StickyUiEventKind.HeaderDragMoved || Kind == StickyUiEventKind.HeaderDragCompleted ||
+            Kind == StickyUiEventKind.DockHorizontalResizing || Kind == StickyUiEventKind.DockHorizontalResizeCompleted ||
+            Kind == StickyUiEventKind.DockDividerResizing || Kind == StickyUiEventKind.DockDividerResizeCompleted ||
+            Kind == StickyUiEventKind.UserResizeCompleted; } }
+
         // Kept internal for focused self-tests; sessions use payload factories.
         internal StickyUiEvent(StickyUiEventKind kind, string noteId,
             StickyNoteUiSnapshot snapshot, bool flag, long sequence,

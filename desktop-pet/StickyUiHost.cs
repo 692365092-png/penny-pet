@@ -19,6 +19,9 @@ namespace PennyPet
                 StringComparer.OrdinalIgnoreCase);
         private DisplayTopologySnapshot _currentTopology;
         private long _currentDockInteractionEpoch;
+        // Sticky-STA only. Advance before posting input to Pet, including when
+        // Pet is still waiting for an older finalization acknowledgment.
+        private DockInput _currentDockInput;
 
         internal void Start()
         {
@@ -156,6 +159,8 @@ namespace PennyPet
             DockResizeBatch batch)
         {
             if (batch == null || batch.Targets.Count == 0)
+                return StickyUiCommandResult.NotHandled();
+            if (!ReferenceEquals(batch.Input, _currentDockInput))
                 return StickyUiCommandResult.NotHandled();
             DisplayTopologySnapshot topology;
             lock (_configurationGate) topology = _currentTopology;
@@ -320,6 +325,8 @@ namespace PennyPet
                     case StickyUiCommandKind.RaiseDockGroupForDrag:
                         return RaiseDockGroupForDrag(command);
                     case StickyUiCommandKind.SetBounds:
+                        if (command.Input != null && !ReferenceEquals(command.Input, _currentDockInput))
+                            return StickyUiCommandResult.NotHandled();
                         if (command.Topology != null && !IsCurrentTopology(command.Topology))
                             return StickyUiCommandResult.NotHandled();
                         return TryGetSession(command.NoteId, out session)
@@ -549,7 +556,8 @@ namespace PennyPet
 
             if (currentTopology == null ||
                 command.Topology.Generation != currentTopology.Generation ||
-                command.InteractionEpoch != currentEpoch)
+                command.InteractionEpoch != currentEpoch ||
+                !ReferenceEquals(command.Input, _currentDockInput))
             {
                 DisplayDiagnostics.Trace("DockZOrderRaiseRejected",
                     "reason=stale source=" + command.NoteId +
@@ -732,7 +740,7 @@ namespace PennyPet
             // gesture plan is constrained by the current gesture token.
             if (plan.InteractionEpoch != 0 &&
                 !DockExecutionRules.CanExecute(plan, topology.Generation,
-                    currentEpoch))
+                    currentEpoch, _currentDockInput))
             {
                 DisplayDiagnostics.Trace("DockPlanStale", "plan=" +
                     plan.PlanSequence + " epoch=" + plan.InteractionEpoch +
@@ -1043,7 +1051,7 @@ namespace PennyPet
             }
             if (topology == null || topology.Generation !=
                 command.Topology.Generation || currentEpoch !=
-                command.InteractionEpoch)
+                command.InteractionEpoch || !ReferenceEquals(command.Input, _currentDockInput))
                 return StickyUiCommandResult.NotHandled();
             HashSet<string> expected = new HashSet<string>(
                 StringComparer.OrdinalIgnoreCase);
@@ -1087,6 +1095,7 @@ namespace PennyPet
 
         private void PostEvent(StickyUiEvent value)
         {
+            if (value.BeginsDockInput) _currentDockInput = value.Input;
             Action<StickyUiEvent> handler;
             SynchronizationContext context;
             lock (_configurationGate)
