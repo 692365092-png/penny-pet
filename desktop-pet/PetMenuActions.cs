@@ -227,9 +227,15 @@ namespace PennyPet
         {
             if (_exiting) return;
             if (_stickyWorkspace.BeginHostedStickyExitIfNeeded()) return;
-            if (!FlushPersistenceBeforeExit()) return;
+            CaptureLocationForSave();
+            if (!FlushPersistenceBeforeExit())
+            {
+                _stickyWorkspace.CancelPreparedStickyExit();
+                return;
+            }
             _exiting = true;
             _reminderTimer.Stop();
+            _persistenceRetryTimer.Stop();
             _dragging = false;
             Capture = false;
             _typingSession = false;

@@ -1165,30 +1165,46 @@ namespace PennyPet
             PostHostedStickyCommand(StickyUiCommand.CloseAll(),
                 delegate(StickyUiCommandResult result)
                 {
-                    Hosted.EndCloseAll();
-                    if (result != null &&
-                        result.Status == StickyUiCommandStatus.NotAccepted)
-                        return;
                     if (result == null ||
                         result.Status != StickyUiCommandStatus.Handled)
                     {
+                        Hosted.EndCloseAll();
+                        if (result != null && result.Status == StickyUiCommandStatus.NotAccepted)
+                            return;
                         Hosted.CancelExit();
                         ReportHostedStickyCommandFailure(
                             "sticky-hosted-exit", result);
                         ShowBubble("便利贴仍在收尾，退出已取消，请稍后重试。");
                         return;
                     }
-                    if (result.FinalSnapshots != null)
-                        foreach (StickyUiFinalSnapshot finalSnapshot in
-                            result.FinalSnapshots)
-                            ApplyHostedStickySnapshot(
-                                finalSnapshot.Snapshot,
-                                finalSnapshot.Sequence, false, finalSnapshot.Facts,
-                                finalSnapshot.Topology);
+                    ApplyClosedHostedStickySnapshots(result);
                     Hosted.PrepareExit();
-                    Host.BeginShutdown();
                     _pet.BeginExitSequence();
                 });
+        }
+
+        private void ApplyClosedHostedStickySnapshots(StickyUiCommandResult result)
+        {
+            if (result.FinalSnapshots != null)
+                foreach (StickyUiFinalSnapshot finalSnapshot in result.FinalSnapshots)
+                {
+                    if (finalSnapshot == null) continue;
+                    ApplyHostedStickySnapshot(finalSnapshot.Snapshot,
+                        finalSnapshot.Sequence, false, finalSnapshot.Facts,
+                        finalSnapshot.Topology);
+                }
+            // Facts above still need the old lease for acceptance. Once all
+            // final content is applied, no closed HWND remains an actual fact.
+            foreach (StickyNoteData note in Notes.InStorageOrder)
+                Placement.InvalidateEffective(note.Id);
+            Hosted.CompleteCloseAll();
+        }
+
+        internal void CancelPreparedStickyExit()
+        {
+            bool reopen = Hosted.ExitPrepared;
+            Hosted.CancelExit();
+            if (reopen) ReloadAllHostedStickyRuntime();
         }
 
         internal void CloseHostedStickyRuntimeForReload(
@@ -1213,19 +1229,7 @@ namespace PennyPet
                         completed(result);
                         return;
                     }
-                    if (result.FinalSnapshots != null)
-                        foreach (StickyUiFinalSnapshot finalSnapshot in
-                            result.FinalSnapshots)
-                        {
-                            if (finalSnapshot == null) continue;
-                            ApplyHostedStickySnapshot(
-                                finalSnapshot.Snapshot,
-                                finalSnapshot.Sequence, false, finalSnapshot.Facts,
-                                finalSnapshot.Topology);
-                            Hosted.RemoveNote(finalSnapshot.NoteId);
-                            Placement.InvalidateEffective(
-                                finalSnapshot.NoteId);
-                        }
+                    ApplyClosedHostedStickySnapshots(result);
                     Dock.ClearHostedDockResizeSession();
                     completed(result);
                 });

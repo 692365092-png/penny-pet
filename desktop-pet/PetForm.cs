@@ -601,15 +601,13 @@ namespace PennyPet
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             base.OnFormClosing(e);
-            if (e.Cancel || _stickyWorkspace.Hosted.ExitPrepared ||
-                _stickyWorkspace.Hosted.NoteCount == 0) return;
+            if (e.Cancel || _exiting) return;
             e.Cancel = true;
-            _stickyWorkspace.BeginHostedStickyExitIfNeeded();
+            BeginExitSequence();
         }
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
-            SaveLocation();
             _stickyWorkspace.Dispose();
             if (_displayTopologyRuntime != null)
             {
@@ -618,7 +616,6 @@ namespace PennyPet
                 _displayTopologyRuntime.Dispose();
                 _displayTopologyRuntime = null;
             }
-            _notes.Save();
             _notes.SaveFailed -= PersistenceSaveFailed;
             _settings.SaveFailed -= PersistenceSaveFailed;
             _keyboard.Dispose();
@@ -702,6 +699,12 @@ namespace PennyPet
 
         private void SaveLocation()
         {
+            CaptureLocationForSave();
+            _settings.SaveAsync();
+        }
+
+        private void CaptureLocationForSave()
+        {
             // Compatibility-only physical fallback.
             // Durable PetPreferred* is committed only from actual facts at an
             // explicit user placement or one-time initial migration/default.
@@ -709,7 +712,6 @@ namespace PennyPet
             _settings.X = Left;
             _settings.Y = Top;
             _settings.ScalePercent = _scalePercent;
-            _settings.SaveAsync();
         }
 
     }

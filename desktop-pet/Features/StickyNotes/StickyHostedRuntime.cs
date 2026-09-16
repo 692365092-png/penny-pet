@@ -126,13 +126,24 @@ namespace PennyPet
         internal void CancelExit()
         {
             ExitRequested = false;
+            ExitPrepared = false;
         }
 
         internal void PrepareExit()
         {
+            ExitPrepared = true;
+        }
+
+        // CloseAll has destroyed every native session. Retire their leases
+        // before another show can create a session with a fresh sequence.
+        internal void CompleteCloseAll()
+        {
+            _noteIds.Clear();
+            _appliedSequences.Clear();
             _imeComposing.Clear();
             _inputFocused.Clear();
-            ExitPrepared = true;
+            _deletePending.Clear();
+            CloseAllInFlight = false;
         }
 
         private static void SetMembership(HashSet<string> values,

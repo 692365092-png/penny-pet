@@ -421,16 +421,38 @@ namespace PennyPet.Tests
             string coordinator = SourceGuardText.ReadStickyWorkflowSource();
 
             Assert.IsTrue(closing.Contains("e.Cancel = true") &&
-                closing.Contains("BeginHostedStickyExitIfNeeded()"),
-                "External close must pause before PetForm disposal.");
-            int apply = coordinator.IndexOf(
-                "ApplyHostedStickySnapshot(\n" +
-                "                                finalSnapshot.Snapshot",
-                StringComparison.Ordinal);
-            int prepared = coordinator.IndexOf(
+                closing.Contains("BeginExitSequence()") &&
+                !closing.Contains("NoteCount == 0") && !closing.Contains("ExitPrepared"),
+                "External close must use the complete persistence exit even without open notes.");
+            string close = RawSource.SliceMethod(coordinator, "private void TryCloseAllHostedStickies()");
+            int apply = close.IndexOf("ApplyClosedHostedStickySnapshots(result)", StringComparison.Ordinal);
+            int prepared = close.IndexOf(
                 "Hosted.PrepareExit()", StringComparison.Ordinal);
             Assert.IsTrue(apply >= 0 && prepared > apply,
                 "Final snapshot must reach the canonical owner before close resumes.");
+            Assert.IsFalse(close.Contains("Host.BeginShutdown()"),
+                "A save cancellation must still be able to reopen windows on the existing host.");
+            string capture = RawSource.SliceMethod(coordinator, "private void ApplyClosedHostedStickySnapshots(");
+            Assert.IsTrue(capture.IndexOf("ApplyHostedStickySnapshot(", StringComparison.Ordinal) <
+                capture.IndexOf("Hosted.CompleteCloseAll()", StringComparison.Ordinal));
+            Assert.IsTrue(capture.Contains("Placement.InvalidateEffective(note.Id)"));
+        }
+
+        [TestMethod]
+        public void ExitDisposalCannotRetryWritesAfterExportOrDiscardWasAccepted()
+        {
+            string form = ReadSource("PetForm.cs");
+            string closed = RawSource.SliceMethod(form, "protected override void OnFormClosed(");
+            Assert.IsFalse(closed.Contains(".Save(") || closed.Contains(".SaveAsync(") ||
+                closed.Contains("SaveLocation("), "Disposal must not start another unobserved write.");
+            string exit = RawSource.SliceMethod(ReadSource("PetMenuActions.cs"), "internal void BeginExitSequence()");
+            Assert.IsTrue(exit.IndexOf("CaptureLocationForSave()", StringComparison.Ordinal) <
+                exit.IndexOf("FlushPersistenceBeforeExit()", StringComparison.Ordinal));
+            Assert.IsTrue(exit.Contains("CancelPreparedStickyExit()"));
+            Assert.IsTrue(exit.Contains("_persistenceRetryTimer.Stop()"));
+            string cancel = RawSource.SliceMethod(SourceGuardText.ReadStickyWorkflowSource(),
+                "internal void CancelPreparedStickyExit()");
+            Assert.IsTrue(cancel.Contains("Hosted.CancelExit()") && cancel.Contains("ReloadAllHostedStickyRuntime()"));
         }
     }
 }
