@@ -5,12 +5,13 @@
 [旧关系的文件边界](2026-09-15-dock-file-relations-review.md)从运行时模型删除 `DockParentId`，并修复旧备份在合并前未迁移分组的问题。
 [窗口消息与实际像素](2026-09-15-geometry-message-review.md)删除内容快照中的全部几何字段，并修复混合 DPI 下实际坐标被回投影改写的问题。
 [完整位置偏好](2026-09-15-typed-preference-review.md)删除模型的五个可变 Preferred 字段，改为一次替换完整的不可变值，坏字段只在文件入口处理。
+[v10 位置输入隔离](2026-09-16-legacy-placement-review.md)删除五个可变兼容字段及逐帧回写，旧坐标只作为不可变的待迁移输入。
 
 最新结论：
 
 | 核心债务 | 当前进展 | 仍需完成 |
 | --- | --- | --- |
-| Geometry Authority | HWND 事实统一接收；内容消息无几何副本；Preferred 为不可变值；修复混合 DPI 实际像素回投影 | 将物理 / v10 待迁移位置从 live model 隔离，并验证原生缺屏恢复 |
+| Geometry Authority | HWND 事实统一接收；内容消息无几何副本；Preferred 为不可变值；v10 只作旧文件迁移输入；实际像素不再回投影 | 物理 X/Y/W/H 仍兼任模型中的恢复副本，需要继续隔离；验证原生缺屏恢复 |
 | Dock 分布式状态机 | 独立 Dock owner；输入由同一 owner 接替；旧原生计划不能抢占新输入 | restore / topology 编排仍分散；连续手势与批次失败补偿需要 Windows 实测 |
 | 保存多写入路径 | 便签与设置复用同一个 writer 实现，各自有序写入；常规 UI 保存和故障重试排队 | 退出仍有同步 flush / 保存等待 |
 | DockParent 双重关系 | 旧字段已从模型删除，父链仅在文件读取局部字典迁移；运行时只用 GroupId / Order | 此项类型隔离已完成；旧文件兼容继续保留 |

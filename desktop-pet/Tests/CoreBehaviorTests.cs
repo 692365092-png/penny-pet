@@ -432,17 +432,12 @@ namespace PennyPet.Tests
         [TestMethod]
         public void StickyPlacementMath_RoundTrip_100Percent()
         {
-            StickyCanonicalPlacement placement =
-                StickyPlacementMath.FromPhysicalRect(
-                    "\\\\.\\DISPLAY1", 0, 0, 1.0,
-                    100, 50, 320, 300);
-            Assert.AreEqual("\\\\.\\DISPLAY1", placement.DisplayId);
-            Assert.AreEqual(100, placement.LocalX);
-            Assert.AreEqual(50, placement.LocalY);
-            Assert.AreEqual(320, placement.LocalWidth);
-            Assert.AreEqual(300, placement.LocalHeight);
-            Assert.AreEqual(100, placement.PhysicalLeft);
-            Assert.AreEqual(50, placement.PhysicalTop);
+            LogicalRect placement = StickyPlacementMath.ToLocalRect(0, 0, 1.0,
+                new PhysicalRect(100, 50, 320, 300));
+            Assert.AreEqual(100, placement.X);
+            Assert.AreEqual(50, placement.Y);
+            Assert.AreEqual(320, placement.Width);
+            Assert.AreEqual(300, placement.Height);
 
             LogicalPoint local = DisplayGeometry.PhysicalToLocal(
                 100, 50, 0, 0, 1.0);
@@ -455,17 +450,12 @@ namespace PennyPet.Tests
         [TestMethod]
         public void StickyPlacementMath_RoundTrip_200PercentNonZeroOrigin()
         {
-            StickyCanonicalPlacement placement =
-                StickyPlacementMath.FromPhysicalRect(
-                    "\\\\.\\DISPLAY2", 1920, 0, 2.0,
-                    2020, 100, 640, 600);
-            Assert.AreEqual("\\\\.\\DISPLAY2", placement.DisplayId);
-            Assert.AreEqual(50, placement.LocalX);
-            Assert.AreEqual(50, placement.LocalY);
-            Assert.AreEqual(320, placement.LocalWidth);
-            Assert.AreEqual(300, placement.LocalHeight);
-            Assert.AreEqual(2020, placement.PhysicalLeft);
-            Assert.AreEqual(100, placement.PhysicalTop);
+            LogicalRect placement = StickyPlacementMath.ToLocalRect(1920, 0, 2.0,
+                new PhysicalRect(2020, 100, 640, 600));
+            Assert.AreEqual(50, placement.X);
+            Assert.AreEqual(50, placement.Y);
+            Assert.AreEqual(320, placement.Width);
+            Assert.AreEqual(300, placement.Height);
 
             LogicalPoint local = DisplayGeometry.PhysicalToLocal(
                 2020, 100, 1920, 0, 2.0);
@@ -478,16 +468,12 @@ namespace PennyPet.Tests
         [TestMethod]
         public void StickyPlacementMath_RoundTrip_NegativeOrigin()
         {
-            StickyCanonicalPlacement placement =
-                StickyPlacementMath.FromPhysicalRect(
-                    "\\\\.\\DISPLAY3", -1920, 0, 2.0,
-                    -2010, 80, 640, 600);
-            Assert.AreEqual(-45, placement.LocalX);
-            Assert.AreEqual(40, placement.LocalY);
-            Assert.AreEqual(320, placement.LocalWidth);
-            Assert.AreEqual(300, placement.LocalHeight);
-            Assert.AreEqual(-2010, placement.PhysicalLeft);
-            Assert.AreEqual(80, placement.PhysicalTop);
+            LogicalRect placement = StickyPlacementMath.ToLocalRect(-1920, 0, 2.0,
+                new PhysicalRect(-2010, 80, 640, 600));
+            Assert.AreEqual(-45, placement.X);
+            Assert.AreEqual(40, placement.Y);
+            Assert.AreEqual(320, placement.Width);
+            Assert.AreEqual(300, placement.Height);
 
             LogicalPoint local = DisplayGeometry.PhysicalToLocal(
                 -2010, 80, -1920, 0, 2.0);
@@ -498,92 +484,16 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void StickyPlacementMath_SpawnMatchesCanonicalSavedPlacement()
+        public void StickyPlacementMath_MoveAcrossDisplaysBuildsDistinctPreferredTargets()
         {
-            StickyCanonicalPlacement placement =
-                StickyPlacementMath.FromSpawn(
-                    "\\\\.\\DISPLAY1", 0, 0, 1.0,
-                    new DockRect(400, 200, 192, 208),
-                    new DockRect(0, 0, 1000, 800),
-                    new DockSize(320, 300), 12);
-            Assert.AreEqual(68, placement.LocalX);
-            Assert.AreEqual(154, placement.LocalY);
-            Assert.AreEqual(320, placement.LocalWidth);
-            Assert.AreEqual(300, placement.LocalHeight);
-            Assert.AreEqual(68, placement.PhysicalLeft);
-            Assert.AreEqual(154, placement.PhysicalTop);
-
-            StickyNoteData note = new StickyNoteData();
-            placement.ApplyTo(note);
-            Assert.AreEqual(placement.DisplayId, note.DisplayId);
-            Assert.AreEqual(placement.LocalX, note.LocalLogicalX);
-            Assert.AreEqual(placement.LocalY, note.LocalLogicalY);
-            Assert.AreEqual(placement.LocalWidth, note.LocalLogicalWidth);
-            Assert.AreEqual(placement.LocalHeight, note.LocalLogicalHeight);
-            Assert.AreEqual(placement.PhysicalLeft, note.X);
-            Assert.AreEqual(placement.PhysicalTop, note.Y);
-            Assert.AreEqual(placement.PhysicalWidth, note.Width);
-            Assert.AreEqual(placement.PhysicalHeight, note.Height);
-
-            StickyCanonicalPlacement restored =
-                StickyCanonicalPlacement.FromData(note);
-            Assert.AreEqual(placement.DisplayId, restored.DisplayId);
-            Assert.AreEqual(placement.LocalX, restored.LocalX);
-            Assert.AreEqual(placement.LocalY, restored.LocalY);
-            Assert.AreEqual(placement.LocalWidth, restored.LocalWidth);
-            Assert.AreEqual(placement.LocalHeight, restored.LocalHeight);
-            Assert.AreEqual(placement.PhysicalLeft, restored.PhysicalLeft);
-            Assert.AreEqual(placement.PhysicalTop, restored.PhysicalTop);
-            Assert.AreEqual(placement.PhysicalWidth, restored.PhysicalWidth);
-            Assert.AreEqual(placement.PhysicalHeight, restored.PhysicalHeight);
-        }
-
-        [TestMethod]
-        public void StickyPlacementMath_MoveAcrossDisplayChangesCanonical()
-        {
-            StickyCanonicalPlacement before =
-                StickyPlacementMath.FromPhysicalRect(
-                    "\\\\.\\DISPLAY1", 0, 0, 1.0,
-                    100, 50, 320, 300);
-
-            StickyCanonicalPlacement after =
-                StickyPlacementMath.FromPhysicalRect(
-                    "\\\\.\\DISPLAY2", 1920, 0, 2.0,
-                    2020, 100, 640, 600);
-
-            Assert.AreNotEqual(before.DisplayId, after.DisplayId);
-            Assert.AreEqual("\\\\.\\DISPLAY2", after.DisplayId);
-            Assert.AreEqual(50, after.LocalX);
-            Assert.AreEqual(50, after.LocalY);
-        }
-
-        [TestMethod]
-        public void StickyPlacementMath_SpawnStaysOnPetScreenAcrossDisplays()
-        {
-            // The pet lives on a 200% monitor at non-zero origin. The newly
-            // created sticky must fall inside that same monitor's work area,
-            // never on the primary monitor.
-            StickyCanonicalPlacement placement =
-                StickyPlacementMath.FromSpawn(
-                    "\\\\.\\DISPLAY2", 1920, 0, 2.0,
-                    new DockRect(2000, 50, 192, 208),
-                    new DockRect(1920, 0, 1280, 720),
-                    new DockSize(320, 300), 12);
-
-            Assert.AreEqual("\\\\.\\DISPLAY2", placement.DisplayId);
-            // B work area in local units is 0..640 x 0..360; the spawn must be
-            // fully inside it (local width 320, height 300).
-            Assert.IsTrue(placement.LocalX >= 0,
-                "spawn X must not leak before the pet screen");
-            Assert.IsTrue(placement.LocalX + placement.LocalWidth <= 640,
-                "spawn X must stay within the pet screen");
-            Assert.IsTrue(placement.LocalY >= 0,
-                "spawn Y must not leak above the pet screen");
-            Assert.IsTrue(placement.LocalY + placement.LocalHeight <= 360,
-                "spawn Y must stay within the pet screen");
-            // Compat physical position is on monitor B, to the right of B origin.
-            Assert.IsTrue(placement.PhysicalLeft >= 1920,
-                "compat physical position must remain on the pet screen");
+            WindowPlacementPreference before = StickyPlacementMath.PreferenceFromPhysicalRect(
+                "mdp:one", 0, 0, 1.0, new PhysicalRect(100, 50, 320, 300));
+            WindowPlacementPreference after = StickyPlacementMath.PreferenceFromPhysicalRect(
+                "mdp:two", 1920, 0, 2.0, new PhysicalRect(2020, 100, 640, 600));
+            Assert.AreNotEqual(before.PreferredTargetKey, after.PreferredTargetKey);
+            Assert.AreEqual("mdp:two", after.PreferredTargetKey);
+            Assert.AreEqual(50, after.LocalLogicalRect.X);
+            Assert.AreEqual(50, after.LocalLogicalRect.Y);
         }
 
         [TestMethod]
@@ -1250,11 +1160,8 @@ namespace PennyPet.Tests
             StickyNoteData source = new StickyNoteData
             {
                 Id = "v11-preferred",
-                DisplayId = "\\\\.\\DISPLAY2",
-                LocalLogicalX = -150,
-                LocalLogicalY = 40,
-                LocalLogicalWidth = 320,
-                LocalLogicalHeight = 300,
+                LegacyPlacement = new StickyLegacyPlacement("\\\\.\\DISPLAY2",
+                new LogicalRect { X = -150, Y = 40, Width = 320, Height = 300 }),
                 PreferredPlacement = new WindowPlacementPreference("mdp:home",
                     new LogicalRect { X = -150, Y = 40, Width = 320, Height = 300 })
             };
@@ -1300,12 +1207,8 @@ namespace PennyPet.Tests
             StickyNoteData note = new StickyNoteData
             {
                 Id = "migrate",
-                DisplayId = "\\\\.\\DISPLAY2",
-                LocalLogicalX = -150,
-                LocalLogicalY = 40,
-                LocalLogicalWidth = 320,
-                LocalLogicalHeight = 300
-            };
+                LegacyPlacement = new StickyLegacyPlacement("\\\\.\\DISPLAY2",
+                new LogicalRect { X = -150, Y = 40, Width = 320, Height = 300 })};
             DisplayTopologySnapshot topology = new DisplayTopologySnapshot(0,
                 new[]
                 {
@@ -1350,12 +1253,8 @@ namespace PennyPet.Tests
             StickyNoteData missing = new StickyNoteData
             {
                 Id = "missing",
-                DisplayId = "\\\\.\\DISPLAY9",
-                LocalLogicalX = 5,
-                LocalLogicalY = 6,
-                LocalLogicalWidth = 320,
-                LocalLogicalHeight = 300
-            };
+                LegacyPlacement = new StickyLegacyPlacement("\\\\.\\DISPLAY9",
+                new LogicalRect { X = 5, Y = 6, Width = 320, Height = 300 })};
             Assert.IsFalse(
                 StickyPlacementRules.MigrateV10Preferred(missing, topology));
             Assert.IsNull(missing.PreferredPlacement);
@@ -1363,11 +1262,8 @@ namespace PennyPet.Tests
             StickyNoteData existing = new StickyNoteData
             {
                 Id = "existing",
-                DisplayId = "\\\\.\\DISPLAY1",
-                LocalLogicalX = 5,
-                LocalLogicalY = 6,
-                LocalLogicalWidth = 320,
-                LocalLogicalHeight = 300,
+                LegacyPlacement = new StickyLegacyPlacement("\\\\.\\DISPLAY1",
+                new LogicalRect { X = 5, Y = 6, Width = 320, Height = 300 }),
                 PreferredPlacement = new WindowPlacementPreference("mdp:keep",
                     new LogicalRect { X = 0, Y = 0, Width = 280, Height = 260 })
             };
@@ -1395,11 +1291,10 @@ namespace PennyPet.Tests
                 new LogicalRect { X = 100, Y = 200, Width = 320, Height = 300 });
             var next = new WindowPlacementPreference("mdp:other",
                 new LogicalRect { X = 10, Y = 20, Width = 600, Height = 450 });
-            var note = new StickyNoteData { PreferredPlacement = previous, X = 9000, LocalLogicalWidth = 700 };
+            var note = new StickyNoteData { PreferredPlacement = previous, X = 9000 };
             Assert.AreEqual(accepted, StickyPlacementRules.TryCommitPreferred(note, next, (PlacementReason)reason));
             Assert.AreSame(accepted ? next : previous, note.PreferredPlacement);
             Assert.AreEqual(9000, note.X);
-            Assert.AreEqual(700, note.LocalLogicalWidth);
         }
 
         [TestMethod]
@@ -1501,11 +1396,11 @@ namespace PennyPet.Tests
             }
             if (version >= 10)
             {
-                Assert.AreEqual("\\\\.\\DISPLAY1", restored.DisplayId);
-                Assert.AreEqual(10, restored.LocalLogicalX);
-                Assert.AreEqual(20, restored.LocalLogicalY);
-                Assert.AreEqual(300, restored.LocalLogicalWidth);
-                Assert.AreEqual(240, restored.LocalLogicalHeight);
+                Assert.AreEqual("\\\\.\\DISPLAY1", restored.LegacyPlacement.RuntimeGdiName);
+                Assert.AreEqual(10, restored.LegacyPlacement.Logical.X);
+                Assert.AreEqual(20, restored.LegacyPlacement.Logical.Y);
+                Assert.AreEqual(300, restored.LegacyPlacement.Logical.Width);
+                Assert.AreEqual(240, restored.LegacyPlacement.Logical.Height);
             }
             if (version >= 11)
             {
@@ -1591,12 +1486,8 @@ namespace PennyPet.Tests
             StickyNoteData note = new StickyNoteData
             {
                 Id = "v10-canonical",
-                DisplayId = "\\\\.\\DISPLAY3",
-                LocalLogicalX = -150,
-                LocalLogicalY = 40,
-                LocalLogicalWidth = 320,
-                LocalLogicalHeight = 300
-            };
+                LegacyPlacement = new StickyLegacyPlacement("\\\\.\\DISPLAY3",
+                new LogicalRect { X = -150, Y = 40, Width = 320, Height = 300 })};
 
             StickyImportValidationResult result =
                 StickyImportBackupValidator.Validate(new[]
@@ -1606,13 +1497,13 @@ namespace PennyPet.Tests
 
             Assert.IsTrue(result.Succeeded, result.ErrorMessage);
             StickyNoteData restored = result.Notes.Single();
-            Assert.AreEqual(note.DisplayId, restored.DisplayId);
-            Assert.AreEqual(note.LocalLogicalX, restored.LocalLogicalX);
-            Assert.AreEqual(note.LocalLogicalY, restored.LocalLogicalY);
-            Assert.AreEqual(note.LocalLogicalWidth,
-                restored.LocalLogicalWidth);
-            Assert.AreEqual(note.LocalLogicalHeight,
-                restored.LocalLogicalHeight);
+            Assert.AreEqual(note.LegacyPlacement.RuntimeGdiName, restored.LegacyPlacement.RuntimeGdiName);
+            Assert.AreEqual(note.LegacyPlacement.Logical.X, restored.LegacyPlacement.Logical.X);
+            Assert.AreEqual(note.LegacyPlacement.Logical.Y, restored.LegacyPlacement.Logical.Y);
+            Assert.AreEqual(note.LegacyPlacement.Logical.Width,
+                restored.LegacyPlacement.Logical.Width);
+            Assert.AreEqual(note.LegacyPlacement.Logical.Height,
+                restored.LegacyPlacement.Logical.Height);
         }
 
         [TestMethod]
@@ -1621,12 +1512,8 @@ namespace PennyPet.Tests
             StickyNoteData note = new StickyNoteData
             {
                 Id = "v10-malformed",
-                DisplayId = "\\\\.\\DISPLAY1",
-                LocalLogicalX = 10,
-                LocalLogicalY = 20,
-                LocalLogicalWidth = 320,
-                LocalLogicalHeight = 300
-            };
+                LegacyPlacement = new StickyLegacyPlacement("\\\\.\\DISPLAY1",
+                new LogicalRect { X = 10, Y = 20, Width = 320, Height = 300 })};
             string[] valid = StickyNoteCodec.SerializeLine(note).Split('|');
             List<string[]> malformed = new List<string[]>();
 
@@ -3065,20 +2952,16 @@ namespace PennyPet.Tests
         {
             StickyNoteData note = new StickyNoteData
             {
-                DisplayId = "\\\\.\\DISPLAY1",
-                LocalLogicalX = 120,
-                LocalLogicalY = 80,
-                LocalLogicalWidth = 320,
-                LocalLogicalHeight = 300
-            };
+                LegacyPlacement = new StickyLegacyPlacement("\\\\.\\DISPLAY1",
+                new LogicalRect { X = 120, Y = 80, Width = 320, Height = 300 })};
             StickyNoteData restored = StickyNoteCodec.ParseLine(
                 StickyNoteCodec.SerializeLine(note));
 
-            Assert.AreEqual("\\\\.\\DISPLAY1", restored.DisplayId);
-            Assert.AreEqual(120, restored.LocalLogicalX);
-            Assert.AreEqual(80, restored.LocalLogicalY);
-            Assert.AreEqual(320, restored.LocalLogicalWidth);
-            Assert.AreEqual(300, restored.LocalLogicalHeight);
+            Assert.AreEqual("\\\\.\\DISPLAY1", restored.LegacyPlacement.RuntimeGdiName);
+            Assert.AreEqual(120, restored.LegacyPlacement.Logical.X);
+            Assert.AreEqual(80, restored.LegacyPlacement.Logical.Y);
+            Assert.AreEqual(320, restored.LegacyPlacement.Logical.Width);
+            Assert.AreEqual(300, restored.LegacyPlacement.Logical.Height);
             Assert.IsTrue(StickyNoteCodec.SerializeLine(restored)
                 .StartsWith(
                     StickyNoteCodec.CurrentVersion.ToString(
@@ -3087,49 +2970,25 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void StickyNoteCodec_ValidatesV10CanonicalContract()
+        public void StickyNoteCodec_RepairsV10OnlyAtTheFileBoundary()
         {
-            // A valid placement round-trips and stays canonical.
-            StickyNoteData valid = new StickyNoteData
-            {
-                DisplayId = "\\\\.\\DISPLAY1",
-                LocalLogicalX = 10,
-                LocalLogicalY = 20,
-                LocalLogicalWidth = 320,
-                LocalLogicalHeight = 300
-            };
-            StickyNoteData restoredValid = StickyNoteCodec.ParseLine(
-                StickyNoteCodec.SerializeLine(valid));
-            Assert.AreEqual("\\\\.\\DISPLAY1", restoredValid.DisplayId);
-            Assert.AreEqual(10, restoredValid.LocalLogicalX);
-            Assert.AreEqual(320, restoredValid.LocalLogicalWidth);
+            var valid = ParseLegacyFile("DISPLAY1", "10", "20", "320", "300");
+            Assert.AreEqual("DISPLAY1", valid.LegacyPlacement.RuntimeGdiName);
+            Assert.AreEqual(10, valid.LegacyPlacement.Logical.X);
+            Assert.AreEqual(320, valid.LegacyPlacement.Logical.Width);
+            var missing = ParseLegacyFile(String.Empty, "5", "6", "320", "300");
+            Assert.IsNull(missing.LegacyPlacement);
+            var oversized = ParseLegacyFile("DISPLAY1", "0", "0", "2147483647", "2147483647");
+            Assert.AreEqual(20000, oversized.LegacyPlacement.Logical.Width);
+            Assert.AreEqual(20000, oversized.LegacyPlacement.Logical.Height);
+        }
 
-            // A missing DisplayId drops an incomplete placement to legacy.
-            StickyNoteData orphan = new StickyNoteData
-            {
-                DisplayId = String.Empty,
-                LocalLogicalX = 5,
-                LocalLogicalY = 6,
-                LocalLogicalWidth = 320,
-                LocalLogicalHeight = 300
-            };
-            StickyNoteData repaired = StickyNoteCodec.ParseLine(
-                StickyNoteCodec.SerializeLine(orphan));
-            Assert.IsTrue(String.IsNullOrWhiteSpace(repaired.DisplayId));
-            Assert.AreEqual(0, repaired.LocalLogicalWidth);
-            Assert.AreEqual(0, repaired.LocalLogicalHeight);
-
-            // A corrupt oversized local rect is clamped to the safety limit.
-            StickyNoteData corrupt = new StickyNoteData
-            {
-                DisplayId = "\\\\.\\DISPLAY1",
-                LocalLogicalWidth = int.MaxValue,
-                LocalLogicalHeight = int.MaxValue
-            };
-            StickyNoteData repairedCorrupt = StickyNoteCodec.ParseLine(
-                StickyNoteCodec.SerializeLine(corrupt));
-            Assert.IsTrue(repairedCorrupt.LocalLogicalWidth <= 20000);
-            Assert.IsTrue(repairedCorrupt.LocalLogicalHeight <= 20000);
+        private static StickyNoteData ParseLegacyFile(string gdi, string x, string y, string width, string height)
+        {
+            string[] fields = StickyNoteCodec.SerializeLine(new StickyNoteData { Id = "legacy-input" }).Split('|');
+            fields[27] = Convert.ToBase64String(Encoding.UTF8.GetBytes(gdi));
+            fields[28] = x; fields[29] = y; fields[30] = width; fields[31] = height;
+            return StickyNoteCodec.ParseLine(String.Join("|", fields));
         }
 
         [TestMethod]

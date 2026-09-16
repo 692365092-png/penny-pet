@@ -42,20 +42,18 @@ namespace PennyPet
             if (note == null || topology == null ||
                 !String.IsNullOrEmpty(note.DockGroupId)) return null;
             WindowPlacementPreference preferred = note.PreferredPlacement;
-            bool legacyValid = !String.IsNullOrWhiteSpace(note.DisplayId) &&
-                note.LocalLogicalWidth > 0 && note.LocalLogicalHeight > 0;
+            StickyLegacyPlacement legacy = preferred == null ? note.LegacyPlacement : null;
             // Preserve the existing uninitialized-note visibility fallback.
-            if (preferred == null && !legacyValid) return null;
+            if (preferred == null && legacy == null) return null;
             DisplaySurfaceSnapshot surface = preferred != null
                 ? topology.FindByTargetKey(preferred.PreferredTargetKey) : null;
             if (surface != null)
                 return WindowPlacementPlan.OnSurface(topology, surface,
                     preferred.LocalLogicalRect);
-            surface = legacyValid ? topology.FindByRuntimeGdiName(note.DisplayId) : null;
+            surface = legacy == null ? null : topology.FindByRuntimeGdiName(legacy.RuntimeGdiName);
             if (surface != null)
                 return WindowPlacementPlan.OnSurface(topology, surface,
-                    new LogicalRect { X = note.LocalLogicalX, Y = note.LocalLogicalY,
-                        Width = note.LocalLogicalWidth, Height = note.LocalLogicalHeight });
+                    legacy.Logical);
             if (note.Width <= 0 || note.Height <= 0) return null;
             PhysicalRect physical = new PhysicalRect(note.X, note.Y,
                 note.Width, note.Height);

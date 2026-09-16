@@ -29,9 +29,8 @@ namespace PennyPet.Tests
         private static StickyNoteData ConflictingNote()
         {
             return new StickyNoteData { Id = "note", X = 9000, Y = 8000,
-                Width = 900, Height = 700, DisplayId = "DISPLAY1",
-                LocalLogicalX = 999, LocalLogicalY = 888,
-                LocalLogicalWidth = 700, LocalLogicalHeight = 600,
+                Width = 900, Height = 700, LegacyPlacement = new StickyLegacyPlacement("DISPLAY1",
+                    new LogicalRect { X = 999, Y = 888, Width = 700, Height = 600 }),
                 PreferredPlacement = new WindowPlacementPreference("mdp:one",
                     new LogicalRect { X = 40, Y = 60, Width = 320, Height = 240 })
             };
@@ -55,7 +54,7 @@ namespace PennyPet.Tests
             Assert.AreEqual((int)(240 * scale), actualTarget.Height);
             Assert.AreSame(topology, plan.Topology);
             Assert.AreEqual(9000, note.X, "Recovery selection cannot commit geometry.");
-            Assert.AreEqual(999, note.LocalLogicalX);
+            Assert.AreEqual(999, note.LegacyPlacement.Logical.X);
         }
 
         [TestMethod]
@@ -74,7 +73,6 @@ namespace PennyPet.Tests
         {
             StickyNoteData note = ConflictingNote();
             note.PreferredPlacement = new WindowPlacementPreference("mdp:missing", note.PreferredPlacement.LocalLogicalRect);
-            note.DisplayId = "missing";
             WindowPlacementPlan plan = StickyPlacementRecovery.SelectForShow(note, Topology());
             PhysicalRect target = plan.Resolve(192);
             Assert.IsNull(plan.Surface);
@@ -84,6 +82,22 @@ namespace PennyPet.Tests
             Assert.AreEqual("mdp:missing", note.PreferredPlacement.PreferredTargetKey);
             Assert.AreEqual(40, note.PreferredPlacement.LocalLogicalRect.X);
             Assert.AreEqual(9000, note.X);
+        }
+
+        [TestMethod]
+        public void AcceptedUserPlacementConsumesLegacyInputWithoutChangingSavedClones()
+        {
+            var note = ConflictingNote();
+            var saved = note.CloneForPersistence();
+            var preferred = new WindowPlacementPreference("mdp:other",
+                new LogicalRect { X = 10, Y = 20, Width = 300, Height = 250 });
+            Assert.IsFalse(StickyPlacementRules.TryCommitPreferred(note, preferred, PlacementReason.TemporaryRehome));
+            Assert.AreSame(saved.LegacyPlacement, note.LegacyPlacement);
+            Assert.IsTrue(StickyPlacementRules.TryCommitPreferred(note, preferred, PlacementReason.UserMoveCommit));
+            Assert.IsNull(note.LegacyPlacement);
+            Assert.IsNotNull(saved.LegacyPlacement);
+            Assert.AreEqual(999, saved.LegacyPlacement.Logical.X);
+            Assert.AreSame(preferred, note.PreferredPlacement);
         }
 
         [TestMethod]

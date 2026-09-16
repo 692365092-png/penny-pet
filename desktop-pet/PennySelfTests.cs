@@ -82,9 +82,8 @@ namespace PennyPet
                         new Point(100, 100 + 230 * i));
                     note.Id = "pc2-" + i;
                     note.Width = 300; note.Height = 230;
-                    note.DisplayId = Surface.RuntimeGdiName;
-                    note.LocalLogicalX = 100; note.LocalLogicalY = 100 + 230 * i;
-                    note.LocalLogicalWidth = 300; note.LocalLogicalHeight = 230;
+                    note.LegacyPlacement = new StickyLegacyPlacement(Surface.RuntimeGdiName,
+                        new LogicalRect { X = 100, Y = 100 + 230 * i, Width = 300, Height = 230 });
                     note.PreferredPlacement = new WindowPlacementPreference(DisplayTopologyRules
                         .SelectPreferredTargetKey(Surface, null), new LogicalRect { X = 100, Y = 100 + 230 * i, Width = 300, Height = 230 });
                     note.AlwaysOnTop = false; note.Visible = true;
@@ -450,8 +449,9 @@ namespace PennyPet
                 Pc2Assert((bool)Pc2Call(s.Workspace, "ApplyReprojectResult", moved, note.Id, s.Topology),
                     "real new-session reproject accepted");
                 s.Repository.WaitForPendingSaves();
+                LogicalRect local;
                 Pc2Assert(ReferenceEquals(s.Placement.GetEffective(note.Id), moved.Facts) &&
-                    note.LocalLogicalX == 180 && note.LocalLogicalY == 140 &&
+                    s.Placement.TryGetEffectiveLogical(note.Id, out local) && local.X == 180 && local.Y == 140 &&
                     note.X == moved.Facts.PhysicalBounds.Left &&
                     note.Y == moved.Facts.PhysicalBounds.Top &&
                     s.Sequence(0) == moved.Sequence && s.Saves == saves + 1 &&

@@ -461,9 +461,10 @@ namespace PennyPet.Tests
                 "Facts must be captured with the Pet-owned topology generation.");
             string receiver = ReadSource("Features/StickyNotes/StickyFactsReceiver.cs");
             Assert.IsTrue(coordinator.Contains("Facts.TryApplySnapshot(") &&
-                receiver.Contains("StickyPlacementMath.FromPhysicalRect(") &&
+                receiver.Contains("canonical.X = facts.PhysicalBounds.Left") &&
+                !receiver.Contains("LegacyPlacement") &&
                 receiver.Contains("snapshot.ApplyContentTo(canonical)"),
-                "Geometry events must derive v10 geometry from facts, never snapshot.ApplyTo.");
+                "Geometry events preserve actual pixels without rewriting v10 file inputs.");
 
             string dragHandler = Between(coordinator,
                 "if (value.Kind == StickyUiEventKind.HeaderDragStarted ||",
@@ -901,8 +902,7 @@ namespace PennyPet.Tests
 
             StringAssert.Contains(plan, "StickyPlacementRules.TryBuildLiveDockState(");
             StringAssert.Contains(plan, "Placement.GetEffective(");
-            Assert.IsFalse(plan.Contains("LocalLogicalWidth") ||
-                plan.Contains("LocalLogicalHeight") || plan.Contains("member.Height"),
+            Assert.IsFalse(plan.Contains("LegacyPlacement") || plan.Contains("member.Height"),
                 "Live Dock geometry must not fall back to persisted coordinates.");
         }
 

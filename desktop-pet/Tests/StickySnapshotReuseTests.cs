@@ -21,14 +21,15 @@ namespace PennyPet.Tests
             var initial = StickyNoteUiSnapshot.Capture(note);
             var content = StickyNoteUiSnapshot.Capture(note, initial);
             Assert.AreSame(initial, content);
-            note.X = -1500; note.LocalLogicalWidth = 300;
+            note.X = -1500;
+            note.LegacyPlacement = new StickyLegacyPlacement("old", new LogicalRect { Width = 300, Height = 240 });
             note.PreferredPlacement = new WindowPlacementPreference("disconnected",
                 new LogicalRect { Width = 320, Height = 240 });
             var moved = StickyNoteUiSnapshot.Capture(note, content);
             Assert.AreSame(content, moved);
             var editor = moved.CreateWorkingCopy();
             Assert.AreEqual(new StickyNoteData().X, editor.X);
-            Assert.AreEqual(0, editor.LocalLogicalWidth);
+            Assert.IsNull(editor.LegacyPlacement);
             Assert.IsNull(editor.PreferredPlacement);
         }
 

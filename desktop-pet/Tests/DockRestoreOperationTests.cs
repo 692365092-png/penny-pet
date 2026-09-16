@@ -129,9 +129,8 @@ namespace PennyPet.Tests
             Assert.IsNull(DockRestoreOperation.TryCreate(group, "other", true, true,
                 StickyGeometryAuthorityTests.Topology(), null, 1));
             group[1].PreferredPlacement = null;
-            group[1].DisplayId = "DISPLAY1";
-            group[1].LocalLogicalWidth = 320;
-            group[1].LocalLogicalHeight = 300;
+            group[1].LegacyPlacement = new StickyLegacyPlacement("DISPLAY1",
+                new LogicalRect { X = 0, Y = 0, Width = 320, Height = 300 });
             DockRestoreOperation recovery = Create(group);
             Assert.AreEqual(DockTopologyReprojectReason.LegacyRecovery, recovery.Reason);
             Assert.IsNull(recovery.Plan.Group);

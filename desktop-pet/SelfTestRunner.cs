@@ -4543,11 +4543,8 @@ namespace PennyPet
             source.Y = 200;
             source.Width = 320;
             source.Height = 300;
-            source.DisplayId = "\\\\.\\DISPLAY1";
-            source.LocalLogicalX = 10;
-            source.LocalLogicalY = 20;
-            source.LocalLogicalWidth = 320;
-            source.LocalLogicalHeight = 300;
+            source.LegacyPlacement = new StickyLegacyPlacement("\\\\.\\DISPLAY1",
+                new LogicalRect { X = 10, Y = 20, Width = 320, Height = 300 });
             source.PreferredPlacement = new WindowPlacementPreference("mdp:preferred",
                 new LogicalRect { X = 0, Y = 0, Width = 640, Height = 240 });
             source.Visible = false;
@@ -4560,22 +4557,19 @@ namespace PennyPet
             target.Y = 888;
             target.Width = 123;
             target.Height = 456;
-            target.DisplayId = "OLD-DISPLAY";
-            target.LocalLogicalX = 7;
-            target.LocalLogicalY = 8;
-            target.LocalLogicalWidth = 123;
-            target.LocalLogicalHeight = 456;
+            target.LegacyPlacement = new StickyLegacyPlacement("OLD-DISPLAY",
+                new LogicalRect { X = 7, Y = 8, Width = 123, Height = 456 });
             snapshot.ApplyContentTo(target);
             bool contentOnly = target.Title == "新标题" &&
                 target.Text == "新正文" &&
                 target.Id != "separation-source" &&
                 target.X == 999 && target.Y == 888 &&
                 target.Width == 123 && target.Height == 456 &&
-                target.DisplayId == "OLD-DISPLAY" &&
-                target.LocalLogicalX == 7 &&
-                target.LocalLogicalY == 8 &&
-                target.LocalLogicalWidth == 123 &&
-                target.LocalLogicalHeight == 456;
+                target.LegacyPlacement.RuntimeGdiName == "OLD-DISPLAY" &&
+                target.LegacyPlacement.Logical.X == 7 &&
+                target.LegacyPlacement.Logical.Y == 8 &&
+                target.LegacyPlacement.Logical.Width == 123 &&
+                target.LegacyPlacement.Logical.Height == 456;
 
             StickyNoteData editor = snapshot.CreateWorkingCopy();
             StickyNoteData defaults = new StickyNoteData();
@@ -4584,8 +4578,7 @@ namespace PennyPet
                 !editor.Visible && !editor.AlwaysOnTop &&
                 editor.X == defaults.X && editor.Y == defaults.Y &&
                 editor.Width == defaults.Width && editor.Height == defaults.Height &&
-                String.IsNullOrEmpty(editor.DisplayId) &&
-                editor.LocalLogicalWidth == 0 &&
+                editor.LegacyPlacement == null &&
                 editor.PreferredPlacement == null;
 
             WindowFacts facts = new WindowFacts("sep-note", "mdp:sep",
@@ -4636,23 +4629,14 @@ namespace PennyPet
 
             // Centered spawn policy: a Schedule keeps its 320x360 logical
             // size and lands in the WorkArea center (never beside the pet).
-            StickyCanonicalPlacement schedule =
-                StickySpawnPolicy.PlanCenteredSpawn("\\\\.\\DISPLAY1",
-                    new PhysicalRect(0, 0, 1920, 1040), 0, 0, 1.0,
-                    320, 360);
-            bool scheduleCenteredOk = schedule.LocalWidth == 320 &&
-                schedule.LocalHeight == 360 &&
-                schedule.PhysicalLeft == 800 &&
-                schedule.PhysicalTop == 340;
-            StickyCanonicalPlacement scaled = StickySpawnPolicy.
-                PlanCenteredSpawn("\\\\.\\DISPLAY1",
-                    new PhysicalRect(0, 0, 1920, 1040), 0, 0, 2.0,
-                    320, 300);
-            bool scaledCenteredOk = scaled.LocalWidth == 320 &&
-                scaled.LocalHeight == 300 &&
-                scaled.PhysicalWidth == 640 &&
-                scaled.PhysicalLeft == 640 &&
-                scaled.PhysicalTop == 220;
+            PhysicalRect schedule = StickySpawnPolicy.PlanCenteredSpawn(
+                new PhysicalRect(0, 0, 1920, 1040), 1.0, 320, 360);
+            bool scheduleCenteredOk = schedule.Width == 320 && schedule.Height == 360 &&
+                schedule.Left == 800 && schedule.Top == 340;
+            PhysicalRect scaled = StickySpawnPolicy.PlanCenteredSpawn(
+                new PhysicalRect(0, 0, 1920, 1040), 2.0, 320, 300);
+            bool scaledCenteredOk = scaled.Width == 640 && scaled.Height == 600 &&
+                scaled.Left == 640 && scaled.Top == 220;
 
             return projectionOk && toleranceOk && toleranceConstantOk &&
                 scheduleCenteredOk && scaledCenteredOk;
@@ -4698,11 +4682,8 @@ namespace PennyPet
             StickyNoteData v10 = new StickyNoteData
             {
                 Id = "v10-check",
-                DisplayId = "\\\\.\\DISPLAY2",
-                LocalLogicalX = 5,
-                LocalLogicalY = 6,
-                LocalLogicalWidth = 320,
-                LocalLogicalHeight = 300
+                LegacyPlacement = new StickyLegacyPlacement("\\\\.\\DISPLAY2",
+                    new LogicalRect { X = 5, Y = 6, Width = 320, Height = 300 })
             };
             DisplayTopologySnapshot topology =
                 new DisplayTopologySnapshot(0, new[]
@@ -4829,9 +4810,8 @@ namespace PennyPet
                 Y = 240,
                 Width = 360,
                 Height = 480,
-                DisplayId = "legacy-display",
-                LocalLogicalWidth = 360,
-                LocalLogicalHeight = 480,
+                LegacyPlacement = new StickyLegacyPlacement("legacy-display",
+                    new LogicalRect { X = 0, Y = 0, Width = 360, Height = 480 }),
                 PreferredPlacement = new WindowPlacementPreference("preferred-target",
                     new LogicalRect { X = 0, Y = 0, Width = 360, Height = 480 })
             };
@@ -4845,9 +4825,7 @@ namespace PennyPet
                 contentOnly.Visible && contentOnly.AlwaysOnTop &&
                 contentCopy.X == defaultCopy.X && contentCopy.Y == defaultCopy.Y &&
                 contentCopy.Width == defaultCopy.Width && contentCopy.Height == defaultCopy.Height &&
-                contentCopy.DisplayId == String.Empty &&
-                contentCopy.LocalLogicalWidth == 0 &&
-                contentCopy.LocalLogicalHeight == 0 &&
+                contentCopy.LegacyPlacement == null &&
                 contentCopy.PreferredPlacement == null;
 
             bool planImmutable = true;
@@ -4905,20 +4883,17 @@ namespace PennyPet
                 new DockGroupReprojectPlan(7, 11, "surface-hotplug",
                     group, true), surface, 192);
 
+            // Legacy dimensions deliberately contradict accepted actual facts.
             StickyNoteData reprojA = new StickyNoteData();
             reprojA.Id = "reproj-a";
-            reprojA.LocalLogicalX = 10;
-            reprojA.LocalLogicalY = 20;
-            reprojA.LocalLogicalWidth = 320;
-            reprojA.LocalLogicalHeight = 300;
+            reprojA.LegacyPlacement = new StickyLegacyPlacement("old",
+                new LogicalRect { X = 10, Y = 20, Width = 320, Height = 1 });
             reprojA.PreferredPlacement = new WindowPlacementPreference("mdp:one",
                 new LogicalRect { X = 900, Y = 800, Width = 500, Height = 600 });
             StickyNoteData reprojB = new StickyNoteData();
             reprojB.Id = "reproj-b";
-            reprojB.LocalLogicalX = 10;
-            reprojB.LocalLogicalY = 320;
-            reprojB.LocalLogicalWidth = 320;
-            reprojB.LocalLogicalHeight = 360;
+            reprojB.LegacyPlacement = new StickyLegacyPlacement("old",
+                new LogicalRect { X = 10, Y = 20, Width = 320, Height = 999 });
             reprojB.PreferredPlacement = new WindowPlacementPreference("mdp:one",
                 new LogicalRect { X = 900, Y = 1400, Width = 500, Height = 700 });
             List<StickyNoteData> reprojGroup =
@@ -4934,9 +4909,6 @@ namespace PennyPet
                 new WindowFacts(reprojB.Id, String.Empty, surface.RuntimeGdiName,
                     new PhysicalRect(surface.Bounds.Left + 20, surface.Bounds.Top + 640, 640, 720), 192, 7, 1),
                 captureTopology);
-            // Legacy dimensions deliberately contradict accepted actual facts.
-            reprojA.LocalLogicalHeight = 1;
-            reprojB.LocalLogicalHeight = 999;
             DockGroupLogicalState runtimeState;
             bool runtimeOk = StickyDockController.TryBuildDockTopologyLogicalState(
                 reprojGroup, DockTopologyReprojectReason.CurrentRuntimeRepair,
@@ -4970,14 +4942,10 @@ namespace PennyPet
 
             StickyNoteData badLocalA = new StickyNoteData();
             badLocalA.Id = "reproj-bad-local-a";
-            badLocalA.LocalLogicalWidth = 0;
-            badLocalA.LocalLogicalHeight = 0;
             badLocalA.PreferredPlacement = new WindowPlacementPreference("mdp:one",
                 new LogicalRect { Width = 500, Height = 600 });
             StickyNoteData badLocalB = new StickyNoteData();
             badLocalB.Id = "reproj-bad-local-b";
-            badLocalB.LocalLogicalWidth = 0;
-            badLocalB.LocalLogicalHeight = 0;
             badLocalB.PreferredPlacement = new WindowPlacementPreference("mdp:one",
                 new LogicalRect { Width = 500, Height = 700 });
             DockGroupLogicalState rejectedLocal;
@@ -4989,12 +4957,12 @@ namespace PennyPet
 
             StickyNoteData badPrefA = new StickyNoteData();
             badPrefA.Id = "reproj-bad-pref-a";
-            badPrefA.LocalLogicalWidth = 320;
-            badPrefA.LocalLogicalHeight = 300;
+            badPrefA.LegacyPlacement = new StickyLegacyPlacement("old",
+                new LogicalRect { X = 10, Y = 20, Width = 320, Height = 300 });
             StickyNoteData badPrefB = new StickyNoteData();
             badPrefB.Id = "reproj-bad-pref-b";
-            badPrefB.LocalLogicalWidth = 320;
-            badPrefB.LocalLogicalHeight = 360;
+            badPrefB.LegacyPlacement = new StickyLegacyPlacement("old",
+                new LogicalRect { X = 10, Y = 20, Width = 320, Height = 360 });
             DockGroupLogicalState rejectedPreferred;
             bool preferredRejected =
                 !StickyDockController.TryBuildDockTopologyLogicalState(

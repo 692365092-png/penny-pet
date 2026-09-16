@@ -32,12 +32,8 @@ namespace PennyPet
             DisplaySurfaceSnapshot surface = capturedTopology.FindByTargetKey(
                 facts.ActiveTargetKey) ?? capturedTopology.FindByRuntimeGdiName(facts.RuntimeGdiName);
             if (surface == null) return false;
-            LogicalPoint point = DisplayGeometry.PhysicalToLocal(
-                facts.PhysicalBounds.Left, facts.PhysicalBounds.Top,
-                surface.Bounds.Left, surface.Bounds.Top, facts.Scale);
-            logical = new LogicalRect { X = point.X, Y = point.Y,
-                Width = DisplayGeometry.PhysicalLengthToLogical(facts.PhysicalBounds.Width, facts.Scale),
-                Height = DisplayGeometry.PhysicalLengthToLogical(facts.PhysicalBounds.Height, facts.Scale) };
+            logical = StickyPlacementMath.ToLocalRect(surface.Bounds.Left,
+                surface.Bounds.Top, facts.Scale, facts.PhysicalBounds);
             return logical.Width > 0 && logical.Height > 0;
         }
 
@@ -76,6 +72,7 @@ namespace PennyPet
         {
             if (note == null || preference == null || !CanCommitPreferred(reason)) return false;
             note.PreferredPlacement = preference;
+            note.LegacyPlacement = null;
             return true;
         }
 
@@ -105,18 +102,16 @@ namespace PennyPet
         {
             if (note == null || topology == null) return false;
             if (note.PreferredPlacement != null) return false;
-            if (String.IsNullOrWhiteSpace(note.DisplayId) ||
-                note.LocalLogicalWidth <= 0 ||
-                note.LocalLogicalHeight <= 0) return false;
+            StickyLegacyPlacement legacy = note.LegacyPlacement;
+            if (legacy == null) return false;
             DisplaySurfaceSnapshot surface =
-                topology.FindByRuntimeGdiName(note.DisplayId);
+                topology.FindByRuntimeGdiName(legacy.RuntimeGdiName);
             if (surface == null) return false;
             string key = DisplayTopologyRules.SelectPreferredTargetKey(
                 surface, null);
             if (String.IsNullOrEmpty(key)) return false;
-            note.PreferredPlacement = new WindowPlacementPreference(key, new LogicalRect {
-                X = note.LocalLogicalX, Y = note.LocalLogicalY,
-                Width = note.LocalLogicalWidth, Height = note.LocalLogicalHeight });
+            note.PreferredPlacement = new WindowPlacementPreference(key, legacy.Logical);
+            note.LegacyPlacement = null;
             return true;
         }
 

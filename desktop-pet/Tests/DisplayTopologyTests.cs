@@ -395,19 +395,17 @@ namespace PennyPet.Tests
         [TestMethod]
         public void StickySpawnPolicy_PlanCenteredSpawn_RoundTripsLocalRect()
         {
-            StickyCanonicalPlacement placement =
-                StickySpawnPolicy.PlanCenteredSpawn("\\\\.\\DISPLAY2",
-                    new PhysicalRect(1920, 0, 1920, 1040), 1920, 0, 1.5,
-                    320, 300);
-            Assert.AreEqual("\\\\.\\DISPLAY2", placement.DisplayId);
-            Assert.AreEqual(480, placement.LocalX);
-            Assert.AreEqual(197, placement.LocalY);
-            Assert.AreEqual(320, placement.LocalWidth);
-            Assert.AreEqual(300, placement.LocalHeight);
-            Assert.AreEqual(2640, placement.PhysicalLeft);
-            Assert.AreEqual(295, placement.PhysicalTop);
-            Assert.AreEqual(480, placement.PhysicalWidth);
-            Assert.AreEqual(450, placement.PhysicalHeight);
+            PhysicalRect placement = StickySpawnPolicy.PlanCenteredSpawn(
+                new PhysicalRect(1920, 0, 1920, 1040), 1.5, 320, 300);
+            LogicalRect local = StickyPlacementMath.ToLocalRect(1920, 0, 1.5, placement);
+            Assert.AreEqual(480, local.X);
+            Assert.AreEqual(197, local.Y);
+            Assert.AreEqual(320, local.Width);
+            Assert.AreEqual(300, local.Height);
+            Assert.AreEqual(2640, placement.Left);
+            Assert.AreEqual(295, placement.Top);
+            Assert.AreEqual(480, placement.Width);
+            Assert.AreEqual(450, placement.Height);
         }
 
         [TestMethod]

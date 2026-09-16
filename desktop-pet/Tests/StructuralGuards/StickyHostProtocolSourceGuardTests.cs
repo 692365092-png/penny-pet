@@ -272,7 +272,7 @@ namespace PennyPet.Tests
             string coordinator = SourceGuardText.ReadStickyWorkflowSource();
             string host = ReadSource("StickyUiHost.cs");
             Assert.IsFalse(session.Contains("data.PreferredPlacement") ||
-                session.Contains("data.LocalLogicalWidth") || session.Contains("ResolvePlacementPlan"));
+                session.Contains("data.LegacyPlacement") || session.Contains("ResolvePlacementPlan"));
             StringAssert.Contains(coordinator, "StickyPlacementRecovery.SelectForShow(note, topology)");
             StringAssert.Contains(host, "command.Placement");
         }
@@ -285,7 +285,7 @@ namespace PennyPet.Tests
             string snapshot = Between(commands,
                 "internal sealed class StickyNoteUiSnapshot",
                 "internal sealed class StickyTodoUiSnapshot");
-            foreach (string geometry in new[] { "DisplayId", "LocalLogical", "Preferred",
+            foreach (string geometry in new[] { "DisplayId", "LocalLogical", "LegacyPlacement", "Preferred",
                 "source.X", "source.Y", "source.Width", "source.Height",
                 "target.X", "target.Y", "target.Width", "target.Height", "internal void ApplyTo(" })
                 Assert.IsFalse(snapshot.Contains(geometry),

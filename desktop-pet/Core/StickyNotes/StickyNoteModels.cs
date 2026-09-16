@@ -173,14 +173,9 @@ namespace PennyPet
         public int Y;
         public int Width = 280;
         public int Height = 230;
-        public string DisplayId = String.Empty;
-        public int LocalLogicalX;
-        public int LocalLogicalY;
-        public int LocalLogicalWidth;
-        public int LocalLogicalHeight;
+        public StickyLegacyPlacement LegacyPlacement;
         // Null means unset; otherwise a complete immutable v11 preference.
-        // DisplayId/LocalLogical* remain v10
-        // migration/legacy fields and X/Y/Width/Height are the last known
+        // LegacyPlacement is file input; X/Y/Width/Height are the last known
         // physical fallback, never the durable authority.
         public WindowPlacementPreference PreferredPlacement;
         // The sole ordered Dock relation, including hidden slots.
@@ -230,11 +225,7 @@ namespace PennyPet
             copy.Y = Y;
             copy.Width = Width;
             copy.Height = Height;
-            copy.DisplayId = DisplayId;
-            copy.LocalLogicalX = LocalLogicalX;
-            copy.LocalLogicalY = LocalLogicalY;
-            copy.LocalLogicalWidth = LocalLogicalWidth;
-            copy.LocalLogicalHeight = LocalLogicalHeight;
+            copy.LegacyPlacement = LegacyPlacement;
             copy.PreferredPlacement = PreferredPlacement;
             copy.DockGroupId = DockGroupId;
             copy.DockGroupOrder = DockGroupOrder;

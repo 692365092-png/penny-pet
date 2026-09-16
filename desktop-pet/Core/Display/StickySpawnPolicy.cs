@@ -27,37 +27,16 @@ namespace PennyPet
             return new PhysicalRect(left, top, fittedWidth, fittedHeight);
         }
 
-        // Full centered-spawn plan: logical default size -> target scale ->
-        // planned physical size -> WorkArea center -> display-local logical
-        // rect plus the v10 physical compatibility projection.
-        internal static StickyCanonicalPlacement PlanCenteredSpawn(
-            string displayId, PhysicalRect workArea, int physicalOriginX,
-            int physicalOriginY, double scale, int logicalWidth,
-            int logicalHeight)
+        // A spawn request produces pixels, not another persisted geometry model.
+        internal static PhysicalRect PlanCenteredSpawn(PhysicalRect workArea,
+            double scale, int logicalWidth, int logicalHeight)
         {
             double safeScale = scale > 0.0 ? scale : 1.0;
             int physicalWidth = Math.Max(1, (int)Math.Round(
-                Math.Max(1, logicalWidth) * safeScale,
-                MidpointRounding.AwayFromZero));
+                Math.Max(1, logicalWidth) * safeScale, MidpointRounding.AwayFromZero));
             int physicalHeight = Math.Max(1, (int)Math.Round(
-                Math.Max(1, logicalHeight) * safeScale,
-                MidpointRounding.AwayFromZero));
-            PhysicalRect centered = CenterInWorkArea(workArea,
-                physicalWidth, physicalHeight);
-            LogicalPoint localTopLeft = DisplayGeometry.PhysicalToLocal(
-                centered.Left, centered.Top, physicalOriginX,
-                physicalOriginY, safeScale);
-            int localWidth = Math.Max(1, (int)Math.Round(
-                centered.Width / safeScale,
-                MidpointRounding.AwayFromZero));
-            int localHeight = Math.Max(1, (int)Math.Round(
-                centered.Height / safeScale,
-                MidpointRounding.AwayFromZero));
-            return new StickyCanonicalPlacement(
-                displayId ?? String.Empty,
-                localTopLeft.X, localTopLeft.Y, localWidth, localHeight,
-                centered.Left, centered.Top, centered.Width,
-                centered.Height);
+                Math.Max(1, logicalHeight) * safeScale, MidpointRounding.AwayFromZero));
+            return CenterInWorkArea(workArea, physicalWidth, physicalHeight);
         }
     }
 }

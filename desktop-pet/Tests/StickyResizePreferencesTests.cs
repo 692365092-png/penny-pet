@@ -8,7 +8,8 @@ namespace PennyPet.Tests
         private static StickyNoteData Note()
         {
             return new StickyNoteData { Id = "note", X = 9000, Y = 8000, Width = 900, Height = 700,
-                LocalLogicalX = 999, LocalLogicalY = 888, LocalLogicalWidth = 700, LocalLogicalHeight = 600,
+                LegacyPlacement = new StickyLegacyPlacement("old",
+                    new LogicalRect { X = 999, Y = 888, Width = 700, Height = 600 }),
                 PreferredPlacement = new WindowPlacementPreference("mdp:one",
                     new LogicalRect { X = 40, Y = 60, Width = 320, Height = 240 })
             };
@@ -38,7 +39,7 @@ namespace PennyPet.Tests
             Assert.AreEqual(240, result.LocalLogicalRect.Height);
             Assert.AreEqual(320, note.PreferredPlacement.LocalLogicalRect.Width, "Building a preference is pure.");
             Assert.AreEqual(9000, note.X);
-            Assert.AreEqual(700, note.LocalLogicalWidth);
+            Assert.AreEqual(700, note.LegacyPlacement.Logical.Width);
         }
 
         [TestMethod]

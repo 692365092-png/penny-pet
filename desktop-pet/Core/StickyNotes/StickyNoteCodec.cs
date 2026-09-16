@@ -35,6 +35,8 @@ namespace PennyPet
             if (note == null) throw new ArgumentNullException(nameof(note));
             WindowPlacementPreference preferred = note.PreferredPlacement;
             LogicalRect local = preferred == null ? new LogicalRect() : preferred.LocalLogicalRect;
+            StickyLegacyPlacement legacy = note.LegacyPlacement;
+            LogicalRect legacyLocal = legacy == null ? new LogicalRect() : legacy.Logical;
             return String.Join("|", new string[]
             {
                 CurrentVersion.ToString(CultureInfo.InvariantCulture),
@@ -66,11 +68,11 @@ namespace PennyPet
                     .ToString(CultureInfo.InvariantCulture),
                 note.IsSchedule ? "1" : "0",
                 EncodeSchedules(note.ScheduleItems),
-                Encode(note.DisplayId ?? String.Empty),
-                note.LocalLogicalX.ToString(CultureInfo.InvariantCulture),
-                note.LocalLogicalY.ToString(CultureInfo.InvariantCulture),
-                note.LocalLogicalWidth.ToString(CultureInfo.InvariantCulture),
-                note.LocalLogicalHeight.ToString(CultureInfo.InvariantCulture),
+                Encode(legacy?.RuntimeGdiName ?? String.Empty),
+                legacyLocal.X.ToString(CultureInfo.InvariantCulture),
+                legacyLocal.Y.ToString(CultureInfo.InvariantCulture),
+                legacyLocal.Width.ToString(CultureInfo.InvariantCulture),
+                legacyLocal.Height.ToString(CultureInfo.InvariantCulture),
                 Encode(preferred?.PreferredTargetKey ?? String.Empty),
                 local.X.ToString(
                     CultureInfo.InvariantCulture),
@@ -169,17 +171,7 @@ namespace PennyPet
                     if (note.IsSchedule) note.IsTodoList = false;
                 }
                 if (version >= 10)
-                {
-                    note.DisplayId = Decode(fields[27]);
-                    if (Int32.TryParse(fields[28], out number))
-                        note.LocalLogicalX = number;
-                    if (Int32.TryParse(fields[29], out number))
-                        note.LocalLogicalY = number;
-                    if (Int32.TryParse(fields[30], out number))
-                        note.LocalLogicalWidth = number;
-                    if (Int32.TryParse(fields[31], out number))
-                        note.LocalLogicalHeight = number;
-                }
+                    note.LegacyPlacement = ReadLegacyPlacement(fields);
                 if (version >= 11)
                     note.PreferredPlacement = ReadPreferredPlacement(fields);
             }
@@ -196,6 +188,20 @@ namespace PennyPet
                     "Sticky-note content exceeds safety limits.");
             RepairForDisplay(note, false);
             return note;
+        }
+
+        private static StickyLegacyPlacement ReadLegacyPlacement(string[] fields)
+        {
+            string gdiName = Decode(fields[27]);
+            if (String.IsNullOrWhiteSpace(gdiName)) return null;
+            int x, y, width, height;
+            Int32.TryParse(fields[28], out x);
+            Int32.TryParse(fields[29], out y);
+            Int32.TryParse(fields[30], out width);
+            Int32.TryParse(fields[31], out height);
+            return new StickyLegacyPlacement(gdiName, new LogicalRect {
+                X = x, Y = y, Width = Clamp(width, 1, MaximumLocalLogicalValue),
+                Height = Clamp(height, 1, MaximumLocalLogicalValue) });
         }
 
         // Invalid or incomplete file fields mean no preference. Input repair
@@ -255,43 +261,6 @@ namespace PennyPet
             {
                 note.FontSizeTwips = size;
                 changed = true;
-            }
-            // v10 canonical contract safety: a valid placement needs a display
-            // id and a sane positive local logical rect. If the display id is
-            // missing the placement is incomplete and must not claim canonical
-            // status; otherwise clamp the local rect to a plausible window size
-            // so a corrupt value can never overflow the display scale projection.
-            if (String.IsNullOrWhiteSpace(note.DisplayId))
-            {
-                if (note.LocalLogicalX != 0 || note.LocalLogicalY != 0 ||
-                    note.LocalLogicalWidth != 0 ||
-                    note.LocalLogicalHeight != 0)
-                {
-                    note.LocalLogicalX = 0;
-                    note.LocalLogicalY = 0;
-                    note.LocalLogicalWidth = 0;
-                    note.LocalLogicalHeight = 0;
-                    changed = true;
-                }
-            }
-            else
-            {
-                int localWidth = Math.Max(1,
-                    Math.Min(note.LocalLogicalWidth,
-                        MaximumLocalLogicalValue));
-                int localHeight = Math.Max(1,
-                    Math.Min(note.LocalLogicalHeight,
-                        MaximumLocalLogicalValue));
-                if (note.LocalLogicalWidth != localWidth)
-                {
-                    note.LocalLogicalWidth = localWidth;
-                    changed = true;
-                }
-                if (note.LocalLogicalHeight != localHeight)
-                {
-                    note.LocalLogicalHeight = localHeight;
-                    changed = true;
-                }
             }
             if (note.BackgroundOpacityPercent != opacity)
             {

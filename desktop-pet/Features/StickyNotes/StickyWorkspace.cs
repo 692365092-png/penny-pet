@@ -320,7 +320,7 @@ namespace PennyPet
         }
 
         // One creation attempt = one topology snapshot + one in-memory draft
-        // fully configured (type, v10 compatibility, v11 preferred, visible)
+        // fully configured (type, physical fallback, preferred, visible)
         // before the caller performs the single first save.
         private StickyNoteData PrepareStickyNoteDraft(string text,
             DockSize logicalSize, bool todo, bool schedule)
@@ -359,22 +359,17 @@ namespace PennyPet
 
             if (targetSurface != null)
             {
-                StickyCanonicalPlacement placement =
-                    StickySpawnPolicy.PlanCenteredSpawn(
-                        targetSurface.RuntimeGdiName,
-                        targetSurface.WorkArea, targetSurface.Bounds.Left,
-                        targetSurface.Bounds.Top, petFacts.Scale,
-                        Math.Max(1, logicalSize.Width),
-                        Math.Max(1, logicalSize.Height));
-                placement.ApplyTo(note);
-                string preferredKey =
-                    DisplayTopologyRules.SelectPreferredTargetKey(
-                        targetSurface, null);
+                PhysicalRect placement = StickySpawnPolicy.PlanCenteredSpawn(
+                    targetSurface.WorkArea, petFacts.Scale, logicalSize.Width, logicalSize.Height);
+                note.X = placement.Left;
+                note.Y = placement.Top;
+                note.Width = placement.Width;
+                note.Height = placement.Height;
+                string preferredKey = DisplayTopologyRules.SelectPreferredTargetKey(targetSurface, null);
                 if (!String.IsNullOrWhiteSpace(preferredKey))
                     StickyPlacementRules.TryCommitPreferred(note,
-                        new WindowPlacementPreference(preferredKey, new LogicalRect {
-                            X = placement.LocalX, Y = placement.LocalY,
-                            Width = placement.LocalWidth, Height = placement.LocalHeight }),
+                        StickyPlacementMath.PreferenceFromPhysicalRect(preferredKey,
+                            targetSurface.Bounds.Left, targetSurface.Bounds.Top, petFacts.Scale, placement),
                         PlacementReason.Spawn);
                 TraceSpawnPlacement(note, petFacts, targetSurface,
                     preferredKey);
@@ -412,6 +407,8 @@ namespace PennyPet
             WindowFacts petFacts, DisplaySurfaceSnapshot surface,
             string preferredKey)
         {
+            if (!DisplayDiagnostics.Enabled) return;
+            LogicalRect logical = note.PreferredPlacement?.LocalLogicalRect ?? new LogicalRect();
             DisplayDiagnostics.Trace("PlacementResolved",
                 "reason=Spawn note=" + note.Id +
                 " topology=" + (petFacts == null
@@ -425,9 +422,9 @@ namespace PennyPet
                 " work=(" + surface.WorkArea.Left + "," +
                 surface.WorkArea.Top + "," + surface.WorkArea.Width + "," +
                 surface.WorkArea.Height + ")" +
-                " logical=(" + note.LocalLogicalX + "," +
-                note.LocalLogicalY + "," + note.LocalLogicalWidth + "," +
-                note.LocalLogicalHeight + ")" +
+                " logical=(" + logical.X + "," +
+                logical.Y + "," + logical.Width + "," +
+                logical.Height + ")" +
                 " physical=(" + note.X + "," + note.Y + "," +
                 note.Width + "," + note.Height + ")" +
                 " preferredDurable=" +
@@ -1084,6 +1081,7 @@ namespace PennyPet
             if (StickyPlacementRules.TryBuildPreferredPlacement(facts, topology, null, out preference))
             {
                 canonical.PreferredPlacement = preference;
+                canonical.LegacyPlacement = null;
                 Notes.SaveAsync();
             }
         }

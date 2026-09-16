@@ -46,8 +46,11 @@ namespace PennyPet.Tests
             update.Commit();
             Assert.AreEqual("after", s.Note.Text);
             Assert.AreEqual(-1840, s.Note.X);
-            Assert.AreEqual(40, s.Note.LocalLogicalX);
-            Assert.AreEqual(320, s.Note.LocalLogicalWidth);
+            LogicalRect logical;
+            Assert.IsTrue(s.Placement.TryGetEffectiveLogical("note", out logical));
+            Assert.AreEqual(40, logical.X);
+            Assert.AreEqual(320, logical.Width);
+            Assert.IsNull(s.Note.LegacyPlacement);
             Assert.AreSame(member.Facts, s.Placement.GetEffective("note"));
             Assert.IsFalse(s.Hosted.CanApplySequence("note", 10));
             Assert.AreEqual("mdp:missing", s.Note.PreferredPlacement.PreferredTargetKey);
@@ -88,11 +91,71 @@ namespace PennyPet.Tests
             Assert.AreSame(facts, s.Placement.GetEffective("note"));
             Assert.AreEqual("mdp:missing", s.Note.PreferredPlacement.PreferredTargetKey);
             Assert.AreEqual(700, s.Note.PreferredPlacement.LocalLogicalRect.X);
-            Assert.AreEqual("DISPLAY1", s.Note.DisplayId);
+            Assert.IsNull(s.Note.LegacyPlacement, "Actual facts must not manufacture a v10 file input.");
+            LogicalRect logical;
+            Assert.IsTrue(s.Placement.TryGetEffectiveLogical("note", out logical));
             Assert.AreEqual((int)Math.Round(offset / facts.Scale,
-                MidpointRounding.AwayFromZero), s.Note.LocalLogicalX);
+                MidpointRounding.AwayFromZero), logical.X);
             Assert.AreEqual((int)Math.Round(643 / facts.Scale,
-                MidpointRounding.AwayFromZero), s.Note.LocalLogicalWidth);
+                MidpointRounding.AwayFromZero), logical.Width);
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void ActualCaptureCannotRewriteTheV10InputBeforeMigration(bool batch)
+        {
+            var s = new Scene();
+            var topology = StickyGeometryAuthorityTests.Topology();
+            s.Note.PreferredPlacement = null;
+            var legacy = new StickyLegacyPlacement("DISPLAY1",
+                new LogicalRect { X = 80, Y = 100, Width = 333, Height = 251 });
+            s.Note.LegacyPlacement = legacy;
+            var facts = StickyGeometryAuthorityTests.Facts();
+            if (batch)
+            {
+                StickyFactsReceiver.Update update;
+                Assert.IsTrue(s.Receiver.TryPrepare(new DockBatchMemberResult("note", 10,
+                    facts, null), topology, out update));
+                update.Commit();
+            }
+            else
+            {
+                Assert.IsTrue(s.Receiver.TryApplySnapshot(StickyNoteUiSnapshot.Capture(s.Note),
+                    10, facts, topology, topology, out _));
+            }
+            Assert.AreSame(legacy, s.Note.LegacyPlacement);
+            Assert.IsNull(s.Note.PreferredPlacement);
+            Assert.IsTrue(StickyPlacementRules.MigrateV10Preferred(s.Note, topology));
+            Assert.IsNull(s.Note.LegacyPlacement);
+            Assert.AreEqual("mdp:one", s.Note.PreferredPlacement.PreferredTargetKey);
+            Assert.AreEqual(80, s.Note.PreferredPlacement.LocalLogicalRect.X);
+            Assert.AreEqual(333, s.Note.PreferredPlacement.LocalLogicalRect.Width);
+            Assert.AreSame(facts, s.Placement.GetEffective("note"));
+            Assert.IsFalse(StickyPlacementRules.MigrateV10Preferred(s.Note, topology));
+            string[] saved = StickyNoteCodec.SerializeLine(s.Note).Split('|');
+            Assert.AreEqual(String.Empty, saved[27]);
+            Assert.AreEqual("0", saved[30]);
+            Assert.AreEqual("333", saved[35]);
+        }
+
+        [TestMethod]
+        public void UnresolvedV10InputSurvivesCaptureAndPersistenceUntilItsDisplayReturns()
+        {
+            var s = new Scene();
+            s.Note.PreferredPlacement = null;
+            s.Note.LegacyPlacement = new StickyLegacyPlacement("disconnected",
+                new LogicalRect { X = -30, Y = 40, Width = 333, Height = 251 });
+            var topology = StickyGeometryAuthorityTests.Topology();
+            Assert.IsTrue(s.Receiver.TryApplySnapshot(StickyNoteUiSnapshot.Capture(s.Note),
+                10, StickyGeometryAuthorityTests.Facts(), topology, topology, out _));
+            Assert.IsFalse(StickyPlacementRules.MigrateV10Preferred(s.Note, topology));
+            var saved = StickyNoteCodec.ParseLine(StickyNoteCodec.SerializeLine(s.Note));
+            Assert.AreEqual("disconnected", saved.LegacyPlacement.RuntimeGdiName);
+            Assert.AreEqual(-30, saved.LegacyPlacement.Logical.X);
+            Assert.AreEqual(333, saved.LegacyPlacement.Logical.Width);
+            Assert.IsNull(saved.PreferredPlacement);
+            Assert.AreEqual(-1840, saved.X);
         }
 
         [TestMethod]

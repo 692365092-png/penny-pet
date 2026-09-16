@@ -58,22 +58,19 @@ namespace PennyPet
             if (WindowFactsVersionRules.Classify(snapshot.NoteId, sequence, facts, topology,
                     current == null ? -1 : current.Generation) == WindowFactsVersionDisposition.Current &&
                 _placement.TryUpdateEffective(snapshot.NoteId, facts, topology))
-                ApplyGeometry(canonical, facts, topology);
+                ApplyPhysicalRecovery(canonical, facts);
             _hosted.RecordSequence(snapshot.NoteId, sequence);
             tabsChanged = visible != canonical.Visible || (!canonical.Visible &&
                 !String.Equals(title, canonical.DisplayTitle, StringComparison.Ordinal));
             return true;
         }
 
-        private static void ApplyGeometry(StickyNoteData canonical,
-            WindowFacts facts, DisplayTopologySnapshot topology)
+        private static void ApplyPhysicalRecovery(StickyNoteData canonical, WindowFacts facts)
         {
-            DisplaySurfaceSnapshot surface = topology.FindByTargetKey(facts.ActiveTargetKey) ??
-                topology.FindByRuntimeGdiName(facts.RuntimeGdiName);
-            StickyPlacementMath.FromPhysicalRect(surface.RuntimeGdiName,
-                surface.Bounds.Left, surface.Bounds.Top, facts.Scale,
-                facts.PhysicalBounds.Left, facts.PhysicalBounds.Top,
-                facts.PhysicalBounds.Width, facts.PhysicalBounds.Height).ApplyTo(canonical);
+            canonical.X = facts.PhysicalBounds.Left;
+            canonical.Y = facts.PhysicalBounds.Top;
+            canonical.Width = facts.PhysicalBounds.Width;
+            canonical.Height = facts.PhysicalBounds.Height;
         }
 
         internal sealed class Update
@@ -107,7 +104,7 @@ namespace PennyPet
 
             internal void CommitGeometry()
             {
-                ApplyGeometry(Canonical, Member.Facts, _topology);
+                ApplyPhysicalRecovery(Canonical, Member.Facts);
                 _owner._placement.AcceptEffective(Member.NoteId, Member.Facts, _topology);
                 _owner._hosted.AcceptBatchSequence(Member, _allowSessionCreation);
             }

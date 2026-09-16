@@ -139,9 +139,8 @@ namespace PennyPet.Tests
             List<StickyNoteData> group = Group();
             group[0].PreferredPlacement = new WindowPlacementPreference("mdp:unplugged",
                 new LogicalRect { X = 0, Y = 0, Width = 700, Height = 500 });
-            group[1].DisplayId = "DISPLAY-old";
-            group[1].LocalLogicalWidth = 800;
-            group[1].LocalLogicalHeight = 600;
+            group[1].LegacyPlacement = new StickyLegacyPlacement("DISPLAY-old",
+                new LogicalRect { X = 0, Y = 0, Width = 800, Height = 600 });
             DockRestoreOperation operation = Create(group);
             group[0].X = 999;
             group[0].Width = 555;
