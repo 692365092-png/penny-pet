@@ -1,0 +1,9 @@
+branch=codex/project-system-experiment (throwaway worktree)
+checkpoint=PC-2A.5-divider-triage A/B control
+source_base=b9a6e79a31cfb5f8af8794e4bb3ec23985d67516
+diagnostics=a9cc498 trace-only additions cherry-picked (no PC-2A.5 behavior)
+platform=x64
+purpose=A/B control: pre-PC-2A.5 with identical divider diagnostics
+MSTest=NOT RERUN (test-project state equals b9a6e79 baseline)
+single_file_package_SelfTests=PASS (exit=0, ok=true)
+Human=PENDING (144/150% DPI divider A/B reproduction against a9cc498 package)

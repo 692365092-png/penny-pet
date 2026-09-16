@@ -12,6 +12,9 @@ namespace PennyPet
         private Dispatcher _dispatcher;
         private Exception _startupError;
         private bool _acceptingCommands = true;
+        private bool _faulted;
+
+        internal event Action<Exception> Faulted;
 
         internal void Start()
         {
@@ -26,6 +29,8 @@ namespace PennyPet
                         try
                         {
                             _dispatcher = Dispatcher.CurrentDispatcher;
+                            _dispatcher.UnhandledException +=
+                                DispatcherUnhandledException;
                             ready.Set();
                             Dispatcher.Run();
                         }
@@ -56,6 +61,55 @@ namespace PennyPet
             SynchronizationContext completionContext)
         {
             if (command == null) throw new ArgumentNullException(nameof(command));
+            // When the owner thread has exited, none of its HWNDs can remain.
+            // Hidden notes can still be deleted after a Sticky subsystem fault.
+            if (command.Kind == StickyUiCommandKind.Close)
+            {
+                bool exited;
+                lock (_gate) exited = _thread != null && !_thread.IsAlive;
+                if (exited)
+                {
+                    PostCompletion(completionContext, completed, StickyUiCommandResult.Handled());
+                    return;
+                }
+            }
+            PostToDispatcher(delegate { return handler(command); },
+                completed, completionContext);
+        }
+
+        // Narrow latest-wins dispatch for one immutable Dock plan. This is a
+        // dedicated Dock entry, not a generic scheduler: only the newest
+        // mailbox plan is ever invoked.
+        internal void PostDockPlan(DockPlanMailbox mailbox,
+            Func<DockPlanMailbox, StickyUiCommandResult> handler,
+            Action<StickyUiCommandResult> completed,
+            SynchronizationContext completionContext)
+        {
+            if (mailbox == null)
+                throw new ArgumentNullException(nameof(mailbox));
+            PostToDispatcher(delegate { return handler(mailbox); },
+                completed, completionContext);
+        }
+
+        // Narrow latest-wins dispatch for one divider follower batch. Same
+        // deferred mailbox shape as PostDockPlan, dedicated to the divider
+        // resize lifecycle, not a generic scheduler.
+        internal void PostResizeBatch(DockResizeMailbox mailbox,
+            Func<DockResizeMailbox, StickyUiCommandResult> handler,
+            Action<StickyUiCommandResult> completed,
+            SynchronizationContext completionContext)
+        {
+            if (mailbox == null)
+                throw new ArgumentNullException(nameof(mailbox));
+            PostToDispatcher(delegate { return handler(mailbox); },
+                completed, completionContext);
+        }
+
+        private void PostToDispatcher(
+            Func<StickyUiCommandResult> invoke,
+            Action<StickyUiCommandResult> completed,
+            SynchronizationContext completionContext)
+        {
             Dispatcher dispatcher;
             bool acceptingCommands;
             lock (_gate)
@@ -69,7 +123,7 @@ namespace PennyPet
                     StickyUiCommandResult.NotAccepted());
                 return;
             }
-            if (handler == null || dispatcher == null ||
+            if (invoke == null || dispatcher == null ||
                 dispatcher.HasShutdownStarted ||
                 dispatcher.HasShutdownFinished)
             {
@@ -85,7 +139,7 @@ namespace PennyPet
                         StickyUiCommandResult result;
                         try
                         {
-                            result = handler(command) ??
+                            result = invoke() ??
                                 StickyUiCommandResult.NotHandled();
                         }
                         catch (Exception error)
@@ -105,6 +159,51 @@ namespace PennyPet
         internal void StopAcceptingCommands()
         {
             lock (_gate) _acceptingCommands = false;
+        }
+
+        private void DispatcherUnhandledException(object sender,
+            DispatcherUnhandledExceptionEventArgs e)
+        {
+            HandleDispatcherFault(e == null ? null : e.Exception);
+            // Contain the fault inside the sticky subsystem instead of letting
+            // it crash the whole desktop pet. The dispatcher is shut down right
+            // after the first fault; this flag only prevents process-level
+            // default handling of that contained exception.
+            e.Handled = true;
+        }
+
+        private void HandleDispatcherFault(Exception error)
+        {
+            bool firstFault;
+            Action<Exception> handler;
+            Dispatcher dispatcher;
+            lock (_gate)
+            {
+                firstFault = !_faulted;
+                _faulted = true;
+                _acceptingCommands = false;
+                handler = Faulted;
+                dispatcher = _dispatcher;
+            }
+            ApplicationDiagnostics.ReportNonFatal(
+                "sticky-ui-dispatcher-fault",
+                error ?? new InvalidOperationException(
+                    "Sticky UI dispatcher fault without an exception."));
+            if (firstFault && handler != null)
+            {
+                try { handler(error); }
+                catch { }
+            }
+            if (firstFault && dispatcher != null &&
+                !dispatcher.HasShutdownStarted &&
+                !dispatcher.HasShutdownFinished)
+            {
+                try
+                {
+                    dispatcher.BeginInvokeShutdown(DispatcherPriority.Send);
+                }
+                catch { }
+            }
         }
 
         internal void BeginShutdown(Action beforeDispatcherShutdown)

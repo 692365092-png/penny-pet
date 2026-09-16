@@ -29,5 +29,11 @@ namespace PennyPet
         {
             return !inspectionAvailable || sensitiveTargetDetected;
         }
+
+        internal static bool ShouldSuppressOwnApplicationInput(
+            bool ownApplicationInput, bool focusedStickyTextInput)
+        {
+            return ownApplicationInput && !focusedStickyTextInput;
+        }
     }
 }

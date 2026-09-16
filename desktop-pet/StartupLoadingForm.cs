@@ -10,21 +10,44 @@ namespace PennyPet
     internal sealed class StartupLoadingForm : Form
     {
         private const string ResourceName = "PennyPet.Startup.Loading";
-        private const int NativePetWidth = 192;
-        private const int NativePetHeight = 208;
         private readonly Bitmap _frame;
+        private readonly PhysicalRect? _placementRect;
 
-        internal StartupLoadingForm(PetSettings settings)
+        internal StartupLoadingForm(
+            StartupPetPlacementSnapshot placement)
         {
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;
             TopMost = true;
             StartPosition = FormStartPosition.Manual;
             AutoScaleMode = AutoScaleMode.None;
-            ClientSize = ScaledPetSize(settings == null
-                ? 100 : settings.ScalePercent);
-            Location = ResolveLocation(settings, ClientSize);
+            _placementRect = placement == null
+                ? (PhysicalRect?)null
+                : placement.PhysicalBounds;
+            ClientSize = placement == null
+                ? new Size(192, 208)
+                : new Size(placement.PhysicalBounds.Width,
+                    placement.PhysicalBounds.Height);
+            Location = placement == null
+                ? Point.Empty
+                : new Point(placement.PhysicalBounds.Left,
+                    placement.PhysicalBounds.Top);
             _frame = LoadScaledFrame(ClientSize);
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            // Same native physical placement the formal Pet uses: never let
+            // WinForms per-monitor DPI handling re-scale the bootstrap rect.
+            if (_placementRect.HasValue && Handle != IntPtr.Zero)
+                NativeDisplayConfig.SetWindowPos(Handle, IntPtr.Zero,
+                    _placementRect.Value.Left,
+                    _placementRect.Value.Top,
+                    0, 0,
+                    NativeDisplayConfig.SWP_NOSIZE |
+                    NativeDisplayConfig.SWP_NOZORDER |
+                    NativeDisplayConfig.SWP_NOACTIVATE);
         }
 
         protected override CreateParams CreateParams
@@ -51,13 +74,6 @@ namespace PennyPet
                     .GetManifestResourceStream(ResourceName))
                     return stream != null && stream.Length > 512;
             }
-        }
-
-        internal bool UsesPetScaleForTest(int scalePercent)
-        {
-            Size expected = ScaledPetSize(scalePercent);
-            return ClientSize == expected && _frame != null &&
-                _frame.Size == expected;
         }
 
         internal bool UsesEmbeddedLoadingFrameForTest()
@@ -89,6 +105,20 @@ namespace PennyPet
                         bounds.Bottom <= ClientSize.Height;
                 }
             }
+        }
+
+        // The loading canvas is a pure projection of the bootstrap snapshot:
+        // same physical size and same physical top-left, nothing more.
+        internal bool UsesPlacementForTest(
+            StartupPetPlacementSnapshot placement)
+        {
+            if (placement == null) return false;
+            Size expected = new Size(placement.PhysicalBounds.Width,
+                placement.PhysicalBounds.Height);
+            return ClientSize == expected && _frame != null &&
+                _frame.Size == expected &&
+                Location == new Point(placement.PhysicalBounds.Left,
+                    placement.PhysicalBounds.Top);
         }
 
         private static Bitmap LoadScaledFrame(Size size)
@@ -132,33 +162,6 @@ namespace PennyPet
             int height = Math.Max(1, (int)Math.Round(source.Height * scale));
             return new Rectangle((canvas.Width - width) / 2,
                 canvas.Height - height, width, height);
-        }
-
-        private static Size ScaledPetSize(int scalePercent)
-        {
-            int normalized = PetSettingRules.NormalizePetScalePercent(
-                scalePercent);
-            return new Size(NativePetWidth * normalized / 100,
-                NativePetHeight * normalized / 100);
-        }
-
-        private static Point ResolveLocation(PetSettings settings, Size size)
-        {
-            if (settings != null && settings.HasLocation)
-            {
-                Point saved = new Point(settings.X, settings.Y);
-                Rectangle candidate = new Rectangle(saved, size);
-                foreach (Screen screen in Screen.AllScreens)
-                {
-                    Rectangle visible = Rectangle.Intersect(
-                        screen.WorkingArea, candidate);
-                    if (visible.Width >= 48 && visible.Height >= 48)
-                        return saved;
-                }
-            }
-            Rectangle work = Screen.PrimaryScreen.WorkingArea;
-            return new Point(work.Right - size.Width - 24,
-                work.Bottom - size.Height - 24);
         }
 
         protected override void Dispose(bool disposing)

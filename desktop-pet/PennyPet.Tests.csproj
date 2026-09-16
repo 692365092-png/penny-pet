@@ -10,6 +10,23 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Tests\**\*.cs" />
+    <!-- Exercise the actual platform-neutral protocol/runtime implementations. -->
+    <Compile Include="Features\StickyNotes\DockWindowFacts.cs" />
+    <Compile Include="Features\StickyNotes\DockResizeSession.cs" />
+    <Compile Include="Features\StickyNotes\DockGestureOwner.cs" />
+    <Compile Include="Features\StickyNotes\DockRestoreOperation.cs" />
+    <Compile Include="Features\StickyNotes\StickyHostedRuntime.cs" />
+    <Compile Include="Features\StickyNotes\StickyPlacementRuntime.cs" />
+    <Compile Include="Features\StickyNotes\StickyFactsReceiver.cs" />
+    <Compile Include="Features\StickyNotes\StickyUiCommand.cs" />
+    <Compile Include="Features\StickyNotes\StickyWriteRequest.cs" />
+    <Compile Include="Infrastructure\Persistence\PersistenceWriter.cs" />
+    <Compile Include="PetSettings.cs" />
+    <Compile Include="Features\StickyNotes\StickyNoteRepository.cs" />
+    <Compile Include="Features\StickyNotes\UnsupportedStickySchemaException.cs" />
+    <Compile Include="Infrastructure\Persistence\AtomicTextFile.cs" />
+    <Compile Include="Infrastructure\Persistence\WindowsDataPaths.cs" />
+    <Compile Include="Infrastructure\Persistence\PersistenceResult.cs" />
     <ProjectReference Include="PennyPet.Core.csproj" />
   </ItemGroup>
   <ItemGroup>

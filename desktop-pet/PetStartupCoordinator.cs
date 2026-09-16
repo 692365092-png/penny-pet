@@ -61,7 +61,7 @@ namespace PennyPet
                             "deferred-startup-registration",
                             new InvalidOperationException(startupError));
                     }
-                    _settings.Save();
+                    _settings.SaveAsync();
                     ReminderTick(null, EventArgs.Empty);
                     _startupVisibleNotes = BuildStartupRestoreQueue();
                 }
@@ -80,22 +80,22 @@ namespace PennyPet
                 StickyNoteData note = _startupVisibleNotes.Dequeue();
                 try
                 {
-                    ShowStickyNote(note, false, false);
+                    _stickyWorkspace.ShowHostedSticky(note, false, false);
                 }
                 catch (Exception error)
                 {
                     ApplicationDiagnostics.ReportNonFatal(
                         "deferred-sticky-restore", error);
-                    RecoverFailedLegacyStickyWindow(note);
+                    _stickyWorkspace.RecoverFailedHostedStickyWindow(note);
                 }
                 return;
             }
             if (!AllExpectedNotesHaveFirstRendered()) return;
             try
             {
-                NormalizeAllDockGroups();
+                _stickyWorkspace.Dock.NormalizeAllDockGroups();
                 RefreshMenuText();
-                RefreshNoteTabs();
+                _stickyWorkspace.RefreshNoteTabs();
                 if (_notes.RecoveredFromLoadFailure)
                     ShowBubble("检测到旧便利贴数据异常，原文件已经保留备份，" +
                         "新建功能已自动恢复。");
@@ -133,7 +133,7 @@ namespace PennyPet
             {
                 if (!note.Visible || restored.Contains(note.Id)) continue;
                 List<StickyNoteData> group =
-                    BuildDockChainOrderIncludingHidden(note);
+                    _stickyWorkspace.Dock.BuildDockChainOrderIncludingHidden(note);
                 foreach (StickyNoteData member in group)
                 {
                     restored.Add(member.Id);

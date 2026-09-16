@@ -1,0 +1,17 @@
+{
+  "scope": "isolated snapshot factory \u002B canonical content application; no HWND rendering",
+  "baseline": {
+    "reuse": false,
+    "iterations": 10000,
+    "todoItems": 100,
+    "allocatedBytes": 64560000,
+    "elapsedMilliseconds": 104.718091
+  },
+  "reused": {
+    "reuse": true,
+    "iterations": 10000,
+    "todoItems": 100,
+    "allocatedBytes": 0,
+    "elapsedMilliseconds": 100.279984
+  }
+}

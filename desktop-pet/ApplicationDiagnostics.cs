@@ -66,7 +66,7 @@ namespace PennyPet
         internal static void WriteWindowLayerEvent(string operation,
             string reason)
         {
-            if (_initialized == 0) return;
+            if (_initialized == 0 || !DisplayDiagnostics.Enabled) return;
             try
             {
                 lock (LogGate)
@@ -75,6 +75,7 @@ namespace PennyPet
                     string directory = Path.GetDirectoryName(path);
                     if (!String.IsNullOrEmpty(directory))
                         Directory.CreateDirectory(directory);
+                    EnsureLogCapacity(path);
                     string line = "[" + DateTime.Now.ToString(
                         "yyyy-MM-dd HH:mm:ss.fff") + "] window-layer / " +
                         (operation ?? "unknown") + " / " +
@@ -116,12 +117,7 @@ namespace PennyPet
                     string directory = Path.GetDirectoryName(path);
                     if (!String.IsNullOrEmpty(directory))
                         Directory.CreateDirectory(directory);
-                    if (File.Exists(path) && new FileInfo(path).Length > 1024 * 1024)
-                    {
-                        string previous = path + ".previous";
-                        if (File.Exists(previous)) File.Delete(previous);
-                        File.Move(path, previous);
-                    }
+                    EnsureLogCapacity(path);
                     StringBuilder text = new StringBuilder();
                     text.AppendLine("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") +
                         "] " + (context ?? "unknown") + " / " + (outcome ?? String.Empty));
@@ -138,38 +134,16 @@ namespace PennyPet
                 // Diagnostics must never become another application failure.
             }
         }
-    }
 
-    internal static class AtomicTextFile
-    {
-        private static readonly object WriteGate = new object();
-
-        internal static void WriteAllLines(string filePath,
-            IEnumerable<string> lines, bool keepBackup)
+        private static void EnsureLogCapacity(string path)
         {
-            // ponytail: global lock, per-path locks if save throughput matters.
-            // One process-wide gate keeps temporary-file replacement safe even
-            // if two repositories ever save from different threads.
-            lock (WriteGate)
+            if (File.Exists(path) && new FileInfo(path).Length > 1024 * 1024)
             {
-                string fullPath = Path.GetFullPath(filePath);
-                string directory = Path.GetDirectoryName(fullPath);
-                if (!String.IsNullOrEmpty(directory))
-                    Directory.CreateDirectory(directory);
-                string temporary = fullPath + ".tmp";
-                File.WriteAllLines(temporary,
-                    new List<string>(lines ?? new string[0]).ToArray(),
-                    new UTF8Encoding(false));
-                if (File.Exists(fullPath))
-                {
-                    string backup = keepBackup ? fullPath + ".bak" : null;
-                    File.Replace(temporary, fullPath, backup, true);
-                }
-                else
-                {
-                    File.Move(temporary, fullPath);
-                }
+                string previous = path + ".previous";
+                if (File.Exists(previous)) File.Delete(previous);
+                File.Move(path, previous);
             }
         }
     }
+
 }

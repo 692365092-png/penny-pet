@@ -10,14 +10,37 @@ namespace PennyPet
     // atomic replacement and diagnostics remain platform responsibilities.
     internal static class StickyNoteCodec
     {
+        internal const int VersionTen = 10;
+        internal const int VersionTenFieldCount = 32;
+        internal const int VersionEleven = 11;
+        internal const int VersionElevenFieldCount = 37;
+        internal const int CurrentVersion = VersionEleven;
+        internal const int CurrentFieldCount = VersionElevenFieldCount;
+        internal const int MaximumDisplayIdCharacters = 1024;
+        internal const int MaximumLocalLogicalValue = 20000;
+
         private static readonly char[] LineSeparators = new char[] { '\n' };
+        // File revisions append fields (v1's text position is the exception).
+        // Validate the complete historical layout once before reading fields.
+        private static readonly int[] MinimumFieldCounts =
+            { 0, 13, 16, 17, 18, 20, 22, 23, 25, 27, 32, 37 };
 
         internal static string SerializeLine(StickyNoteData note)
         {
+            return SerializeLine(note, String.Empty);
+        }
+
+        internal static string SerializeLine(StickyNoteData note, string legacyParentId)
+        {
             if (note == null) throw new ArgumentNullException(nameof(note));
+            WindowPlacementPreference preferred = note.PreferredPlacement;
+            LogicalRect local = preferred == null ? new LogicalRect() : preferred.LocalLogicalRect;
+            StickyLegacyPlacement legacy = note.LegacyPlacement;
+            LogicalRect legacyLocal = legacy == null ? new LogicalRect() : legacy.Logical;
             return String.Join("|", new string[]
             {
-                "9", note.Id ?? String.Empty,
+                CurrentVersion.ToString(CultureInfo.InvariantCulture),
+                note.Id ?? String.Empty,
                 note.Visible ? "1" : "0",
                 note.AlwaysOnTop ? "1" : "0",
                 note.ColorArgb.ToString(CultureInfo.InvariantCulture),
@@ -39,31 +62,48 @@ namespace PennyPet
                     .ToString(CultureInfo.InvariantCulture),
                 NormalizeTextColor(note.TextColorArgb)
                     .ToString(CultureInfo.InvariantCulture),
-                Encode(note.DockParentId ?? String.Empty),
+                Encode(legacyParentId ?? String.Empty),
                 Encode(note.DockGroupId ?? String.Empty),
                 Math.Max(-1, note.DockGroupOrder)
                     .ToString(CultureInfo.InvariantCulture),
                 note.IsSchedule ? "1" : "0",
-                EncodeSchedules(note.ScheduleItems)
+                EncodeSchedules(note.ScheduleItems),
+                Encode(legacy?.RuntimeGdiName ?? String.Empty),
+                legacyLocal.X.ToString(CultureInfo.InvariantCulture),
+                legacyLocal.Y.ToString(CultureInfo.InvariantCulture),
+                legacyLocal.Width.ToString(CultureInfo.InvariantCulture),
+                legacyLocal.Height.ToString(CultureInfo.InvariantCulture),
+                Encode(preferred?.PreferredTargetKey ?? String.Empty),
+                local.X.ToString(
+                    CultureInfo.InvariantCulture),
+                local.Y.ToString(
+                    CultureInfo.InvariantCulture),
+                local.Width.ToString(
+                    CultureInfo.InvariantCulture),
+                local.Height.ToString(
+                    CultureInfo.InvariantCulture)
             });
         }
 
         internal static StickyNoteData ParseLine(string line)
         {
+            return ParseLine(line, out _);
+        }
+
+        // The compatibility link belongs to the file being read, never to the
+        // live note or its persistence snapshot. Whole-file readers migrate it
+        // before returning notes to runtime workflows.
+        internal static StickyNoteData ParseLine(string line, out string legacyParentId)
+        {
+            legacyParentId = String.Empty;
             if (String.IsNullOrWhiteSpace(line)) return null;
             string[] fields = line.Split('|');
-            bool versionOne = fields.Length >= 13 && fields[0] == "1";
-            bool versionTwo = fields.Length >= 16 && fields[0] == "2";
-            bool versionThree = fields.Length >= 17 && fields[0] == "3";
-            bool versionFour = fields.Length >= 18 && fields[0] == "4";
-            bool versionFive = fields.Length >= 20 && fields[0] == "5";
-            bool versionSix = fields.Length >= 22 && fields[0] == "6";
-            bool versionSeven = fields.Length >= 23 && fields[0] == "7";
-            bool versionEight = fields.Length >= 25 && fields[0] == "8";
-            bool versionNine = fields.Length >= 27 && fields[0] == "9";
-            if (!versionOne && !versionTwo && !versionThree && !versionFour &&
-                !versionFive && !versionSix && !versionSeven && !versionEight &&
-                !versionNine) return null;
+            int version;
+            if (!Int32.TryParse(fields[0], NumberStyles.None,
+                    CultureInfo.InvariantCulture, out version) ||
+                version < 1 || version > CurrentVersion ||
+                fields[0] != version.ToString(CultureInfo.InvariantCulture) ||
+                fields.Length < MinimumFieldCounts[version]) return null;
 
             int number;
             long ticks;
@@ -75,16 +115,20 @@ namespace PennyPet
             if (Int32.TryParse(fields[5], out number)) note.X = number;
             if (Int32.TryParse(fields[6], out number)) note.Y = number;
             if (Int32.TryParse(fields[7], out number))
-                note.Width = Clamp(number, 200, 900);
+                note.Width = Clamp(number,
+                    StickyNoteLimits.MinimumWindowWidth,
+                    StickyNoteLimits.MaximumWindowWidth);
             if (Int32.TryParse(fields[8], out number))
-                note.Height = Clamp(number, 140, 700);
+                note.Height = Clamp(number,
+                    StickyNoteLimits.MinimumWindowHeight,
+                    StickyNoteLimits.MaximumWindowHeight);
             if (Int64.TryParse(fields[9], out ticks) && ticks > 0)
                 note.CreatedUtcTicks = ticks;
             if (Int64.TryParse(fields[10], out ticks) && ticks > 0)
                 note.ModifiedUtcTicks = ticks;
             if (Int64.TryParse(fields[11], out ticks) && ticks > 0)
                 note.ReminderUtcTicks = ticks;
-            if (versionOne)
+            if (version == 1)
             {
                 note.Text = Decode(fields[12]);
             }
@@ -94,44 +138,45 @@ namespace PennyPet
                 note.Title = Decode(fields[13]);
                 DecodeTodos(fields[14], note.TodoItems);
                 note.Text = Decode(fields[15]);
-                if ((versionThree || versionFour || versionFive || versionSix ||
-                    versionSeven || versionEight || versionNine) &&
+                if (version >= 3 &&
                     Int32.TryParse(fields[16], out number))
                     note.TabOrder = Math.Max(0, number);
-                if (versionFour || versionFive || versionSix || versionSeven ||
-                    versionEight || versionNine)
+                if (version >= 4)
                     note.RichTextRtf = NormalizeRtf(Decode(fields[17]));
-                if (versionFive || versionSix || versionSeven || versionEight ||
-                    versionNine)
+                if (version >= 5)
                 {
                     note.FontFamilyName = NormalizeFontFamily(Decode(fields[18]));
                     if (Int32.TryParse(fields[19], out number))
                         note.FontSizeTwips = Clamp(number, 120, 1440);
                 }
-                if (versionSix || versionSeven || versionEight || versionNine)
+                if (version >= 6)
                 {
                     if (Int32.TryParse(fields[20], out number))
                         note.BackgroundOpacityPercent = Clamp(number, 10, 100);
                     if (Int32.TryParse(fields[21], out number))
                         note.TextColorArgb = NormalizeTextColor(number);
                 }
-                if (versionSeven || versionEight || versionNine)
-                    note.DockParentId = Decode(fields[22]);
-                if (versionEight || versionNine)
+                if (version >= 7)
+                    legacyParentId = Decode(fields[22]);
+                if (version >= 8)
                 {
                     note.DockGroupId = Decode(fields[23]);
                     if (Int32.TryParse(fields[24], out number))
                         note.DockGroupOrder = Math.Max(-1, number);
                 }
-                if (versionNine)
+                if (version >= 9)
                 {
                     note.IsSchedule = fields[25] == "1";
                     DecodeSchedules(fields[26], note.ScheduleItems);
                     if (note.IsSchedule) note.IsTodoList = false;
                 }
+                if (version >= 10)
+                    note.LegacyPlacement = ReadLegacyPlacement(fields);
+                if (version >= 11)
+                    note.PreferredPlacement = ReadPreferredPlacement(fields);
             }
 
-            if (!versionSix && !versionSeven && !versionEight && !versionNine)
+            if (version < 6)
                 note.TextColorArgb = IsLightPaper(note.ColorArgb)
                     ? WhiteArgb : BlackArgb;
             if (note.Title.Length > StickyNoteLimits.MaximumTitleCharacters ||
@@ -143,6 +188,36 @@ namespace PennyPet
                     "Sticky-note content exceeds safety limits.");
             RepairForDisplay(note, false);
             return note;
+        }
+
+        private static StickyLegacyPlacement ReadLegacyPlacement(string[] fields)
+        {
+            string gdiName = Decode(fields[27]);
+            if (String.IsNullOrWhiteSpace(gdiName)) return null;
+            int x, y, width, height;
+            Int32.TryParse(fields[28], out x);
+            Int32.TryParse(fields[29], out y);
+            Int32.TryParse(fields[30], out width);
+            Int32.TryParse(fields[31], out height);
+            return new StickyLegacyPlacement(gdiName, new LogicalRect {
+                X = x, Y = y, Width = Clamp(width, 1, MaximumLocalLogicalValue),
+                Height = Clamp(height, 1, MaximumLocalLogicalValue) });
+        }
+
+        // Invalid or incomplete file fields mean no preference. Input repair
+        // and size caps stay here; runtime preferences are complete values.
+        private static WindowPlacementPreference ReadPreferredPlacement(string[] fields)
+        {
+            string key = Decode(fields[32]).Trim();
+            int x, y, width, height;
+            if (key.Length == 0 || key.Length > MaximumDisplayIdCharacters ||
+                !Int32.TryParse(fields[35], out width) || width <= 0 ||
+                !Int32.TryParse(fields[36], out height) || height <= 0) return null;
+            Int32.TryParse(fields[33], out x);
+            Int32.TryParse(fields[34], out y);
+            return new WindowPlacementPreference(key, new LogicalRect {
+                X = x, Y = y, Width = Math.Min(width, MaximumLocalLogicalValue),
+                Height = Math.Min(height, MaximumLocalLogicalValue) });
         }
 
         internal static bool RepairForDisplay(StickyNoteData note,
@@ -169,8 +244,12 @@ namespace PennyPet
                 note.FontFamilyName = family;
                 changed = true;
             }
-            int width = Clamp(note.Width, 280, 900);
-            int height = Clamp(note.Height, 220, 700);
+            int width = Clamp(note.Width,
+                StickyNoteLimits.MinimumWindowWidth,
+                StickyNoteLimits.MaximumWindowWidth);
+            int height = Clamp(note.Height,
+                StickyNoteLimits.MinimumWindowHeight,
+                StickyNoteLimits.MaximumWindowHeight);
             int size = Clamp(note.FontSizeTwips, 120, 1440);
             int opacity = Clamp(note.BackgroundOpacityPercent, 10, 100);
             int textColor = NormalizeTextColor(note.TextColorArgb);
@@ -269,7 +348,7 @@ namespace PennyPet
                     builder.Append((int)item.State).Append('\t')
                         .Append(item.IsPinned ? '1' : '0').Append('\t')
                         .Append((item.Text ?? String.Empty).Replace("\r", " ")
-                            .Replace("\n", " "));
+                            .Replace("\n", " ").Replace("\t", " "));
                 }
             }
             return Encode(builder.ToString());

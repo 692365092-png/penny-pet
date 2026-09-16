@@ -17,7 +17,7 @@ namespace PennyPet
             "处理密码、验证码、支付或其他高敏感信息时，请先关闭按键显示。" +
             "是否确认开启？";
 
-        private void RefreshMenuText()
+        internal void RefreshMenuText()
         {
             _cancelItem.DropDownItems.Clear();
             List<ReminderItem> items = _reminders.GetItems();
@@ -50,19 +50,8 @@ namespace PennyPet
             _setReminderItem.Enabled = items.Count < ReminderSchedule.MaximumItems;
             _setReminderItem.Text = "添加提醒…（" + items.Count + "/" +
                 ReminderSchedule.MaximumItems + "）";
-            _manageNotesItem.Text = "便利贴管理…（" + _notes.GetAll().Count + "张）";
+            _manageNotesItem.Text = "便利贴管理…（" + _notes.Count + "张）";
             _silentItem.Checked = _settings.SilentMode;
-            int visibleNotes = 0;
-            int hiddenNotes = 0;
-            foreach (StickyNoteData note in _notes.GetAll())
-            {
-                if (note.Visible) visibleNotes++;
-                else hiddenNotes++;
-            }
-            _collapseNotesItem.Text = "收起全部便利贴到页签（" + visibleNotes + "张）";
-            _collapseNotesItem.Enabled = visibleNotes > 0;
-            _expandTabsItem.Text = "展开全部侧边页签（" + hiddenNotes + "张）";
-            _expandTabsItem.Enabled = hiddenNotes > 0;
             _scaleItem.Text = "调整大小…（桌宠 " + _scalePercent + "% / 按键" +
                 KeyTextSizeName(_settings.KeyOverlayScalePercent) + "）";
             RefreshKeyboardMenuText();
@@ -73,8 +62,42 @@ namespace PennyPet
             using (ScaleDialog dialog = new ScaleDialog(_scalePercent,
                 _settings.KeyOverlayScalePercent))
             {
-                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                if (_windowLayers.ShowModal(this, dialog) != DialogResult.OK)
+                    return;
                 ApplyScale(dialog.SelectedPercent, dialog.SelectedKeyTextPercent);
+            }
+        }
+
+        private void ShowDailyContentSettingsDialog()
+        {
+            WeatherLocation currentLocation;
+            WeatherLocation.TryCreate(_settings.WeatherLocationName,
+                _settings.WeatherLocationAdmin1,
+                _settings.WeatherLocationCountry, _settings.WeatherLatitude,
+                _settings.WeatherLongitude, _settings.WeatherTimezone,
+                out currentLocation);
+            string previousLocationKey = currentLocation == null
+                ? String.Empty : currentLocation.StableKey;
+            using (DailyContentSettingsForm dialog =
+                new DailyContentSettingsForm(
+                    _settings.DailyContentEnabled,
+                    _settings.SolarTermEnabled,
+                    _settings.AlmanacEnabled,
+                    _settings.WeatherEnabled, currentLocation,
+                    _settings.ZodiacSign,
+                    _settings.UserBirthdayMonth,
+                    _settings.UserBirthdayDay,
+                    _weatherSource, _windowLayers))
+            {
+                DialogResult result = _windowLayers.ShowModal(this, dialog);
+                if (!dialog.ApplyIfAccepted(_settings, result)) return;
+                WeatherLocation selected = dialog.SelectedWeatherLocation;
+                string nextLocationKey = selected == null
+                    ? String.Empty : selected.StableKey;
+                if (!String.Equals(previousLocationKey, nextLocationKey,
+                    StringComparison.Ordinal))
+                    _weatherSource.InvalidateCache();
+                _settings.SaveAsync();
             }
         }
 
@@ -91,14 +114,12 @@ namespace PennyPet
             {
                 int centerX = Left + Width / 2;
                 int bottom = Bottom;
-                DisposeRenderedFrameCache();
                 _scalePercent = next;
-                ClientSize = ScaledPetSize(_scalePercent);
-                BuildRenderedFrameCache();
+                ApplyCurrentDisplayScale(ActualPetDpi());
                 Location = new Point(centerX - Width / 2, bottom - Height);
                 KeepFullyVisible();
                 RenderCurrentFrame();
-                if (_bubble != null && !_bubble.IsDisposed) _bubble.ShowNear(this);
+                _bubbleCoordinator.ShowCurrentNearOwner();
             }
             _keyOverlay.SetTextScale(nextKeyText);
             _settings.ScalePercent = _scalePercent;
@@ -132,7 +153,7 @@ namespace PennyPet
                 {
                     _keyboardItem.Checked = false;
                     _settings.ShowKeyOverlay = false;
-                    _settings.Save();
+                    _settings.SaveAsync();
                     RefreshKeyboardMenuText();
                     return;
                 }
@@ -155,7 +176,7 @@ namespace PennyPet
                 _keyboard.Dispose();
             _keyboardItem.Checked = desired;
             _settings.ShowKeyOverlay = desired;
-            _settings.Save();
+            _settings.SaveAsync();
             if (!_settings.ShowKeyOverlay) _keyOverlay.HideImmediately();
             RefreshKeyboardMenuText();
         }
@@ -163,7 +184,7 @@ namespace PennyPet
         private void SilentItemClick(object sender, EventArgs e)
         {
             _settings.SilentMode = _silentItem.Checked;
-            _settings.Save();
+            _settings.SaveAsync();
             if (_settings.SilentMode) HideHoverBubble();
         }
 
@@ -198,23 +219,29 @@ namespace PennyPet
             }
             _settings.StartupPreferenceInitialized = true;
             _settings.StartAtLogin = desired;
-            _settings.Save();
+            _settings.SaveAsync();
             ShowBubble(desired ? "开机自动启动已开启。" : "开机自动启动已关闭。");
         }
 
-        private void BeginExitSequence()
+        internal void BeginExitSequence()
         {
             if (_exiting) return;
-            if (BeginHostedStickyExitIfNeeded()) return;
-            if (!FlushPersistenceBeforeExit()) return;
+            if (_stickyWorkspace.BeginHostedStickyExitIfNeeded()) return;
+            CaptureLocationForSave();
+            if (!FlushPersistenceBeforeExit())
+            {
+                _stickyWorkspace.CancelPreparedStickyExit();
+                return;
+            }
             _exiting = true;
             _reminderTimer.Stop();
+            _persistenceRetryTimer.Stop();
             _dragging = false;
             Capture = false;
             _typingSession = false;
-            _manualAnimationActive = false;
+            _animation.CancelInteractionAnimation();
             _keyOverlay.HideImmediately();
-            _mouseInside = false;
+            _stableMouseInside = false;
             if (_menu.Visible) _menu.Close();
             CloseCurrentBubbleWithoutRestoringHover();
             _row = WavingRow;
@@ -222,19 +249,13 @@ namespace PennyPet
             _nextFrameUtc = DateTime.UtcNow.AddMilliseconds(
                 RuntimeFrameDuration(_row, _frame));
             RenderCurrentFrame();
-            if (!ShouldSuppressDailyBubble(_settings.SilentMode, false))
+            if (!_settings.SilentMode)
                 ShowBubble("再见啦，照顾好自己！");
         }
 
         private bool HasFocusedOwnNoteTextInput()
         {
-            if (_hostedRuntime.HasInputFocus) return true;
-            foreach (StickyNoteWindow form in _noteWindows.Values)
-            {
-                if (form != null && !form.IsDisposed &&
-                    form.HasFocusedTextInput) return true;
-            }
-            return false;
+            return _stickyWorkspace.Hosted.HasInputFocus;
         }
 
         internal static string FormatRemaining(TimeSpan value)

@@ -1,0 +1,322 @@
+{
+  "reviewDate": "2026-09-09",
+  "baselineCommit": "d8b682c0c55552312d426e269337cfa1bab088bf",
+  "initialReviewCommit": "0f5cd49bb2c8348c5071c59644e9c0c37417e1fa",
+  "sdk": "8.0.425",
+  "standardVSTest": {
+    "baseline": "HOST_FAILED",
+    "after": "HOST_FAILED",
+    "testRunner": "17.11.1",
+    "reason": "NullReferenceException in TestEngine.ShouldRunInProcess before test execution",
+    "applicationTestFailureEstablished": false
+  },
+  "directMSTestInvocation": {
+    "baseline": {
+      "passed": 350,
+      "failed": 0,
+      "taggedSource": 118
+    },
+    "after": {
+      "passed": 362,
+      "failed": 0,
+      "taggedSource": 117
+    },
+    "usesRealMSTestAssertions": true,
+    "equivalentToStandardTestHost": false,
+    "notes": "Temporary reflection entry point invoking TestMethod and DataRow. No lifecycle hooks or dynamic test data exist in current test sources."
+  },
+  "compile": {
+    "coreAndMSTestSources": "PASS",
+    "allProductCSharpAgainstNet48ReferenceAssemblies": "PASS",
+    "net48Warnings": 0,
+    "net48Errors": 0,
+    "formalWindowsSolutionAndResourceBuild": "NOT_RUN"
+  },
+  "windowsNativeRuntime": "NOT_RUN",
+  "modularAndSingleFileSelfTests": "NOT_RUN",
+  "ciAutomaticPRTarget": "main; this PR targets experiment branch, so no automatic Windows validation",
+  "benchmarks": {
+    "baseline": {
+      "variant": "baseline",
+      "runtime": ".NET 8.0.31",
+      "os": "Ubuntu 24.04.3 LTS",
+      "warmups": 3,
+      "samples": 7,
+      "results": [
+        {
+          "name": "effective-facts-10000",
+          "medianMilliseconds": 0.3917,
+          "medianAllocatedBytes": 400280,
+          "milliseconds": [
+            0.5329,
+            0.4334,
+            0.3917,
+            0.3658,
+            0.422,
+            0.3624,
+            0.3619
+          ],
+          "allocatedBytes": [
+            400280,
+            400280,
+            400280,
+            400280,
+            400280,
+            400280,
+            400280
+          ]
+        },
+        {
+          "name": "five-reminders-10000",
+          "medianMilliseconds": 7.4261,
+          "medianAllocatedBytes": 23280040,
+          "milliseconds": [
+            29.6068,
+            30.7382,
+            26.7856,
+            7.2682,
+            7.2226,
+            7.4261,
+            7.3377
+          ],
+          "allocatedBytes": [
+            23280040,
+            23280040,
+            23280040,
+            23280040,
+            23280040,
+            23280040,
+            23280040
+          ]
+        },
+        {
+          "name": "side-tabs-10-notes-20000-checks",
+          "medianMilliseconds": 5.4933,
+          "medianAllocatedBytes": 2720040,
+          "milliseconds": [
+            5.4933,
+            5.5132,
+            5.4685,
+            5.5267,
+            5.5899,
+            5.3259,
+            5.4687
+          ],
+          "allocatedBytes": [
+            2720040,
+            2720040,
+            2720040,
+            2720040,
+            2720040,
+            2720040,
+            2720040
+          ]
+        },
+        {
+          "name": "side-tabs-50-notes-20000-checks",
+          "medianMilliseconds": 19.4983,
+          "medianAllocatedBytes": 9120040,
+          "milliseconds": [
+            34.9863,
+            18.579,
+            21.7955,
+            19.4983,
+            18.9683,
+            19.4411,
+            20.9442
+          ],
+          "allocatedBytes": [
+            9120040,
+            9120040,
+            9120040,
+            9120040,
+            9120040,
+            9120040,
+            9120040
+          ]
+        },
+        {
+          "name": "side-tabs-100-notes-20000-checks",
+          "medianMilliseconds": 48.4507,
+          "medianAllocatedBytes": 17120040,
+          "milliseconds": [
+            48.1066,
+            48.8101,
+            48.4507,
+            50.4795,
+            46.7095,
+            49.6795,
+            47.1356
+          ],
+          "allocatedBytes": [
+            17120040,
+            17120040,
+            17120040,
+            17120040,
+            17120040,
+            17120040,
+            17120040
+          ]
+        }
+      ],
+      "codecBudget": {
+        "bodyCharacters": 1000000,
+        "rtfCharacters": 15000000,
+        "oneNoteBytesIncludingCRLF": 21333487,
+        "twoNoteBytesIncludingCRLF": 42666974,
+        "readerLimitBytes": 33554432
+      }
+    },
+    "after": {
+      "variant": "after",
+      "runtime": ".NET 8.0.31",
+      "os": "Ubuntu 24.04.3 LTS",
+      "warmups": 3,
+      "samples": 7,
+      "results": [
+        {
+          "name": "effective-facts-10000",
+          "medianMilliseconds": 0.1874,
+          "medianAllocatedBytes": 320,
+          "milliseconds": [
+            0.1874,
+            0.3526,
+            0.185,
+            0.2017,
+            0.1814,
+            0.4395,
+            0.1834
+          ],
+          "allocatedBytes": [
+            320,
+            320,
+            320,
+            320,
+            320,
+            320,
+            320
+          ]
+        },
+        {
+          "name": "five-reminders-10000",
+          "medianMilliseconds": 4.3454,
+          "medianAllocatedBytes": 3760040,
+          "milliseconds": [
+            7.7463,
+            4.2373,
+            4.3331,
+            9.4667,
+            3.9732,
+            4.3454,
+            6.3232
+          ],
+          "allocatedBytes": [
+            3760040,
+            3760040,
+            3760040,
+            3760040,
+            3760040,
+            3760040,
+            3760040
+          ]
+        },
+        {
+          "name": "side-tabs-10-notes-20000-checks",
+          "medianMilliseconds": 1.129,
+          "medianAllocatedBytes": 40,
+          "milliseconds": [
+            1.1024,
+            1.129,
+            1.1393,
+            1.5662,
+            1.0873,
+            1.278,
+            1.0666
+          ],
+          "allocatedBytes": [
+            40,
+            40,
+            40,
+            40,
+            40,
+            40,
+            40
+          ]
+        },
+        {
+          "name": "side-tabs-50-notes-20000-checks",
+          "medianMilliseconds": 5.5063,
+          "medianAllocatedBytes": 40,
+          "milliseconds": [
+            5.5084,
+            5.2276,
+            5.0309,
+            5.5063,
+            5.0377,
+            5.7479,
+            9.2247
+          ],
+          "allocatedBytes": [
+            40,
+            40,
+            40,
+            40,
+            40,
+            40,
+            40
+          ]
+        },
+        {
+          "name": "side-tabs-100-notes-20000-checks",
+          "medianMilliseconds": 11.2508,
+          "medianAllocatedBytes": 40,
+          "milliseconds": [
+            14.7762,
+            10.5769,
+            11.2508,
+            15.1308,
+            8.4846,
+            7.3945,
+            22.6187
+          ],
+          "allocatedBytes": [
+            40,
+            40,
+            40,
+            40,
+            40,
+            40,
+            40
+          ]
+        }
+      ],
+      "codecBudget": {
+        "bodyCharacters": 1000000,
+        "rtfCharacters": 15000000,
+        "oneNoteBytesIncludingCRLF": 21333487,
+        "twoNoteBytesIncludingCRLF": 42666974,
+        "readerLimitBytes": 33554432
+      }
+    }
+  },
+  "limitations": [
+    "Linux microbenchmarks do not measure UI latency, native HWND, GDI resources, animation FPS, or disk I/O.",
+    "Codec budget reproducer measures actual serialized bytes, not a Windows save/restart integration test."
+  ],
+  "sourceSha256": {
+    "desktop-pet/ApplicationDiagnostics.cs": "5fa613bf58067c1e8c6b0b07deb247602ccf86750bba44e9538ad777d5554866",
+    "desktop-pet/Core/StickyNotes/StickyNoteModels.cs": "5a62243f6dc3b78d9a5b807955bf41ec4e69464e4d8b1a66777cf71edf398c68",
+    "desktop-pet/Features/StickyNotes/PetPersistenceCoordinator.cs": "c1d3fd679a5487d4673f6fba559203257263d50aa76d81994785d5fe49199cd3",
+    "desktop-pet/Features/StickyNotes/PetStickyWindowCoordinator.cs": "f34f8292605cfdc1fbfb1225d0b5c3180858f99eefa5ef8da3f9f2c4d3605305",
+    "desktop-pet/Features/StickyNotes/StickyNoteRepository.cs": "06192c7d815b0df86749c008266b4e7784212e6cb7cdf949f914e18e85be612b",
+    "desktop-pet/Features/StickyNotes/StickyPlacementRuntime.cs": "d07862c64c6c9ff35eb74c970f4b7e2fdd79885e631880175c7b4d02eab57c82",
+    "desktop-pet/Features/StickyNotes/StickyUiCommand.cs": "cabe945a4f7342f3cf9e7797aaa35e8ff64b04fbe4aced2db1240412fafd8c3b",
+    "desktop-pet/Infrastructure/Display/DisplayDiagnostics.cs": "9e2dc0486040a254d172ff807c4ccb6d4ee5b446160417586bb4b2f239f3fbf4",
+    "desktop-pet/PetMenuActions.cs": "d02a5f5e1a1837f68c69c82a270022868a94474b06734e283b84ec2039b9042e",
+    "desktop-pet/StickyWindowSession.cs": "4674220c38d5d1e0b89c3cc73e3aed77361330ef1ed52b6614064e5a2ec43e54",
+    "desktop-pet/Tests/StickyPlacementRuntimeTests.cs": "39135b908eb71b1c15b37c20f4144bf7c75d2fa82049a2068c158d1acfb88fde",
+    "desktop-pet/Tests/StructuralGuards/DisplaySourceGuardTests.cs": "2c0076b58a9ec61d0d37c6f12a6d15dd3d91d89659b869e697159f8d515389c2",
+    "desktop-pet/Tests/StructuralGuards/StickyDockSourceGuardTests.cs": "25ee6e9eea2b224520b1b3fa9e523bceffab2e9f416a67e0e257f17a5c9e79ec",
+    "desktop-pet/Tests/StickyInteractionReadTests.cs": "421ce44454d28c31156bae85a7bf370a53d493f2abc161e3ba3968425df8ba42"
+  }
+}

@@ -85,7 +85,7 @@ GitHub 开源发布版使用 `build.ps1` 生成可审查、可自动测试的未
 
 - `Program.cs`：兼容单 EXE 的演示/正常入口；`Infrastructure` 下的共享路由统一承载测试、预览和美术命令。
 - `PennyApplicationHost.cs`：单实例、loading 与正常应用运行。
-- `PetForm.cs`：桌宠 Windows 窗口壳；启动、动画运行时、键盘、气泡、菜单和便利贴窗口协调分别位于对应 `Pet*.cs` partial 文件。
+- `PetForm.cs`：桌宠 Windows 窗口壳；启动、动画、键盘、气泡、菜单位于对应 `Pet*.cs` partial 文件；便利贴由独立的 `StickyWorkspace` 实例管理。
 - `PetContextMenu.cs`：桌宠右键菜单。
 - `Core/Animation`：动画状态、优先级、随机选择、资源预加载退避与恢复规则。
 - `Core/Reminders` / `PetReminderWindowsCoordinator.cs`：纯提醒模型和规则与 Windows UI 协调。
@@ -93,12 +93,14 @@ GitHub 开源发布版使用 `build.ps1` 生成可审查、可自动测试的未
 - `PetArt.cs`：外置美术包读取、GIF 时长解析、完整分辨率发布资源包与运行时缓存。
 - `Features/Art`：Windows/GDI 动画帧生命周期、画布适配和可选内描边。
 - `LayeredSpriteRenderer.cs`：Windows 透明分层窗口渲染。
-- `Core/StickyNotes`：便利贴、待办、日程与 Dock 的纯数据、v1-v9 编解码、组关系变更及页签拖放会话，不引用桌面 UI。
+- `Core/StickyNotes`：便利贴、待办、日程与 Dock 的纯数据、v1-v11 编解码、组关系变更及页签拖放会话，不引用桌面 UI。
 - `Features/StickyNotes`：便利贴窗口、编辑、Dock 协调、持久化、dirty 状态、自动重试与紧急导出。
 - `StickyNoteWpf.cs`：WPF 便利贴窗口本体；RichText/IME、链接和原生窗口行为分别位于 `StickyEditorCoordinator.cs`、`StickyLinkCoordinator.cs` 和 `StickyNativeWindowBehavior.cs`。
 - `StickyTodoCoordinator.cs` / `StickyScheduleCoordinator.cs`：待办和日程 UI 逻辑。
 - `StickyReminderCoordinator.cs` / `StickyAppearanceCoordinator.cs`：提醒条和外观 UI 逻辑。
-- `PetStickyDockCoordinator.cs`：Windows 便利贴吸附命中、拖拽、坐标同步与隐藏恢复适配；组关系规则由 Core 持有。
+- `StickyWorkspace.cs`：持有便利贴窗口宿主、运行态、内容接收与侧边页签的生命周期。
+- `StickyDockController.cs`：持有 Dock 拖拽、缩放、恢复操作、邮箱与延迟操作；组关系规则由 Core 持有。
+- `StickyFactsReceiver.cs`：统一校验和提交实际 HWND 几何、捕获拓扑及会话序号。
 - `StickyNotes.cs` / `StickyNoteTabs.cs`：管理界面、IME 辅助控件和侧边页签。
 - `ReminderUi.cs` / `Core/Reminders`：提醒界面以及纯提醒模型和规则。
 - `Core/Settings` / `PetSettings.cs`：设置数据、INI 兼容 codec，以及 Windows 路径/备份/重试适配器。
@@ -114,3 +116,5 @@ GitHub 开源发布版使用 `build.ps1` 生成可审查、可自动测试的未
 用户数据保存在 `%LocalAppData%\PennyPet`。
 
 启动时若旧版 `sticky-notes.dat` 无法解析，程序会先尝试读取自动生成的 `.bak`；仍无法恢复时会把原文件改名保留为 `.unreadable-时间.bak`，再启用新的可写数据文件。因此旧数据不会被覆盖，新建便利贴也不会因为一次读取失败而永久锁死。
+
+需要采集显示拓扑、Dock 或窗口层级的详细诊断时，请在启动前设置 `PENNY_DISPLAY_TRACE=1`。默认关闭这类逐帧追踪，避免拖动时同步写日志；错误诊断仍正常记录。

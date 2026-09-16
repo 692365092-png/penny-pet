@@ -1,0 +1,30 @@
+namespace PennyPet
+{
+    internal enum SolarTerm
+    {
+        MinorCold,
+        MajorCold,
+        StartOfSpring,
+        RainWater,
+        AwakeningOfInsects,
+        VernalEquinox,
+        QingMing,
+        GrainRain,
+        StartOfSummer,
+        GrainFull,
+        GrainInEar,
+        SummerSolstice,
+        MinorHeat,
+        MajorHeat,
+        StartOfAutumn,
+        EndOfHeat,
+        WhiteDew,
+        AutumnalEquinox,
+        ColdDew,
+        FrostDescent,
+        StartOfWinter,
+        MinorSnow,
+        MajorSnow,
+        WinterSolstice
+    }
+}

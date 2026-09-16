@@ -33,13 +33,18 @@ namespace PennyPet
             NewScheduleItem.Click += delegate { _commands.CreateSchedule(); };
             ManageNotesItem = new ToolStripMenuItem("便利贴管理…");
             ManageNotesItem.Click += delegate { _commands.ManageNotes(); };
-            CollapseNotesItem = new ToolStripMenuItem("收起全部便利贴到页签");
-            CollapseNotesItem.Click += delegate { _commands.CollapseNotes(); };
-            ExpandTabsItem = new ToolStripMenuItem("展开全部侧边页签");
-            ExpandTabsItem.Click += delegate { _commands.ExpandTabs(); };
-            RecoverWindowsItem = new ToolStripMenuItem(
-                "展开全部并平铺到此屏幕");
-            RecoverWindowsItem.Click += delegate { _commands.RecoverWindows(); };
+            TileAllNotesItem = new ToolStripMenuItem(
+                "平铺全部便利贴到当前屏幕");
+            TileAllNotesItem.Click += delegate
+            {
+                if (_commands.TileAllNotes != null)
+                    _commands.TileAllNotes();
+            };
+            DailyContentItem = new ToolStripMenuItem("个性化每日内容…");
+            DailyContentItem.Click += delegate
+            {
+                _commands.ShowDailyContentSettings();
+            };
             ScaleItem = new ToolStripMenuItem("调整桌宠大小…");
             ScaleItem.Click += delegate { _commands.ShowScale(); };
             StartupItem = new ToolStripMenuItem("开机自动启动");
@@ -67,13 +72,12 @@ namespace PennyPet
             Menu.Items.Add(NewTodoItem);
             Menu.Items.Add(NewScheduleItem);
             Menu.Items.Add(ManageNotesItem);
-            Menu.Items.Add(CollapseNotesItem);
-            Menu.Items.Add(ExpandTabsItem);
-            Menu.Items.Add(RecoverWindowsItem);
+            Menu.Items.Add(TileAllNotesItem);
             Menu.Items.Add(new ToolStripSeparator());
             Menu.Items.Add(SetReminderItem);
             Menu.Items.Add(CancelItem);
             Menu.Items.Add(new ToolStripSeparator());
+            Menu.Items.Add(DailyContentItem);
             Menu.Items.Add(ScaleItem);
             Menu.Items.Add(KeyboardItem);
             Menu.Items.Add(SilentItem);
@@ -95,9 +99,8 @@ namespace PennyPet
         internal ToolStripMenuItem NewTodoItem { get; private set; }
         internal ToolStripMenuItem NewScheduleItem { get; private set; }
         internal ToolStripMenuItem ManageNotesItem { get; private set; }
-        internal ToolStripMenuItem CollapseNotesItem { get; private set; }
-        internal ToolStripMenuItem ExpandTabsItem { get; private set; }
-        internal ToolStripMenuItem RecoverWindowsItem { get; private set; }
+        internal ToolStripMenuItem TileAllNotesItem { get; private set; }
+        internal ToolStripMenuItem DailyContentItem { get; private set; }
         internal ToolStripMenuItem ScaleItem { get; private set; }
         internal ToolStripMenuItem StartupItem { get; private set; }
         internal ToolStripMenuItem KeyboardItem { get; private set; }
@@ -119,9 +122,8 @@ namespace PennyPet
         internal Action CreateTodo;
         internal Action CreateSchedule;
         internal Action ManageNotes;
-        internal Action CollapseNotes;
-        internal Action ExpandTabs;
-        internal Action RecoverWindows;
+        internal Action TileAllNotes;
+        internal Action ShowDailyContentSettings;
         internal Action ShowScale;
         internal EventHandler StartupClick;
         internal EventHandler KeyboardClick;

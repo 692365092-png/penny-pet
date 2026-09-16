@@ -36,6 +36,15 @@ namespace PennyPet
             return _noteIds.Contains(noteId ?? String.Empty);
         }
 
+        // Synchronize only after EnsureSession acknowledges its real session.
+        // A recreated session may lower the lease; IME/focus/delete stay intact.
+        internal void SynchronizeSessionLease(string noteId, long sequence)
+        {
+            string id = noteId ?? String.Empty;
+            _noteIds.Add(id);
+            _appliedSequences[id] = Math.Max(0, sequence);
+        }
+
         internal bool CanApplySequence(string noteId, long sequence)
         {
             string id = noteId ?? String.Empty;
@@ -47,6 +56,23 @@ namespace PennyPet
         internal void RecordSequence(string noteId, long sequence)
         {
             _appliedSequences[noteId ?? String.Empty] = sequence;
+        }
+
+        // Only a restore batch may acknowledge a newly created session. An
+        // existing session still obeys its watermark, including events received
+        // after the batch was captured and before its Pet-thread continuation.
+        internal bool CanApplyBatchSequence(DockBatchMemberResult member, bool allowSessionCreation)
+        {
+            if (member == null || String.IsNullOrEmpty(member.NoteId) || member.WindowSequence <= 0) return false;
+            return (allowSessionCreation && (member.SessionCreated || !ContainsNote(member.NoteId))) ||
+                CanApplySequence(member.NoteId, member.WindowSequence);
+        }
+
+        internal void AcceptBatchSequence(DockBatchMemberResult member, bool allowSessionCreation)
+        {
+            if (allowSessionCreation && (member.SessionCreated || !ContainsNote(member.NoteId)))
+                SynchronizeSessionLease(member.NoteId, member.WindowSequence);
+            else RecordSequence(member.NoteId, member.WindowSequence);
         }
 
         internal void SetImeComposition(string noteId, bool active)
@@ -100,13 +126,24 @@ namespace PennyPet
         internal void CancelExit()
         {
             ExitRequested = false;
+            ExitPrepared = false;
         }
 
         internal void PrepareExit()
         {
+            ExitPrepared = true;
+        }
+
+        // CloseAll has destroyed every native session. Retire their leases
+        // before another show can create a session with a fresh sequence.
+        internal void CompleteCloseAll()
+        {
+            _noteIds.Clear();
+            _appliedSequences.Clear();
             _imeComposing.Clear();
             _inputFocused.Clear();
-            ExitPrepared = true;
+            _deletePending.Clear();
+            CloseAllInFlight = false;
         }
 
         private static void SetMembership(HashSet<string> values,

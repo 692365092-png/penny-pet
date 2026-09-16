@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework><OutputType>Library</OutputType>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems><GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <LangVersion>latest</LangVersion><TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../penny-pet/desktop-pet/**/*.cs" Exclude="../penny-pet/desktop-pet/bin/**;../penny-pet/desktop-pet/obj/**;../penny-pet/desktop-pet/Tests/**" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net48" Version="1.0.3" />
+    <PackageReference Include="CosineKitty.AstronomyEngine" Version="2.1.19" />
+    <PackageReference Include="lunar-csharp" Version="1.6.8" />
+    <Reference Include="System.Drawing" /><Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Net.Http" /><Reference Include="System.Web.Extensions" /><Reference Include="System.Xaml" />
+    <Reference Include="WindowsBase" /><Reference Include="PresentationCore" /><Reference Include="PresentationFramework" />
+    <Reference Include="UIAutomationClient" /><Reference Include="UIAutomationTypes" /><Reference Include="WindowsFormsIntegration" />
+  </ItemGroup>
+</Project>

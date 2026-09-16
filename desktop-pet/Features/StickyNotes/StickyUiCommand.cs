@@ -6,14 +6,26 @@ namespace PennyPet
     internal enum StickyUiCommandKind
     {
         Create,
+
+        // Idempotently ensure a hosted Sticky session exists on the Sticky STA,
+        // but do not show or place the HWND yet.
+        EnsureSession,
+
         Show,
         Hide,
         FocusPrimaryInput,
         SetTopMost,
         SetDockResizeRole,
+        RaiseDockGroupForDrag,
         SetBounds,
+        Reproject,
+        ReprojectDockGroup,
+        RestoreDockGroup,
+        CaptureWindowFacts,
+        CaptureDockFacts,
         Close,
-        CloseAll
+        CloseAll,
+        UpdateReminders
     }
 
     internal sealed class StickyUiCommand
@@ -22,7 +34,14 @@ namespace PennyPet
         internal StickyUiCommand(StickyUiCommandKind kind, string noteId,
             bool flag, StickyNoteUiSnapshot snapshot = null,
             StickyUiBounds bounds = null,
-            StickyUiDockResizeRole dockResizeRole = null)
+            StickyUiDockResizeRole dockResizeRole = null,
+            IEnumerable<ReminderItem> reminders = null,
+            DisplayTopologySnapshot topology = null,
+            StickyUiReprojectTarget reprojectTarget = null,
+            string[] dockNoteIds = null,
+            DockGroupReprojectPlan dockGroupReprojectPlan = null,
+            long interactionEpoch = 0, WindowPlacementPlan placement = null,
+            DockRestoreOperation dockRestore = null, DockInput input = null)
         {
             Kind = kind;
             NoteId = noteId ?? String.Empty;
@@ -30,21 +49,65 @@ namespace PennyPet
             Snapshot = snapshot;
             Bounds = bounds;
             DockResizeRole = dockResizeRole;
+            Reminders = CopyReminders(reminders);
+            Topology = topology;
+            ReprojectTarget = reprojectTarget;
+            DockNoteIds = dockNoteIds == null
+                ? null
+                : (string[])dockNoteIds.Clone();
+            DockGroupReprojectPlan = dockGroupReprojectPlan;
+            InteractionEpoch = interactionEpoch;
+            Placement = placement;
+            DockRestore = dockRestore;
+            Input = input;
         }
 
         internal static StickyUiCommand Create(StickyNoteUiSnapshot snapshot,
-            bool focusEditor)
+            bool focusEditor, IEnumerable<ReminderItem> reminders = null,
+            DisplayTopologySnapshot topology = null,
+            StickyUiReprojectTarget reprojectTarget = null,
+            WindowPlacementPlan placement = null)
         {
             if (snapshot == null)
                 throw new ArgumentNullException(nameof(snapshot));
             return new StickyUiCommand(StickyUiCommandKind.Create,
-                snapshot.NoteId, focusEditor, snapshot);
+                snapshot.NoteId, focusEditor, snapshot, null, null,
+                CopyReminders(reminders), topology, reprojectTarget,
+                placement: placement);
         }
 
-        internal static StickyUiCommand Show(string noteId, bool focusEditor)
+        internal static StickyUiCommand EnsureSession(
+            StickyNoteUiSnapshot snapshot,
+            IEnumerable<ReminderItem> reminders = null,
+            DisplayTopologySnapshot topology = null)
+        {
+            if (snapshot == null)
+                throw new ArgumentNullException(nameof(snapshot));
+
+            return new StickyUiCommand(
+                StickyUiCommandKind.EnsureSession,
+                snapshot.NoteId,
+                false,
+                snapshot,
+                null,
+                null,
+                reminders,
+                topology);
+        }
+
+        internal static StickyUiCommand UpdateReminders(string noteId,
+            IEnumerable<ReminderItem> reminders)
+        {
+            return new StickyUiCommand(StickyUiCommandKind.UpdateReminders,
+                noteId, false, null, null, null, reminders);
+        }
+
+        internal static StickyUiCommand Show(string noteId, bool focusEditor,
+            DisplayTopologySnapshot topology = null, WindowPlacementPlan placement = null)
         {
             return new StickyUiCommand(StickyUiCommandKind.Show, noteId,
-                focusEditor);
+                focusEditor, null, null, null, null, topology,
+                placement: placement);
         }
 
         internal static StickyUiCommand Hide(string noteId)
@@ -73,18 +136,139 @@ namespace PennyPet
                 noteId, false, null, null, role);
         }
 
+        internal static StickyUiCommand RaiseDockGroupForDrag(
+            IEnumerable<string> orderedNoteIds,
+            string sourceNoteId,
+            DisplayTopologySnapshot topology,
+            long interactionEpoch, DockInput input = null)
+        {
+            if (String.IsNullOrWhiteSpace(sourceNoteId))
+                throw new ArgumentException(
+                    "A source note id is required.",
+                    nameof(sourceNoteId));
+
+            if (topology == null)
+                throw new ArgumentNullException(nameof(topology));
+
+            if (interactionEpoch <= 0)
+                throw new ArgumentOutOfRangeException(
+                    nameof(interactionEpoch));
+
+            List<string> ids = new List<string>();
+            HashSet<string> seen = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+            bool sourceFound = false;
+
+            if (orderedNoteIds != null)
+            {
+                foreach (string noteId in orderedNoteIds)
+                {
+                    if (String.IsNullOrWhiteSpace(noteId) ||
+                        !seen.Add(noteId))
+                        throw new ArgumentException(
+                            "Dock Z-order ids must be unique and non-empty.",
+                            nameof(orderedNoteIds));
+
+                    if (String.Equals(noteId, sourceNoteId,
+                        StringComparison.OrdinalIgnoreCase))
+                        sourceFound = true;
+
+                    ids.Add(noteId);
+                }
+            }
+
+            if (ids.Count < 2)
+                throw new ArgumentException(
+                    "A Dock Z-order command requires at least two members.",
+                    nameof(orderedNoteIds));
+
+            if (!sourceFound)
+                throw new ArgumentException(
+                    "The source note must belong to the Dock group.",
+                    nameof(sourceNoteId));
+
+            return new StickyUiCommand(
+                StickyUiCommandKind.RaiseDockGroupForDrag,
+                sourceNoteId,
+                false,
+                null,
+                null,
+                null,
+                null,
+                topology,
+                null,
+                ids.ToArray(),
+                null,
+                interactionEpoch, input: input);
+        }
+
         internal static StickyUiCommand SetBounds(string noteId,
-            StickyUiBounds bounds)
+            StickyUiBounds bounds,
+            DisplayTopologySnapshot topology = null, DockInput input = null)
         {
             if (bounds == null) throw new ArgumentNullException(nameof(bounds));
             return new StickyUiCommand(StickyUiCommandKind.SetBounds, noteId,
-                false, null, bounds);
+                false, null, bounds, null, null, topology, input: input);
+        }
+
+        internal static StickyUiCommand Reproject(string noteId,
+            StickyUiReprojectTarget target,
+            DisplayTopologySnapshot topology = null)
+        {
+            if (target == null) throw new ArgumentNullException(nameof(target));
+            return new StickyUiCommand(StickyUiCommandKind.Reproject, noteId,
+                false, null, null, null, null, topology, target);
+        }
+
+        internal static StickyUiCommand CaptureDockFacts(
+            IEnumerable<string> noteIds, DisplayTopologySnapshot topology,
+            long interactionEpoch, DockInput input = null)
+        {
+            List<string> ids = new List<string>();
+            if (noteIds != null)
+                foreach (string noteId in noteIds)
+                    if (!String.IsNullOrEmpty(noteId)) ids.Add(noteId);
+            return new StickyUiCommand(
+                StickyUiCommandKind.CaptureDockFacts,
+                ids.Count > 0 ? ids[0] : String.Empty, false,
+                null, null, null, null, topology, null, ids.ToArray(), null,
+                interactionEpoch, input: input);
+        }
+
+        internal static StickyUiCommand CaptureWindowFacts(string noteId,
+            DisplayTopologySnapshot topology)
+        {
+            if (String.IsNullOrWhiteSpace(noteId))
+                throw new ArgumentException("A note id is required.", nameof(noteId));
+            if (topology == null) throw new ArgumentNullException(nameof(topology));
+            return new StickyUiCommand(StickyUiCommandKind.CaptureWindowFacts,
+                noteId, false, null, null, null, null, topology);
+        }
+
+        internal static StickyUiCommand ReprojectDockGroup(
+            DockGroupReprojectPlan plan,
+            DisplayTopologySnapshot topology,
+            bool showAfterPlacement = false)
+        {
+            if (plan == null) throw new ArgumentNullException(nameof(plan));
+            return new StickyUiCommand(
+                StickyUiCommandKind.ReprojectDockGroup, String.Empty, showAfterPlacement,
+                null, null, null, null, topology, null, null, plan);
         }
 
         internal static StickyUiCommand Close(string noteId)
         {
             return new StickyUiCommand(StickyUiCommandKind.Close, noteId,
                 false);
+        }
+
+        internal static StickyUiCommand RestoreDockGroup(DockRestoreOperation operation,
+            IEnumerable<ReminderItem> reminders)
+        {
+            if (operation == null) throw new ArgumentNullException(nameof(operation));
+            return new StickyUiCommand(StickyUiCommandKind.RestoreDockGroup, String.Empty, true,
+                reminders: CopyReminders(reminders), topology: operation.Topology,
+                dockGroupReprojectPlan: operation.Plan, dockRestore: operation);
         }
 
         internal static StickyUiCommand CloseAll()
@@ -99,13 +283,42 @@ namespace PennyPet
         internal StickyNoteUiSnapshot Snapshot { get; private set; }
         internal StickyUiBounds Bounds { get; private set; }
         internal StickyUiDockResizeRole DockResizeRole { get; private set; }
+        internal ReminderItem[] Reminders { get; private set; }
+        internal DisplayTopologySnapshot Topology { get; private set; }
+        internal StickyUiReprojectTarget ReprojectTarget { get; private set; }
+        internal string[] DockNoteIds { get; private set; }
+        internal DockGroupReprojectPlan DockGroupReprojectPlan
+            { get; private set; }
+        internal long InteractionEpoch { get; private set; }
+        internal WindowPlacementPlan Placement { get; private set; }
+        internal DockRestoreOperation DockRestore { get; private set; }
+        internal DockInput Input { get; private set; }
+
+        private static ReminderItem[] CopyReminders(
+            IEnumerable<ReminderItem> reminders)
+        {
+            List<ReminderItem> copy = new List<ReminderItem>();
+            if (reminders != null)
+            {
+                foreach (ReminderItem source in reminders)
+                {
+                    if (source == null) continue;
+                    // ReminderItem is immutable; only the collection needs
+                    // ownership isolation when crossing the STA boundary.
+                    copy.Add(source);
+                    if (copy.Count >= 5) break;
+                }
+            }
+            return copy.ToArray();
+        }
     }
 
     // Immutable cross-thread value snapshot. The WPF STA creates its own
     // mutable working copy; the repository-owned model never crosses threads.
     internal sealed class StickyNoteUiSnapshot
     {
-        private StickyNoteUiSnapshot(StickyNoteData source)
+        private StickyNoteUiSnapshot(StickyNoteData source,
+            bool alwaysOnTop)
         {
             NoteId = source.Id ?? String.Empty;
             Title = source.Title ?? String.Empty;
@@ -117,13 +330,9 @@ namespace PennyPet
             BackgroundOpacityPercent = source.BackgroundOpacityPercent;
             TextColorArgb = source.TextColorArgb;
             Visible = source.Visible;
-            AlwaysOnTop = source.AlwaysOnTop;
+            AlwaysOnTop = alwaysOnTop;
             IsTodoList = source.IsTodoList;
             IsSchedule = source.IsSchedule;
-            X = source.X;
-            Y = source.Y;
-            Width = source.Width;
-            Height = source.Height;
             CreatedUtcTicks = source.CreatedUtcTicks;
             ModifiedUtcTicks = source.ModifiedUtcTicks;
             ReminderUtcTicks = source.ReminderUtcTicks;
@@ -132,13 +341,13 @@ namespace PennyPet
             foreach (StickyTodoItem item in source.TodoItems)
                 if (item != null) todos.Add(
                     new StickyTodoUiSnapshot(item));
-            TodoItems = todos.ToArray();
+            TodoItems = Array.AsReadOnly(todos.ToArray());
             List<StickyScheduleUiSnapshot> schedules =
                 new List<StickyScheduleUiSnapshot>();
             foreach (StickyScheduleItem item in source.ScheduleItems)
                 if (item != null) schedules.Add(
                     new StickyScheduleUiSnapshot(item));
-            ScheduleItems = schedules.ToArray();
+            ScheduleItems = Array.AsReadOnly(schedules.ToArray());
         }
 
         internal string NoteId { get; private set; }
@@ -154,33 +363,82 @@ namespace PennyPet
         internal bool AlwaysOnTop { get; private set; }
         internal bool IsTodoList { get; private set; }
         internal bool IsSchedule { get; private set; }
-        internal int X { get; private set; }
-        internal int Y { get; private set; }
-        internal int Width { get; private set; }
-        internal int Height { get; private set; }
         internal long CreatedUtcTicks { get; private set; }
         internal long ModifiedUtcTicks { get; private set; }
         internal long ReminderUtcTicks { get; private set; }
-        internal StickyTodoUiSnapshot[] TodoItems { get; private set; }
-        internal StickyScheduleUiSnapshot[] ScheduleItems { get; private set; }
+        internal IReadOnlyList<StickyTodoUiSnapshot> TodoItems { get; private set; }
+        internal IReadOnlyList<StickyScheduleUiSnapshot> ScheduleItems { get; private set; }
 
-        internal static StickyNoteUiSnapshot FromData(StickyNoteData source)
+        internal static StickyNoteUiSnapshot Capture(StickyNoteData source,
+            StickyNoteUiSnapshot previous = null, bool? alwaysOnTop = null)
         {
             if (source == null) throw new ArgumentNullException(nameof(source));
-            return new StickyNoteUiSnapshot(source);
+            bool topMost = alwaysOnTop ?? source.AlwaysOnTop;
+            if (previous == null ||
+                !String.Equals(previous.NoteId, source.Id, StringComparison.Ordinal) ||
+                !previous.MatchesContent(source)) return new StickyNoteUiSnapshot(source, topMost);
+            if (previous.Visible == source.Visible && previous.AlwaysOnTop == topMost) return previous;
+            var snapshot = (StickyNoteUiSnapshot)previous.MemberwiseClone();
+            snapshot.Visible = source.Visible;
+            snapshot.AlwaysOnTop = topMost;
+            return snapshot;
+        }
+
+        // Compare values, not ModifiedUtcTicks: pending editor input, appearance
+        // previews and uncommitted list edits can change before the save timer.
+        private bool MatchesContent(StickyNoteData source)
+        {
+            if (Title != (source.Title ?? String.Empty) || Text != (source.Text ?? String.Empty) ||
+                RichTextRtf != (source.RichTextRtf ?? String.Empty) ||
+                FontFamilyName != (source.FontFamilyName ?? String.Empty) ||
+                FontSizeTwips != source.FontSizeTwips || ColorArgb != source.ColorArgb ||
+                BackgroundOpacityPercent != source.BackgroundOpacityPercent ||
+                TextColorArgb != source.TextColorArgb || IsTodoList != source.IsTodoList ||
+                IsSchedule != source.IsSchedule || CreatedUtcTicks != source.CreatedUtcTicks ||
+                ModifiedUtcTicks != source.ModifiedUtcTicks || ReminderUtcTicks != source.ReminderUtcTicks) return false;
+            int index = 0;
+            foreach (StickyTodoItem item in source.TodoItems)
+            {
+                if (item == null) continue;
+                if (index == TodoItems.Count) return false;
+                StickyTodoUiSnapshot snapshot = TodoItems[index++];
+                if (snapshot.Text != (item.Text ?? String.Empty) || snapshot.State != item.State ||
+                    snapshot.IsPinned != item.IsPinned) return false;
+            }
+            if (index != TodoItems.Count) return false;
+            index = 0;
+            foreach (StickyScheduleItem item in source.ScheduleItems)
+            {
+                if (item == null) continue;
+                if (index == ScheduleItems.Count) return false;
+                StickyScheduleUiSnapshot snapshot = ScheduleItems[index++];
+                if (snapshot.Text != (item.Text ?? String.Empty) || snapshot.TargetDateTicks != item.TargetDateTicks ||
+                    snapshot.IsPinned != item.IsPinned) return false;
+            }
+            return index == ScheduleItems.Count;
         }
 
         internal StickyNoteData CreateWorkingCopy()
         {
             StickyNoteData copy = new StickyNoteData();
-            ApplyTo(copy);
+            ApplyContentFields(copy);
+            copy.Id = NoteId;
+            copy.Visible = Visible;
+            copy.AlwaysOnTop = AlwaysOnTop;
             return copy;
         }
 
-        internal void ApplyTo(StickyNoteData target)
+        // Content-only apply: never touches identity, visibility, topmost or
+        // any geometry field. Geometry must flow through WindowFacts instead.
+        internal void ApplyContentTo(StickyNoteData target)
         {
             if (target == null) throw new ArgumentNullException(nameof(target));
-            target.Id = NoteId;
+            ApplyContentFields(target);
+        }
+
+        private void ApplyContentFields(StickyNoteData target)
+        {
+            if (MatchesContent(target)) return;
             target.Title = Title;
             target.Text = Text;
             target.RichTextRtf = RichTextRtf;
@@ -189,14 +447,8 @@ namespace PennyPet
             target.ColorArgb = ColorArgb;
             target.BackgroundOpacityPercent = BackgroundOpacityPercent;
             target.TextColorArgb = TextColorArgb;
-            target.Visible = Visible;
-            target.AlwaysOnTop = AlwaysOnTop;
             target.IsTodoList = IsTodoList;
             target.IsSchedule = IsSchedule;
-            target.X = X;
-            target.Y = Y;
-            target.Width = Width;
-            target.Height = Height;
             target.CreatedUtcTicks = CreatedUtcTicks;
             target.ModifiedUtcTicks = ModifiedUtcTicks;
             target.ReminderUtcTicks = ReminderUtcTicks;
@@ -260,6 +512,35 @@ namespace PennyPet
         internal int Height { get; private set; }
     }
 
+    // Detached intent for one native visible-safe reprojection: move the HWND
+    // to the named surface, projecting the given display-local logical rect
+    // with the real window DPI. CenterInWorkArea rehomes temporarily at the
+    // preferred logical size; ShowAfterPlacement makes a hidden/reopen window
+    // visible after the exact placement lands.
+    internal sealed class StickyUiReprojectTarget
+    {
+        internal StickyUiReprojectTarget(string surfaceRuntimeGdiName,
+            int logicalX, int logicalY, int logicalWidth, int logicalHeight,
+            bool centerInWorkArea, bool showAfterPlacement)
+        {
+            SurfaceRuntimeGdiName = surfaceRuntimeGdiName ?? String.Empty;
+            LogicalX = logicalX;
+            LogicalY = logicalY;
+            LogicalWidth = logicalWidth;
+            LogicalHeight = logicalHeight;
+            CenterInWorkArea = centerInWorkArea;
+            ShowAfterPlacement = showAfterPlacement;
+        }
+
+        internal string SurfaceRuntimeGdiName { get; private set; }
+        internal int LogicalX { get; private set; }
+        internal int LogicalY { get; private set; }
+        internal int LogicalWidth { get; private set; }
+        internal int LogicalHeight { get; private set; }
+        internal bool CenterInWorkArea { get; private set; }
+        internal bool ShowAfterPlacement { get; private set; }
+    }
+
     internal sealed class StickyUiDockResizeRole
     {
         internal StickyUiDockResizeRole(bool grouped, bool resizeTop,
@@ -293,8 +574,14 @@ namespace PennyPet
         HeaderDragStarted,
         HeaderDragMoved,
         HeaderDragCompleted,
+        DockHorizontalResizeStarted,
         DockHorizontalResizing,
+        DockHorizontalResizeCompleted,
+        UserResizeStarted,
+        UserResizeCompleted,
+        DockDividerResizeStarted,
         DockDividerResizing,
+        DockDividerResizeCompleted,
         CancelReminderRequested,
         ModifyReminderRequested,
         DeleteReminderRequested,
@@ -308,10 +595,23 @@ namespace PennyPet
 
     internal sealed class StickyUiEvent
     {
+        // Stamped once by the emitting session, before crossing to the Pet thread.
+        internal DockInput Input { get; set; }
+        internal bool BeginsDockInput { get { return Kind == StickyUiEventKind.HeaderDragStarted ||
+            Kind == StickyUiEventKind.DockHorizontalResizeStarted ||
+            Kind == StickyUiEventKind.DockDividerResizeStarted || Kind == StickyUiEventKind.UserResizeStarted; } }
+        internal bool IsDockInput { get { return BeginsDockInput ||
+            Kind == StickyUiEventKind.HeaderDragMoved || Kind == StickyUiEventKind.HeaderDragCompleted ||
+            Kind == StickyUiEventKind.DockHorizontalResizing || Kind == StickyUiEventKind.DockHorizontalResizeCompleted ||
+            Kind == StickyUiEventKind.DockDividerResizing || Kind == StickyUiEventKind.DockDividerResizeCompleted ||
+            Kind == StickyUiEventKind.UserResizeCompleted; } }
+
         // Kept internal for focused self-tests; sessions use payload factories.
         internal StickyUiEvent(StickyUiEventKind kind, string noteId,
             StickyNoteUiSnapshot snapshot, bool flag, long sequence,
-            ReminderItem reminder = null, int left = 0, int width = 0)
+            ReminderItem reminder = null, int left = 0, int width = 0,
+            int height = 0, WindowFacts facts = null,
+            DisplayTopologySnapshot topology = null)
         {
             Kind = kind;
             NoteId = noteId ?? String.Empty;
@@ -321,6 +621,9 @@ namespace PennyPet
             Reminder = reminder;
             Left = left;
             Width = width;
+            Height = height;
+            Facts = facts;
+            Topology = topology;
         }
 
         internal static StickyUiEvent Signal(StickyUiEventKind kind,
@@ -338,6 +641,16 @@ namespace PennyPet
                 snapshot.Visible, sequence);
         }
 
+        internal static StickyUiEvent FromSnapshot(StickyUiEventKind kind,
+            StickyNoteUiSnapshot snapshot, long sequence, WindowFacts facts,
+            DisplayTopologySnapshot topology = null)
+        {
+            if (snapshot == null)
+                throw new ArgumentNullException(nameof(snapshot));
+            return new StickyUiEvent(kind, snapshot.NoteId, snapshot,
+                snapshot.Visible, sequence, null, 0, 0, 0, facts, topology);
+        }
+
         internal static StickyUiEvent ReminderRequest(StickyUiEventKind kind,
             string noteId, ReminderItem reminder, long sequence)
         {
@@ -346,13 +659,28 @@ namespace PennyPet
         }
 
         internal static StickyUiEvent HorizontalResize(
-            StickyNoteUiSnapshot snapshot, long sequence, int left, int width)
+            StickyNoteUiSnapshot snapshot, long sequence, int left, int width,
+            WindowFacts facts = null, DisplayTopologySnapshot topology = null)
         {
             if (snapshot == null)
                 throw new ArgumentNullException(nameof(snapshot));
             return new StickyUiEvent(
                 StickyUiEventKind.DockHorizontalResizing, snapshot.NoteId,
-                snapshot, false, sequence, null, left, width);
+                snapshot, false, sequence, null, left, width, 0, facts, topology);
+        }
+
+        internal static StickyUiEvent DividerResize(StickyUiEventKind kind,
+            StickyNoteUiSnapshot snapshot, long sequence, int height,
+            WindowFacts facts = null, DisplayTopologySnapshot topology = null)
+        {
+            if (snapshot == null)
+                throw new ArgumentNullException(nameof(snapshot));
+            if (kind != StickyUiEventKind.DockDividerResizeStarted &&
+                kind != StickyUiEventKind.DockDividerResizing &&
+                kind != StickyUiEventKind.DockDividerResizeCompleted)
+                throw new ArgumentOutOfRangeException(nameof(kind));
+            return new StickyUiEvent(kind, snapshot.NoteId, snapshot, false,
+                sequence, null, 0, 0, height, facts, topology);
         }
 
         internal StickyUiEventKind Kind { get; private set; }
@@ -363,6 +691,9 @@ namespace PennyPet
         internal ReminderItem Reminder { get; private set; }
         internal int Left { get; private set; }
         internal int Width { get; private set; }
+        internal int Height { get; private set; }
+        internal WindowFacts Facts { get; private set; }
+        internal DisplayTopologySnapshot Topology { get; private set; }
     }
 
     internal enum StickyUiCommandStatus
@@ -376,25 +707,91 @@ namespace PennyPet
     internal sealed class StickyUiFinalSnapshot
     {
         internal StickyUiFinalSnapshot(StickyNoteUiSnapshot snapshot,
-            long sequence)
+            long sequence, WindowFacts facts = null,
+            DisplayTopologySnapshot topology = null)
         {
             if (snapshot == null)
                 throw new ArgumentNullException(nameof(snapshot));
             NoteId = snapshot.NoteId;
             Snapshot = snapshot;
             Sequence = sequence;
+            Facts = facts;
+            Topology = topology;
         }
 
         internal string NoteId { get; private set; }
         internal StickyNoteUiSnapshot Snapshot { get; private set; }
         internal long Sequence { get; private set; }
+        internal WindowFacts Facts { get; private set; }
+        internal DisplayTopologySnapshot Topology { get; private set; }
+    }
+
+    // Detached actual-facts result for one window inside a native Dock batch
+    // or a dock-commit capture. Geometry authority is Facts; Snapshot only
+    // carries content and non-geometry state.
+    internal sealed class DockBatchMemberResult
+    {
+        internal DockBatchMemberResult(string noteId, long windowSequence,
+            WindowFacts facts, StickyNoteUiSnapshot snapshot, bool sessionCreated = false)
+        {
+            NoteId = noteId ?? String.Empty;
+            WindowSequence = windowSequence;
+            Facts = facts;
+            Snapshot = snapshot;
+            SessionCreated = sessionCreated;
+        }
+
+        internal string NoteId { get; private set; }
+        internal long WindowSequence { get; private set; }
+        internal WindowFacts Facts { get; private set; }
+        internal StickyNoteUiSnapshot Snapshot { get; private set; }
+        internal bool SessionCreated { get; private set; }
+    }
+
+    internal sealed class DockBatchResult
+    {
+        private readonly DockBatchMemberResult[] _members;
+
+        internal DockBatchResult(long planSequence, long topologyGeneration,
+            IEnumerable<DockBatchMemberResult> members)
+            : this(planSequence, topologyGeneration, String.Empty, 0, members, 0)
+        {
+        }
+
+        internal DockBatchResult(long planSequence, long topologyGeneration,
+            string targetSurfaceId, int targetDpi,
+            IEnumerable<DockBatchMemberResult> members,
+            long interactionEpoch = 0)
+        {
+            PlanSequence = planSequence;
+            TopologyGeneration = topologyGeneration;
+            TargetSurfaceId = targetSurfaceId ?? String.Empty;
+            TargetDpi = targetDpi;
+            InteractionEpoch = interactionEpoch;
+            _members = members == null
+                ? new DockBatchMemberResult[0]
+                : new List<DockBatchMemberResult>(members).ToArray();
+            Members = Array.AsReadOnly(_members);
+        }
+
+        internal long PlanSequence { get; private set; }
+        internal long TopologyGeneration { get; private set; }
+        internal string TargetSurfaceId { get; private set; }
+        internal int TargetDpi { get; private set; }
+        internal long InteractionEpoch { get; private set; }
+        internal IReadOnlyList<DockBatchMemberResult> Members
+            { get; private set; }
     }
 
     internal sealed class StickyUiCommandResult
     {
         private StickyUiCommandResult(StickyUiCommandStatus status,
             string error, StickyNoteUiSnapshot snapshot, long sequence,
-            StickyUiFinalSnapshot[] finalSnapshots, int ownerThreadId)
+            StickyUiFinalSnapshot[] finalSnapshots, int ownerThreadId,
+            WindowFacts facts = null,
+            DisplayTopologySnapshot topology = null,
+            DockBatchResult dockBatchResult = null,
+            bool sessionCreated = false)
         {
             Status = status;
             Error = error ?? String.Empty;
@@ -402,6 +799,10 @@ namespace PennyPet
             Sequence = sequence;
             FinalSnapshots = finalSnapshots;
             OwnerThreadId = ownerThreadId;
+            Facts = facts;
+            Topology = topology;
+            DockBatchResult = dockBatchResult;
+            SessionCreated = sessionCreated;
         }
 
         internal StickyUiCommandStatus Status { get; private set; }
@@ -410,6 +811,14 @@ namespace PennyPet
         internal long Sequence { get; private set; }
         internal StickyUiFinalSnapshot[] FinalSnapshots { get; private set; }
         internal int OwnerThreadId { get; private set; }
+        internal WindowFacts Facts { get; private set; }
+        internal DisplayTopologySnapshot Topology { get; private set; }
+        internal DockBatchResult DockBatchResult { get; private set; }
+
+        // Runtime-only EnsureSession acknowledgement: true only when the host
+        // created a brand-new StickyWindowSession for this command. It is never
+        // persisted and never derives from a stored sequence.
+        internal bool SessionCreated { get; private set; }
 
         internal static StickyUiCommandResult Handled()
         {
@@ -429,6 +838,33 @@ namespace PennyPet
         {
             return new StickyUiCommandResult(StickyUiCommandStatus.Handled,
                 String.Empty, null, 0, finalSnapshots, ThreadingThreadId());
+        }
+
+        internal static StickyUiCommandResult Handled(
+            StickyNoteUiSnapshot snapshot, long sequence, WindowFacts facts,
+            DisplayTopologySnapshot topology)
+        {
+            return new StickyUiCommandResult(StickyUiCommandStatus.Handled,
+                String.Empty, snapshot, sequence, null, ThreadingThreadId(),
+                facts, topology);
+        }
+
+        internal static StickyUiCommandResult Handled(
+            DockBatchResult dockBatchResult)
+        {
+            return new StickyUiCommandResult(StickyUiCommandStatus.Handled,
+                String.Empty, null, 0, null, ThreadingThreadId(),
+                null, null, dockBatchResult);
+        }
+
+        internal static StickyUiCommandResult SessionEnsured(
+            StickyNoteUiSnapshot snapshot,
+            long sequence,
+            bool sessionCreated)
+        {
+            return new StickyUiCommandResult(StickyUiCommandStatus.Handled,
+                String.Empty, snapshot, sequence, null, ThreadingThreadId(),
+                null, null, null, sessionCreated);
         }
 
         internal static StickyUiCommandResult NotHandled()

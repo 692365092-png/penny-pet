@@ -1,0 +1,6 @@
+branch=codex/display-scale-v2
+source_commit=b0faa7447940b999835381d6bf7aa5bbf4dc440f
+baseline=a4d28e465d48454761592814e69f6fa88d39830a
+purpose=DRT-10/11 drag-start split-gesture runtime-DPI-reproject manual test
+platform=x64
+DRT-12=NOT STARTED

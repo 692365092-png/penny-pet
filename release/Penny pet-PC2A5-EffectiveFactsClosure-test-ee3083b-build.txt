@@ -1,0 +1,20 @@
+branch=codex/project-system-experiment
+checkpoint=PC-2A.5-EffectiveFacts-Closure
+defect_characterization=b9a6e79a31cfb5f8af8794e4bb3ec23985d67516
+source_commit=ee3083b
+platform=x64
+session_created_metadata=PASS
+session_effective_invalidation=PASS
+dock_facts_barrier_atomic_reject=PASS
+live_dock_batch_atomic_reject=PASS
+reproject_atomic_reject=PASS
+dock_commit_atomic_reject=PASS
+dock_topology_atomic_reject=PASS
+real_hwnd_recreation=PASS
+Release=PASS (0 warnings, 0 errors)
+MSTest=PASS (337 tests; 6 new placement-runtime focused)
+modular_SelfTests=PASS (exit=0, ok=true, 306 *_ok keys)
+single_file_package_SelfTests=PASS (exit=0, ok=true, 306 *_ok keys)
+git_diff_check=PASS
+Human=PENDING (full backup restore; immediate drag; Dock collapse/reopen x20; restart; mixed DPI)
+PC-2B=BLOCKED

@@ -32,11 +32,32 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Reference Include="System.Net.Http" />
     <Reference Include="System.Web.Extensions" />
     <Reference Include="System.Xaml" />
     <Reference Include="UIAutomationClient" />
     <Reference Include="UIAutomationTypes" />
     <Reference Include="WindowsFormsIntegration" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CosineKitty.AstronomyEngine" Version="2.1.19"
+      GeneratePathProperty="true" />
+    <PackageReference Include="lunar-csharp" Version="1.6.8"
+      GeneratePathProperty="true" />
+    <EmbeddedResource
+      Include="$(PkgCosineKitty_AstronomyEngine)\lib\netstandard2.0\astronomy.dll"
+      LogicalName="PennyPet.Dependencies.astronomy.dll" />
+    <EmbeddedResource
+      Include="$(Pkglunar-csharp)\lib\netstandard2.0\lunar.dll"
+      LogicalName="PennyPet.Dependencies.lunar.dll" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Tests\Fixtures\weather-*.json"
+      LogicalName="PennyPet.Tests.Fixtures.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Tests\Fixtures\sticky-v*.txt"
+      LogicalName="PennyPet.Tests.Fixtures.%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

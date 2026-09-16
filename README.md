@@ -1,6 +1,6 @@
 # Penny pet
 
-Penny pet 是一款 Windows 桌面宠物，包含透明角色动画、普通便利贴、待办清单、日程、提醒、侧边页签以及可选的按键显示功能。
+Penny pet 是一款 Windows 桌面宠物，包含透明角色动画、普通便利贴、待办清单、日程、提醒、侧边页签、每日互动内容，以及可选的按键显示和本地天气。
 
 ![Penny pet](art/loading.png)
 
@@ -32,6 +32,8 @@ Release 页面同时提供 `SHA256SUMS.txt` 校验文件，供需要核对文件
 普通便利贴会把 `http://`、`https://`、`www.` 开头的网址，以及 Windows 本地文件/文件夹绝对路径显示为蓝色下划线；鼠标移上去会变成小手，单击即可用系统默认程序打开。待办清单和日程不会启用此识别。
 
 右键菜单中的“将已展开的便利贴集中到此屏幕”会按当前显示器的 DPI 缩放，把普通便利贴、待办、日程和磁吸组合集中排列到小 Penny 所在屏幕。到点提醒气泡会保持显示，点击气泡才会关闭；后续功能提示或新提醒可以覆盖它。
+
+“每日内容”中的本地天气默认关闭。开启前需要手动搜索并确认城市；Penny 不读取系统定位或使用 IP 猜位置。启用后只在每天第一次符合条件的戳击中按需取得预报，天气数据来源为 [Open-Meteo](https://open-meteo.com/)。网络不可用时会直接回退到其他每日内容，不影响桌宠和本地功能。
 
 ## 从源码构建
 
@@ -71,7 +73,9 @@ dotnet test ".\desktop-pet\PennyPet.Tests.csproj" --configuration Release
 
 ## 隐私
 
-当前 Penny pet 不包含广告、账户系统、遥测或在线内容服务，不会上传便利贴、提醒或键盘内容。未来在线功能的开发也必须遵守最少数据原则。详情见 [PRIVACY.md](PRIVACY.md)。
+当前 Penny pet 不包含广告、账户系统或遥测，不会上传便利贴、提醒或键盘内容。可选天气只把用户手动选择城市的坐标和时区直接发送给 Open-Meteo；详情见 [PRIVACY.md](PRIVACY.md)。
+
+天气数据由 [Open-Meteo.com](https://open-meteo.com/) 提供，采用 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)；Penny 会把原始逐小时预报加工为简短生活提示。完整第三方声明见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 
 ## 许可与美术资源版权
 

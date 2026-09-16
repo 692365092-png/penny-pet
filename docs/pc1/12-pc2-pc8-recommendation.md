@@ -1,0 +1,39 @@
+# Next phases and blocking prerequisites
+
+**PC-1 CLOSED by user review. PC-2A Characterization Safety Net is GO after the docs amendment. PC-2B Harness / Domain Decomposition is BLOCKED until PC-2A PASS and explicit review. PC-3 through PC-11 remain BLOCKED.** This is a proposed sequence, not an instruction executed by this commit. Master plan v2 phase order is preserved.
+
+| Phase | Exact first-to-last sequence | Blockers / exit evidence |
+|---|---|---|
+| PC-2A FIRST: Characterization Safety Net | Execute production logic for A1 facts barrier rejection, A2 recreated lease vs retained effective, A3 partial live batch, A4 reproject rejection, A5 final whole-set commit, A6 asymmetric failure policies. Inspect state-after-rejection, never source strings. | No production refactor. If a realistically reachable partial canonical/effective inconsistency is confirmed, STOP and report before correctness closure; do not silently fix or continue. Preserve 331 cases and 292 report keys. STOP for review even if PASS. |\n| PC-2B AFTER PC-2A PASS + review | 1 isolate source guards unchanged; 2 split pure domains; 3 retain actual HWND/IME/DPI/z-order/shutdown probes; 4 move suitable pure tests to MSTest; 5 keep report adapter small | Safety net must precede file moves. Never reduce coverage or replace runtime probes with source guards. |
+| PC-3 geometry authority | 1 explicit preferred vs actual facts contract; 2 migrate PlanDockPlan v10-height/positive-size reader and root offset; 3 migrate CommitExpandedPreferred v10 mirror dependency; 4 move standalone ResolvePlacementPlan fallback selection to migration/recovery boundary; 5 Dock restore/rehome/preview/overlap consumers; 6 stop unnecessary normal v10 mirrors only after reader inventory is empty | PC-2 characterization; no schema/ownership surgery simultaneously. Cannot retire v10 normal reader while PlanDockPlan, ResolvePlacementPlan, MigrateDockRestorePreferredIfNeeded or CommitExpandedPreferred relies on it. Physical recovery remains bounded exception; verify temporary rehome never overwrites preferred |
+| PC-4 display ownership | 1 lifecycle subscription/generation source; 2 Pet actual facts and placement flags; 3 temporary-return signals; 4 detached display context for Sticky/tabs; 5 remove redundant Pet glue | PC-3 authority agreed. Preserve actual GetDpiForWindow and DPI-handoff event order. Runtime must not gain repository/Dock/editor ownership |
+| PC-5 session/protocol narrowing | 1 define selected placement intent using existing payload shapes where possible; 2 move preferred/v10/fallback selection; 3 keep native bootstrap/correct-once/rollback/facts in Session; 4 characterize/align session lease and consumer effective watermark; 5 tighten array ownership and coarsen only proven ping-pong | PC-2 tests + PC-3/4 authority; full IME/final batch/restore/mixed-DPI Windows smoke. No fourth manager or protocol redesign just to remove fields |
+| PC-6 Dock single owner | 1 move phase+source+group baseline+hold as one invariant; 2 live/final mailbox/final expected token (cross-lifecycle PlanSequence allocation/topology/restore remains an independent boundary to audit in PC-6); 3 barrier preflight and acceptance; 4 topology interruption/rebase/failure/reset; 5 remove Pet duplicate fields after all callers switch | All epoch mutation/reset sites in 05 must migrate together; producer execution and consumer acceptance checks retained. Restore is separate transaction, not folded blindly into drag. Focused mixed-DPI drag/split/merge/resize/z-order/repeated-drag/topology/collapse-restore matrix required |
+| PC-7 PetForm real decomposition | 1 Sticky create/delete/restore/exit lifecycle ownership; 2 remaining startup/feature orchestration only where state/API can stand alone; 3 remove forwarding proxies/shared fields made redundant; 4 keep shell/composition/event hookups | PC-6 isolated Dock lifecycle first. No class whose only API calls PetForm private methods. Don't move already-real daily/bubble/animation owners again |
+| PC-8 persistence bridges | 1 prove normal runtime no longer uses legacy geometry authority; 2 boundary-only migration/recovery adapters; 3 only then decide whether v12 is justified; 4 fixtures v1–v11/future-primary+older-backup/save-generation/import protection | PC-3 reader/writer closure and PC-5 lease/actual geometry stable. No v12 proposal is authorized here. Preserve old-reader fail-closed behavior, independent note heights/order, backups and atomic IO |
+
+## Later phases remain separate
+
+PC-9 SideTabs/Manager/ancillary ownership; PC-10 measured PERF-OBS-01, diagnostic noise and remaining test debt; PC-11 full integration/release/docs. No opportunistic SideTabs optimization, loading changes, feature work or main merge. Every future checkpoint needs a fresh exact SHA, one architecture concept, automated gate, focused human test when native/thread/persistence behavior is touched, then STOP.
+
+
+## 2026-09-12 continuation addendum
+
+Historical phase status above describes the earlier checkpoint. The current user-requested continuation is tracked in [the geometry/persistence integration review](../architecture-review/2026-09-12-integration-review.md); implementation does not itself close its Windows acceptance gates.
+
+- Add to **PC-6 and PC-8**: one ordered Dock membership relation including hidden members. `DockParentId` and `DockGroupId/Order` must not remain independently mutable sources; legacy fields become boundary projections only after all normal consumers migrate.
+- Add to **PC-8 persistence**: one owner orders writes to the workspace file. Independent rescue exports must not wait on that writer or clear its dirty/error state. Whole-process I/O serialization is not a substitute for per-resource ownership.
+- PC-6 and PC-7 remain open. Registry consolidation and partial-file splitting alone do not satisfy their ownership/decomposition requirements.
+
+
+### Dock 所有权后续实施（2026-09-12）
+
+PR #4 已继续移除 live Parent 权威，正常成员关系只从 GroupId/Order 表示的完整有序组查询；隐藏恢复不改关系。Header gesture 状态迁入 DockInteractionSession，合并先计划后提交，并修正旧 final 回调清理新手势的竞态。
+
+详见 [本轮审查与证据](../architecture-review/2026-09-12-dock-ownership-review.md)。这不关闭 divider resize / restore 编排、整个 Dock 控制器独立化、同步 UI 保存或 PC-7；Windows 验收仍开放。
+
+### 内部接缝 resize 后续实施（2026-09-13）
+
+内部接缝的基准、live / final、更正和结束已由 DockDividerResizeSession 统一管理；邮箱取消可撤销待执行批次，旧 final 不再影响取消后的状态或更正批次。详见 [审查与证据](../architecture-review/2026-09-13-resize-ownership-review.md)。
+
+整组横向 resize 的成组应用与各窗口实际 DPI 下的 preferred 提交仍开放；restore / topology、完整 Sticky 生命周期、同步 UI Save 和 Windows 验收也未关闭。原有历史阶段审批文字不代表本轮完成了这些验收。
