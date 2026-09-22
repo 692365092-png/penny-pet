@@ -235,7 +235,6 @@ namespace PennyPet
         private void RequestReminderAttentionAnimation()
         {
             int generation = _reminderCoordinator.NextAnimationGeneration();
-            QueueArtPreload(NotificationRow);
             if (_art.IsRowLoaded(NotificationRow))
             {
                 BeginReminderAttentionAnimation(generation);
@@ -243,17 +242,22 @@ namespace PennyPet
             }
             ThreadPool.QueueUserWorkItem(delegate
             {
-                // Bounded wait: an ordinary lazy decode completes quickly, but
-                // damaged art must not create an endless retry loop.
-                for (int attempt = 0; attempt < 50 && !_exiting &&
-                    !IsDisposed; attempt++)
+                // Decode once on the background pool. PetArtPackage already
+                // serializes and caches a row, so a concurrent preload simply
+                // waits for the same cached result instead of polling.
+                try
                 {
-                    if (_art.IsRowLoaded(NotificationRow)) break;
-                    if (attempt == 12) QueueArtPreload(NotificationRow);
-                    Thread.Sleep(100);
+                    _art.PreloadRow(NotificationRow);
                 }
-                if (!_art.IsRowLoaded(NotificationRow) || _exiting ||
-                    IsDisposed || !IsHandleCreated) return;
+                catch (Exception error)
+                {
+                    if (!_exiting && !IsDisposed)
+                        ApplicationDiagnostics.ReportNonFatal(
+                            "reminder-art-preload", error);
+                    return;
+                }
+                if (_exiting || IsDisposed || !IsHandleCreated ||
+                    !_art.IsRowLoaded(NotificationRow)) return;
                 try
                 {
                     BeginInvoke((MethodInvoker)delegate

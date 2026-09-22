@@ -22,6 +22,10 @@ namespace PennyPet
         private int _textScalePercent = 100;
         private int _heldVirtualKeyCode;
         private bool _ownedResourcesDisposed;
+        private bool _hasContrastSample;
+        private Point _contrastSampleLocation;
+        private Color _contrastTextColor;
+        private DateTime _contrastSampleUtc;
 
         public KeyboardOverlayForm() : this(100)
         {
@@ -173,6 +177,11 @@ namespace PennyPet
 
         private Color ChooseTextColor(Point location)
         {
+            DateTime now = DateTime.UtcNow;
+            if (_hasContrastSample &&
+                _contrastSampleLocation == location &&
+                now - _contrastSampleUtc < TimeSpan.FromMilliseconds(300))
+                return _contrastTextColor;
             try
             {
                 int centerX = location.X + Width / 2;
@@ -194,13 +203,24 @@ namespace PennyPet
                             count++;
                         }
                     }
-                    return ChooseTextColorFromLuminance(total / Math.Max(1, count));
+                    Color result = ChooseTextColorFromLuminance(
+                        total / Math.Max(1, count));
+                    _contrastSampleLocation = location;
+                    _contrastTextColor = result;
+                    _contrastSampleUtc = now;
+                    _hasContrastSample = true;
+                    return result;
                 }
             }
             catch
             {
-                return ChooseTextColorFromLuminance(
+                Color result = ChooseTextColorFromLuminance(
                     SystemColors.Desktop.GetBrightness());
+                _contrastSampleLocation = location;
+                _contrastTextColor = result;
+                _contrastSampleUtc = now;
+                _hasContrastSample = true;
+                return result;
             }
         }
 

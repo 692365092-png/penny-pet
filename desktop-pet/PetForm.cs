@@ -123,11 +123,10 @@ namespace PennyPet
         private bool _startupUiReady;
         private bool _startupArtReady;
         private bool _startupReadyRaised;
-        // The loading window is the only startup visual.  Keep the layered pet
-        // window alive for initialization, but do not publish one of its frames
-        // until both the restored notes and animation rows are ready.  Showing
-        // both layered bitmaps at the saved pet location caused the startup
-        // artwork and the normal pet to overlap.
+        // The loading window is the only startup visual. Keep the layered pet
+        // window alive for initialization, but do not publish one of its
+        // frames until the restored notes and the first idle frame are ready.
+        // Optional interaction rows continue warming after startup.
         private bool _startupDisplaySuppressed = true;
 
         internal event EventHandler StartupReady;
@@ -382,6 +381,11 @@ namespace PennyPet
                 _stickyWorkspace.RefreshNoteTabs();
 
                 RenderCurrentFrame();
+                // The first idle frame is the startup contract. Optional
+                // interaction rows continue warming in the background and
+                // must not keep the loading surface visible.
+                _startupArtReady = _art.IsRowLoaded(IdleRow);
+                TryRaiseStartupReady();
                 QueueStartupInteractionPreload();
 
                 if (_reminders.Count > 0)

@@ -28,7 +28,7 @@
        duplicated compile list. -->
   <ItemGroup>
     <Compile Include="**\*.cs"
-      Exclude="bin\**;obj\**;Tests\**;PennyPet.AppProgram.cs;PennyPet.SelfTestsProgram.cs;PennyPet.ToolsProgram.cs" />
+      Exclude="bin\**;obj\**;Tests\**;PennyPet.AppProgram.cs;PennyPet.SelfTestsProgram.cs;PennyPet.ToolsProgram.cs;PennySelfTests.cs;SelfTestRunner.cs;Infrastructure\SelfTestCommandRouter.cs;Infrastructure\ArtCommandRouter.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -54,13 +54,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Tests\Fixtures\weather-*.json"
-      LogicalName="PennyPet.Tests.Fixtures.%(Filename)%(Extension)" />
-    <EmbeddedResource Include="Tests\Fixtures\sticky-v*.txt"
-      LogicalName="PennyPet.Tests.Fixtures.%(Filename)%(Extension)" />
-  </ItemGroup>
-
-  <ItemGroup>
+    <!-- Build ordering only: the tools project generates the embedded art
+         resources, while its assembly is never referenced by the product. -->
     <ProjectReference Include="PennyPet.Tools.csproj"
       ReferenceOutputAssembly="false" />
   </ItemGroup>

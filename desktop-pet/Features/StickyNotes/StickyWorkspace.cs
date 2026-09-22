@@ -1482,8 +1482,7 @@ namespace PennyPet
             if (String.Equals(signature, _noteTabsSignature,
                 StringComparison.Ordinal))
             {
-                PositionNoteTabs();
-                ApplyNoteTabZOrder();
+                PositionNoteTabs(petFacts, petSurface, workArea, metrics);
                 return;
             }
             _noteTabsSignature = signature;
@@ -1515,8 +1514,7 @@ namespace PennyPet
                 hidden.Count - leftCount);
             _leftNoteTabs.SetNotes(left, 0);
             _rightNoteTabs.SetNotes(right, leftCount);
-            PositionNoteTabs();
-            ApplyNoteTabZOrder();
+            PositionNoteTabs(petFacts, petSurface, workArea, metrics);
         }
 
         private bool IsStripCoveredByVisibleSticky(StickyNoteTabsForm tabs)
@@ -1586,6 +1584,19 @@ namespace PennyPet
                 out metrics))
                 return;
 
+            _leftNoteTabs.ApplyPhysicalMetrics(metrics);
+            _rightNoteTabs.ApplyPhysicalMetrics(metrics);
+            PositionNoteTabs(petFacts, surface, work, metrics);
+        }
+
+        private void PositionNoteTabs(WindowFacts petFacts,
+            DisplaySurfaceSnapshot surface, Rectangle work,
+            SideTabPhysicalMetrics metrics)
+        {
+            if (_leftNoteTabs == null || _rightNoteTabs == null ||
+                IsDisposed || _positioningNoteTabs)
+                return;
+
             Rectangle petBounds = new Rectangle(
                 petFacts.PhysicalBounds.Left,
                 petFacts.PhysicalBounds.Top,
@@ -1618,9 +1629,6 @@ namespace PennyPet
 
             try
             {
-                _leftNoteTabs.ApplyPhysicalMetrics(metrics);
-                _rightNoteTabs.ApplyPhysicalMetrics(metrics);
-
                 _leftNoteTabs.ShowNear(petBounds, work);
                 _rightNoteTabs.ShowNear(petBounds, work);
 

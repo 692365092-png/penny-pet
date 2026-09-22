@@ -388,37 +388,23 @@ namespace PennyPet
 
         private void QueueStartupInteractionPreload()
         {
-            // Keep loading visible until hover and drag are both decoded and
-            // scaled for the user's current pet size. Otherwise the first
-            // mouse interaction still performs expensive frame work after the
-            // loading image has disappeared.
+            // Warm optional interaction rows off the UI thread. The idle row
+            // already establishes startup readiness; a first hover can use
+            // the safe idle frame while an optional row is still decoding.
             Thread preloadThread = new Thread(new ThreadStart(delegate
             {
                 int[] warmRows = { HoverRow, FailedRow, WaitingRow, ThinkingRow };
                 foreach (int row in warmRows)
                 {
-                    if (_art.IsRowLoaded(row)) continue;
-                    bool ownsPreload = ReserveArtPreload(row);
                     try
                     {
-                        if (ownsPreload) _art.PreloadRow(row);
-                        else
-                        {
-                            for (int wait = 0; wait < 200 &&
-                                !_art.IsRowLoaded(row); wait++)
-                                Thread.Sleep(10);
-                            if (!_art.IsRowLoaded(row)) _art.PreloadRow(row);
-                        }
+                        if (!_art.IsRowLoaded(row)) _art.PreloadRow(row);
                     }
                     catch (Exception error)
                     {
                         if (!_exiting && !IsDisposed)
                             ApplicationDiagnostics.ReportNonFatal(
                                 "art-preload-" + row, error);
-                    }
-                    finally
-                    {
-                        if (ownsPreload) CompleteArtPreload(row);
                     }
                 }
                 if (_exiting || IsDisposed || !IsHandleCreated) return;

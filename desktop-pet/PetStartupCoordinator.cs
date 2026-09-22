@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace PennyPet
 {
@@ -18,7 +19,10 @@ namespace PennyPet
             if (_startupWorkTimer != null) return;
             _startupWorkPhase = StartupWorkPhase.StartInputs;
             _startupWorkTimer = new System.Windows.Forms.Timer();
-            _startupWorkTimer.Interval = 90;
+            // Run often enough to keep the shell responsive, but restore as
+            // many notes as fit in one small UI budget instead of imposing a
+            // fixed 90 ms delay per note.
+            _startupWorkTimer.Interval = 16;
             _startupWorkTimer.Tick += DeferredStartupTick;
             _startupWorkTimer.Start();
         }
@@ -77,16 +81,21 @@ namespace PennyPet
             if (_startupVisibleNotes != null &&
                 _startupVisibleNotes.Count > 0)
             {
-                StickyNoteData note = _startupVisibleNotes.Dequeue();
-                try
+                Stopwatch budget = Stopwatch.StartNew();
+                while (_startupVisibleNotes.Count > 0 &&
+                    budget.ElapsedMilliseconds < 6)
                 {
-                    _stickyWorkspace.ShowHostedSticky(note, false, false);
-                }
-                catch (Exception error)
-                {
-                    ApplicationDiagnostics.ReportNonFatal(
-                        "deferred-sticky-restore", error);
-                    _stickyWorkspace.RecoverFailedHostedStickyWindow(note);
+                    StickyNoteData note = _startupVisibleNotes.Dequeue();
+                    try
+                    {
+                        _stickyWorkspace.ShowHostedSticky(note, false, false);
+                    }
+                    catch (Exception error)
+                    {
+                        ApplicationDiagnostics.ReportNonFatal(
+                            "deferred-sticky-restore", error);
+                        _stickyWorkspace.RecoverFailedHostedStickyWindow(note);
+                    }
                 }
                 return;
             }

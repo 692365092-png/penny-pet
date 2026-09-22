@@ -4,9 +4,10 @@ using System.Windows.Automation;
 
 namespace PennyPet
 {
-    // Identity captured synchronously with a low-level keyboard event. Privacy
-    // inspection may run later, but it is valid only while this exact target
-    // (window, process, GUI thread, focused HWND and UIA element) is unchanged.
+    // Cheap target identity captured synchronously with a low-level keyboard
+    // event. Privacy inspection may run later, but it is valid only while this
+    // exact window/process/thread/focused HWND remains unchanged. UI Automation
+    // identity is optional and is captured only by the privacy worker.
     internal sealed class KeyboardFocusSnapshot
     {
         private readonly int[] _automationRuntimeId;
@@ -33,13 +34,21 @@ namespace PennyPet
             get
             {
                 return ForegroundWindow != IntPtr.Zero && ProcessId != 0 &&
-                    ThreadId != 0 && FocusedWindow != IntPtr.Zero &&
-                    _automationRuntimeId != null &&
-                    _automationRuntimeId.Length > 0;
+                    ThreadId != 0 && FocusedWindow != IntPtr.Zero;
             }
         }
 
         internal static KeyboardFocusSnapshot Capture()
+        {
+            return CaptureCore(true);
+        }
+
+        internal static KeyboardFocusSnapshot CaptureCheap()
+        {
+            return CaptureCore(false);
+        }
+
+        private static KeyboardFocusSnapshot CaptureCore(bool includeAutomation)
         {
             IntPtr foreground = IntPtr.Zero;
             uint processId = 0;
@@ -54,8 +63,12 @@ namespace PennyPet
                 info.cbSize = Marshal.SizeOf(typeof(GuiThreadInfo));
                 if (threadId != 0 && GetGUIThreadInfo(threadId, ref info))
                     focused = info.hwndFocus;
-                AutomationElement element = AutomationElement.FocusedElement;
-                if (element != null) runtimeId = element.GetRuntimeId();
+                if (includeAutomation)
+                {
+                    AutomationElement element =
+                        AutomationElement.FocusedElement;
+                    if (element != null) runtimeId = element.GetRuntimeId();
+                }
             }
             catch
             {
@@ -67,7 +80,12 @@ namespace PennyPet
 
         internal bool StillMatchesCurrentTarget()
         {
-            return IsSameTarget(this, Capture());
+            KeyboardFocusSnapshot current = Capture();
+            if (!IsSameTarget(this, current)) return false;
+            // The privacy worker must still obtain a UIA identity even when
+            // the original snapshot came from the cheap hook path.
+            return current._automationRuntimeId != null &&
+                current._automationRuntimeId.Length > 0;
         }
 
         internal static bool IsSameTarget(KeyboardFocusSnapshot expected,
@@ -78,13 +96,19 @@ namespace PennyPet
             if (expected.ForegroundWindow != current.ForegroundWindow ||
                 expected.ProcessId != current.ProcessId ||
                 expected.ThreadId != current.ThreadId ||
-                expected.FocusedWindow != current.FocusedWindow ||
-                expected._automationRuntimeId.Length !=
-                    current._automationRuntimeId.Length) return false;
-            for (int index = 0; index < expected._automationRuntimeId.Length;
-                index++)
-                if (expected._automationRuntimeId[index] !=
-                    current._automationRuntimeId[index]) return false;
+                expected.FocusedWindow != current.FocusedWindow) return false;
+            // A cheap hook snapshot intentionally has no UIA id. A full
+            // snapshot remains strict when both sides contain one.
+            if (expected._automationRuntimeId != null)
+            {
+                if (current._automationRuntimeId == null ||
+                    expected._automationRuntimeId.Length !=
+                        current._automationRuntimeId.Length) return false;
+                for (int index = 0; index < expected._automationRuntimeId.Length;
+                    index++)
+                    if (expected._automationRuntimeId[index] !=
+                        current._automationRuntimeId[index]) return false;
+            }
             return true;
         }
 
