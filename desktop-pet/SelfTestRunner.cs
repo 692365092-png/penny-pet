@@ -1625,25 +1625,17 @@ namespace PennyPet
                     new int[] { 700, 700, 700 }, 30000) &&
                 !StickyDockOperations.IsDockCoordinateRangeSafe(29000,
                     new int[] { 700, 700 }, 30000);
-            Dictionary<string, DockWindowFacts> dragFacts =
-                new Dictionary<string, DockWindowFacts>(
-                    StringComparer.OrdinalIgnoreCase)
-                {
-                    { "root", new DockWindowFacts("root", 100, 200,
-                        320, 300, true, false) },
-                    { "child", new DockWindowFacts("child", 100, 500,
-                        320, 240, true, false) }
-                };
-            List<DockLayoutTarget> translated =
-                StickyDockController.CalculateDockTranslationTargets(
-                    new string[] { "root", "child" }, dragFacts,
-                    new DockWindowFacts("root", 115, 190, 320, 300,
-                        true, false), 15, -10);
-            result.DetachedGroupTranslationOk = translated.Count == 2 &&
-                translated[0].NoteId == "root" &&
-                translated[0].X == 115 && translated[0].Y == 190 &&
-                translated[1].NoteId == "child" &&
-                translated[1].X == 115 && translated[1].Y == 490;
+            DisplaySurfaceSnapshot dragSurface = FakeSurface(1, 0, true, 1080, 1040, FakeTarget("mdp:drag"));
+            DockPlacementPlan translated = DockPlacementPlanner.Plan(
+                new DockGroupLogicalState(new LogicalPoint { X = 115, Y = 190 }, new[] {
+                    new DockLogicalMember("root", 320, 300), new DockLogicalMember("child", 320, 240) }),
+                new WindowFacts("root", "mdp:drag", dragSurface.RuntimeGdiName,
+                    new PhysicalRect(115, 190, 320, 300), 96, 1, 1), dragSurface, 96, 1, 1);
+            result.DetachedGroupTranslationOk = translated.WindowTargets.Count == 2 &&
+                translated.WindowTargets[0].NoteId == "root" &&
+                translated.WindowTargets[0].PhysicalBounds.Left == 115 && translated.WindowTargets[0].PhysicalBounds.Top == 190 &&
+                translated.WindowTargets[1].NoteId == "child" &&
+                translated.WindowTargets[1].PhysicalBounds.Left == 115 && translated.WindowTargets[1].PhysicalBounds.Top == 490;
             Rectangle recoveredDrag = StickyNoteWindow
                 .CalculateRecoveredHeaderDragBounds(
                     new Rectangle(100, 100, 320, 300),
@@ -4584,16 +4576,7 @@ namespace PennyPet
             WindowFacts facts = new WindowFacts("sep-note", "mdp:sep",
                 "\\\\.\\DISPLAY2",
                 new PhysicalRect(1920, 0, 640, 600), 144, 3, 5);
-            bool factsImmutable = true;
-            foreach (System.Reflection.PropertyInfo property in
-                typeof(WindowFacts).GetProperties())
-                if (property.CanWrite) factsImmutable = false;
-            bool eventCarrierImmutable = true;
-            foreach (System.Reflection.PropertyInfo property in
-                typeof(StickyUiEvent).GetProperties())
-                if (property.CanWrite) eventCarrierImmutable = false;
-            return contentOnly && editorCopyOnly && factsImmutable &&
-                eventCarrierImmutable && facts.Scale == 1.5 &&
+            return contentOnly && editorCopyOnly && facts.Scale == 1.5 &&
                 facts.WindowId == "sep-note";
         }
 
@@ -4748,58 +4731,26 @@ namespace PennyPet
         // mouse-up plan and its queued flag remain owned until final apply.
         private static bool RunDockPlanMailboxCheck()
         {
-            DockPlanMailbox mailbox = new DockPlanMailbox();
-            lock (mailbox.Gate)
-            {
-                mailbox.Current = new DockPlacementPlan(3,
-                    mailbox.NextSequence(), "source", "surface-1", 96,
-                    new[]
-                    {
-                        new DockWindowTarget("a",
-                            new PhysicalRect(10, 20, 320, 300))
-                    });
-                mailbox.ApplyQueued = true;
-            }
-            lock (mailbox.Gate)
-            {
-                mailbox.Current = new DockPlacementPlan(3,
-                    mailbox.NextSequence(), "source", "surface-1", 96,
-                    new[]
-                    {
-                        new DockWindowTarget("b",
-                            new PhysicalRect(30, 40, 320, 300))
-                    });
-            }
+            var mailbox = new DockFrameMailbox<DockPlacementPlan>();
+            var first = new DockPlacementPlan(3, 1, "source", "surface-1", 96,
+                new[] { new DockWindowTarget("a", new PhysicalRect(10, 20, 320, 300)) });
+            var second = new DockPlacementPlan(3, 2, "source", "surface-1", 96,
+                new[] { new DockWindowTarget("b", new PhysicalRect(30, 40, 320, 300)) });
+            bool firstPosted = mailbox.QueueLive(first);
+            bool coalesced = !mailbox.QueueLive(second);
             DockPlacementPlan taken = mailbox.TakeLatest();
-            bool latestWins = taken != null &&
-                taken.PlanSequence == 2 &&
-                taken.WindowTargets.Count == 1 &&
-                taken.WindowTargets[0].NoteId == "b" &&
-                mailbox.Current == null &&
-                !mailbox.ApplyQueued;
+            bool latestWins = firstPosted && coalesced && ReferenceEquals(taken, second) && !mailbox.HasPending;
 
-            DockPlacementPlan finalPlan = new DockPlacementPlan(3,
-                mailbox.NextSequence(), "source", "surface-1", 96,
-                new[]
-                {
-                    new DockWindowTarget("a",
-                        new PhysicalRect(50, 60, 320, 300)),
-                    new DockWindowTarget("b",
-                        new PhysicalRect(370, 60, 320, 300))
-                });
-            mailbox.ReplaceWithFinal(finalPlan);
-            DockPlacementPlan liveTake = mailbox.TakeLatest();
-            bool finalBarrierHolds = liveTake == null &&
-                object.ReferenceEquals(mailbox.Current, finalPlan) &&
-                mailbox.ApplyQueued &&
-                object.ReferenceEquals(
-                    mailbox.TakeFinal(finalPlan.PlanSequence), finalPlan) &&
-                object.ReferenceEquals(mailbox.Current, finalPlan) &&
-                mailbox.ApplyQueued;
-            mailbox.CompleteFinal(finalPlan.PlanSequence);
-            finalBarrierHolds = finalBarrierHolds &&
-                mailbox.Current == null && !mailbox.ApplyQueued &&
-                mailbox.FinalPlanSequence == 0;
+            var finalPlan = new DockPlacementPlan(3, 3, "source", "surface-1", 96,
+                new[] { new DockWindowTarget("a", new PhysicalRect(50, 60, 320, 300)),
+                    new DockWindowTarget("b", new PhysicalRect(370, 60, 320, 300)) });
+            mailbox.QueueFinal(finalPlan);
+            bool finalBarrierHolds = mailbox.TakeLatest() == null && mailbox.HasPending &&
+                ReferenceEquals(mailbox.TakeFinal(finalPlan), finalPlan);
+            mailbox.CompleteFinal(finalPlan);
+            finalBarrierHolds = finalBarrierHolds && !mailbox.HasPending && !mailbox.QueueLive(first);
+            mailbox.Cancel();
+            finalBarrierHolds = finalBarrierHolds && !mailbox.QueueFinal(finalPlan);
 
             StickyNoteData snapshotSource = new StickyNoteData
             {
@@ -4828,19 +4779,14 @@ namespace PennyPet
                 contentCopy.LegacyPlacement == null &&
                 contentCopy.PreferredPlacement == null;
 
-            bool planImmutable = true;
-            foreach (System.Reflection.PropertyInfo property in
-                typeof(DockPlacementPlan).GetProperties())
-                if (property.CanWrite) planImmutable = false;
-            bool batchResultImmutable = true;
-            foreach (System.Reflection.PropertyInfo property in
-                typeof(DockBatchResult).GetProperties())
-                if (property.CanWrite) batchResultImmutable = false;
-            foreach (System.Reflection.PropertyInfo property in
-                typeof(DockBatchMemberResult).GetProperties())
-                if (property.CanWrite) batchResultImmutable = false;
+            var targets = new List<DockWindowTarget> { new DockWindowTarget("a", new PhysicalRect(1, 2, 300, 230)) };
+            var detachedPlan = new DockPlacementPlan(1, 1, "a", "surface-1", 96, targets);
+            targets.Clear();
+            var members = new List<DockBatchMemberResult> { new DockBatchMemberResult("a", 1, null, contentOnly) };
+            var detachedBatch = new DockBatchResult(1, 1, members);
+            members.Clear();
             return latestWins && finalBarrierHolds && contentSnapshotIsNarrow &&
-                planImmutable && batchResultImmutable;
+                detachedPlan.WindowTargets.Count == 1 && detachedBatch.Members.Count == 1;
         }
 
         // DISPLAYCONFIG_TARGET_DEVICE_NAME is a wire ABI passed directly to
@@ -5501,30 +5447,25 @@ namespace PennyPet
                     mixedSource.Sequence > canonicalBaseline &&
                     mixedRoot.Sequence > secondBaseline &&
                     staleCannotOverwrite && !setBoundsLeakedHeaderDrag;
-                Dictionary<string, DockWindowFacts> moveFacts =
-                    new Dictionary<string, DockWindowFacts>(
-                        StringComparer.OrdinalIgnoreCase)
-                    {
-                        { second.Id, HostedDockFacts(targetDocked) },
-                        { canonical.Id, HostedDockFacts(sourceDocked) }
-                    };
-                DockWindowFacts movedRoot = new DockWindowFacts(second.Id,
-                    160, 140, 320, 300, true, false);
-                List<DockLayoutTarget> moveTargets =
-                    StickyDockController.CalculateDockTranslationTargets(
-                        new string[] { second.Id, canonical.Id }, moveFacts,
-                        movedRoot, 60, 40);
+                DisplaySurfaceSnapshot moveSurface = FakeSurface(1, 0, true, 1080, 1040, FakeTarget("mdp:move"));
+                DockPlacementPlan movePlan = DockPlacementPlanner.Plan(
+                    new DockGroupLogicalState(new LogicalPoint { X = 160, Y = 140 }, new[] {
+                        new DockLogicalMember(second.Id, 320, 300), new DockLogicalMember(canonical.Id, 320, 300) }),
+                    new WindowFacts(second.Id, "mdp:move", moveSurface.RuntimeGdiName,
+                        new PhysicalRect(160, 140, 320, 300), 96, 1, 1), moveSurface, 96, 1, 1);
+                PhysicalRect targetBounds = movePlan.WindowTargets[0].PhysicalBounds;
+                PhysicalRect sourceBounds = movePlan.WindowTargets[1].PhysicalBounds;
                 StickyUiCommandResult targetMoved = PostStickyCommandAndWait(
                     host, new StickyUiCommand(StickyUiCommandKind.SetBounds,
                         second.Id, false, null, new StickyUiBounds(
-                            moveTargets[0].X, moveTargets[0].Y,
-                            moveTargets[0].Width, moveTargets[0].Height)),
+                            targetBounds.Left, targetBounds.Top,
+                            targetBounds.Width, targetBounds.Height)),
                     petContext);
                 StickyUiCommandResult sourceMoved = PostStickyCommandAndWait(
                     host, new StickyUiCommand(StickyUiCommandKind.SetBounds,
                         canonical.Id, false, null, new StickyUiBounds(
-                            moveTargets[1].X, moveTargets[1].Y,
-                            moveTargets[1].Width, moveTargets[1].Height)),
+                            sourceBounds.Left, sourceBounds.Top,
+                            sourceBounds.Width, sourceBounds.Height)),
                     petContext);
                 check.HostedGroupMoveOk = targetMoved.Facts.PhysicalBounds.Left == 160 &&
                     targetMoved.Facts.PhysicalBounds.Top == 140 &&

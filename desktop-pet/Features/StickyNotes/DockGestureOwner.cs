@@ -8,7 +8,17 @@ namespace PennyPet
     internal sealed class DockGestureOwner
     {
         internal readonly DockInteractionSession Drag = new DockInteractionSession();
-        internal readonly DockPlanMailbox Plans = new DockPlanMailbox();
+        internal DockFrameMailbox<DockPlacementPlan> Plans { get; private set; } =
+            new DockFrameMailbox<DockPlacementPlan>();
+        private long _nextPlanSequence;
+
+        internal long NextPlanSequence() { return ++_nextPlanSequence; }
+
+        internal void RenewPlans()
+        {
+            Plans.Cancel();
+            Plans = new DockFrameMailbox<DockPlacementPlan>();
+        }
         internal DockResizeSession Resize { get; private set; }
         internal DockInput Input { get; private set; }
 
@@ -24,7 +34,7 @@ namespace PennyPet
         // must be retired before a deferred hide/delete/restore can reenter.
         internal Action[] BeginInput(DockInput input)
         {
-            Action[] drag = ResetDrag(true);
+            Action[] drag = ResetDrag();
             Action[] resize = FinishResize();
             Input = input;
             if (drag.Length == 0) return resize;
@@ -35,11 +45,11 @@ namespace PennyPet
             return deferred;
         }
 
-        internal Action[] ResetDrag(bool clearMailbox)
+        internal Action[] ResetDrag()
         {
             Action[] deferred;
             Drag.Reset(out deferred);
-            if (clearMailbox) Plans.Clear();
+            RenewPlans();
             return deferred;
         }
 

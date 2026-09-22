@@ -755,7 +755,7 @@ namespace PennyPet
         {
             Dock.CancelHostedDockRestores();
             Dock.ClearHostedDockResizeSession();
-            Dock.ResetDockDragState(true);
+            Dock.ResetDockDragState();
             if (error != null)
                 ApplicationDiagnostics.ReportNonFatal(
                     "hosted-sticky-faulted", error);
@@ -1130,7 +1130,7 @@ namespace PennyPet
                     Dock.ClearHostedDockResizeSessionIfMember(noteId);
                 }
             }
-            if (cancelHeaderFinal && ReferenceEquals(Dock.Interaction.Mutations, failedFinal)) Dock.ResetDockDragState(true);
+            if (cancelHeaderFinal && ReferenceEquals(Dock.Interaction.Mutations, failedFinal)) Dock.ResetDockDragState();
             Notes.SaveAsync();
             RefreshNoteTabs();
             RefreshMenuText();

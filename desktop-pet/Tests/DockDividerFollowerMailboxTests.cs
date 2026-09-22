@@ -21,8 +21,8 @@ namespace PennyPet.Tests
         [TestMethod]
         public void QueueLive_CoalescesWhileApplyInFlight()
         {
-            DockResizeMailbox mailbox =
-                new DockResizeMailbox();
+            DockFrameMailbox<DockResizeBatch> mailbox =
+                new DockFrameMailbox<DockResizeBatch>();
             Assert.IsTrue(mailbox.QueueLive(Batch(1, 100)));
             Assert.IsFalse(mailbox.QueueLive(Batch(1, 120)));
             DockResizeBatch taken = mailbox.TakeLatest();
@@ -34,8 +34,8 @@ namespace PennyPet.Tests
         [TestMethod]
         public void QueueFinal_SupersedesPendingLiveFrames()
         {
-            DockResizeMailbox mailbox =
-                new DockResizeMailbox();
+            DockFrameMailbox<DockResizeBatch> mailbox =
+                new DockFrameMailbox<DockResizeBatch>();
             Assert.IsTrue(mailbox.QueueLive(Batch(1, 100)));
             DockResizeBatch expected = Batch(1, 200);
             Assert.IsTrue(mailbox.QueueFinal(expected));
@@ -53,7 +53,7 @@ namespace PennyPet.Tests
         [TestMethod]
         public void OldFinalCannotTakeOrAcknowledgeCorrection()
         {
-            DockResizeMailbox mailbox = new DockResizeMailbox();
+            DockFrameMailbox<DockResizeBatch> mailbox = new DockFrameMailbox<DockResizeBatch>();
             DockResizeBatch first = Batch(1, 200), corrected = Batch(1, 220);
             mailbox.QueueFinal(first);
             mailbox.QueueFinal(corrected);
@@ -67,7 +67,7 @@ namespace PennyPet.Tests
         [DataRow(true)]
         public void CancelRevokesPendingWorkAndPermanentlyClosesMailbox(bool final)
         {
-            DockResizeMailbox mailbox = new DockResizeMailbox();
+            DockFrameMailbox<DockResizeBatch> mailbox = new DockFrameMailbox<DockResizeBatch>();
             DockResizeBatch batch = Batch(1, 200);
             if (final) mailbox.QueueFinal(batch);
             else mailbox.QueueLive(batch);

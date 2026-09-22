@@ -58,8 +58,9 @@ namespace PennyPet.Tests
             StartDrag(owner);
             long finalEpoch = owner.Drag.BeginFinalizing(7, null);
             var final = Plan(first, finalEpoch);
-            owner.Plans.ReplaceWithFinal(final);
-            var taken = owner.Plans.TakeFinal(final.PlanSequence);
+            var finalMailbox = owner.Plans;
+            finalMailbox.QueueFinal(final);
+            var taken = finalMailbox.TakeFinal(final);
             Assert.IsTrue(DockExecutionRules.CanExecute(taken, 7, finalEpoch, first));
 
             // Same source, topology and Pet epoch; only the native input changed.
@@ -69,9 +70,8 @@ namespace PennyPet.Tests
             Assert.IsTrue(owner.Matches(first));
             owner.BeginInput(second);
             long next = StartDrag(owner);
-            owner.Plans.Current = Plan(second, next, 2);
-            owner.Plans.ApplyQueued = true;
-            owner.Plans.CompleteFinal(final.PlanSequence);
+            Assert.IsTrue(owner.Plans.QueueLive(Plan(second, next, 2)));
+            finalMailbox.CompleteFinal(final);
             Assert.IsFalse(owner.Drag.TryFinish(finalEpoch, 7, out _, out _));
             Assert.IsTrue(owner.Drag.IsActive);
             Assert.AreEqual(2L, owner.Plans.TakeLatest().PlanSequence);
@@ -84,13 +84,14 @@ namespace PennyPet.Tests
             owner.BeginInput(new DockInput());
             StartDrag(owner);
             long old = owner.Drag.BeginFinalizing(7, null);
-            owner.Plans.ReplaceWithFinal(Plan(owner.Input, old));
+            var final = Plan(owner.Input, old);
+            owner.Plans.QueueFinal(final);
             bool ran = false;
             var nextInput = new DockInput();
             owner.Drag.Mutations.Defer("a", null, () => {
                 Assert.IsFalse(owner.Drag.IsActive);
                 Assert.IsNull(owner.Resize);
-                Assert.IsNull(owner.Plans.TakeFinal(1));
+                Assert.IsNull(owner.Plans.TakeFinal(final));
                 Assert.IsTrue(owner.Matches(nextInput));
                 Assert.IsTrue(owner.TryBeginResize(Resize(nextInput, 0)));
                 ran = true;

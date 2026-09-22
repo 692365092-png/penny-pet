@@ -65,7 +65,7 @@
 - Reminder 是所有便利贴共享的 capability/UI，不是独立 Sticky subtype 或第四种 Dock participant；设置或未设置提醒的 ordinary / Todo / Schedule 均可正常参与 mixed Dock。
 - Ordinary、Todo、Schedule 是同一个 Sticky window system 的三种 content mode；Dock grouping type-agnostic，任意 mixed-type group 共用 detached facts、Core rules、`DockLayoutTarget` 和 hosted effect boundary。
 - Preview、merge pulse、split guide，以及 group move、TopMost、horizontal/divider resize、collapse-reopen、middle split 和多成员 insertion 已完成。
-- persisted standalone 与 Dock component 都通过 hosted session 恢复；v1-v9 codec 和旧文件迁移继续保留，persisted data 不记录 executor 类型。
+- persisted standalone 与 Dock component 都通过 hosted session 恢复；v1-v11 codec 和旧文件迁移继续保留，persisted data 不记录 executor 类型。
 - “展开全部并平铺到此屏幕”会展开全部 note、真正清除 Dock relation，并通过唯一 hosted effect path 平铺。
 - Side Tabs 是不激活的 Pet chrome；左右 strip 按几何 overlap 独立决定 TopMost，被可见 Sticky 覆盖的 strip 临时降层，移开后恢复；monitor、work area 或 Pet scale 改变时会重新验证左右 split，仅在分配变化时 rebuild。
 - Side Tabs 继续由 WinForms Pet STA 承载，直接消费 Core 中 detached `SideTabSnapshot`；业务 note identity 使用稳定 `NoteId`，平台 UI source identity 保持本地 opaque object。OLE nested-loop、透明 canvas 和 WinForms z-order workaround 属于 Windows 实现，不要求 macOS 复制。

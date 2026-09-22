@@ -3,6 +3,27 @@ using System.Collections.Generic;
 
 namespace PennyPet
 {
+    // Physical resize targets: below the source for a divider, every other
+    // visible member for a horizontal resize. Windows owns the source HWND.
+    internal sealed class DockResizeBatch
+    {
+        internal DockResizeBatch(
+            long topologyGeneration,
+            IList<DockWindowTarget> targets, DockInput input = null)
+        {
+            TopologyGeneration = topologyGeneration;
+            Input = input;
+            Targets = new List<DockWindowTarget>(
+                targets == null
+                    ? new DockWindowTarget[0]
+                    : targets).AsReadOnly();
+        }
+
+        internal long TopologyGeneration { get; private set; }
+        internal DockInput Input { get; private set; }
+        internal IReadOnlyList<DockWindowTarget> Targets { get; private set; }
+    }
+
     // One Pet-thread resize owner. Mailbox acknowledgment is transport state,
     // not completion of the gesture or its deferred user operations.
     internal sealed class DockResizeSession
@@ -34,7 +55,7 @@ namespace PennyPet
                 PhysicalRect rect = members[index].PhysicalBounds;
                 _startBounds[index] = new DockRect(rect.Left, rect.Top, rect.Width, rect.Height);
             }
-            Mailbox = new DockResizeMailbox();
+            Mailbox = new DockFrameMailbox<DockResizeBatch>();
             _mutations = new DockMutationQueue(new List<WindowFacts>(members).ConvertAll(member => member.WindowId), affectedMembers);
         }
 
@@ -42,7 +63,7 @@ namespace PennyPet
         internal DockInput Input { get; private set; }
         internal DockResizeKind Kind { get; private set; }
         internal long TopologyGeneration { get; private set; }
-        internal DockResizeMailbox Mailbox { get; private set; }
+        internal DockFrameMailbox<DockResizeBatch> Mailbox { get; private set; }
         internal bool IsResizing { get { return !_finished && _finalBatch == null; } }
         internal bool IsFinalizing { get { return !_finished && _finalBatch != null; } }
         internal DockMutationQueue Mutations { get { return IsFinalizing ? _mutations : null; } }

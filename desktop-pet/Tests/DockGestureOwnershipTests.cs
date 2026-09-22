@@ -92,19 +92,51 @@ namespace PennyPet.Tests
         [TestMethod]
         public void OldMailboxFinalCompletionDoesNotAcknowledgeNewFinalOrLivePlan()
         {
-            DockPlanMailbox mailbox = new DockPlanMailbox();
+            var owner = new DockGestureOwner();
+            DockFrameMailbox<DockPlacementPlan> mailbox = owner.Plans;
             DockPlacementPlan first = Plan(1), second = Plan(2);
-            mailbox.ReplaceWithFinal(first);
-            mailbox.ReplaceWithFinal(second);
-            mailbox.CompleteFinal(1);
-            Assert.AreSame(second, mailbox.TakeFinal(2));
-            Assert.IsTrue(mailbox.ApplyQueued);
-            mailbox.Clear();
-            mailbox.Current = Plan(3);
-            mailbox.ApplyQueued = true;
-            mailbox.CompleteFinal(2);
-            Assert.IsTrue(mailbox.ApplyQueued);
-            Assert.AreEqual(3L, mailbox.TakeLatest().PlanSequence);
+            mailbox.QueueFinal(first);
+            mailbox.QueueFinal(second);
+            mailbox.CompleteFinal(first);
+            Assert.AreSame(second, mailbox.TakeFinal(second));
+            Assert.IsTrue(mailbox.HasPending);
+            owner.ResetDrag();
+            DockPlacementPlan live = Plan(3);
+            Assert.IsTrue(owner.Plans.QueueLive(live));
+            mailbox.CompleteFinal(second);
+            Assert.IsNull(mailbox.TakeFinal(second));
+            Assert.AreSame(live, owner.Plans.TakeLatest());
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void QueuedCallbackCannotConsumeNextLifetimePlan(bool topologyRebase)
+        {
+            DockGestureOwner owner = new DockGestureOwner();
+            DockFrameMailbox<DockPlacementPlan> retired = owner.Plans;
+            Assert.IsTrue(retired.QueueLive(Plan(1)));
+            Func<DockPlacementPlan> queuedCallback = retired.TakeLatest;
+
+            if (topologyRebase) owner.RenewPlans();
+            else owner.ResetDrag();
+            DockPlacementPlan next = Plan(2);
+            Assert.IsTrue(owner.Plans.QueueLive(next));
+
+            Assert.IsNull(queuedCallback(), "A callback already queued on Sticky STA must not steal work from the next gesture or topology generation.");
+            Assert.AreSame(next, owner.Plans.TakeLatest());
+            Assert.IsFalse(retired.QueueLive(next));
+            Assert.IsFalse(retired.QueueFinal(next));
+        }
+
+        [TestMethod]
+        public void PlacementPlanOwnsItsTargetCollection()
+        {
+            var input = new List<DockWindowTarget> { new DockWindowTarget("a", new PhysicalRect(1, 1, 300, 230)) };
+            var plan = new DockPlacementPlan(1, 1, "a", "screen", 96, input);
+            input.Clear();
+            Assert.AreEqual(1, plan.WindowTargets.Count);
+            Assert.ThrowsExactly<NotSupportedException>(() => ((IList<DockWindowTarget>)plan.WindowTargets).Clear());
         }
 
         private static DockPlacementPlan Plan(long sequence)

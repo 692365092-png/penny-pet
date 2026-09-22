@@ -205,30 +205,11 @@ namespace PennyPet
                 anchor = DisplayGeometry.PhysicalToLocal(left, top,
                     targetSurface.Bounds.Left, targetSurface.Bounds.Top,
                     scale);
-                group = new DockGroupLogicalState(anchor, group.Members);
             }
 
-            DockLogicalMember source = group.Members[0];
-            PhysicalRect sourceRect = DisplayGeometry.ProjectLocalRect(
-                new LogicalRect
-                {
-                    X = group.RootAnchor.X,
-                    Y = group.RootAnchor.Y,
-                    Width = source.Width,
-                    Height = source.Height
-                }, targetSurface.Bounds.Left, targetSurface.Bounds.Top,
-                targetDpi / 96.0);
-            WindowFacts facts = new WindowFacts(source.NoteId,
-                targetSurface.Targets[0].StableKey,
-                targetSurface.RuntimeGdiName, sourceRect, targetDpi,
-                request.TopologyGeneration, 0);
-            DockPlacementPlan physical = Plan(group, facts, targetSurface,
-                targetDpi, request.TopologyGeneration,
-                request.PlanSequence);
-            return new DockPlacementPlan(physical.TopologyGeneration,
-                physical.PlanSequence, String.Empty,
-                physical.TargetSurfaceId, physical.TargetDpi,
-                physical.WindowTargets, 0);
+            return new DockPlacementPlan(request.TopologyGeneration,
+                request.PlanSequence, String.Empty, request.TargetSurfaceId,
+                targetDpi, ProjectGroup(group, anchor, targetSurface, targetDpi));
         }
 
         internal static DockPlacementPlan Plan(
@@ -264,8 +245,17 @@ namespace PennyPet
                     "The source window must belong to the Dock group.",
                     nameof(sourceFacts));
 
+            return new DockPlacementPlan(topologyGeneration, planSequence,
+                sourceFacts.WindowId, targetSurface.RuntimeSurfaceId,
+                targetDpi, ProjectGroup(group, group.RootAnchor, targetSurface, targetDpi),
+                interactionEpoch, input);
+        }
+
+        private static List<DockWindowTarget> ProjectGroup(DockGroupLogicalState group,
+            LogicalPoint anchor, DisplaySurfaceSnapshot targetSurface, int targetDpi)
+        {
             double scale = targetDpi / 96.0;
-            int logicalTop = group.RootAnchor.Y;
+            int logicalTop = anchor.Y;
             List<DockWindowTarget> targets =
                 new List<DockWindowTarget>(group.Members.Count);
             foreach (DockLogicalMember member in group.Members)
@@ -274,12 +264,12 @@ namespace PennyPet
                 if (nextTop > Int32.MaxValue)
                     throw new ArgumentOutOfRangeException(nameof(group),
                         "The logical Dock stack is too tall.");
-                long logicalRight = (long)group.RootAnchor.X + member.Width;
+                long logicalRight = (long)anchor.X + member.Width;
                 if (logicalRight > Int32.MaxValue)
                     throw new ArgumentOutOfRangeException(nameof(group),
                         "The logical Dock member is too wide.");
                 int left = ProjectEdge(targetSurface.Bounds.Left,
-                    group.RootAnchor.X, scale);
+                    anchor.X, scale);
                 int right = ProjectEdge(targetSurface.Bounds.Left,
                     logicalRight, scale);
                 int top = ProjectEdge(targetSurface.Bounds.Top,
@@ -293,9 +283,7 @@ namespace PennyPet
                 logicalTop = (int)nextTop;
             }
 
-            return new DockPlacementPlan(topologyGeneration, planSequence,
-                sourceFacts.WindowId, targetSurface.RuntimeSurfaceId,
-                targetDpi, targets, interactionEpoch, input);
+            return targets;
         }
 
         private static int ProjectEdge(int physicalOrigin,

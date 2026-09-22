@@ -82,52 +82,50 @@ namespace PennyPet
         // Dedicated latest-wins entry for a live Dock drag. This is not a
         // generic scheduler: the Pet thread replaces the immutable plan in
         // the mailbox and only one deferred native batch runs at a time.
-        internal void PostLatestDockPlan(DockPlanMailbox mailbox,
+        internal void PostLatestDockPlan(DockFrameMailbox<DockPlacementPlan> mailbox,
             Action<StickyUiCommandResult> completed,
             SynchronizationContext completionContext)
         {
             if (mailbox == null)
                 throw new ArgumentNullException(nameof(mailbox));
-            _threadHost.PostDockPlan(mailbox, ApplyLatestDockPlan,
+            _threadHost.PostToDispatcher(() => ApplyLatestDockPlan(mailbox),
                 completed, completionContext);
         }
 
-        internal void PostFinalDockPlan(DockPlanMailbox mailbox,
-            long planSequence, Action<StickyUiCommandResult> completed,
+        internal void PostFinalDockPlan(DockFrameMailbox<DockPlacementPlan> mailbox,
+            DockPlacementPlan expected, Action<StickyUiCommandResult> completed,
             SynchronizationContext completionContext)
         {
             if (mailbox == null)
                 throw new ArgumentNullException(nameof(mailbox));
-            _threadHost.PostDockPlan(mailbox, delegate(DockPlanMailbox value)
-            {
-                return ApplyFinalDockPlan(value, planSequence);
-            }, completed, completionContext);
+            _threadHost.PostToDispatcher(() => ApplyFinalDockPlan(mailbox, expected),
+                completed, completionContext);
         }
 
         // Horizontal and divider gestures share one latest-frame/final transport.
-        internal void PostLatestResizeBatch(DockResizeMailbox mailbox,
+        internal void PostLatestResizeBatch(DockFrameMailbox<DockResizeBatch> mailbox,
             Action<StickyUiCommandResult> completed,
             SynchronizationContext completionContext)
         {
             if (mailbox == null)
                 throw new ArgumentNullException(nameof(mailbox));
-            _threadHost.PostResizeBatch(mailbox,
-                ApplyLatestResizeBatch, completed, completionContext);
+            _threadHost.PostToDispatcher(() => ApplyLatestResizeBatch(mailbox),
+                completed, completionContext);
         }
 
-        internal void PostFinalResizeBatch(DockResizeMailbox mailbox,
+        internal void PostFinalResizeBatch(DockFrameMailbox<DockResizeBatch> mailbox,
             DockResizeBatch expected,
             Action<StickyUiCommandResult> completed,
             SynchronizationContext completionContext)
         {
             if (mailbox == null)
                 throw new ArgumentNullException(nameof(mailbox));
-            _threadHost.PostResizeBatch(mailbox,
-                value => ApplyFinalResizeBatch(value, expected), completed, completionContext);
+            _threadHost.PostToDispatcher(() => ApplyFinalResizeBatch(mailbox, expected),
+                completed, completionContext);
         }
 
         private StickyUiCommandResult ApplyLatestResizeBatch(
-            DockResizeMailbox mailbox)
+            DockFrameMailbox<DockResizeBatch> mailbox)
         {
             DockResizeBatch batch = mailbox == null
                 ? null : mailbox.TakeLatest();
@@ -137,7 +135,7 @@ namespace PennyPet
         }
 
         private StickyUiCommandResult ApplyFinalResizeBatch(
-            DockResizeMailbox mailbox, DockResizeBatch expected)
+            DockFrameMailbox<DockResizeBatch> mailbox, DockResizeBatch expected)
         {
             DockResizeBatch batch = mailbox == null
                 ? null : mailbox.TakeFinal(expected);
@@ -691,7 +689,7 @@ namespace PennyPet
         // snapshots. Geometry events stay suppressed so the drag never yields
         // a stale coordinate chase on the following members.
         private StickyUiCommandResult ApplyLatestDockPlan(
-            DockPlanMailbox mailbox)
+            DockFrameMailbox<DockPlacementPlan> mailbox)
         {
             DockPlacementPlan plan = mailbox == null
                 ? null : mailbox.TakeLatest();
@@ -701,10 +699,10 @@ namespace PennyPet
         }
 
         private StickyUiCommandResult ApplyFinalDockPlan(
-            DockPlanMailbox mailbox, long planSequence)
+            DockFrameMailbox<DockPlacementPlan> mailbox, DockPlacementPlan expected)
         {
             DockPlacementPlan plan = mailbox == null
-                ? null : mailbox.TakeFinal(planSequence);
+                ? null : mailbox.TakeFinal(expected);
             if (plan == null || plan.WindowTargets.Count == 0)
                 return StickyUiCommandResult.NotHandled();
             try
@@ -713,7 +711,7 @@ namespace PennyPet
             }
             finally
             {
-                mailbox.CompleteFinal(planSequence);
+                mailbox.CompleteFinal(expected);
             }
         }
 

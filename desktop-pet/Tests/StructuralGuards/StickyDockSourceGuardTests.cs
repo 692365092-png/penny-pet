@@ -113,7 +113,7 @@ namespace PennyPet.Tests
                 !form.Contains("_activeDockGroupIds") &&
                 !form.Contains("_activeDockCurrentFacts") &&
                 coordinator.Contains("Interaction.MemberIds") &&
-                coordinator.Contains("CalculateDockTranslationTargets") &&
+                coordinator.Contains("DockPlacementPlanner.Plan(") &&
                 coordinator.Contains("ApplyDockTargets"),
                 "Dock session geometry must be note-id/facts based.");
             Assert.IsFalse(coordinator.Contains("Object.ReferenceEquals") ||
@@ -348,7 +348,7 @@ namespace PennyPet.Tests
                 "internal void BeginStickyDockDrag",
                 "internal void MoveStickyDockDrag");
             string moveVisuals = Between(coordinator,
-                "RememberActiveDockFacts(PlanToDockTargets(livePlan));",
+                "Interaction.RememberTargets(PlanToDockTargets(livePlan));",
                 "internal void CompleteStickyDockDrag");
             string mergeVisuals = Between(coordinator,
                 "internal void CompleteStickyDockDrag",
@@ -550,11 +550,11 @@ namespace PennyPet.Tests
             string native = ReadSource(
                 "Infrastructure/Display/NativeDisplayConfig.cs");
             string dock = ReadSource(
-                "Features/StickyNotes/DockWindowFacts.cs");
+                "Features/StickyNotes/DockFrameMailbox.cs");
             string coordinator = SourceGuardText.ReadStickyWorkflowSource();
 
             Assert.IsTrue(dock.Contains(
-                    "internal sealed class DockPlanMailbox") &&
+                    "internal sealed class DockFrameMailbox<T>") &&
                 dock.Contains("TakeLatest()") &&
                 !dock.Contains("DockBatchLayout"),
                 "The mutable DockBatchLayout must be retired for the immutable mailbox.");
@@ -639,7 +639,7 @@ namespace PennyPet.Tests
                 batch.Contains("DockPlacementPlanner.Plan(") &&
                 batch.Contains("sourceFacts.Dpi") &&
                 batch.Contains("Interaction.CanPlan(") &&
-                batch.Contains("Gestures.Plans.NextSequence()"),
+                batch.Contains("Gestures.NextPlanSequence()"),
                 "One plan must carry one capture-time generation, surface, DPI and sequence.");
             Assert.IsFalse(batch.Contains("WindowsDisplayResolver") ||
                 batch.Contains("MonitorFromRect"),
@@ -728,37 +728,6 @@ namespace PennyPet.Tests
                 result.IndexOf("Facts.TryPrepare(") <
                     result.IndexOf("_lastAppliedDockPlanSequence = batch.PlanSequence"),
                 "The whole live batch must pass acceptance preflight before any plan-sequence advance.");
-        }
-
-        [TestMethod]
-        public void FinalMouseUpPlanCannotBeClearedBeforeApply()
-        {
-            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
-            string mailbox = ReadSource(
-                "Features/StickyNotes/DockWindowFacts.cs");
-            string complete = Between(coordinator,
-                "internal void CompleteStickyDockDrag",
-                "private static List<string> CollectExpectedPlanMemberIds");
-            string takeFinal = Between(mailbox,
-                "internal DockPlacementPlan TakeFinal(",
-                "internal void CompleteFinal(");
-            string takeLatest = Between(mailbox,
-                "internal DockPlacementPlan TakeLatest()",
-                "internal void ReplaceWithFinal(");
-
-            Assert.IsTrue(complete.Contains(
-                    "Gestures.Plans.ReplaceWithFinal(finalPlan)") &&
-                complete.Contains("Host.PostFinalDockPlan("),
-                "Mouse-up must replace pending live work with a final plan.");
-            Assert.IsFalse(takeFinal.Contains("Current = null") ||
-                takeFinal.Contains("ApplyQueued = false"),
-                "The final plan must remain owned until its apply completes.");
-            string finalBranch = Between(takeLatest,
-                "Current.PlanSequence == FinalPlanSequence)",
-                "DockPlacementPlan plan = Current;");
-            Assert.IsFalse(finalBranch.Contains("Current = null") ||
-                finalBranch.Contains("ApplyQueued = false"),
-                "A stale live callback must not release the final barrier.");
         }
 
         [TestMethod]
@@ -981,7 +950,7 @@ namespace PennyPet.Tests
                     StringComparison.Ordinal) < changed.IndexOf(
                     "ReconcileDockGroups(snapshot, petFacts)",
                     StringComparison.Ordinal));
-            Assert.IsTrue(invalidate.Contains("Gestures.Plans.Clear()") &&
+            Assert.IsTrue(invalidate.Contains("Gestures.RenewPlans()") &&
                 invalidate.Contains("Interaction.BeginRebase("));
         }
 

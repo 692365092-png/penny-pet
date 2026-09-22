@@ -46,7 +46,7 @@ namespace PennyPet.Tests
         {
             string dock = SourceGuardText.ReadStickyWorkflowSource();
             string reset = SliceMethod(dock, "internal void ResetDockDragState(");
-            int retire = reset.IndexOf("Gestures.ResetDrag(clearMailbox)", StringComparison.Ordinal);
+            int retire = reset.IndexOf("Gestures.ResetDrag()", StringComparison.Ordinal);
             int invalidate = reset.IndexOf("SetCurrentDockInteractionEpoch", StringComparison.Ordinal);
             int run = reset.IndexOf("RunDeferredDockMutations(deferred)", StringComparison.Ordinal);
             Assert.IsTrue(retire >= 0 && invalidate > retire && run > invalidate);
@@ -62,7 +62,7 @@ namespace PennyPet.Tests
         public void LifecycleFailuresRetireFinalizationAndDeferredActionsResolveCurrentNotes()
         {
             string window = SourceGuardText.ReadStickyWorkflowSource(), dock = SourceGuardText.ReadStickyWorkflowSource();
-            Assert.IsTrue(SliceMethod(window, "internal void HostedStickyFaulted(").Contains("ResetDockDragState(true)"));
+            Assert.IsTrue(SliceMethod(window, "internal void HostedStickyFaulted(").Contains("ResetDockDragState()"));
             Assert.IsTrue(SliceMethod(window, "private void HandleHostedStickyFailure(").Contains(
                 "cancelHeaderFinal && ReferenceEquals(Dock.Interaction.Mutations, failedFinal)"));
             string closed = SliceMethod(window, "if (value.Kind == StickyUiEventKind.Closed)");

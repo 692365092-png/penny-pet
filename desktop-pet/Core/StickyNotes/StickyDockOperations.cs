@@ -12,7 +12,7 @@ namespace PennyPet
         internal const int SplitPreHoldMovement = 7;
 
         internal static List<StickyNoteData> BuildDockChainOrderFromNotes(
-            IList<StickyNoteData> notes, StickyNoteData seed, bool visibleOnly)
+            IEnumerable<StickyNoteData> notes, StickyNoteData seed, bool visibleOnly)
         {
             return visibleOnly ? StickyDockGroups.GetVisibleGroup(notes, seed)
                 : StickyDockGroups.GetOrderedGroup(notes, seed);
@@ -136,7 +136,7 @@ namespace PennyPet
         }
 
         internal static StickyNoteData FindActiveDockTail(
-            IList<StickyNoteData> notes, IList<StickyNoteData> activeGroup,
+            IEnumerable<StickyNoteData> notes, IList<StickyNoteData> activeGroup,
             StickyNoteData seed)
         {
             if (seed == null) return null;

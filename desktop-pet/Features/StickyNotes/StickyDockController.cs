@@ -19,7 +19,7 @@ namespace PennyPet
         {
             ClearHostedDockResizeSession();
             CancelHostedDockRestores();
-            ResetDockDragState(true);
+            ResetDockDragState();
             ClearDockPreview();
             ClearSplitGuide();
         }
@@ -305,7 +305,7 @@ namespace PennyPet
             // following the user and cannot wait for a follower capture.
             if (!Interaction.TryEnterDragging(epoch, topology.Generation))
             {
-                ResetDockDragState(true);
+                ResetDockDragState();
                 return;
             }
             DisplayDiagnostics.Trace("DockDragReady",
@@ -351,13 +351,13 @@ namespace PennyPet
                 _movingDockGroup = true;
                 try { ApplyLiveDockPlan(livePlan); }
                 finally { _movingDockGroup = false; }
-                RememberActiveDockFacts(PlanToDockTargets(livePlan));
+                Interaction.RememberTargets(PlanToDockTargets(livePlan));
             }
             Interaction.RecordMove(facts);
             if (!Interaction.Detached && Interaction.SplitEligible)
                 UpdateSplitGuide(seed, Interaction.PreviewFacts);
             Dictionary<string, DockWindowFacts> previewFacts =
-                CaptureDockFacts(_workspace.Notes.GetAll());
+                CaptureDockFacts(_workspace.Notes.InStorageOrder);
             previewFacts[facts.NoteId] = facts;
             UpdateDockPreview(seed, previewFacts);
         }
@@ -413,7 +413,7 @@ namespace PennyPet
                 plan = DockPlacementPlanner.Plan(group, sourceFacts,
                     surface, sourceFacts.Dpi,
                     sourceFacts.TopologyGeneration,
-                    Gestures.Plans.NextSequence(), interactionEpoch, Gestures.Input);
+                    Gestures.NextPlanSequence(), interactionEpoch, Gestures.Input);
             }
             catch (ArgumentException)
             {
@@ -455,7 +455,7 @@ namespace PennyPet
             if (!String.Equals(facts.NoteId, Interaction.SourceNoteId,
                 StringComparison.OrdinalIgnoreCase)) return;
             Dictionary<string, DockWindowFacts> currentFacts =
-                CaptureDockFacts(_workspace.Notes.GetAll());
+                CaptureDockFacts(_workspace.Notes.InStorageOrder);
             currentFacts[facts.NoteId] = facts;
             if (Interaction.IsFinalizing) return;
             DockTarget target = FindDockTarget(seed, currentFacts);
@@ -491,14 +491,14 @@ namespace PennyPet
             StickyNoteData remainderSeed)
         {
             DisplayTopologySnapshot topology = _workspace.CurrentTopologySnapshot();
-            if (seed == null || topology == null) { ResetDockDragState(true); return; }
+            if (seed == null || topology == null) { ResetDockDragState(); return; }
             List<StickyNoteData> finalMembers;
             if (Interaction.PendingMerge != null)
             {
-                if (!Interaction.PendingMerge.TryResolve(_workspace.Notes.GetAll(), out finalMembers))
+                if (!Interaction.PendingMerge.TryResolve(_workspace.Notes.InStorageOrder, out finalMembers))
                 {
                     TraceDockCommitRejected("membership changed before final capture");
-                    ResetDockDragState(true);
+                    ResetDockDragState();
                     return;
                 }
             }
@@ -509,7 +509,7 @@ namespace PennyPet
             finalMembers.RemoveAll(note => !note.Visible);
             long epoch = Interaction.BeginFinalizing(topology.Generation,
                 Interaction.RemainderNoteId, finalMembers.ConvertAll(note => note.Id), affectedMembers);
-            if (epoch == 0) { ResetDockDragState(true); return; }
+            if (epoch == 0) { ResetDockDragState(); return; }
             _workspace.Host.SetCurrentDockInteractionEpoch(epoch);
             string sourceId = seed.Id;
             string[] expectedIds = Interaction.CopyMemberIds();
@@ -527,16 +527,17 @@ namespace PennyPet
                                 epoch, sourceId, false, out sourceFacts))
                             {
                                 TraceDockCommitRejected("final facts barrier rejected");
-                                ResetDockDragState(true);
+                                ResetDockDragState();
                                 return;
                             }
                             DockPlacementPlan finalPlan = PlanDockPlan(seed, sourceFacts,
                                 topology, epoch);
-                            if (finalPlan == null) { TraceDockCommitRejected("final capture unavailable"); ResetDockDragState(true); return; }
+                            if (finalPlan == null) { TraceDockCommitRejected("final capture unavailable"); ResetDockDragState(); return; }
                             List<string> expectedMemberIds = CollectExpectedPlanMemberIds(finalPlan);
-                            Gestures.Plans.ReplaceWithFinal(finalPlan);
-                            _workspace.Host.PostFinalDockPlan(Gestures.Plans,
-                                finalPlan.PlanSequence, delegate(StickyUiCommandResult result)
+                            DockFrameMailbox<DockPlacementPlan> finalMailbox = Gestures.Plans;
+                            finalMailbox.QueueFinal(finalPlan);
+                            _workspace.Host.PostFinalDockPlan(finalMailbox,
+                                finalPlan, delegate(StickyUiCommandResult result)
                                 {
                                     try
                                     {
@@ -549,7 +550,7 @@ namespace PennyPet
                                     }
                                     finally
                                     {
-                                        Gestures.Plans.CompleteFinal(finalPlan.PlanSequence);
+                                        finalMailbox.CompleteFinal(finalPlan);
                                         long invalidatingEpoch;
                                         Action[] deferred;
                                         if (Interaction.TryFinish(epoch, topology.Generation, out invalidatingEpoch, out deferred))
@@ -563,7 +564,7 @@ namespace PennyPet
                         catch
                         {
                             if (Interaction.Matches(epoch, topology.Generation, DockInteractionPhase.Finalizing))
-                                ResetDockDragState(true);
+                                ResetDockDragState();
                             throw;
                         }
                     });
@@ -571,7 +572,7 @@ namespace PennyPet
             catch
             {
                 if (Interaction.Matches(epoch, topology.Generation, DockInteractionPhase.Finalizing))
-                    ResetDockDragState(true);
+                    ResetDockDragState();
                 throw;
             }
         }
@@ -586,9 +587,9 @@ namespace PennyPet
             return result;
         }
 
-        internal void ResetDockDragState(bool clearMailbox)
+        internal void ResetDockDragState()
         {
-            Action[] deferred = Gestures.ResetDrag(clearMailbox);
+            Action[] deferred = Gestures.ResetDrag();
             _workspace.Host.SetCurrentDockInteractionEpoch(Interaction.Epoch);
             RunDeferredDockMutations(deferred);
         }
@@ -602,22 +603,15 @@ namespace PennyPet
             if (plan == null || !Interaction.Matches(
                 plan.InteractionEpoch, plan.TopologyGeneration,
                 DockInteractionPhase.Dragging)) return;
-            DockPlanMailbox mailbox = Gestures.Plans;
-            lock (mailbox.Gate)
-            {
-                // Diagnostic-only evidence for latest-wins: a newer plan
-                // replacing a still-pending one is a supersede transition.
-                bool superseded =
-                    mailbox.ApplyQueued && mailbox.Current != null;
-                mailbox.Current = plan;
-                if (superseded)
-                    DisplayDiagnostics.Trace("DockPlanSuperseded",
-                        "source=" + plan.SourceNoteId +
-                        " sequence=" + plan.PlanSequence +
-                        " epoch=" + plan.InteractionEpoch);
-                if (mailbox.ApplyQueued) return;
-                mailbox.ApplyQueued = true;
-            }
+            DockFrameMailbox<DockPlacementPlan> mailbox = Gestures.Plans;
+            bool superseded;
+            bool post = mailbox.QueueLive(plan, out superseded);
+            if (superseded && DisplayDiagnostics.Enabled)
+                DisplayDiagnostics.Trace("DockPlanSuperseded",
+                    "source=" + plan.SourceNoteId +
+                    " sequence=" + plan.PlanSequence +
+                    " epoch=" + plan.InteractionEpoch);
+            if (!post) return;
             _workspace.Host.PostLatestDockPlan(mailbox,
                 delegate(StickyUiCommandResult result)
                 {
@@ -666,80 +660,31 @@ namespace PennyPet
         }
 
         internal Dictionary<string, DockWindowFacts>
-            CaptureDockFacts(IEnumerable<string> noteIds)
+            CaptureDockFacts(IEnumerable<StickyNoteData> notes)
         {
-            Dictionary<string, DockWindowFacts> facts =
-                new Dictionary<string, DockWindowFacts>(
-                    StringComparer.OrdinalIgnoreCase);
-            if (noteIds == null) return facts;
-            foreach (string noteId in noteIds)
+            var facts = new Dictionary<string, DockWindowFacts>(StringComparer.OrdinalIgnoreCase);
+            if (notes == null) return facts;
+            foreach (StickyNoteData note in notes)
             {
-                StickyNoteData note = _workspace.Notes.Find(noteId);
-                if (note == null) continue;
                 DockWindowFacts actual = GetHostedDockFacts(note);
-                if (actual != null) facts[noteId] = actual;
+                if (actual != null) facts[note.Id] = actual;
             }
             return facts;
         }
 
-        internal Dictionary<string, DockWindowFacts>
-            CaptureDockFacts(IEnumerable<StickyNoteData> notes)
-        {
-            List<string> noteIds = new List<string>();
-            if (notes != null)
-                foreach (StickyNoteData note in notes)
-                    if (note != null) noteIds.Add(note.Id);
-            return CaptureDockFacts(noteIds);
-        }
-
-        internal static List<DockLayoutTarget> CalculateDockTranslationTargets(
-            IList<string> noteIds,
-            IDictionary<string, DockWindowFacts> currentFacts,
-            DockWindowFacts movedSource, int dx, int dy)
-        {
-            List<DockLayoutTarget> targets = new List<DockLayoutTarget>();
-            if (noteIds == null || currentFacts == null) return targets;
-            foreach (string noteId in noteIds)
-            {
-                DockWindowFacts facts;
-                if (movedSource != null && String.Equals(noteId,
-                    movedSource.NoteId, StringComparison.OrdinalIgnoreCase))
-                    facts = movedSource;
-                else if (!currentFacts.TryGetValue(noteId, out facts))
-                    continue;
-                if (facts == null || !facts.Visible) continue;
-                targets.Add(facts.ToTarget(
-                    movedSource != null && String.Equals(noteId,
-                        movedSource.NoteId,
-                        StringComparison.OrdinalIgnoreCase)
-                        ? facts.X : facts.X + dx,
-                    movedSource != null && String.Equals(noteId,
-                        movedSource.NoteId,
-                        StringComparison.OrdinalIgnoreCase)
-                        ? facts.Y : facts.Y + dy));
-            }
-            return targets;
-        }
-
-        private void RememberActiveDockFacts(
-            IEnumerable<DockLayoutTarget> targets)
-        {
-            Interaction.RememberTargets(targets);
-        }
-
         private List<StickyNoteData> BuildDockChainOrder(StickyNoteData seed)
         {
-            return StickyDockGroups.GetVisibleGroup(_workspace.Notes.GetAll(), seed);
+            return StickyDockGroups.GetVisibleGroup(_workspace.Notes.InStorageOrder, seed);
         }
 
         internal List<StickyNoteData> BuildDockChainOrderIncludingHidden(StickyNoteData seed)
         {
-            return StickyDockGroups.GetOrderedGroup(_workspace.Notes.GetAll(), seed);
+            return StickyDockGroups.GetOrderedGroup(_workspace.Notes.InStorageOrder, seed);
         }
 
         private string FindVisibleDockParentId(StickyNoteData seed)
         {
-            StickyNoteData parent = StickyDockGroups.GetVisibleNeighbor(_workspace.Notes.GetAll(), seed, -1);
+            StickyNoteData parent = StickyDockGroups.GetVisibleNeighbor(_workspace.Notes.InStorageOrder, seed, -1);
             return parent == null ? String.Empty : parent.Id;
         }
 
@@ -1080,7 +1025,7 @@ namespace PennyPet
 
         internal void RefreshDockResizeRoles()
         {
-            List<StickyNoteData> all = _workspace.Notes.GetAll();
+            IEnumerable<StickyNoteData> all = _workspace.Notes.InStorageOrder;
             HashSet<string> handled = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (StickyNoteData note in all)
             {
@@ -1177,7 +1122,7 @@ namespace PennyPet
                 StickyNoteData note = _workspace.Notes.Find(noteId);
                 if (note != null) activeNotes.Add(note);
             }
-            return StickyDockOperations.FindActiveDockTail(_workspace.Notes.GetAll(),
+            return StickyDockOperations.FindActiveDockTail(_workspace.Notes.InStorageOrder,
                 activeNotes, seed);
         }
 
@@ -1305,7 +1250,7 @@ namespace PennyPet
 
         private string FindDockChild(string parentId, HashSet<string> ignoredIds)
         {
-            StickyNoteData child = StickyDockGroups.GetVisibleNeighbor(_workspace.Notes.GetAll(), _workspace.Notes.Find(parentId), 1);
+            StickyNoteData child = StickyDockGroups.GetVisibleNeighbor(_workspace.Notes.InStorageOrder, _workspace.Notes.Find(parentId), 1);
             return child == null || (ignoredIds != null && ignoredIds.Contains(child.Id))
                 ? String.Empty : child.Id;
         }
@@ -1446,7 +1391,7 @@ namespace PennyPet
         internal void InvalidateDockPlansForTopologyChange(
             DisplayTopologySnapshot snapshot)
         {
-            Gestures.Plans.Clear();
+            Gestures.RenewPlans();
             ClearHostedDockResizeSession();
             if (Interaction.IsActive)
             {
@@ -1507,7 +1452,7 @@ namespace PennyPet
                     if (plan != null && plan.WindowTargets.Count > 1)
                     {
                         ApplyLiveDockPlan(plan);
-                        RememberActiveDockFacts(PlanToDockTargets(plan));
+                        Interaction.RememberTargets(PlanToDockTargets(plan));
                     }
                 });
         }
@@ -1630,7 +1575,7 @@ namespace PennyPet
             }
             bool centerInWorkArea = reason == DockTopologyReprojectReason.TemporaryRehome;
             DockGroupReprojectPlan plan = new DockGroupReprojectPlan(
-                snapshot.Generation, Gestures.Plans.NextSequence(),
+                snapshot.Generation, Gestures.NextPlanSequence(),
                 targetSurface.RuntimeSurfaceId, logicalState, centerInWorkArea);
             List<string> expectedIds = new List<string>();
             foreach (DockLogicalMember member in logicalState.Members)
@@ -1762,7 +1707,7 @@ namespace PennyPet
             }
 
             bool merged = Interaction.PendingMerge != null;
-            if (merged && !Interaction.PendingMerge.TryCommit(_workspace.Notes.GetAll()))
+            if (merged && !Interaction.PendingMerge.TryCommit(_workspace.Notes.InStorageOrder))
             {
                 TraceDockCommitRejected("membership changed before final commit");
                 return;
@@ -1938,7 +1883,7 @@ namespace PennyPet
             StickyNoteData note = _workspace.Notes.Find(noteId);
             DockMutationQueue final = Interaction.Mutations;
             if (final != null && final.Contains(noteId, note == null ? null : note.DockGroupId))
-                ResetDockDragState(true);
+                ResetDockDragState();
         }
 
         internal void ClearHostedDockResizeSession(DockResizeSession expected = null)
@@ -2073,7 +2018,7 @@ namespace PennyPet
             if (MigrateDockRestorePreferredIfNeeded(ordered, topology)) _workspace.Notes.SaveAsync();
             DockRestoreOperation operation = DockRestoreOperation.TryCreate(ordered,
                 focus == null ? null : focus.Id, focusEditor, persistVisibility,
-                topology, _workspace.CapturePetWindowFacts(topology), Gestures.Plans.NextSequence());
+                topology, _workspace.CapturePetWindowFacts(topology), Gestures.NextPlanSequence());
             if (!_dockRestores.TryBegin(operation)) return false;
             try
             {
