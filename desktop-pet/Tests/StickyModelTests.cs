@@ -69,8 +69,8 @@ namespace PennyPet.Tests
         {
             var model = new StickyModel();
             var note = model.CreateDraft("before", Point.Empty);
-            note.TodoItems.Add(new StickyTodoItem { Text = "todo-before" });
-            note.ScheduleItems.Add(new StickyScheduleItem { Text = "schedule-before" });
+            note.TodoItems.Add(new StickyTodoItem("todo-before", false));
+            note.ScheduleItems.Add(new StickyScheduleItem("schedule-before", new DateTime(2035, 1, 1)));
             var captured = model.CaptureSnapshot();
             note.Text = "after"; note.TodoItems[0].Text = "todo-after";
             note.ScheduleItems.Clear();

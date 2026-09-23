@@ -73,3 +73,5 @@ Unavailable optional art now plays the ready Idle loop while preserving the curr
 Ready clip publication uses release/acquire reads and writes. UI readiness, timing and bitmap reads do not acquire the decoder gate or call a decoding getter. The mandatory startup Idle load is explicit before background work starts. Resource-task sharing, background decode/disposal ownership and memory policy remain R12; scaled bitmap construction remains R19. Goodbye is warmed in the background and has a two-second missing-art wait budget, after which shutdown can finish instead of waiting indefinitely for damaged optional art. A ready goodbye still plays its full cycle.
 
 No native drag-latency, mixed-DPI visual or IME performance improvement is claimed from source checks alone. Windows CI remains required for this change; the local environment has no .NET SDK.
+
+R11.1 initial [CI #66](https://github.com/692365092-png/penny-pet/actions/runs/35890263969) compiled product code but rejected two new test fixtures that assumed parameterless todo/schedule constructors. The follow-up uses the actual text/state/date constructors.
