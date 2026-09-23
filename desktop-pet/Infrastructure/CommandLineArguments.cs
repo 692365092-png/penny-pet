@@ -9,15 +9,6 @@ namespace PennyPet
     // non-zero and leaves a sibling error file when execution fails.
     internal static class CommandLineArguments
     {
-        internal static bool HasFlag(string[] args, string expected)
-        {
-            if (args == null) return false;
-            foreach (string argument in args)
-                if (String.Equals(argument, expected,
-                    StringComparison.OrdinalIgnoreCase)) return true;
-            return false;
-        }
-
         internal static bool TryGetPath(string[] args, string prefix,
             out string path)
         {

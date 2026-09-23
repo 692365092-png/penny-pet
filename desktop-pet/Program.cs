@@ -1,12 +1,11 @@
 using System;
-using System.Windows.Forms;
 
 namespace PennyPet
 {
     internal static class Program
     {
         [STAThread]
-        private static void Main(string[] args)
+        private static void Main()
         {
             EmbeddedAssemblyResolver.Register();
             // Compatibility-test build: keep WPF sticky-note rendering away

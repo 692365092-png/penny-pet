@@ -91,7 +91,7 @@ namespace PennyPet.Tests
                 StringComparison.Ordinal);
             Assert.IsTrue(animation.Contains(
                     "if (_startupDisplaySuppressed || !IsHandleCreated") &&
-                startup.Contains("_startupUiReady, _startupArtReady") &&
+                startup.Contains("!_startupUiReady || !_startupArtReady") &&
                 releaseFrame >= 0 && renderFrame > releaseFrame,
                 "Normal Pet frames must remain suppressed until startup readiness.");
         }

@@ -4111,7 +4111,6 @@ namespace PennyPet
         private sealed class WindowShellCheckResult
         {
             internal bool StartupDefaultOk;
-            internal bool StartupLoadingReadinessGateOk;
             internal bool StickyUiHostOk;
             internal StickyHostedCheckResult StickyHosted;
             internal bool ScaleRangeOk;
@@ -5023,11 +5022,6 @@ namespace PennyPet
                 StartupRegistration.BuildCommand(
                     "C:\\Program Files\\Penny pet.exe") ==
                     "\"C:\\Program Files\\Penny pet.exe\"";
-            result.StartupLoadingReadinessGateOk =
-                !PetStartupRules.CanReleaseStartupLoading(false, false) &&
-                !PetStartupRules.CanReleaseStartupLoading(true, false) &&
-                !PetStartupRules.CanReleaseStartupLoading(false, true) &&
-                PetStartupRules.CanReleaseStartupLoading(true, true);
             using (StickyUiHost host = new StickyUiHost())
             using (ManualResetEventSlim handlerStarted =
                 new ManualResetEventSlim(false))
@@ -6461,9 +6455,7 @@ namespace PennyPet
                     keyboardOverlayChecks.HookOptInDefaultOk) + ",\n" +
                 "  \"keyboard_privacy_notice_persistence_ok\": " + Bool(
                     settingsChecks.KeyboardPrivacyNoticePersistenceOk) +
-                    ",\n" +
-                "  \"startup_loading_waits_for_ui_and_art_ok\": " + Bool(
-                    shellChecks.StartupLoadingReadinessGateOk) + ",\n";
+                    ",\n";
         }
 
         private static string BuildAnimationArtReportFields(

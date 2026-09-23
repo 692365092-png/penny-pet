@@ -121,8 +121,7 @@ namespace PennyPet
 
         private void TryRaiseStartupReady()
         {
-            if (_startupReadyRaised || !PetStartupRules.CanReleaseStartupLoading(
-                _startupUiReady, _startupArtReady) ||
+            if (_startupReadyRaised || !_startupUiReady || !_startupArtReady ||
                 IsDisposed || _exiting) return;
             _startupDisplaySuppressed = false;
             _startupReadyRaised = true;
