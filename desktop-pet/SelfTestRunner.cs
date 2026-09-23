@@ -2904,6 +2904,7 @@ namespace PennyPet
             internal bool DailyCoordinatorFailureFallbackOk;
             internal bool DailyCoordinatorInFlightOk;
             internal bool DailyCoordinatorPreferenceSnapshotOk;
+            internal bool ConversationOwnershipOk;
             internal bool RejectedBubbleReusesForecastOk;
             internal bool LocationDialogLayoutOk;
         }
@@ -3116,7 +3117,7 @@ namespace PennyPet
             int dailyForecastCalls = 0;
             int dailyShowCount = 0;
             PetDailyContentCoordinator daily =
-                new PetDailyContentCoordinator(
+                CreateDailyCoordinator(
                     delegate { return lastDate; },
                     delegate { return false; }, delegate { return true; },
                     delegate { return false; },
@@ -3150,7 +3151,7 @@ namespace PennyPet
             shownText = null;
             dailyForecastCalls = 0;
             PetDailyContentCoordinator unavailable =
-                new PetDailyContentCoordinator(
+                CreateDailyCoordinator(
                     delegate { return lastDate; },
                     delegate { return false; }, delegate { return true; },
                     delegate { return false; },
@@ -3179,6 +3180,8 @@ namespace PennyPet
                 !shownText.Contains(expectedWeather) &&
                 lastDate == "20260901";
 
+            result.ConversationOwnershipOk = RunConversationRuntimeChecks();
+
             result.DailyCoordinatorInFlightOk = Task.Run(delegate
             {
                 string pendingDate = String.Empty;
@@ -3187,7 +3190,7 @@ namespace PennyPet
                 TaskCompletionSource<WeatherForecastWindow> pending =
                     new TaskCompletionSource<WeatherForecastWindow>();
                 PetDailyContentCoordinator pendingDaily =
-                    new PetDailyContentCoordinator(
+                    CreateDailyCoordinator(
                         delegate { return pendingDate; },
                         delegate { return false; },
                         delegate { return true; },
@@ -3227,7 +3230,7 @@ namespace PennyPet
                 TaskCompletionSource<WeatherForecastWindow> pending =
                     new TaskCompletionSource<WeatherForecastWindow>();
                 PetDailyContentCoordinator snapshotDaily =
-                    new PetDailyContentCoordinator(
+                    CreateDailyCoordinator(
                         delegate { return String.Empty; },
                         delegate { return false; },
                         delegate { return true; },
@@ -3282,7 +3285,7 @@ namespace PennyPet
                     bool accept = false;
                     int attempts = 0;
                     PetDailyContentCoordinator retryDaily =
-                        new PetDailyContentCoordinator(
+                        CreateDailyCoordinator(
                             delegate { return retryDate; },
                             delegate { return false; },
                             delegate { return true; },
@@ -3721,7 +3724,7 @@ namespace PennyPet
             int recordCount = 0;
             string greetingText = null;
             PetDailyContentCoordinator daily =
-                new PetDailyContentCoordinator(
+                CreateDailyCoordinator(
                     delegate { return lastBriefingDate; },
                     delegate { return silent; },
                     delegate { return dailyContentEnabled; },
@@ -6685,6 +6688,8 @@ namespace PennyPet
                 "  \"daily_content_async_preference_snapshot_ok\": " + Bool(
                     weatherChecks.DailyCoordinatorPreferenceSnapshotOk) +
                     ",\n" +
+                "  \"conversation_runtime_ownership_ok\": " + Bool(
+                    weatherChecks.ConversationOwnershipOk) + ",\n" +
                 "  \"weather_rejected_bubble_reuses_forecast_ok\": " + Bool(
                     weatherChecks.RejectedBubbleReusesForecastOk) + ",\n" +
                 "  \"weather_location_dialog_compact_formatting_ok\": " +

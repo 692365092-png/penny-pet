@@ -91,6 +91,7 @@ namespace PennyPet
             {
                 DialogResult result = _windowLayers.ShowModal(this, dialog);
                 if (!dialog.ApplyIfAccepted(_settings, result)) return;
+                _conversation.InvalidatePending();
                 WeatherLocation selected = dialog.SelectedWeatherLocation;
                 string nextLocationKey = selected == null
                     ? String.Empty : selected.StableKey;
@@ -184,6 +185,7 @@ namespace PennyPet
         private void SilentItemClick(object sender, EventArgs e)
         {
             _settings.SilentMode = _silentItem.Checked;
+            _conversation.InvalidatePending();
             _settings.SaveAsync();
             if (_settings.SilentMode) HideHoverBubble();
         }
@@ -235,6 +237,7 @@ namespace PennyPet
             }
             _exiting = true;
             _reminderRuntime.Stop();
+            _conversation.Stop();
             _persistenceRetryTimer.Stop();
             _dragging = false;
             Capture = false;

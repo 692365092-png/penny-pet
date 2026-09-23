@@ -111,19 +111,21 @@ namespace PennyPet.Tests
             string form = ReadSource("PetForm.cs");
             string animation = ReadSource("PetAnimationRuntime.cs");
             string coordinator = ReadSource("PetSmallTalkCoordinator.cs");
+            string runtime = ReadSource("Features/Conversation/ConversationRuntime.cs");
             string poke = Between(animation,
                 "private async void HandlePetPoked",
                 "internal void StartOrdinaryPokeAnimation");
 
             Assert.IsTrue(form.Contains(
-                    "private readonly PetSmallTalkCoordinator") &&
+                    "private readonly ConversationRuntime") &&
                 poke.Contains("StartOrdinaryPokeAnimation(nowUtc)") &&
                 poke.Contains("IsOpeningEligible") &&
                 poke.Contains("StartNotificationPokeAnimation(nowUtc)") &&
                 poke.Contains(".HandlePetPokedAsync") &&
-                poke.Contains("if (dailyHandled)") &&
-                poke.Contains("_daypartCheckInCoordinator.HandlePetPoked") &&
-                poke.Contains("_smallTalkCoordinator.HandlePetPoked(nowUtc)") &&
+                runtime.Contains("_daily.HandlePetPokedAsync(now)") &&
+                runtime.Contains("_daypart.HandlePetPoked(now)") &&
+                runtime.Contains("_smallTalk.HandlePetPoked(now.UtcDateTime)") &&
+                !poke.Contains("PersistDailyLedger") &&
                 !poke.Contains(".Wait(") && !poke.Contains(".Result"),
                 "PetForm must preserve Easter, Daily, Daypart, SmallTalk, animation order.");
             Assert.IsFalse(form.Contains("SmallTalkPhrases") ||

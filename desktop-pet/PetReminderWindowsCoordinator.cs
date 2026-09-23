@@ -113,6 +113,7 @@ namespace PennyPet
 
         void IReminderPresentation.ShowDue(ReminderItem item, StickyNoteData linkedNote)
         {
+            _conversation.InvalidatePending();
             _animation.CancelInteractionAnimation();
             ShowDueReminderBubble(String.IsNullOrWhiteSpace(item.Text)
                 ? "到时间啦。" : item.Text, DueReminderBubbleFontSizePoints(

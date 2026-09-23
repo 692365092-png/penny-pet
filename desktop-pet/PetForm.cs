@@ -26,10 +26,8 @@ namespace PennyPet
         private readonly System.Windows.Forms.Timer _persistenceRetryTimer;
         private readonly ReminderRuntime _reminderRuntime;
         private readonly PetBubbleCoordinator _bubbleCoordinator;
-        private readonly PetDailyContentCoordinator _dailyContentCoordinator;
+        private readonly ConversationRuntime _conversation;
         private readonly PetWeatherSource _weatherSource;
-        private readonly PetSmallTalkCoordinator _smallTalkCoordinator;
-        private readonly PetDaypartCheckInCoordinator _daypartCheckInCoordinator;
         private readonly PetPokeBurstTracker _pokeBurstTracker =
             new PetPokeBurstTracker();
         private readonly PetContextMenu _petContextMenu;
@@ -144,69 +142,8 @@ namespace PennyPet
 
             _settings = preloadedSettings ?? PetSettings.Load();
             _weatherSource = new PetWeatherSource();
-            InitializeDailyLedger();
-            _smallTalkCoordinator = new PetSmallTalkCoordinator(
-                delegate { return _settings.SilentMode; },
-                delegate(string text)
-                {
-                    return _bubbleCoordinator.Show(
-                        PetBubbleRequest.SmallTalk(text,
-                            KeyboardOverlayForm.TextFontFamilyName,
-                            KeyboardOverlayForm.TextFontSizePoints(
-                                _settings.KeyOverlayScalePercent)));
-                },
-                LedgerSnapshot);
-            _daypartCheckInCoordinator = new PetDaypartCheckInCoordinator(
-                LedgerSnapshot,
-                delegate { return _settings.SilentMode; },
-                delegate(string text)
-                {
-                    return _bubbleCoordinator.Show(
-                        PetBubbleRequest.DailyGreeting(text,
-                            KeyboardOverlayForm.TextFontFamilyName,
-                            KeyboardOverlayForm.TextFontSizePoints(
-                                _settings.KeyOverlayScalePercent)));
-                });
-            _dailyContentCoordinator = new PetDailyContentCoordinator(
-                delegate { return _settings.LastDailyBriefingDate; },
-                delegate { return _settings.SilentMode; },
-                delegate { return _settings.DailyContentEnabled; },
-                delegate { return _settings.SolarTermEnabled; },
-                delegate { return _settings.AlmanacEnabled; },
-                delegate { return _settings.WeatherEnabled; },
-                delegate
-                {
-                    WeatherLocation location;
-                    WeatherLocation.TryCreate(
-                        _settings.WeatherLocationName,
-                        _settings.WeatherLocationAdmin1,
-                        _settings.WeatherLocationCountry,
-                        _settings.WeatherLatitude,
-                        _settings.WeatherLongitude,
-                        _settings.WeatherTimezone, out location);
-                    return location;
-                },
-                delegate(WeatherLocation location)
-                {
-                    return _weatherSource.GetForecastAsync(location);
-                },
-                delegate { return _settings.ZodiacSign; },
-                delegate { return _settings.UserBirthdayMonth; },
-                delegate { return _settings.UserBirthdayDay; },
-                delegate(string text)
-                {
-                    if (_exiting || IsDisposed || Disposing) return false;
-                    return _bubbleCoordinator.Show(
-                        PetBubbleRequest.DailyGreeting(text,
-                            KeyboardOverlayForm.TextFontFamilyName,
-                            KeyboardOverlayForm.TextFontSizePoints(
-                                _settings.KeyOverlayScalePercent)));
-                },
-                delegate(string date)
-                {
-                    _settings.LastDailyBriefingDate = date;
-                    _settings.SaveAsync();
-                });
+            _conversation = new ConversationRuntime(_settings,
+                _weatherSource.GetForecastAsync, ShowConversationMessage);
             _settings.SaveFailed += PersistenceSaveFailed;
             if (PetKeyboardPrivacyPolicy.ShouldDisableUnacknowledgedLegacyOptIn(
                 _settings.ShowKeyOverlay,
@@ -625,6 +562,7 @@ namespace PennyPet
             _menu.Dispose();
             _animationTimer.Dispose();
             _reminderRuntime.Dispose();
+            _conversation.Stop();
             _persistenceRetryTimer.Dispose();
             StopDeferredStartupWork();
             DisposeRenderedFrameCache();

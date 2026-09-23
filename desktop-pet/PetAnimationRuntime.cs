@@ -221,56 +221,23 @@ namespace PennyPet
             DateTime nowUtc = DateTime.UtcNow;
             if (_pokeBurstTracker.RegisterPoke(nowUtc))
             {
+                _conversation.InvalidatePending();
                 StartPokeEasterEgg(nowUtc);
                 return;
             }
             DateTimeOffset localNow = DateTimeOffset.Now;
 
-            // Daily Opening: the first successful daypart of the day keeps the
-            // full briefing path and uses the notification talk animation.
-            if (_dailyContentCoordinator.IsOpeningEligible(localNow))
-            {
+            if (_conversation.IsOpeningEligible(localNow))
                 StartNotificationPokeAnimation(nowUtc);
-                bool dailyHandled = await _dailyContentCoordinator
-                    .HandlePetPokedAsync(localNow);
-                if (dailyHandled)
-                {
-                    _dailyLedger.TryConsumeDaypart(
-                        PetDaypartRule.Resolve(localNow));
-                    PersistDailyLedger();
-                    return;
-                }
-                if (_exiting || IsDisposed || Disposing) return;
-            }
-
-            // Light per-daypart check-in for a not-yet-consumed slot.
-            if (_daypartCheckInCoordinator.HandlePetPoked(localNow))
+            ConversationAnimation animation = await _conversation.HandlePetPokedAsync(localNow);
+            if (_exiting || IsDisposed || Disposing) return;
+            switch (animation)
             {
-                StartNotificationPokeAnimation(nowUtc);
-                PersistDailyLedger();
-                return;
+                case ConversationAnimation.Notification: StartNotificationPokeAnimation(nowUtc); break;
+                case ConversationAnimation.Guitar: StartGuitarPokeAnimation(nowUtc); break;
+                case ConversationAnimation.Hover: StartHoverPokeAnimation(nowUtc); break;
+                case ConversationAnimation.Ordinary: StartOrdinaryPokeAnimation(nowUtc); break;
             }
-
-            // Live SmallTalk under the new rhythm window.
-            if (_smallTalkCoordinator.HandlePetPoked(nowUtc))
-            {
-                if (_smallTalkCoordinator.LastSpokenAnimationKind ==
-                    PetPersonaAnimationKind.Guitar)
-                    StartGuitarPokeAnimation(nowUtc);
-                else if (_smallTalkCoordinator.LastSpokenAnimationKind ==
-                    PetPersonaAnimationKind.Hover)
-                    StartHoverPokeAnimation(nowUtc);
-                else if (_smallTalkCoordinator.LastSpokenRepeatClass ==
-                    PetPersonaRepeatClass.Meaningful)
-                    StartNotificationPokeAnimation(nowUtc);
-                else
-                    StartOrdinaryPokeAnimation(nowUtc);
-                PersistDailyLedger();
-                return;
-            }
-
-            // No talk: a random interaction animation is the whole response.
-            StartOrdinaryPokeAnimation(nowUtc);
         }
 
         private void StartGuitarPokeAnimation(DateTime nowUtc)
