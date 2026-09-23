@@ -28,8 +28,6 @@ namespace PennyPet
         private readonly PetBubbleCoordinator _bubbleCoordinator;
         private readonly ConversationRuntime _conversation;
         private readonly PetWeatherSource _weatherSource;
-        private readonly PetPokeBurstTracker _pokeBurstTracker =
-            new PetPokeBurstTracker();
         private readonly PetContextMenu _petContextMenu;
         internal ContextMenuStrip _menu { get { return _petContextMenu.Menu; } }
         private ToolStripMenuItem _statusItem
@@ -58,12 +56,10 @@ namespace PennyPet
             new PetWindowLayerCoordinator();
         private readonly StickyNoteRepository _notes;
         private readonly StickyWorkspace _stickyWorkspace;
-        private readonly Random _random = new Random();
         private readonly object _keyboardQueueGate = new object();
         private readonly ArtPreloadReservations _artPreloads =
             new ArtPreloadReservations();
-        private readonly PetAnimationController _animation =
-            new PetAnimationController();
+        private readonly InteractionRuntime _interaction;
         internal readonly HashSet<string> _expectedFirstRenderNoteIds =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         internal readonly HashSet<string> _renderedFirstRenderNoteIds =
@@ -75,27 +71,6 @@ namespace PennyPet
         private Size _renderedTargetSize;
         private ContactAuthorForm _contactAuthorForm;
         private DisplayTopologyRuntime _displayTopologyRuntime;
-        private int _row
-            { get { return _animation.Row; } set { _animation.Row = value; } }
-        private int _frame
-            { get { return _animation.Frame; } set { _animation.Frame = value; } }
-        private bool _dragging;
-        private bool _dragMoved;
-        private Point _dragMouseOrigin;
-        private Point _dragWindowOrigin;
-        private bool _typingSession { get { return _animation.TypingSession; }
-            set { _animation.TypingSession = value; } }
-        private int _typingRow { get { return _animation.TypingRow; }
-            set { _animation.TypingRow = value; } }
-        private int _idleRow { get { return _animation.IdleRowState; }
-            set { _animation.IdleRowState = value; } }
-        private DateTime _typingUntilUtc { get { return _animation.TypingUntilUtc; }
-            set { _animation.TypingUntilUtc = value; } }
-        private bool _reminderAttentionActive
-            { get { return _animation.ReminderAttentionActive; }
-                set { _animation.ReminderAttentionActive = value; } }
-        private DateTime _nextFrameUtc { get { return _animation.NextFrameUtc; }
-            set { _animation.NextFrameUtc = value; } }
         internal bool _exiting;
         private int _scalePercent = 100;
         private KeyboardInputEventArgs _latestKeyboardEvent;
@@ -136,7 +111,7 @@ namespace PennyPet
             DoubleBuffered = true;
             AutoScaleMode = AutoScaleMode.None;
             _bubbleCoordinator = new PetBubbleCoordinator(this,
-                delegate { return _dragging; },
+                delegate { return _interaction != null && _interaction.PointerDown; },
                 delegate { return _exiting; }, BubbleMessageClosed,
                 RestoreAmbientBubble, null, _windowLayers);
 
@@ -160,8 +135,11 @@ namespace PennyPet
             ClientSize = ScaledPetSize(_scalePercent);
             // Always show the compact ordinary idle clip first. The less common
             // long animations are decoded only when they are actually selected.
-            _idleRow = IdleRow;
-            _row = _idleRow;
+            // Resolve only the mandatory startup clip before any preload worker.
+            _art.PreloadRow(IdleRow);
+            _interaction = new InteractionRuntime(this, DateTime.UtcNow);
+            _interaction.FrameChanged += RenderCurrentFrame;
+            _interaction.HoverChanged += InteractionHoverChanged;
             BuildRenderedFrameCache();
 
             _reminders = new ReminderSchedule();
@@ -199,9 +177,9 @@ namespace PennyPet
             {
                 if (!_exiting &&
                     !PetHoverStabilityRules.ShouldSuppressHover(
-                        _stableMouseInside, _menu.Visible, _dragging,
+                        _interaction.StableMouseInside, _menu.Visible, _interaction.PointerDown,
                         _settings.SilentMode,
-                        _hoverSuppressedUntilStableLeave))
+                        _interaction.HoverSuppressed))
                     ShowOrUpdateHoverBubble();
             };
             menuCommands.ShowReminder = ShowReminderDialog;
@@ -262,8 +240,6 @@ namespace PennyPet
             _animationTimer = new System.Windows.Forms.Timer();
             _animationTimer.Interval = 15;
             _animationTimer.Tick += AnimationTick;
-            _nextFrameUtc = DateTime.UtcNow.AddMilliseconds(
-                RuntimeFrameDuration(_row, 0));
             _animationTimer.Start();
             _reminderRuntime.Start();
             _persistenceRetryTimer = new System.Windows.Forms.Timer();
@@ -275,6 +251,7 @@ namespace PennyPet
             MouseDown += PetMouseDown;
             MouseMove += PetMouseMove;
             MouseUp += PetMouseUp;
+            MouseCaptureChanged += PetMouseCaptureChanged;
             MouseEnter += delegate { OnRawMouseEnter(); };
             MouseLeave += delegate { OnRawMouseLeave(); };
             LocationChanged += delegate
@@ -339,7 +316,7 @@ namespace PennyPet
                 return;
             }
 
-            bool activeDrag = _dragging && IsHandleCreated &&
+            bool activeDrag = _interaction != null && _interaction.PointerDown && IsHandleCreated &&
                 Handle != IntPtr.Zero;
 
             DisplayTopologySnapshot topology = CurrentTopologySnapshot();
@@ -413,9 +390,8 @@ namespace PennyPet
                             afterRebase.PhysicalBounds.Top)
                         : new Point(rebased.X, rebased.Y);
 
-                    _dragMouseOrigin = new Point(
-                        newCursor.X, newCursor.Y);
-                    _dragWindowOrigin = actualTopLeft;
+                    _interaction.RebasePointer(new Point(
+                        newCursor.X, newCursor.Y), actualTopLeft);
 
                     DisplayDiagnostics.Trace("PetDragDpiHandoff",
                         "oldDpi=" + oldDpi +
@@ -551,7 +527,7 @@ namespace PennyPet
             _keyboard.Dispose();
             _windowLayers.LayerChanged -= PetWindowLayerChanged;
             _keyOverlay.Dispose();
-            DisposeHoverRuntime();
+            _interaction.Stop();
             _bubbleCoordinator.Dispose();
             _weatherSource.Dispose();
             if (_contactAuthorForm != null && !_contactAuthorForm.IsDisposed)

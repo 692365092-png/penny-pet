@@ -2791,16 +2791,8 @@ namespace PennyPet
                 manualFirstThought >= 2200 && manualFirstThought <= 2900 &&
                 manualFailedGuitar >= 2200 && manualFailedGuitar <= 2900 &&
                 manualSecondThought >= 2200 && manualSecondThought <= 2900;
-            PetAnimationController interaction =
-                new PetAnimationController();
-            bool firstOrdinary = interaction.TryStartOrdinaryPoke(4);
-            bool blockedOrdinary = interaction.TryStartOrdinaryPoke(6);
-            bool easterOverride = interaction.TryStartEasterEgg(5);
-            interaction.CompleteInteractionAnimation();
-            bool nextCycle = interaction.TryStartOrdinaryPoke(6);
-            result.ManualFullCycleGuardOk = firstOrdinary &&
-                !blockedOrdinary && easterOverride &&
-                interaction.InteractionAnimationRow == 6 && nextCycle;
+            result.ManualFullCycleGuardOk = RunInteractionCycleCheck() &&
+                RunReadyArtReadCheck();
             DateTime burstStart = new DateTime(2035, 1, 1, 0, 0, 0,
                 DateTimeKind.Utc);
             PetPokeBurstTracker burst = new PetPokeBurstTracker();
@@ -4356,16 +4348,7 @@ namespace PennyPet
                 if (entry == null ||
                     entry.AnimationKind != PetPersonaAnimationKind.Hover)
                     return false;
-            PetAnimationController controller = new PetAnimationController();
-            if (!controller.TryStartOrdinaryPoke(
-                PetAnimationController.HoverRow, true)) return false;
-            controller.CancelInteractionAnimation();
-            if (controller.InteractionAnimationKind ==
-                PetInteractionAnimationKind.None) return false;
-            controller.CompleteInteractionAnimation();
-            controller.CancelInteractionAnimation();
-            return controller.InteractionAnimationKind ==
-                PetInteractionAnimationKind.None;
+            return RunProtectedInteractionCheck();
         }
 
         private static bool RunSolarPreservePlumbingCheck()

@@ -9,6 +9,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Web.Script.Serialization;
 
 namespace PennyPet
@@ -44,7 +45,7 @@ namespace PennyPet
         private int[] _packedStateToClip;
         private PackedClipMetadata[] _packedClips;
         private bool _packedMetadataAttempted;
-        private bool _disposed;
+        private volatile bool _disposed;
         private bool _loadedStartupCache;
 
         private sealed class PackedClipMetadata
@@ -273,7 +274,7 @@ namespace PennyPet
                     finally { if (deflate != null) deflate.Dispose(); }
                     AnimationClip clip = new AnimationClip(
                         "embedded-startup-cache", created.ToArray(), durations);
-                    _runtimeClips[0] = clip;
+                    Volatile.Write(ref _runtimeClips[0], clip);
                     _resolved[RuntimeStateNames[0]] = clip;
                     _loadedStartupCache = true;
                     created.Clear();
@@ -777,13 +778,21 @@ namespace PennyPet
             return clip.Frames[index];
         }
 
+        // Fully constructed clips are published once. Reading a ready row must
+        // not wait on another row's decoder holding _resolveGate. UI consumption
+        // stops before owner-thread disposal; workers still serialize with Dispose.
         internal bool IsRowLoaded(int row)
         {
-            if (row < 0 || row >= _runtimeClips.Length) return false;
-            lock (_resolveGate)
-            {
-                return !_disposed && _runtimeClips[row] != null;
-            }
+            return row >= 0 && row < _runtimeClips.Length && !_disposed &&
+                Volatile.Read(ref _runtimeClips[row]) != null;
+        }
+
+        internal AnimationClip GetLoadedClip(int row)
+        {
+            if (_disposed) throw new ObjectDisposedException("PetArtPackage");
+            AnimationClip clip = Volatile.Read(ref _runtimeClips[row]);
+            if (clip == null) throw new InvalidOperationException("Animation row is not ready.");
+            return clip;
         }
 
         internal void PreloadRow(int row)
@@ -809,11 +818,11 @@ namespace PennyPet
                     else
                         clip = ResolveState(RuntimeStateNames[row],
                             new HashSet<string>(StringComparer.OrdinalIgnoreCase));
-                    _runtimeClips[row] = clip;
                 }
                 if (clip == null || clip.FrameCount == 0)
                     throw new InvalidDataException("美术状态没有可播放帧：" +
                         RuntimeStateNames[row]);
+                Volatile.Write(ref _runtimeClips[row], clip);
                 return clip;
             }
         }

@@ -21,7 +21,7 @@ namespace PennyPet.Tests
             string reconcile = StickySessionTopologyContractTests.SliceMethod(
                 runtime, "private void ReconcilePetDisplayPlacement");
             Assert.IsFalse(reconcile.Contains("CommitPetPreferredFromFacts("));
-            Assert.IsTrue(reconcile.Contains("if (_dragging)"));
+            Assert.IsTrue(reconcile.Contains("if (_interaction.PointerDown)"));
             Assert.IsTrue(reconcile.Contains("_petUserMovedSinceTemporaryRehome"));
         }
 
@@ -38,10 +38,7 @@ namespace PennyPet.Tests
             Assert.IsTrue(dpi.Contains("ActualPetDpi(e.DeviceDpiNew)"));
             Assert.IsTrue(dpi.Contains(
                 "RebaseActiveDragTopLeft("));
-            Assert.IsTrue(dpi.Contains(
-                "_dragMouseOrigin ="));
-            Assert.IsTrue(dpi.Contains(
-                "_dragWindowOrigin ="));
+            Assert.IsTrue(dpi.Contains("_interaction.RebasePointer(new Point("));
             Assert.IsTrue(dpi.Contains(
                 "_petDpiDragHandoffActive"));
             Assert.IsFalse(dpi.Contains(

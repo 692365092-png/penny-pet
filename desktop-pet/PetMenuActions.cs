@@ -239,19 +239,11 @@ namespace PennyPet
             _reminderRuntime.Stop();
             _conversation.Stop();
             _persistenceRetryTimer.Stop();
-            _dragging = false;
+            _interaction.BeginExit(DateTime.UtcNow);
             Capture = false;
-            _typingSession = false;
-            _animation.CancelInteractionAnimation();
             _keyOverlay.HideImmediately();
-            _stableMouseInside = false;
             if (_menu.Visible) _menu.Close();
             CloseCurrentBubbleWithoutRestoringHover();
-            _row = WavingRow;
-            _frame = 0;
-            _nextFrameUtc = DateTime.UtcNow.AddMilliseconds(
-                RuntimeFrameDuration(_row, _frame));
-            RenderCurrentFrame();
             if (!_settings.SilentMode)
                 ShowBubble("再见啦，照顾好自己！");
         }

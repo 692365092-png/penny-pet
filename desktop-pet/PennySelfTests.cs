@@ -64,6 +64,8 @@ namespace PennyPet
                 bubble = new PetBubbleCoordinator(Pet, () => true, () => false,
                     null, null);
                 Pc2Set(Pet, "_notes", Repository);
+                Pc2Set(Pet, "_interaction", new InteractionRuntime(
+                    new InteractionTestArt(), DateTime.UtcNow));
 
                 Pc2Set(Pet, "_displayTopologyRuntime", Display);
 

@@ -1622,51 +1622,6 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void AnimationController_ResolvesStatePriorityWithoutAWindow()
-        {
-            PetAnimationController controller = new PetAnimationController();
-            Func<int, bool> allRowsLoaded = delegate { return true; };
-
-            Assert.AreEqual(PetAnimationController.WavingRow,
-                controller.ChooseRow(true, true, true, false, allRowsLoaded));
-            Assert.AreEqual(PetAnimationController.FailedRow,
-                controller.ChooseRow(false, true, true, false, allRowsLoaded));
-
-            controller.TypingSession = true;
-            controller.TypingRow = PetAnimationController.ThinkingRow;
-            Assert.AreEqual(PetAnimationController.ThinkingRow,
-                controller.ChooseRow(false, false, true, false, allRowsLoaded));
-
-            Assert.IsTrue(controller.TryStartOrdinaryPoke(
-                PetAnimationController.HoverRow));
-            Assert.IsFalse(controller.TryStartOrdinaryPoke(
-                PetAnimationController.WaitingRow));
-            Assert.AreEqual(PetAnimationController.HoverRow,
-                controller.ChooseRow(false, false, true, false, allRowsLoaded));
-            Assert.IsTrue(controller.TryStartEasterEgg(
-                PetAnimationController.FailedRow));
-            Assert.AreEqual(PetInteractionAnimationKind.EasterEgg,
-                controller.InteractionAnimationKind);
-            Assert.AreEqual(PetAnimationController.FailedRow,
-                controller.ChooseRow(false, false, true, false, allRowsLoaded));
-
-            controller.ReminderAttentionActive = true;
-            Assert.AreEqual(PetAnimationController.NotificationRow,
-                controller.ChooseRow(false, true, true, false, allRowsLoaded));
-            controller.CancelInteractionAnimation();
-            Assert.IsFalse(controller.TryStartOrdinaryPoke(
-                PetAnimationController.HoverRow));
-            controller.ReminderAttentionActive = false;
-            Assert.IsTrue(controller.TryStartOrdinaryPoke(
-                PetAnimationController.HoverRow));
-            controller.CompleteInteractionAnimation();
-            Assert.IsTrue(controller.TryStartOrdinaryPoke(
-                PetAnimationController.WaitingRow));
-            Assert.IsFalse(PetAnimationController.MovementStartsDrag(4, 4));
-            Assert.IsTrue(PetAnimationController.MovementStartsDrag(6, 0));
-        }
-
-        [TestMethod]
         public void PokeBurstTracker_TriggersOnlyAtFiftyUntilAPause()
         {
             DateTime start = new DateTime(2035, 1, 1, 0, 0, 0,

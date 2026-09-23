@@ -8,19 +8,6 @@ namespace PennyPet.Tests
     public sealed partial class InputAnimationBoundaryTests
     {
         [TestMethod]
-        public void AnimationTick_DoesNotPauseForOwnNoteFocus()
-        {
-            string source = ReadSource("PetAnimationRuntime.cs");
-            string tick = Between(source, "private void AnimationTick",
-                "private int RuntimeFrameCount");
-
-            Assert.IsFalse(tick.Contains("HasFocusedOwnNoteTextInput()"),
-                "Animation must not pause merely because a note editor has focus.");
-            Assert.IsFalse(tick.Contains("ShouldPauseOwnNoteAnimation"),
-                "Animation must not pause for own-note IME composition.");
-        }
-
-        [TestMethod]
         public void AnimationRendering_DoesNotChangeWindowFocusOrActivation()
         {
             string runtime = ReadSource("PetAnimationRuntime.cs");
@@ -112,15 +99,13 @@ namespace PennyPet.Tests
             string animation = ReadSource("PetAnimationRuntime.cs");
             string coordinator = ReadSource("PetSmallTalkCoordinator.cs");
             string runtime = ReadSource("Features/Conversation/ConversationRuntime.cs");
-            string poke = Between(animation,
-                "private async void HandlePetPoked",
-                "internal void StartOrdinaryPokeAnimation");
+            string poke = ReadSource("Features/Interaction/InteractionRuntime.Conversation.cs");
 
             Assert.IsTrue(form.Contains(
                     "private readonly ConversationRuntime") &&
-                poke.Contains("StartOrdinaryPokeAnimation(nowUtc)") &&
+                poke.Contains("PickRandomManualAnimationRow(_random, Row)") &&
                 poke.Contains("IsOpeningEligible") &&
-                poke.Contains("StartNotificationPokeAnimation(nowUtc)") &&
+                poke.Contains("StartPoke(NotificationRow,") &&
                 poke.Contains(".HandlePetPokedAsync") &&
                 runtime.Contains("_daily.HandlePetPokedAsync(now)") &&
                 runtime.Contains("_daypart.HandlePetPoked(now)") &&
@@ -283,10 +268,8 @@ namespace PennyPet.Tests
                 client.Contains("wind_gusts_10m") &&
                 !client.Contains("apikey"),
                 "Forecast request must keep the reviewed eight-variable shape.");
-            string poke = Between(animation,
-                "private async void HandlePetPoked",
-                "internal void StartOrdinaryPokeAnimation");
-            Assert.IsTrue(poke.IndexOf("StartNotificationPokeAnimation(nowUtc)",
+            string poke = ReadSource("Features/Interaction/InteractionRuntime.Conversation.cs");
+            Assert.IsTrue(poke.IndexOf("StartPoke(NotificationRow,",
                     StringComparison.Ordinal) <
                 poke.IndexOf(".HandlePetPokedAsync", StringComparison.Ordinal) &&
                 coordinator.Contains("await _weatherForecast") &&
@@ -306,7 +289,7 @@ namespace PennyPet.Tests
                 coordinator.Contains(
                     "DailyContentPreferencesSnapshot preferences = _preferences();") &&
                 !coordinator.Contains("private readonly Func<ZodiacSign>") &&
-                animation.Contains("private async Task HandlePetPokedAsync()") &&
+                animation.Contains("await _interaction.PokeAsync(") &&
                 animation.Contains(
                     "ApplicationDiagnostics.ReportNonFatal(\"pet-poke\", error)"),
                 "One immutable preference snapshot must span each async attempt and the UI boundary must observe failures.");
@@ -396,17 +379,17 @@ namespace PennyPet.Tests
                 "private void PetMouseMove");
             string bubble = ReadSource("PetBubbleCoordinator.cs");
             string form = ReadSource("PetForm.cs");
-            string hover = ReadSource("PetHoverRuntime.cs");
+            string hover = ReadSource("Features/Interaction/InteractionRuntime.cs");
 
-            Assert.IsTrue(mouseDown.Contains(
-                    "_hoverSuppressedUntilStableLeave = true") &&
+            Assert.IsTrue(mouseDown.Contains("_interaction.BeginPointer(") &&
+                hover.Contains("HoverSuppressed = true") &&
                 mouseDown.Contains("HideHoverBubble()"),
                 "Mouse-down must end the ambient Hover session.");
             Assert.IsFalse(mouseDown.Contains(
                 "CloseCurrentBubbleWithoutRestoringHover"),
                 "Mouse-down must not close foreground user messages.");
             Assert.IsTrue(hover.Contains(
-                    "_hoverSuppressedUntilStableLeave = false") &&
+                    "HoverSuppressed = false") &&
                 hover.Contains("CommitStableLeave") &&
                 bubble.Contains(
                     "PetHoverStabilityRules.ShouldSuppressHover"),

@@ -114,7 +114,7 @@ namespace PennyPet
         void IReminderPresentation.ShowDue(ReminderItem item, StickyNoteData linkedNote)
         {
             _conversation.InvalidatePending();
-            _animation.CancelInteractionAnimation();
+            _interaction.TakeReminder();
             ShowDueReminderBubble(String.IsNullOrWhiteSpace(item.Text)
                 ? "到时间啦。" : item.Text, DueReminderBubbleFontSizePoints(
                     _settings.KeyOverlayScalePercent));
@@ -131,15 +131,7 @@ namespace PennyPet
 
         void IReminderPresentation.BeginAttention()
         {
-            _animation.CancelInteractionAnimation();
-            _reminderAttentionActive = true;
-            if (_row == NotificationRow)
-            {
-                _frame = 0;
-                _nextFrameUtc = DateTime.UtcNow.AddMilliseconds(
-                    RuntimeFrameDuration(_row, _frame));
-                RenderCurrentFrame();
-            }
+            _interaction.BeginReminderAttention(DateTime.UtcNow);
         }
     }
 }

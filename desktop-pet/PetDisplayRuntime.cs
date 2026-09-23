@@ -405,7 +405,7 @@ namespace PennyPet
                 _petEffectiveFacts = actual;
 
             // User drag owns the HWND until mouse-up.
-            if (_dragging)
+            if (_interaction.PointerDown)
             {
                 _stickyWorkspace.PositionNoteTabs();
                 return;

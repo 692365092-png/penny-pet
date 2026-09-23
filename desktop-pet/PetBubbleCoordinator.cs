@@ -318,7 +318,7 @@ namespace PennyPet
 
         bool IReminderPresentation.TryShowPreAlert(string text, bool updateCurrent)
         {
-            if (_dragging || _exiting || _menu.Visible || IsDisposed) return false;
+            if (_interaction.PointerDown || _exiting || _menu.Visible || IsDisposed) return false;
             if (_bubbleCoordinator.HasCurrent)
             {
                 if (_bubbleCoordinator.IsCurrent(PetMessageKind.ReminderPreAlert) &&
@@ -338,9 +338,9 @@ namespace PennyPet
         {
             if (IsDisposed || _exiting ||
                 PetHoverStabilityRules.ShouldSuppressHover(
-                    _stableMouseInside, _menu.Visible, _dragging,
+                    _interaction.StableMouseInside, _menu.Visible, _interaction.PointerDown,
                     _settings.SilentMode,
-                    _hoverSuppressedUntilStableLeave)) return;
+                    _interaction.HoverSuppressed)) return;
             ReminderItem next = _reminders.Next;
             string text = next != null
                 ? "距离最近提醒还有" + FormatRemaining(next.Remaining) +
@@ -389,11 +389,11 @@ namespace PennyPet
 
         private void RestoreAmbientBubble()
         {
-            if (_dragging || _exiting || IsDisposed) return;
+            if (_interaction.PointerDown || _exiting || IsDisposed) return;
             if (_reminderRuntime.RefreshPreAlert(DateTime.UtcNow)) return;
             if (!PetHoverStabilityRules.ShouldSuppressHover(
-                _stableMouseInside, _menu.Visible, _dragging,
-                _settings.SilentMode, _hoverSuppressedUntilStableLeave))
+                _interaction.StableMouseInside, _menu.Visible, _interaction.PointerDown,
+                _settings.SilentMode, _interaction.HoverSuppressed))
                 ShowOrUpdateHoverBubble();
         }
 
