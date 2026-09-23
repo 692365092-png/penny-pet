@@ -8,6 +8,9 @@ Implementation follows the approved R01–R27 roadmap on `codex/simplify-dock-pi
 | R02 | Exclude tool argument parsing and self-test source directories from product builds; inspect the actual release for test/tool entry points and fixtures. | [16d9e84](https://github.com/692365092-png/penny-pet/commit/16d9e845c5ae764f34178f809c17a85b4979d55b), [Windows CI passed](https://github.com/692365092-png/penny-pet/actions/runs/35800808231). Window interaction exercise methods remain for the R15 view/test-driver extraction. |
 | R03 | Inline the readiness conjunction; remove the unused flag parser and product arguments. | [89b480d](https://github.com/692365092-png/penny-pet/commit/89b480d868c6d613781fdb89ca8ad83dc3942807). One truth-table unit test and the duplicate self-test JSON field were removed with the wrapper. The actual startup boundary guard and release smoke remain. |
 | R04 | Record executable startup/shutdown, memory and GUI handles; run the existing 10/50/100-note managed microbenchmark in Windows CI. | Reports are uploaded as `Penny-test-reports`. These are automated baseline observations; native drag latency, visible follower lag and real IME interaction still require their dedicated Windows scenarios. |
+| R05 | Send one shared reminder update per model change; refresh countdown text with one Sticky STA timer; remove countdown polling from Pet STA and avoid geometry snapshots for reminder-only updates. | A native self-test checks shared-list parity, independent ticking while the caller is blocked, selection/body preservation, hidden/empty banners and batch close. The existing `reminder_banner_tick_throttled_ok` report field now checks the actual host clock. |
+
+R03 passed [Windows CI #57](https://github.com/692365092-png/penny-pet/actions/runs/35801035266). R04 passed [Windows CI #58](https://github.com/692365092-png/penny-pet/actions/runs/35801276643), including baseline capture and upload.
 
 ## Reading the baseline
 
@@ -20,4 +23,4 @@ Implementation follows the approved R01–R27 roadmap on `codex/simplify-dock-pi
 
 Every sticky currently displays the same global list of up to five reminders. `SourceNoteId` links reminder lifetime to a note; it is not a display filter. Filtering banners by `SourceNoteId`, as suggested in the roadmap, would change current functionality.
 
-R05 will preserve the shared list: send it once to StickyHost when the schedule changes, fan out locally on Sticky STA, and update countdown labels locally. Do not replace the global banner with per-note-only reminders.
+R05 preserves the shared list: send it once to StickyHost when the schedule changes, fan out locally on Sticky STA, and update countdown labels locally. The global banner remains available on every note.

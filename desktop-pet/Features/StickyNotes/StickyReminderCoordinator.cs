@@ -10,6 +10,21 @@ namespace PennyPet
     // coordination remain in their existing reminder modules.
     internal sealed partial class StickyNoteWindow
     {
+        internal bool HasReminderBanner
+        {
+            get { return _reminderList.Items.Count != 0; }
+        }
+
+        internal void RefreshReminderCountdown(DateTime nowUtc)
+        {
+            foreach (WC.ListBoxItem row in _reminderList.Items)
+            {
+                string text = ReminderDisplayText((ReminderItem)row.Tag, nowUtc);
+                if (!String.Equals(row.Content as string, text,
+                    StringComparison.Ordinal)) row.Content = text;
+            }
+        }
+
         private void ReminderSelectionChanged(object sender,
             WC.SelectionChangedEventArgs e)
         {
@@ -105,7 +120,7 @@ namespace PennyPet
         private void UpdateReminderRow(WC.ListBoxItem row,
             ReminderItem reminder)
         {
-            row.Content = ReminderDisplayText(reminder);
+            row.Content = ReminderDisplayText(reminder, DateTime.UtcNow);
             row.FontSize = PointSizeToDip(Math.Max(6F, Math.Min(72F,
                 reminder.FontSizeTwips / 20F)));
         }
@@ -132,11 +147,11 @@ namespace PennyPet
                 ? W.Visibility.Collapsed : W.Visibility.Visible;
         }
 
-        private string ReminderDisplayText(ReminderItem reminder)
+        private string ReminderDisplayText(ReminderItem reminder, DateTime nowUtc)
         {
             if (reminder == null) return String.Empty;
             return "• " + ShortItemText.Normalize(reminder.Text) + "  ·  " +
-                FormatCountdown(reminder.DeadlineUtc - DateTime.UtcNow);
+                FormatCountdown(reminder.DeadlineUtc - nowUtc);
         }
 
         private void ExecuteSelectedReminderDelete()

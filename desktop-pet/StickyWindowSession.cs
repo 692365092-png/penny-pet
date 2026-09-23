@@ -44,6 +44,17 @@ namespace PennyPet
         }
 
         internal string NoteId { get { return _noteId; } }
+        internal event Action ReminderVisibilityChanged;
+        internal bool HasVisibleReminders
+        {
+            get { return IsAvailable && _window.Visible && _window.HasReminderBanner; }
+        }
+
+        internal void RefreshReminderCountdown(DateTime nowUtc)
+        {
+            _window.RefreshReminderCountdown(nowUtc);
+        }
+
         internal bool IsAvailable
         {
             get { return _window != null && !_window.IsDisposed; }
@@ -205,13 +216,12 @@ namespace PennyPet
             return CurrentResult();
         }
 
-        internal StickyUiCommandResult UpdateReminders(
+        internal void UpdateReminders(
             IEnumerable<ReminderItem> reminders)
         {
-            if (!IsAvailable) return StickyUiCommandResult.NotHandled();
+            if (!IsAvailable) return;
             _window.UpdateReminderBanner(reminders ??
                 new ReminderItem[0]);
-            return CurrentResult();
         }
 
         internal StickyUiCommandResult SetBounds(StickyUiBounds bounds,
@@ -678,6 +688,7 @@ namespace PennyPet
 
         private void WireEvents()
         {
+            _window.IsVisibleChanged += WindowVisibilityChanged;
             _window.NoteChanged += NoteChanged;
             _window.TypingActivity += TypingActivity;
             _window.InputFocusChanged += InputFocusChanged;
@@ -709,6 +720,7 @@ namespace PennyPet
 
         private void UnwireEvents()
         {
+            _window.IsVisibleChanged -= WindowVisibilityChanged;
             _window.NoteChanged -= NoteChanged;
             _window.TypingActivity -= TypingActivity;
             _window.InputFocusChanged -= InputFocusChanged;
@@ -736,6 +748,13 @@ namespace PennyPet
             _window.NewTodoRequested -= NewTodoRequested;
             _window.NewScheduleRequested -= NewScheduleRequested;
             _window.FormClosed -= WindowClosed;
+        }
+
+        private void WindowVisibilityChanged(object sender,
+            System.Windows.DependencyPropertyChangedEventArgs e)
+        {
+            Action changed = ReminderVisibilityChanged;
+            if (changed != null) changed();
         }
 
         private void NoteChanged(object sender, EventArgs e)

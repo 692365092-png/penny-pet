@@ -25,7 +25,8 @@ namespace PennyPet
         CaptureDockFacts,
         Close,
         CloseAll,
-        UpdateReminders
+        UpdateReminders,
+        UpdateAllReminders
     }
 
     internal sealed class StickyUiCommand
@@ -100,6 +101,13 @@ namespace PennyPet
         {
             return new StickyUiCommand(StickyUiCommandKind.UpdateReminders,
                 noteId, false, null, null, null, reminders);
+        }
+
+        internal static StickyUiCommand UpdateAllReminders(
+            IEnumerable<ReminderItem> reminders)
+        {
+            return new StickyUiCommand(StickyUiCommandKind.UpdateAllReminders,
+                String.Empty, false, reminders: reminders);
         }
 
         internal static StickyUiCommand Show(string noteId, bool focusEditor,

@@ -22,6 +22,7 @@ namespace PennyPet
         // Sticky-STA only. Advance before posting input to Pet, including when
         // Pet is still waiting for an older finalization acknowledgment.
         private DockInput _currentDockInput;
+        private System.Windows.Threading.DispatcherTimer _reminderClock;
 
         internal void Start()
         {
@@ -351,9 +352,14 @@ namespace PennyPet
                     case StickyUiCommandKind.CaptureDockFacts:
                         return CaptureDockFactsForCommit(command);
                     case StickyUiCommandKind.UpdateReminders:
-                        return TryGetSession(command.NoteId, out session)
-                            ? session.UpdateReminders(command.Reminders)
-                            : StickyUiCommandResult.NotHandled();
+                        if (!TryGetSession(command.NoteId, out session))
+                            return StickyUiCommandResult.NotHandled();
+                        session.UpdateReminders(command.Reminders);
+                        return StickyUiCommandResult.Handled();
+                    case StickyUiCommandKind.UpdateAllReminders:
+                        foreach (StickyWindowSession member in _sessions.Values)
+                            member.UpdateReminders(command.Reminders);
+                        return StickyUiCommandResult.Handled();
                     case StickyUiCommandKind.Close:
                         return TryGetSession(command.NoteId, out session)
                             ? session.Close()
@@ -370,9 +376,45 @@ namespace PennyPet
                 {
                     session.CloseAfterFailure();
                     _sessions.Remove(command.NoteId);
+                    RefreshReminderClock();
                 }
                 throw;
             }
+            finally
+            {
+                switch (command.Kind)
+                {
+                    case StickyUiCommandKind.Create:
+                    case StickyUiCommandKind.EnsureSession:
+                    case StickyUiCommandKind.UpdateReminders:
+                    case StickyUiCommandKind.UpdateAllReminders:
+                    case StickyUiCommandKind.CloseAll:
+                    case StickyUiCommandKind.RestoreDockGroup:
+                        RefreshReminderClock();
+                        break;
+                }
+            }
+        }
+
+        private void RefreshReminderClock()
+        {
+            bool active = false;
+            foreach (StickyWindowSession session in _sessions.Values)
+                if (session.HasVisibleReminders) { active = true; break; }
+            if (active && _reminderClock == null)
+            {
+                _reminderClock = new System.Windows.Threading.DispatcherTimer(
+                    System.Windows.Threading.DispatcherPriority.Background);
+                _reminderClock.Interval = TimeSpan.FromSeconds(1);
+                _reminderClock.Tick += delegate
+                {
+                    DateTime nowUtc = DateTime.UtcNow;
+                    foreach (StickyWindowSession session in _sessions.Values)
+                        if (session.HasVisibleReminders)
+                            session.RefreshReminderCountdown(nowUtc);
+                };
+            }
+            if (_reminderClock != null) _reminderClock.IsEnabled = active;
         }
 
         private StickyUiCommandResult CreateSession(StickyUiCommand command)
@@ -388,6 +430,7 @@ namespace PennyPet
             StickyWindowSession session = new StickyWindowSession(
                 command.Snapshot, SessionEventRaised, command.Placement);
             _sessions[command.NoteId] = session;
+            session.ReminderVisibilityChanged += RefreshReminderClock;
             if (command.Reminders != null)
                 session.UpdateReminders(command.Reminders);
             try
@@ -447,6 +490,7 @@ namespace PennyPet
                     SessionEventRaised);
 
             _sessions[command.NoteId] = session;
+            session.ReminderVisibilityChanged += RefreshReminderClock;
 
             try
             {
@@ -643,6 +687,7 @@ namespace PennyPet
                 if (_sessions.TryGetValue(value.NoteId, out current) &&
                     Object.ReferenceEquals(current, session))
                     _sessions.Remove(value.NoteId);
+                RefreshReminderClock();
             }
             PostEvent(value);
         }
@@ -1122,10 +1167,12 @@ namespace PennyPet
 
         private void CloseSessionsForShutdown()
         {
+            if (_reminderClock != null) _reminderClock.Stop();
             foreach (StickyWindowSession session in
                 new List<StickyWindowSession>(_sessions.Values))
                 session.CloseForHostShutdown();
             _sessions.Clear();
+            if (_reminderClock != null) _reminderClock.Stop();
         }
 
         internal bool WaitForExit(int timeoutMilliseconds)

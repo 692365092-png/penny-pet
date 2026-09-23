@@ -68,23 +68,16 @@ namespace PennyPet
 
         internal void UpdateAllStickyNoteReminderBanners()
         {
-            System.Collections.Generic.List<ReminderItem> reminders =
-                _pet._reminders.GetItems();
-            foreach (StickyNoteData note in Notes.GetAll())
-            {
-                if (note == null || !Hosted.ContainsNote(note.Id))
-                    continue;
-                PostHostedStickyCommand(
-                    StickyUiCommand.UpdateReminders(note.Id, reminders),
-                    delegate(StickyUiCommandResult result)
-                    {
-                        if (result == null ||
-                            result.Status == StickyUiCommandStatus.Handled)
-                            return;
-                        ReportHostedStickyCommandFailure(
-                            "sticky-hosted-reminder-refresh", result);
-                    });
-            }
+            PostHostedStickyCommand(
+                StickyUiCommand.UpdateAllReminders(_pet._reminders.GetItems()),
+                delegate(StickyUiCommandResult result)
+                {
+                    if (result == null ||
+                        result.Status == StickyUiCommandStatus.Handled)
+                        return;
+                    ReportHostedStickyCommandFailure(
+                        "sticky-hosted-reminder-refresh", result);
+                });
         }
 
         internal void PreviewHostedReminderFontSize(ReminderItem existing,

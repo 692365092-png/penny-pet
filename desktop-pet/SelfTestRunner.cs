@@ -2503,14 +2503,7 @@ namespace PennyPet
             result.ConcreteDateTimeOk = Math.Abs(
                 (concrete.DeadlineUtc.ToLocalTime() -
                     concreteLocal).TotalSeconds) < 1;
-            long second = DateTime.UtcNow.Ticks / TimeSpan.TicksPerSecond;
-            result.BannerTickThrottleOk =
-                PetReminderCoordinator.ShouldRefreshReminderBanner(
-                    Int64.MinValue, second) &&
-                !PetReminderCoordinator.ShouldRefreshReminderBanner(
-                    second, second) &&
-                PetReminderCoordinator.ShouldRefreshReminderBanner(
-                    second, second + 1);
+            result.BannerTickThrottleOk = RunStickyReminderHostChecks();
             result.DueBubblePersistentOk =
                 PetReminderCoordinator.DueReminderBubbleDurationMilliseconds == 0;
             result.DueBubbleUsesOwnSizeOk = Math.Abs(

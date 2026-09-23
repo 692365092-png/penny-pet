@@ -11,13 +11,7 @@ namespace PennyPet
 
         private int _animationGeneration;
 
-        internal long LastBannerSecond { get; set; }
         internal ReminderItem PreAlertItem { get; set; }
-
-        internal PetReminderCoordinator()
-        {
-            LastBannerSecond = Int64.MinValue;
-        }
 
         internal int NextAnimationGeneration()
         {
@@ -27,12 +21,6 @@ namespace PennyPet
         internal int CurrentAnimationGeneration
         {
             get { return _animationGeneration; }
-        }
-
-        internal static bool ShouldRefreshReminderBanner(long previousSecond,
-            long currentSecond)
-        {
-            return previousSecond != currentSecond;
         }
 
         internal static bool IsPreAlertWindow(TimeSpan remaining)

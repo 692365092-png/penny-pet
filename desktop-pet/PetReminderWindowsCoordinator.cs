@@ -137,18 +137,6 @@ namespace PennyPet
                 return;
             }
 
-            // Due checks remain at 500 ms. Countdown labels only display whole
-            // seconds, so update their existing rows once per second without
-            // rebuilding controls or touching the editor/IME focus.
-            long currentSecond = now.Ticks / TimeSpan.TicksPerSecond;
-            if (PetReminderCoordinator.ShouldRefreshReminderBanner(
-                _lastReminderBannerSecond,
-                currentSecond))
-            {
-                _lastReminderBannerSecond = currentSecond;
-                _stickyWorkspace.UpdateAllStickyNoteReminderBanners();
-            }
-
             ReminderItem next = _reminders.NextPreAlert;
             if (PetReminderCoordinator.ShouldShowPreAlert(next, next == null
                 ? TimeSpan.Zero : next.DeadlineUtc - now))

@@ -34,9 +34,6 @@ namespace PennyPet
         private readonly PetDaypartCheckInCoordinator _daypartCheckInCoordinator;
         private readonly PetPokeBurstTracker _pokeBurstTracker =
             new PetPokeBurstTracker();
-        private long _lastReminderBannerSecond
-            { get { return _reminderCoordinator.LastBannerSecond; }
-                set { _reminderCoordinator.LastBannerSecond = value; } }
         private readonly PetContextMenu _petContextMenu;
         internal ContextMenuStrip _menu { get { return _petContextMenu.Menu; } }
         private ToolStripMenuItem _statusItem
