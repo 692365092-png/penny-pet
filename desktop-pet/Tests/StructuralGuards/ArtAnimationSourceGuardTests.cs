@@ -25,13 +25,14 @@ namespace PennyPet.Tests
                 "private PersistenceResult CommitPreparedSnapshot" })
             {
                 string body = RawSource.SliceMethod(source, entry);
-                Assert.IsTrue(body.Contains("_writer.Enqueue("), entry);
+                Assert.IsTrue(body.Contains("_store.Save("), entry);
                 Assert.IsFalse(body.Contains("AtomicTextFile.WriteAllLines"), entry);
             }
-            string export = RawSource.SliceMethod(source, "internal PersistenceResult ExportSnapshot");
+            string store = ReadSource("Features/StickyNotes/StickyStore.cs");
+            string export = RawSource.SliceMethod(store, "internal PersistenceResult ExportSnapshot");
             Assert.IsFalse(export.Contains("_writer.Enqueue(") || export.Contains("WaitForPendingSaves("),
                 "Emergency export must not wait for the primary writer.");
-            string physicalWrite = RawSource.SliceMethod(source,
+            string physicalWrite = RawSource.SliceMethod(store,
                 "private PersistenceResult WriteSnapshot");
             Assert.IsFalse(physicalWrite.Contains("NormalizeAll") ||
                 physicalWrite.Contains("generation") || physicalWrite.Contains("lock ("),
@@ -78,7 +79,7 @@ namespace PennyPet.Tests
                 "Every file must be version-preflighted before payload parsing.");
             Assert.IsTrue(save.IndexOf("if (!_loadSucceeded)",
                     StringComparison.Ordinal) <
-                save.IndexOf("CloneNotes(_notes)",
+                save.IndexOf("Model.CaptureSnapshot()",
                     StringComparison.Ordinal),
                 "A blocked repository must reject save before snapshot generation.");
             Assert.IsTrue(pet.Contains("if (_notes.IsFutureSchemaBlocked)") &&
@@ -171,9 +172,9 @@ namespace PennyPet.Tests
             string create = Between(repository,
                 "public StickyNoteData Create(string text, Point location)",
                 "public List<StickyNoteData> GetAll()");
-            string draft = Between(repository,
-                "internal StickyNoteData CreateDraft(string text, Point location)",
-                "public List<StickyNoteData> GetAll()");
+            string draft = RawSource.SliceMethod(
+                ReadSource("Core/StickyNotes/StickyModel.cs"),
+                "internal StickyNoteData CreateDraft(string text, Point location)");
 
             Assert.IsTrue(create.Contains("CreateDraft(text, location)") &&
                 create.Contains("Save();"),

@@ -8,13 +8,12 @@ using System.Threading;
 
 namespace PennyPet
 {
-    // File-system persistence and recovery adapter. Data serialization stays
-    // in Core; the default Windows directory comes from WindowsDataPaths.
+    // Transitional owner coordinator: model commands and load/recovery policy.
+    // StickyModel owns memory; StickyStore accepts detached writes only.
     internal sealed class StickyNoteRepository
     {
         private readonly string _filePath;
-        private readonly List<StickyNoteData> _notes = new List<StickyNoteData>();
-        private readonly IReadOnlyList<StickyNoteData> _notesView;
+        internal readonly StickyModel Model = new StickyModel();
         private bool _loadSucceeded = true;
         private bool _recoveredFromLoadFailure;
         private bool _recoveredFromPartialSalvage;
@@ -22,7 +21,7 @@ namespace PennyPet
         private int _skippedCorruptLineCount;
         private string _recoveryBackupPath = String.Empty;
         private UnsupportedStickySchemaException _futureSchemaError;
-        private readonly PersistenceWriter<StickyWriteRequest> _writer;
+        private readonly StickyStore _store;
         private readonly SynchronizationContext _uiContext;
         private Exception _blockedSaveError;
         private int _blockedSaveFailures;
@@ -33,10 +32,9 @@ namespace PennyPet
             Func<StickyWriteRequest, PersistenceResult> write = null)
         {
             _filePath = filePath;
-            _notesView = _notes.AsReadOnly();
             _uiContext = SynchronizationContext.Current;
-            _writer = new PersistenceWriter<StickyWriteRequest>(write ?? WriteSnapshot);
-            _writer.Failed += delegate(object sender, PersistenceFailedEventArgs e)
+            _store = new StickyStore(filePath, write);
+            _store.SaveFailed += delegate(object sender, PersistenceFailedEventArgs e)
             {
                 NotifySaveFailed(e.Result, e.ConsecutiveFailures);
             };
@@ -77,7 +75,7 @@ namespace PennyPet
                 StickyNoteRepository legacy = LoadFromFile(legacyPath);
                 if (!legacy.LoadSucceeded || legacy.Count == 0) continue;
                 // LoadFromFile already repaired content, order and file relations.
-                current._notes.AddRange(legacy._notes);
+                current.Model.ReplaceWith(legacy.Model.InStorageOrder);
                 current.SaveToFile(currentPath);
                 break;
             }
@@ -100,7 +98,7 @@ namespace PennyPet
             }
 
             ApplicationDiagnostics.ReportNonFatal("sticky-notes-load", primaryError);
-            repository._notes.Clear();
+            repository.Model.Clear();
             string backupPath = filePath + ".bak";
             Exception backupError = null;
             bool backupLoaded = File.Exists(backupPath) &&
@@ -153,7 +151,7 @@ namespace PennyPet
                     }
                     catch (Exception salvageError)
                     {
-                        repository._notes.Clear();
+                        repository.Model.Clear();
                         repository._loadSucceeded = false;
                         ApplicationDiagnostics.ReportNonFatal(
                             "sticky-notes-salvage", salvageError);
@@ -174,7 +172,7 @@ namespace PennyPet
             }
             catch (Exception recoveryError)
             {
-                repository._notes.Clear();
+                repository.Model.Clear();
                 repository._loadSucceeded = false;
                 ApplicationDiagnostics.ReportNonFatal("sticky-notes-recovery",
                     recoveryError);
@@ -186,7 +184,7 @@ namespace PennyPet
             string filePath, out Exception error)
         {
             error = null;
-            repository._notes.Clear();
+            repository.Model.Clear();
             try
             {
                 if (!File.Exists(filePath))
@@ -209,13 +207,14 @@ namespace PennyPet
                 var legacyParents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 foreach (string line in lines)
                     AddParsedLine(repository, line, legacyParents);
-                repository.NormalizeTabOrders();
-                StickyDockFileRelations.Normalize(repository._notes, legacyParents);
+                repository.Model.NormalizeTabOrders();
+                StickyDockFileRelations.Normalize(
+                    new List<StickyNoteData>(repository.Model.InStorageOrder), legacyParents);
                 return true;
             }
             catch (Exception caught)
             {
-                repository._notes.Clear();
+                repository.Model.Clear();
                 error = caught;
                 return false;
             }
@@ -229,14 +228,14 @@ namespace PennyPet
             StickyNoteData note = StickyNoteCodec.ParseLine(line, out parent);
             if (note == null || String.IsNullOrEmpty(note.Id))
                 throw new InvalidDataException("便利贴数据格式不完整。");
-            foreach (StickyNoteData existing in repository._notes)
+            foreach (StickyNoteData existing in repository.Model.InStorageOrder)
             {
                 if (String.Equals(existing.Id, note.Id,
                     StringComparison.OrdinalIgnoreCase)) return;
             }
-            if (repository._notes.Count >= StickyNoteLimits.MaximumNotes)
+            if (repository.Model.InStorageOrder.Count >= StickyNoteLimits.MaximumNotes)
                 throw new InvalidDataException("Too many sticky notes.");
-            repository._notes.Add(note);
+            repository.Model.AddLoaded(note);
             legacyParents.Add(note.Id, parent);
         }
 
@@ -312,11 +311,12 @@ namespace PennyPet
                 }
             }
             if (salvaged.Count == 0) return false;
-            repository._notes.Clear();
+            repository.Model.Clear();
             foreach (StickyNoteData note in salvaged)
-                repository._notes.Add(note);
-            repository.NormalizeTabOrders();
-            StickyDockFileRelations.Normalize(repository._notes, legacyParents);
+                repository.Model.AddLoaded(note);
+            repository.Model.NormalizeTabOrders();
+            StickyDockFileRelations.Normalize(
+                    new List<StickyNoteData>(repository.Model.InStorageOrder), legacyParents);
             salvagedCount = salvaged.Count;
             return true;
         }
@@ -324,7 +324,7 @@ namespace PennyPet
         private void BlockFutureSchema(
             UnsupportedStickySchemaException error)
         {
-            _notes.Clear();
+            Model.Clear();
             _loadSucceeded = false;
             _futureSchemaError = error;
             _recoveredFromLoadFailure = false;
@@ -400,27 +400,27 @@ namespace PennyPet
 
         internal int Count
         {
-            get { return _notes.Count; }
+            get { return Model.Count; }
         }
 
         internal bool HasUnsavedChanges
         {
-            get { return _writer.IsDirty; }
+            get { return _store.HasUnsavedChanges; }
         }
 
         internal bool HasPendingSaves
         {
-            get { return _writer.HasPending; }
+            get { return _store.HasPendingSaves; }
         }
 
         internal Exception LastSaveError
         {
-            get { return _blockedSaveError ?? _writer.LastError; }
+            get { return _blockedSaveError ?? _store.LastSaveError; }
         }
 
         internal bool CanCreate
         {
-            get { return CanCreateAtCount(_loadSucceeded, _notes.Count); }
+            get { return CanCreateAtCount(_loadSucceeded, Model.Count); }
         }
 
         internal static bool CanCreateAtCount(bool loadSucceeded, int noteCount)
@@ -443,84 +443,22 @@ namespace PennyPet
         // intermediate model.
         internal StickyNoteData CreateDraft(string text, Point location)
         {
-            if (!CanCreate) return null;
-            StickyNoteData note = new StickyNoteData();
-            string body = text ?? String.Empty;
-            note.Text = body.Length <= StickyNoteLimits.MaximumBodyCharacters
-                ? body : body.Substring(0, StickyNoteLimits.MaximumBodyCharacters);
-            note.X = location.X;
-            note.Y = location.Y;
-            note.TabOrder = NextTabOrder();
-            _notes.Add(note);
-            return note;
+            return _loadSucceeded ? Model.CreateDraft(text, location) : null;
         }
 
-        // Pet-thread-only live view for order-independent reads. Do not retain
-        // across repository mutations or pass it to a worker thread.
-        internal IReadOnlyList<StickyNoteData> InStorageOrder
-        {
-            get { return _notesView; }
-        }
-
-        public List<StickyNoteData> GetAll()
-        {
-            List<StickyNoteData> result = new List<StickyNoteData>(_notes);
-            result.Sort(delegate(StickyNoteData left, StickyNoteData right)
-            {
-                return right.ModifiedUtcTicks.CompareTo(left.ModifiedUtcTicks);
-            });
-            return result;
-        }
-
-        public List<StickyNoteData> GetHiddenInTabOrder()
-        {
-            List<StickyNoteData> result = GetInTabOrder();
-            result.RemoveAll(delegate(StickyNoteData note) { return note.Visible; });
-            return result;
-        }
+        internal IReadOnlyList<StickyNoteData> InStorageOrder { get { return Model.InStorageOrder; } }
+        public List<StickyNoteData> GetAll() { return Model.GetAll(); }
+        public List<StickyNoteData> GetHiddenInTabOrder() { return Model.GetHiddenInTabOrder(); }
+        public StickyNoteData Find(string id) { return Model.Find(id); }
 
         public void ReorderHidden(StickyNoteData moved, int destinationIndex)
         {
-            if (!_loadSucceeded) return;
-            if (moved == null || moved.Visible) return;
-            List<StickyNoteData> all = GetInTabOrder();
-            List<StickyNoteData> hidden = new List<StickyNoteData>();
-            foreach (StickyNoteData note in all)
-            {
-                if (!note.Visible) hidden.Add(note);
-            }
-            int original = hidden.IndexOf(moved);
-            if (original < 0) return;
-            hidden.RemoveAt(original);
-            int adjusted = destinationIndex;
-            if (original < adjusted) adjusted--;
-            adjusted = Math.Max(0, Math.Min(hidden.Count, adjusted));
-            hidden.Insert(adjusted, moved);
-            int hiddenIndex = 0;
-            for (int i = 0; i < all.Count; i++)
-            {
-                if (!all[i].Visible) all[i] = hidden[hiddenIndex++];
-            }
-            for (int i = 0; i < all.Count; i++) all[i].TabOrder = i;
-            SaveAsync();
-        }
-
-        public StickyNoteData Find(string id)
-        {
-            foreach (StickyNoteData note in _notes)
-            {
-                if (String.Equals(note.Id, id, StringComparison.OrdinalIgnoreCase))
-                    return note;
-            }
-            return null;
+            if (_loadSucceeded && Model.ReorderHidden(moved, destinationIndex)) SaveAsync();
         }
 
         public bool Remove(StickyNoteData note)
         {
-            if (!_loadSucceeded || note == null || !_notes.Contains(note)) return false;
-            StickyDockOperations.ExtractSingleDockMember(
-                StickyDockGroups.GetOrderedGroup(_notes, note), note);
-            _notes.Remove(note);
+            if (!_loadSucceeded || !Model.Remove(note)) return false;
             SaveAsync();
             return true;
         }
@@ -537,7 +475,7 @@ namespace PennyPet
                 RejectBlockedSave("save asynchronously");
                 return;
             }
-            _writer.Enqueue(new StickyWriteRequest(CloneNotes(_notes)), coalesce: true);
+            _store.Save(new StickyWriteRequest(Model.CaptureSnapshot()), coalesce: true);
         }
 
         internal PersistenceResult WaitForPendingSaves()
@@ -547,7 +485,7 @@ namespace PennyPet
 
         internal PersistenceResult WaitForPendingSaves(TimeSpan timeout)
         {
-            return _writer.Flush(timeout);
+            return _store.Flush(timeout);
         }
 
         internal PersistenceResult SaveToFile(string filePath)
@@ -561,7 +499,7 @@ namespace PennyPet
                     return ExportSnapshot(filePath);
             }
             catch (Exception error) { return PersistenceResult.Failure(error); }
-            return _writer.Enqueue(new StickyWriteRequest(CloneNotes(_notes)))
+            return _store.Save(new StickyWriteRequest(Model.CaptureSnapshot()))
                 .GetAwaiter().GetResult();
         }
 
@@ -569,24 +507,7 @@ namespace PennyPet
         {
             if (!_loadSucceeded)
                 return PersistenceResult.Failure(CreateMutationBlockedError("export"));
-            try
-            {
-                string destination = Path.GetFullPath(filePath);
-                string primary = Path.GetFullPath(_filePath);
-                if (String.Equals(destination, primary, StringComparison.OrdinalIgnoreCase) ||
-                    String.Equals(destination, primary + ".bak", StringComparison.OrdinalIgnoreCase))
-                    return PersistenceResult.Failure(new InvalidOperationException(
-                        "Export must use a separate file, not the active data file or its backup."));
-                // Independent export remains available if the primary writer stalls.
-                AtomicTextFile.WriteAllLines(destination,
-                    SerializeSnapshot(CloneNotes(_notes)), false);
-                return PersistenceResult.Success();
-            }
-            catch (Exception error)
-            {
-                ApplicationDiagnostics.ReportNonFatal("sticky-notes-export", error);
-                return PersistenceResult.Failure(error);
-            }
+            return _store.ExportSnapshot(filePath, Model.CaptureSnapshot());
         }
 
         internal PersistenceResult CommitImportedMerge(
@@ -657,15 +578,14 @@ namespace PennyPet
             // caller must remain free to cancel while the old model is active.
             PersistenceResult pending = WaitForPendingSaves();
             if (pending.Error is TimeoutException) return pending;
-            PersistenceResult result = _writer.Enqueue(new StickyWriteRequest(
+            PersistenceResult result = _store.Save(new StickyWriteRequest(
                 committed, backupPath: automaticBackupPath,
-                backupSnapshot: CloneNotes(_notes))).GetAwaiter().GetResult();
+                backupSnapshot: Model.CaptureSnapshot())).GetAwaiter().GetResult();
             if (!result.Succeeded) return result;
 
             // The model thread publishes the prepared dataset only after the
             // same writer has durably committed both the backup and primary.
-            _notes.Clear();
-            _notes.AddRange(committed);
+            Model.ReplaceWith(committed);
             return result;
         }
 
@@ -692,16 +612,6 @@ namespace PennyPet
                 _uiContext.Post(delegate { handler(this, args); }, null);
         }
 
-        private static List<StickyNoteData> CloneNotes(
-            IEnumerable<StickyNoteData> notes)
-        {
-            List<StickyNoteData> result = new List<StickyNoteData>();
-            if (notes != null)
-                foreach (StickyNoteData note in notes)
-                    if (note != null) result.Add(note.CloneForPersistence());
-            return result;
-        }
-
         private PersistenceResult RejectBlockedSave(string operation)
         {
             Exception error = CreateMutationBlockedError(operation);
@@ -721,26 +631,10 @@ namespace PennyPet
                 "Cannot " + operation + " because " + reason + ".");
         }
 
-        private static List<string> SerializeSnapshot(
-            IEnumerable<StickyNoteData> snapshot)
-        {
-            List<string> lines = new List<string>();
-            Dictionary<string, string> parents = StickyDockFileRelations.BuildLegacyParents(snapshot);
-            if (snapshot != null)
-                foreach (StickyNoteData note in snapshot)
-                {
-                    if (note == null) continue;
-                    string parent;
-                    parents.TryGetValue(note.Id, out parent);
-                    lines.Add(StickyNoteCodec.SerializeLine(note, parent ?? String.Empty));
-                }
-            return lines;
-        }
-
         private static List<StickyNoteData> CloneAndValidateMergeSnapshot(
             IEnumerable<StickyNoteData> snapshot)
         {
-            List<StickyNoteData> result = CloneNotes(snapshot);
+            List<StickyNoteData> result = StickyModel.CloneSnapshot(snapshot);
             if (result.Count > StickyNoteLimits.MaximumNotes)
                 throw new InvalidDataException("Too many sticky notes.");
             HashSet<string> ids = new HashSet<string>(
@@ -753,24 +647,6 @@ namespace PennyPet
             }
             StickyDockFileRelations.Normalize(result);
             return result;
-        }
-
-        private PersistenceResult WriteSnapshot(StickyWriteRequest request)
-        {
-            try
-            {
-                if (request.BackupPath != null)
-                    AtomicTextFile.WriteAllLines(request.BackupPath,
-                        SerializeSnapshot(request.BackupSnapshot), false);
-                AtomicTextFile.WriteAllLines(_filePath,
-                    SerializeSnapshot(request.Snapshot), true);
-                return PersistenceResult.Success();
-            }
-            catch (Exception error)
-            {
-                ApplicationDiagnostics.ReportNonFatal("sticky-notes-write", error);
-                return PersistenceResult.Failure(error);
-            }
         }
 
         internal static bool RepairForDisplay(StickyNoteData note,
@@ -787,32 +663,6 @@ namespace PennyPet
         internal static string NormalizeFontFamily(string value)
         {
             return StickyNoteCodec.NormalizeFontFamily(value);
-        }
-
-        private List<StickyNoteData> GetInTabOrder()
-        {
-            List<StickyNoteData> result = new List<StickyNoteData>(_notes);
-            result.Sort(delegate(StickyNoteData left, StickyNoteData right)
-            {
-                int order = left.TabOrder.CompareTo(right.TabOrder);
-                if (order != 0) return order;
-                return left.CreatedUtcTicks.CompareTo(right.CreatedUtcTicks);
-            });
-            return result;
-        }
-
-        private int NextTabOrder()
-        {
-            int maximum = -1;
-            foreach (StickyNoteData note in _notes)
-                maximum = Math.Max(maximum, note.TabOrder);
-            return maximum + 1;
-        }
-
-        private void NormalizeTabOrders()
-        {
-            List<StickyNoteData> ordered = GetInTabOrder();
-            for (int i = 0; i < ordered.Count; i++) ordered[i].TabOrder = i;
         }
 
     }

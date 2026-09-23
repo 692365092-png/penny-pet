@@ -15,6 +15,14 @@ Implementation follows the approved R01–R27 roadmap on `codex/simplify-dock-pi
 | R09 | ConversationRuntime owns daily/daypart/small-talk scheduling and ledger persistence; PetForm presents conversation messages and animation results. Daily attempts take one preference snapshot and use owner-context invalidation instead of a lock. | New integration self-test checks in-flight coalescing without premature ledger consumption, original-daypart commit, accepted/rejected presentation, date/daypart rollover, quiet mode, shutdown and old/new completion order. Existing catalogue, weather-cache and speaking-quota cases remain. |
 | R10 | InteractionRuntime owns playback, hover hysteresis, pointer/drag state, typing, poke intent and reminder/exit transitions. PetForm supplies native input, one clock and read-only frame presentation. Ready art reads bypass the decoder gate. | Ten deterministic runtime tests cover fallback/full cycles, drag/DPI rebase, capture loss, hover, typing/editor focus, priority, reminders, exit and Stop. Native self-tests exercise the real runtime and ready-clip reads while another thread holds the decoder gate. Windows CI is the execution gate. |
 
+R10 passed [Windows CI #65](https://github.com/692365092-png/penny-pet/actions/runs/35857017185), including the ten interaction tests, native ready-art check and formal EXE smoke.
+
+## R11 — in progress
+
+First checkpoint: `StickyModel` owns the canonical in-memory collection, note creation/removal, tab ordering, Dock member removal and detached snapshot capture. It has no store, file path, writer, window or dispatcher dependency. `StickyStore` owns the serial writer and independent emergency export and accepts only captured requests. Existing loading/recovery and owner-side import publication remain in the transitional repository until the next checkpoint; Workspace still needs its PetForm dependency removed. R11 is not complete.
+
+Five new tests exercise memory-only commands, hidden-tab ordering without changing Dock slots, hidden Dock-member removal, deep snapshot isolation and a blocked store while the live model changes. Existing real-file recovery, future-schema, import/restore and serial-writer tests remain the compatibility gates.
+
 R09 passed [Windows CI #64](https://github.com/692365092-png/penny-pet/actions/runs/35853802433), including runtime integration, release smoke and artifact checks.
 
 R08 passed [Windows CI #63](https://github.com/692365092-png/penny-pet/actions/runs/35827162500) after the full-restore call-site fix, including the new runtime self-test and release smoke.
