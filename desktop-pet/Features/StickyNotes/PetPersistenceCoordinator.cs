@@ -312,7 +312,7 @@ namespace PennyPet
                     // Reminder records are persisted in settings, not in the
                     // portable sticky backup.  Reconcile note-side display
                     // ticks and remove linked reminders whose notes vanished.
-                    ReconcileNoteReminders();
+                    _reminderRuntime.ReconcileNoteLinks();
                     _stickyWorkspace.ReloadAllHostedStickyRuntime();
                     ShowBubble("完整恢复完成，共 " +
                         restoredSnapshot.Count + " 张便利贴。");

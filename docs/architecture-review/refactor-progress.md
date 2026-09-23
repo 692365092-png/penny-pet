@@ -41,3 +41,5 @@ R05 preserves the shared list: send it once to StickyHost when the schedule chan
 - Editing the currently displayed pre-alert closes the obsolete presentation before replacing it. The model remains authoritative if a reminder expires while its edit dialog is open.
 - Reminder restoration no longer catches every exception and saves an empty schedule. Settings parsing/recovery remains at its existing persistence boundary; expired and orphaned reminders still follow the existing cleanup policy.
 - Shared art-load locking is not fixed by this extraction; R12 owns resource task sharing and lock scope. Settings/sticky saves still use their existing writers; R17/R25 own asynchronous persistence and shutdown changes.
+
+R08's first Windows run caught a remaining call to the removed reconciliation method in full backup restore. The follow-up routes it through `ReminderRuntime.ReconcileNoteLinks` and extends the runtime self-test with actual note-model replacement and orphan cleanup. The initial failed run is [CI #62](https://github.com/692365092-png/penny-pet/actions/runs/35826916959).

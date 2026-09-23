@@ -205,6 +205,11 @@ namespace PennyPet
             _view.RemindersChanged();
         }
 
+        internal void ReconcileNoteLinks()
+        {
+            if (ReconcileLinkedNotes()) SaveChanges();
+        }
+
         private bool ReconcileLinkedNotes()
         {
             bool changed = false;

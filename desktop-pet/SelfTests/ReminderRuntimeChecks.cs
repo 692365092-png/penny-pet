@@ -95,6 +95,16 @@ namespace PennyPet
                     CompleteReminderArt(late, context);
                     Pc2Assert(view.Deliveries == delivered + 1 && view.Animations == 1,
                         "Stop blocks ticks and invalidates outstanding art work");
+
+                    schedule.Restore(new[] {
+                        new ReminderItem(deadline, "restored-away", note.Id),
+                        new ReminderItem(deadline, "standalone") });
+                    Pc2Assert(notes.CommitFullRestore(new StickyNoteData[0]).Succeeded,
+                        "replace note model through the actual full-restore entry");
+                    runtime.ReconcileNoteLinks();
+                    Pc2Assert(schedule.Count == 1 && schedule.Next.Text == "standalone" &&
+                        settings.Reminders.Count == 1 && notes.Count == 0,
+                        "full restore removes orphan reminder links and preserves standalone reminders");
                 }
                 return true;
             }
