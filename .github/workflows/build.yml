@@ -71,32 +71,26 @@ jobs:
             -TargetPlatform anycpu `
             -OutputFile $releaseExe
 
-      - name: Run Penny self-tests
+      - name: Smoke test the single-file release
         shell: powershell
         run: |
-          $report = Join-Path $env:RUNNER_TEMP "penny-selftest.json"
           $releaseExe = Join-Path "$env:GITHUB_WORKSPACE\release" `
             "Penny-pet-Windows.exe"
-          $expectedAssemblyVersion = $env:PENNY_PRODUCT_VERSION + ".0"
-          $builtVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo(
-            $releaseExe)
-          if ($builtVersion.FileVersion -ne $expectedAssemblyVersion -or
-              $builtVersion.ProductVersion -ne $expectedAssemblyVersion) {
-            throw "Release version does not match ProductVersion.props."
-          }
-          & $releaseExe ("--self-test=" + $report)
-          $deadline = [DateTime]::UtcNow.AddMinutes(5)
-          while (-not (Test-Path -LiteralPath $report -PathType Leaf) -and
-                 [DateTime]::UtcNow -lt $deadline) {
-            Start-Sleep -Milliseconds 200
-          }
-          if (-not (Test-Path -LiteralPath $report -PathType Leaf)) {
-            throw "Penny self-test report was not created."
-          }
-          $result = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
-          if (-not $result.ok) {
-            throw "Penny self-tests failed."
-          }
+          & "$env:GITHUB_WORKSPACE\desktop-pet\test-release.ps1" `
+            -Executable $releaseExe `
+            -ExpectedVersion ($env:PENNY_PRODUCT_VERSION + ".0") `
+            -ReportPath (Join-Path $env:RUNNER_TEMP "penny-release-smoke.json")
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Penny-test-reports
+          path: |
+            ${{ runner.temp }}/penny-modular-selftest.json
+            ${{ runner.temp }}/penny-release-smoke.json
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Generate SPDX SBOM
         uses: anchore/sbom-action@v0

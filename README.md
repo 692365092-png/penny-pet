@@ -57,8 +57,20 @@ dotnet build ".\PennyPet.sln" --configuration Release
 
 ```powershell
 dotnet test ".\desktop-pet\PennyPet.Tests.csproj" --configuration Release
-.\release\Penny pet-release.exe --self-test="$env:TEMP\penny-selftest.json"
+.\desktop-pet\bin\Release\net48\PennyPet.SelfTests.exe --self-test="$env:TEMP\penny-selftest.json"
 ```
+
+正式 EXE 不包含自测命令入口。验证发布物时，在 Windows 测试环境运行外部冒烟脚本（会启动并正常关闭实际桌宠）：
+
+```powershell
+[xml]$props = Get-Content ".\desktop-pet\ProductVersion.props"
+.\desktop-pet\test-release.ps1 `
+  -Executable ".\release\Penny pet-release.exe" `
+  -ExpectedVersion ($props.Project.PropertyGroup.PennyVersionPrefix + ".0") `
+  -ReportPath "$env:TEMP\penny-release-smoke.json"
+```
+
+脚本检查版本和内嵌资源，再将单个 EXE 复制到临时目录，验证宠物窗口可响应及正常退出；领域和窗口交互自测仍由 `PennyPet.SelfTests` 执行。
 
 ## 源码结构
 
