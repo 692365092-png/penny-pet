@@ -21,6 +21,7 @@ public static class PennyReleaseWindow
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder text, int count);
     [DllImport("user32.dll")] private static extern IntPtr SendMessageTimeout(IntPtr window, uint message, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out IntPtr result);
     [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] public static extern uint GetGuiResources(IntPtr process, uint flags);
 
     public static IntPtr Find(int processId, string title)
     {
@@ -56,6 +57,9 @@ $ReportPath = [IO.Path]::GetFullPath($ReportPath)
 $stage = Join-Path ([IO.Path]::GetTempPath()) ("penny-release-smoke-" + [Guid]::NewGuid())
 $process = $null
 $result = [ordered]@{ ok = $false; version = $ExpectedVersion; resources = @(); window = $false; exited = $false }
+$result.sourceRevision = $env:GITHUB_SHA
+$result.os = [Environment]::OSVersion.VersionString
+$result.processorCount = [Environment]::ProcessorCount
 try {
     $version = [Diagnostics.FileVersionInfo]::GetVersionInfo($Executable)
     if ($version.FileVersion -ne $ExpectedVersion -or
@@ -95,6 +99,7 @@ try {
     New-Item -ItemType Directory -Path $stage | Out-Null
     $stagedExe = Join-Path $stage "Penny-pet-Windows.exe"
     Copy-Item -LiteralPath $Executable -Destination $stagedExe
+    $startup = [Diagnostics.Stopwatch]::StartNew()
     $process = Start-Process -FilePath $stagedExe -WorkingDirectory $stage -PassThru
     $deadline = [DateTime]::UtcNow.AddSeconds(45)
     $window = [IntPtr]::Zero
@@ -108,11 +113,20 @@ try {
         throw "Release did not show a responsive pet window."
     }
     $result.window = $true
+    $result.firstResponsivePetMilliseconds = $startup.Elapsed.TotalMilliseconds
+    $process.Refresh()
+    $result.workingSetBytes = $process.WorkingSet64
+    $result.peakWorkingSetBytes = $process.PeakWorkingSet64
+    $result.processCpuMilliseconds = $process.TotalProcessorTime.TotalMilliseconds
+    $result.gdiHandles = [PennyReleaseWindow]::GetGuiResources($process.Handle, 0)
+    $result.userHandles = [PennyReleaseWindow]::GetGuiResources($process.Handle, 1)
+    $shutdown = [Diagnostics.Stopwatch]::StartNew()
     if (-not [PennyReleaseWindow]::PostMessage($window, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)) {
         throw "Could not request normal window close."
     }
     if (-not $process.WaitForExit(30000)) { throw "Release did not finish normal shutdown." }
     if ($process.ExitCode -ne 0) { throw "Release failed during shutdown (exit $($process.ExitCode))." }
+    $result.shutdownMilliseconds = $shutdown.Elapsed.TotalMilliseconds
     $result.exited = $true
     $result.ok = $true
 } catch {

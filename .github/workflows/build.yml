@@ -81,6 +81,15 @@ jobs:
             -ExpectedVersion ($env:PENNY_PRODUCT_VERSION + ".0") `
             -ReportPath (Join-Path $env:RUNNER_TEMP "penny-release-smoke.json")
 
+      - name: Record managed Dock baseline
+        shell: powershell
+        run: |
+          $project = Join-Path $env:GITHUB_WORKSPACE `
+            "docs\architecture-review\dock-pipeline-benchmark\DockPipelineBenchmark.csproj"
+          $report = Join-Path $env:RUNNER_TEMP "penny-dock-baseline.json"
+          dotnet run --project $project --configuration Release -- $report
+          if ($LASTEXITCODE -ne 0) { throw "Managed Dock baseline failed." }
+
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -89,6 +98,7 @@ jobs:
           path: |
             ${{ runner.temp }}/penny-modular-selftest.json
             ${{ runner.temp }}/penny-release-smoke.json
+            ${{ runner.temp }}/penny-dock-baseline.json
           if-no-files-found: warn
           retention-days: 14
 

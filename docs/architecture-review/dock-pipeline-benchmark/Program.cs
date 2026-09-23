@@ -76,6 +76,7 @@ foreach (int count in new[] { 10, 50, 100 })
     Measure("group-after-" + count, () => StickyDockGroups.GetVisibleGroup(view, notes[0]).Count);
 }
 string json = JsonSerializer.Serialize(new {
+    sourceRevision = Environment.GetEnvironmentVariable("GITHUB_SHA"),
     baseline = "b0efb1375e3ab545197ec709c1057cd8fe4c2836",
     runtime = RuntimeInformation.FrameworkDescription, os = RuntimeInformation.OSDescription,
     iterations, warmups, samples, results,
