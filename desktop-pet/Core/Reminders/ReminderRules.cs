@@ -1,27 +1,10 @@
 using System;
-using System.Threading;
 
 namespace PennyPet
 {
-    // Holds reminder coordination state and product rules. ReminderSchedule
-    // remains the data model; PetForm remains the Windows UI integration point.
-    internal sealed class PetReminderCoordinator
+    internal static class ReminderRules
     {
         internal const int DueReminderBubbleDurationMilliseconds = 0;
-
-        private int _animationGeneration;
-
-        internal ReminderItem PreAlertItem { get; set; }
-
-        internal int NextAnimationGeneration()
-        {
-            return Interlocked.Increment(ref _animationGeneration);
-        }
-
-        internal int CurrentAnimationGeneration
-        {
-            get { return _animationGeneration; }
-        }
 
         internal static bool IsPreAlertWindow(TimeSpan remaining)
         {
@@ -34,11 +17,6 @@ namespace PennyPet
         {
             return item != null && item.PreAlertEnabled &&
                 IsPreAlertWindow(remaining);
-        }
-
-        internal static bool ShouldRunReminderClock(bool exiting)
-        {
-            return !exiting;
         }
 
         internal static bool ShouldRestoreReminderAfterLaunch(

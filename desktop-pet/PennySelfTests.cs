@@ -76,6 +76,9 @@ namespace PennyPet
                 Pc2Set(Pet, "_renderedFirstRenderNoteIds", new HashSet<string>());
                 Workspace = new StickyWorkspace(Pet, Repository, Context);
                 Pc2Set(Pet, "_stickyWorkspace", Workspace);
+                Pc2Set(Pet, "_reminderRuntime", new ReminderRuntime(
+                    (ReminderSchedule)Pc2Get(Pet, "_reminders"),
+                    (PetSettings)Pc2Get(Pet, "_settings"), Repository, Pet));
                 for (int i = 0; i < 3; i++)
                 {
                     StickyNoteData note = Repository.CreateDraft("before-" + i,
@@ -149,6 +152,7 @@ namespace PennyPet
                     System.Threading.Thread thread = (System.Threading.Thread)Pc2Get(threadHost, "_thread");
                     Context.PumpUntil(() => thread == null || !thread.IsAlive);
                 }
+                ((ReminderRuntime)Pc2Get(Pet, "_reminderRuntime")).Dispose();
                 Display.Dispose(); bubble.Dispose(); menu.Dispose();
             }
         }

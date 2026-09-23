@@ -23,10 +23,8 @@ namespace PennyPet
         private const int NotificationRow = PetAnimationController.NotificationRow;
 
         private readonly System.Windows.Forms.Timer _animationTimer;
-        private readonly System.Windows.Forms.Timer _reminderTimer;
         private readonly System.Windows.Forms.Timer _persistenceRetryTimer;
-        private readonly PetReminderCoordinator _reminderCoordinator =
-            new PetReminderCoordinator();
+        private readonly ReminderRuntime _reminderRuntime;
         private readonly PetBubbleCoordinator _bubbleCoordinator;
         private readonly PetDailyContentCoordinator _dailyContentCoordinator;
         private readonly PetWeatherSource _weatherSource;
@@ -79,9 +77,6 @@ namespace PennyPet
         private Size _renderedTargetSize;
         private ContactAuthorForm _contactAuthorForm;
         private DisplayTopologyRuntime _displayTopologyRuntime;
-        private ReminderItem _preAlertItem
-            { get { return _reminderCoordinator.PreAlertItem; }
-                set { _reminderCoordinator.PreAlertItem = value; } }
         private int _row
             { get { return _animation.Row; } set { _animation.Row = value; } }
         private int _frame
@@ -233,7 +228,6 @@ namespace PennyPet
             BuildRenderedFrameCache();
 
             _reminders = new ReminderSchedule();
-            RestoreReminders();
             _notes = StickyNoteRepository.Load();
             if (_notes.IsFutureSchemaBlocked)
                 throw _notes.FutureSchemaError;
@@ -241,7 +235,8 @@ namespace PennyPet
             _stickyWorkspace = new StickyWorkspace(this, _notes,
                 SynchronizationContext.Current as WindowsFormsSynchronizationContext
                 ?? new WindowsFormsSynchronizationContext());
-            ReconcileNoteReminders();
+            _reminderRuntime = new ReminderRuntime(_reminders, _settings, _notes, this);
+            _reminderRuntime.Restore(DateTime.UtcNow);
             if (!_settings.StartupPreferenceInitialized)
             {
                 // Startup is an explicit opt-in. First launch records the safe
@@ -333,10 +328,7 @@ namespace PennyPet
             _nextFrameUtc = DateTime.UtcNow.AddMilliseconds(
                 RuntimeFrameDuration(_row, 0));
             _animationTimer.Start();
-            _reminderTimer = new System.Windows.Forms.Timer();
-            _reminderTimer.Interval = 500;
-            _reminderTimer.Tick += ReminderTick;
-            _reminderTimer.Start();
+            _reminderRuntime.Start();
             _persistenceRetryTimer = new System.Windows.Forms.Timer();
             _persistenceRetryTimer.Interval = 5000;
             _persistenceRetryTimer.Tick += RetryUnsavedPersistence;
@@ -632,7 +624,7 @@ namespace PennyPet
             if (_appIcon != null) _appIcon.Dispose();
             _menu.Dispose();
             _animationTimer.Dispose();
-            _reminderTimer.Dispose();
+            _reminderRuntime.Dispose();
             _persistenceRetryTimer.Dispose();
             StopDeferredStartupWork();
             DisposeRenderedFrameCache();

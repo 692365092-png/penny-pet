@@ -2496,6 +2496,7 @@ namespace PennyPet
             internal bool MultipleLinkedReminderOk;
             internal bool ConcreteDateTimeOk;
             internal bool BannerTickThrottleOk;
+            internal bool RuntimeOwnershipOk;
             internal bool DueBubblePersistentOk;
             internal bool DueBubbleUsesOwnSizeOk;
             internal bool DueBubbleReplacementOk;
@@ -2530,8 +2531,9 @@ namespace PennyPet
                 (concrete.DeadlineUtc.ToLocalTime() -
                     concreteLocal).TotalSeconds) < 1;
             result.BannerTickThrottleOk = RunStickyReminderHostChecks();
+            result.RuntimeOwnershipOk = RunReminderRuntimeChecks();
             result.DueBubblePersistentOk =
-                PetReminderCoordinator.DueReminderBubbleDurationMilliseconds == 0;
+                ReminderRules.DueReminderBubbleDurationMilliseconds == 0;
             result.DueBubbleUsesOwnSizeOk = Math.Abs(
                 PetForm.DueReminderBubbleFontSizePoints(100) -
                 KeyboardOverlayForm.TextFontSizePoints(100)) < 0.2F;
@@ -2562,9 +2564,9 @@ namespace PennyPet
                 DateTime.UtcNow.AddMinutes(1), "仍有效");
             DateTime launchGate = DateTime.UtcNow;
             result.ExpiredAtLaunchDiscardedOk =
-                !PetReminderCoordinator.ShouldRestoreReminderAfterLaunch(
+                !ReminderRules.ShouldRestoreReminderAfterLaunch(
                     expired, launchGate) &&
-                PetReminderCoordinator.ShouldRestoreReminderAfterLaunch(
+                ReminderRules.ShouldRestoreReminderAfterLaunch(
                     future, launchGate);
             return result;
         }
@@ -6409,6 +6411,8 @@ namespace PennyPet
                     reminderCoordinatorChecks.ConcreteDateTimeOk) + ",\n" +
                 "  \"reminder_banner_tick_throttled_ok\": " + Bool(
                     reminderCoordinatorChecks.BannerTickThrottleOk) + ",\n" +
+                "  \"reminder_runtime_ownership_ok\": " + Bool(
+                    reminderCoordinatorChecks.RuntimeOwnershipOk) + ",\n" +
                 "  \"startup_default_ok\": " + Bool(
                     shellChecks.StartupDefaultOk) + ",\n" +
                 "  \"sticky_ui_host_ok\": " + Bool(

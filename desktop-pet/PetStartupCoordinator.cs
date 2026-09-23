@@ -66,7 +66,7 @@ namespace PennyPet
                             new InvalidOperationException(startupError));
                     }
                     _settings.SaveAsync();
-                    ReminderTick(null, EventArgs.Empty);
+                    _reminderRuntime.Tick(DateTime.UtcNow);
                     _startupVisibleNotes = BuildStartupRestoreQueue();
                 }
                 catch (Exception error)

@@ -94,7 +94,7 @@ namespace PennyPet
         {
             return new PetBubbleRequest(PetMessageKind.ReminderDue, text,
                 fontFamilyName, fontSizePoints,
-                PetReminderCoordinator.DueReminderBubbleDurationMilliseconds,
+                ReminderRules.DueReminderBubbleDurationMilliseconds,
                 false, true, 0);
         }
 
@@ -316,29 +316,22 @@ namespace PennyPet
             _bubbleCoordinator.ShowNextPending();
         }
 
-        private void ShowOrUpdatePreAlert(ReminderItem item)
+        bool IReminderPresentation.TryShowPreAlert(string text, bool updateCurrent)
         {
-            if (item == null || _dragging || _exiting || _menu.Visible ||
-                IsDisposed) return;
-            int seconds = Math.Max(0, (int)Math.Ceiling(
-                (item.DeadlineUtc - DateTime.UtcNow).TotalSeconds));
-            string text = "提醒倒计时 " + seconds + " 秒\n" + item.Text;
+            if (_dragging || _exiting || _menu.Visible || IsDisposed) return false;
             if (_bubbleCoordinator.HasCurrent)
             {
-                if (_bubbleCoordinator.IsCurrent(
-                    PetMessageKind.ReminderPreAlert) &&
-                    ReferenceEquals(_preAlertItem, item))
+                if (_bubbleCoordinator.IsCurrent(PetMessageKind.ReminderPreAlert) &&
+                    updateCurrent)
                 {
                     _bubbleCoordinator.UpdateCurrentText(text);
-                    return;
+                    return true;
                 }
-                if (!_bubbleCoordinator.IsCurrent(PetMessageKind.Hover)) return;
+                if (!_bubbleCoordinator.IsCurrent(PetMessageKind.Hover)) return false;
             }
-            PetBubbleRequest request = PetBubbleRequest.ReminderPreAlert(text,
+            return _bubbleCoordinator.Show(PetBubbleRequest.ReminderPreAlert(text,
                 KeyboardOverlayForm.TextFontFamilyName,
-                KeyboardOverlayForm.TextFontSizePoints(
-                    _settings.KeyOverlayScalePercent));
-            if (_bubbleCoordinator.Show(request)) _preAlertItem = item;
+                KeyboardOverlayForm.TextFontSizePoints(_settings.KeyOverlayScalePercent)));
         }
 
         private void ShowOrUpdateHoverBubble()
@@ -391,17 +384,14 @@ namespace PennyPet
 
         private void BubbleMessageClosed(PetMessageKind kind)
         {
-            if (kind == PetMessageKind.ReminderPreAlert) _preAlertItem = null;
+            _reminderRuntime.MessageClosed(kind);
         }
 
         private void RestoreAmbientBubble()
         {
             if (_dragging || _exiting || IsDisposed) return;
-            ReminderItem next = _reminders.NextPreAlert;
-            if (PetReminderCoordinator.ShouldShowPreAlert(next, next == null
-                ? TimeSpan.Zero : next.Remaining))
-                ShowOrUpdatePreAlert(next);
-            else if (!PetHoverStabilityRules.ShouldSuppressHover(
+            if (_reminderRuntime.RefreshPreAlert(DateTime.UtcNow)) return;
+            if (!PetHoverStabilityRules.ShouldSuppressHover(
                 _stableMouseInside, _menu.Visible, _dragging,
                 _settings.SilentMode, _hoverSuppressedUntilStableLeave))
                 ShowOrUpdateHoverBubble();

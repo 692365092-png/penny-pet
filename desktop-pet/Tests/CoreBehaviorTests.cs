@@ -882,13 +882,12 @@ namespace PennyPet.Tests
         {
             ReminderItem enabled = new ReminderItem(
                 DateTime.UtcNow.AddMinutes(2), "enabled", null, 10.5F, true);
-            Assert.IsTrue(PetReminderCoordinator.IsPreAlertWindow(
+            Assert.IsTrue(ReminderRules.IsPreAlertWindow(
                 TimeSpan.FromSeconds(20)));
-            Assert.IsFalse(PetReminderCoordinator.IsPreAlertWindow(
+            Assert.IsFalse(ReminderRules.IsPreAlertWindow(
                 TimeSpan.FromSeconds(21)));
-            Assert.IsTrue(PetReminderCoordinator.ShouldShowPreAlert(enabled,
+            Assert.IsTrue(ReminderRules.ShouldShowPreAlert(enabled,
                 TimeSpan.FromSeconds(5)));
-            Assert.IsFalse(PetReminderCoordinator.ShouldRunReminderClock(true));
         }
 
         [TestMethod]

@@ -234,7 +234,7 @@ namespace PennyPet
                 return;
             }
             _exiting = true;
-            _reminderTimer.Stop();
+            _reminderRuntime.Stop();
             _persistenceRetryTimer.Stop();
             _dragging = false;
             Capture = false;
