@@ -23,6 +23,15 @@ namespace PennyPet
         internal bool IsSchedule { get; private set; }
         internal bool Visible { get; private set; }
 
+        internal bool HasSameContent(SideTabSnapshot other)
+        {
+            return other != null &&
+                String.Equals(NoteId, other.NoteId, StringComparison.Ordinal) &&
+                String.Equals(DisplayTitle, other.DisplayTitle, StringComparison.Ordinal) &&
+                ColorArgb == other.ColorArgb && IsTodoList == other.IsTodoList &&
+                IsSchedule == other.IsSchedule && Visible == other.Visible;
+        }
+
         internal static SideTabSnapshot FromData(StickyNoteData source)
         {
             if (source == null) throw new ArgumentNullException(nameof(source));

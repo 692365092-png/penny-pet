@@ -342,7 +342,7 @@ namespace PennyPet
                     "StartupPreferred");
 
                 _petTemporaryRehome = false;
-                _stickyWorkspace.RefreshNoteTabs();
+                _stickyWorkspace.PositionNoteTabs();
                 return;
             }
 
@@ -353,7 +353,7 @@ namespace PennyPet
                 TryPlacePetLegacy(topology, legacy))
             {
                 EstablishInitialPetPreference(topology, "LegacyXYMigration");
-                _stickyWorkspace.RefreshNoteTabs();
+                _stickyWorkspace.PositionNoteTabs();
                 return;
             }
 
@@ -382,7 +382,7 @@ namespace PennyPet
                 }
             }
 
-            _stickyWorkspace.RefreshNoteTabs();
+            _stickyWorkspace.PositionNoteTabs();
         }
 
         private void ReconcilePetDisplayPlacement(

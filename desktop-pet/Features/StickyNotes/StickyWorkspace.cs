@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -107,7 +106,8 @@ namespace PennyPet
         internal readonly StickyPlacementRuntime Placement =
             new StickyPlacementRuntime();
         private bool _positioningNoteTabs;
-        private string _noteTabsSignature = String.Empty;
+        private List<SideTabSnapshot> _hiddenNoteTabs = new List<SideTabSnapshot>();
+        private bool _noteTabsContentChanged;
         private bool? _leftTabsCovered;
         private bool? _rightTabsCovered;
         private readonly HashSet<string> _pendingStandaloneTopologyNotes =
@@ -1326,7 +1326,6 @@ namespace PennyPet
             int destinationIndex)
         {
             Notes.ReorderHidden(note, destinationIndex);
-            _noteTabsSignature = String.Empty;
             RefreshNoteTabs();
         }
 
@@ -1423,116 +1422,36 @@ namespace PennyPet
                 "structural");
             if (_leftNoteTabs == null || _rightNoteTabs == null || IsDisposed)
                 return;
-            // Side tabs have their own persistent order.  Sorting them by the
-            // note's modified time here used to undo every successful drag.
-            List<StickyNoteData> hiddenData = Notes.GetHiddenInTabOrder();
-            List<SideTabSnapshot> hidden = new List<SideTabSnapshot>();
-            foreach (StickyNoteData note in hiddenData)
-                hidden.Add(SideTabSnapshot.FromData(note));
-            WindowFacts petFacts;
-            DisplaySurfaceSnapshot petSurface;
-            Rectangle workArea;
-            SideTabPhysicalMetrics metrics;
-
-            if (!TryGetPetDerivedDisplayContext(
-                out petFacts,
-                out petSurface,
-                out workArea,
-                out metrics))
-                return;
-
-            _leftNoteTabs.ApplyPhysicalMetrics(metrics);
-            _rightNoteTabs.ApplyPhysicalMetrics(metrics);
-
-            DockRect petRect = new DockRect(
-                petFacts.PhysicalBounds.Left,
-                petFacts.PhysicalBounds.Top,
-                petFacts.PhysicalBounds.Width,
-                petFacts.PhysicalBounds.Height);
-            DockRect workRect = new DockRect(
-                workArea.Left, workArea.Top,
-                workArea.Width, workArea.Height);
-            int overlap = SideTabLayoutPolicy.CalculatePhysicalOverlap(
-                petRect.Width, metrics);
-            int leftCount = SideTabLayoutPolicy.CalculateEdgeAwareLeftCount(
-                hidden.Count, petRect, workRect, metrics.Width, overlap,
-                metrics.WindowMarginX);
-
-            StringBuilder signatureBuilder = new StringBuilder();
-            foreach (SideTabSnapshot note in hidden)
-            {
-                signatureBuilder.Append(note.NoteId).Append('|')
-                    .Append(note.DisplayTitle).Append('|')
-                    .Append(note.ColorArgb).Append('\n');
-            }
-            signatureBuilder.Append("dpi=")
-                .Append(metrics.Dpi)
-                .Append('\n');
-            signatureBuilder.Append("left=")
-                .Append(leftCount)
-                .Append('\n');
-            string signature = signatureBuilder.ToString();
-            if (String.Equals(signature, _noteTabsSignature,
-                StringComparison.Ordinal))
-            {
-                PositionNoteTabs(petFacts, petSurface, workArea, metrics);
-                return;
-            }
-            _noteTabsSignature = signature;
-
-            int logicalWorkHeight =
-                SideTabLayoutPolicy.PhysicalWorkHeightToLogical(
-                    workArea.Height, metrics.Dpi);
-
-            int logicalCapacity =
-                SideTabLayoutPolicy.LogicalScreenCapacity(
-                    logicalWorkHeight);
-
-            DisplayDiagnostics.Trace("SideTabsLayout",
-                "topology=" + petFacts.TopologyGeneration +
-                " dpi=" + metrics.Dpi +
-                " total=" + hidden.Count +
-                " left=" + leftCount +
-                " right=" + (hidden.Count - leftCount) +
-                " petLeft=" + petRect.Left +
-                " petRight=" + petRect.Right +
-                " workLeft=" + workRect.Left +
-                " workRight=" + workRect.Right +
-                " stripWidth=" + metrics.Width +
-                " overlap=" + overlap +
-                " logicalCapacity=" + logicalCapacity +
-                " surface=" + petSurface.RuntimeSurfaceId);
-            List<SideTabSnapshot> left = hidden.GetRange(0, leftCount);
-            List<SideTabSnapshot> right = hidden.GetRange(leftCount,
-                hidden.Count - leftCount);
-            _leftNoteTabs.SetNotes(left, 0);
-            _rightNoteTabs.SetNotes(right, leftCount);
-            PositionNoteTabs(petFacts, petSurface, workArea, metrics);
-        }
-
-        private bool IsStripCoveredByVisibleSticky(StickyNoteTabsForm tabs)
-        {
-            if (tabs == null || tabs.IsDisposed || !tabs.Visible) return false;
-            Rectangle stripBounds = tabs.Bounds;
-            foreach (StickyNoteData note in Notes.InStorageOrder)
-            {
-                if (note == null || !note.Visible) continue;
-                WindowFacts facts = Placement.GetEffective(note.Id);
-                if (facts == null) continue;
-                PhysicalRect actual = facts.PhysicalBounds;
-                Rectangle noteBounds = new Rectangle(actual.Left, actual.Top,
-                    actual.Width, actual.Height);
-                if (stripBounds.IntersectsWith(noteBounds)) return true;
-            }
-            return false;
+            // Only model changes rebuild this projection. Pet motion, DPI and
+            // edge-driven redistribution reuse it without reading the repository.
+            List<StickyNoteData> hidden = Notes.GetHiddenInTabOrder();
+            _hiddenNoteTabs = new List<SideTabSnapshot>(hidden.Count);
+            foreach (StickyNoteData note in hidden)
+                _hiddenNoteTabs.Add(SideTabSnapshot.FromData(note));
+            _noteTabsContentChanged = true;
+            PositionNoteTabs();
         }
 
         private void ApplyNoteTabZOrder()
         {
             if (_leftNoteTabs == null || _rightNoteTabs == null || IsDisposed)
                 return;
-            bool leftCovered = IsStripCoveredByVisibleSticky(_leftNoteTabs);
-            bool rightCovered = IsStripCoveredByVisibleSticky(_rightNoteTabs);
+            bool leftCovered = false;
+            bool rightCovered = false;
+            Rectangle leftBounds = _leftNoteTabs.Bounds;
+            Rectangle rightBounds = _rightNoteTabs.Bounds;
+            foreach (StickyNoteData note in Notes.InStorageOrder)
+            {
+                if (note == null || !note.Visible) continue;
+                WindowFacts facts = Placement.GetEffective(note.Id);
+                if (facts == null) continue;
+                PhysicalRect actual = facts.PhysicalBounds;
+                Rectangle bounds = new Rectangle(actual.Left, actual.Top,
+                    actual.Width, actual.Height);
+                leftCovered |= _leftNoteTabs.Visible && leftBounds.IntersectsWith(bounds);
+                rightCovered |= _rightNoteTabs.Visible && rightBounds.IntersectsWith(bounds);
+                if (leftCovered && rightCovered) break;
+            }
             if (!_leftTabsCovered.HasValue || _leftTabsCovered.Value != leftCovered)
             {
                 _leftTabsCovered = leftCovered;
@@ -1600,8 +1519,7 @@ namespace PennyPet
                 petBounds.Width, petBounds.Height);
             DockRect workRect = new DockRect(
                 work.Left, work.Top, work.Width, work.Height);
-            int total = _leftNoteTabs.Controls.Count +
-                _rightNoteTabs.Controls.Count;
+            int total = _hiddenNoteTabs.Count;
             int overlap = SideTabLayoutPolicy.CalculatePhysicalOverlap(
                 petBounds.Width, metrics);
             int desiredLeftCount =
@@ -1609,19 +1527,24 @@ namespace PennyPet
                     total, petRect, workRect, metrics.Width, overlap,
                     metrics.WindowMarginX);
 
-            if (_leftNoteTabs.Controls.Count != desiredLeftCount ||
-                _rightNoteTabs.Controls.Count !=
-                    total - desiredLeftCount)
-            {
-                _noteTabsSignature = String.Empty;
-                RefreshNoteTabs();
-                return;
-            }
-
             _positioningNoteTabs = true;
-
             try
             {
+                if (_noteTabsContentChanged ||
+                    _leftNoteTabs.NoteCount != desiredLeftCount ||
+                    _rightNoteTabs.NoteCount != total - desiredLeftCount)
+                {
+                    _leftNoteTabs.SetNotes(_hiddenNoteTabs.GetRange(0, desiredLeftCount), 0);
+                    _rightNoteTabs.SetNotes(_hiddenNoteTabs.GetRange(desiredLeftCount,
+                        total - desiredLeftCount), desiredLeftCount);
+                    _noteTabsContentChanged = false;
+                    DisplayDiagnostics.Trace("SideTabsLayout",
+                        "topology=" + petFacts.TopologyGeneration +
+                        " dpi=" + metrics.Dpi + " total=" + total +
+                        " left=" + desiredLeftCount +
+                        " surface=" + surface.RuntimeSurfaceId);
+                }
+
                 _leftNoteTabs.ShowNear(petBounds, work);
                 _rightNoteTabs.ShowNear(petBounds, work);
 

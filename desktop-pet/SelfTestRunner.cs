@@ -2227,6 +2227,10 @@ namespace PennyPet
                             row + metrics.PreviewInsertionGap) return false;
                     tabs.ShowDropPreviewForTest(notes[0].NoteId, 2);
                     if (!tabs.HasDropPreviewForTest) return false;
+                    tabs.SetNotes(new List<SideTabSnapshot>(notes), 7);
+                    if (!Object.ReferenceEquals(first, tabs.Controls[0]) ||
+                        !tabs.HasDropPreviewForTest ||
+                        (int)Pc2Get(tabs, "_globalStartIndex") != 7) return false;
                     SideTabPhysicalMetrics next = SideTabPhysicalMetrics.ForDpi(
                         dpi == 192 ? 96 : 192);
                     tabs.ApplyPhysicalMetrics(next);
@@ -2234,6 +2238,28 @@ namespace PennyPet
                         tabs.ClientSize != new Size(next.Width,
                             3 * (next.Height + next.Gap) - next.Gap)) return false;
                 }
+                // A type-only change must update the icon even when title and
+                // color are identical. Old string signatures omitted the type.
+                SideTabSnapshot original = notes[0];
+                notes[0] = SideTabSnapshot.FromData(new StickyNoteData
+                {
+                    Id = original.NoteId, Title = original.DisplayTitle,
+                    ColorArgb = original.ColorArgb, Visible = original.Visible,
+                    IsTodoList = true
+                });
+                tabs.SetNotes(notes);
+                if (!first.IsDisposed ||
+                    !((StickyNoteTabControl)tabs.Controls[0]).Snapshot.IsTodoList)
+                    return false;
+                SideTabSnapshot moved = notes[0];
+                notes.RemoveAt(0);
+                notes.Add(moved);
+                tabs.SetNotes(notes);
+                if (((StickyNoteTabControl)tabs.Controls[2]).Snapshot.NoteId != moved.NoteId)
+                    return false;
+                tabs.SetNotes(new List<SideTabSnapshot>());
+                if (tabs.Visible || tabs.NoteCount != 0 || tabs.Controls.Count != 0)
+                    return false;
             }
             return true;
         }

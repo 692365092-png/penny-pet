@@ -29,8 +29,9 @@ namespace PennyPet.Tests
                 tabs.Contains("WS_EX_NOACTIVATE"),
                 "Stable TopMost tabs must remain non-activating.");
             Assert.IsTrue(position.Contains("CalculateEdgeAwareLeftCount") &&
-                position.Contains("_noteTabsSignature = String.Empty") &&
-                position.Contains("RefreshNoteTabs();") &&
+                !position.Contains("RefreshNoteTabs();") &&
+                !position.Contains("Notes.GetHiddenInTabOrder") &&
+                position.Contains("_hiddenNoteTabs.GetRange") &&
                 position.Contains("ShowNear(petBounds, work)") &&
                 position.Contains("petFacts.PhysicalBounds"),
                 "Positioning must rebuild only an invalid split and otherwise reposition.");
