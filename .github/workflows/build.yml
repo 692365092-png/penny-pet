@@ -42,6 +42,19 @@ jobs:
         shell: powershell
         run: dotnet build "$env:GITHUB_WORKSPACE\PennyPet.sln" --configuration Release
 
+      - name: Validate art tool output
+        shell: powershell
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP "penny-art-validation.json"
+          $toolExe = Join-Path $env:GITHUB_WORKSPACE `
+            "desktop-pet\bin\Release\net48\PennyPet.Tools.exe"
+          & $toolExe ("--validate-art=" + $report)
+          if ($LASTEXITCODE -ne 0) { throw "Art validation tool failed." }
+          $result = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+          if (-not $result.ok -or @($result.states).Count -ne 10) {
+            throw "Art validation report is incomplete."
+          }
+
       - name: Run discoverable core tests
         shell: powershell
         run: dotnet test "$env:GITHUB_WORKSPACE\desktop-pet\PennyPet.Tests.csproj" --configuration Release --no-build
@@ -99,6 +112,7 @@ jobs:
             ${{ runner.temp }}/penny-modular-selftest.json
             ${{ runner.temp }}/penny-release-smoke.json
             ${{ runner.temp }}/penny-dock-baseline.json
+            ${{ runner.temp }}/penny-art-validation.json
           if-no-files-found: warn
           retention-days: 14
 

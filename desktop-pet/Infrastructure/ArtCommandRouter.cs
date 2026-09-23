@@ -11,14 +11,14 @@ namespace PennyPet
                 "--write-startup-cache=", out path))
             {
                 exitCode = CommandLineArguments.RunOutputCommand(path,
-                    delegate { PetArtPackage.WriteStartupCache(192, 208, path); });
+                    delegate { PetArtWriter.WriteStartupCache(192, 208, path); });
                 return true;
             }
             if (CommandLineArguments.TryGetPath(args,
                 "--write-release-pack=", out path))
             {
                 exitCode = CommandLineArguments.RunOutputCommand(path,
-                    delegate { PetArtPackage.WriteReleasePack(192, 208, path); });
+                    delegate { PetArtWriter.WriteReleasePack(192, 208, path); });
                 return true;
             }
             if (CommandLineArguments.TryGetPath(args, "--validate-art=", out path))
@@ -26,7 +26,7 @@ namespace PennyPet
                 exitCode = CommandLineArguments.RunOutputCommand(path,
                     delegate
                     {
-                        PetArtPackage.WriteValidationReport(192, 208, path);
+                        PetArtWriter.WriteValidationReport(192, 208, path);
                     });
                 return true;
             }

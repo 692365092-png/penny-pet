@@ -19,7 +19,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="**\*.cs"
-      Exclude="bin\**;obj\**;Core\**;Tests\**;SelfTests\**;Infrastructure\CommandLineArguments.cs;Infrastructure\ArtCommandRouter.cs;Infrastructure\SelfTestCommandRouter.cs;Program.cs;PennyPet.AppProgram.cs;PennyPet.SelfTestsProgram.cs;PennyPet.ToolsProgram.cs;PennySelfTests.cs;SelfTestRunner.cs" />
+      Exclude="bin\**;obj\**;Core\**;Tests\**;SelfTests\**;Tools\**;Infrastructure\CommandLineArguments.cs;Infrastructure\ArtCommandRouter.cs;Infrastructure\SelfTestCommandRouter.cs;Program.cs;PennyPet.AppProgram.cs;PennyPet.SelfTestsProgram.cs;PennyPet.ToolsProgram.cs;PennySelfTests.cs;SelfTestRunner.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="System.Net.Http" />

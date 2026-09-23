@@ -68,9 +68,18 @@ try {
     }
     $assembly = [Reflection.Assembly]::ReflectionOnlyLoadFrom($Executable)
     foreach ($name in @("PennyPet.SelfTest", "PennyPet.SelfTestCommandRouter",
-        "PennyPet.ArtCommandRouter", "PennyPet.CommandLineArguments")) {
+        "PennyPet.ArtCommandRouter", "PennyPet.CommandLineArguments",
+        "PennyPet.PetArtWriter", "PennyPet.PetArtPackage+RawAnimationClip")) {
         if ($null -ne $assembly.GetType($name, $false)) {
             throw "Release contains a test/tool entry point: $name"
+        }
+    }
+    $artType = $assembly.GetType("PennyPet.PetArtPackage", $true)
+    foreach ($name in @("WriteValidationReport", "WriteReleasePack", "WriteStartupCache",
+        "BuildClipPalette", "WritePackedClip")) {
+        if ($null -ne $artType.GetMethod($name,
+            [Reflection.BindingFlags]"Static,Instance,Public,NonPublic")) {
+            throw "Release contains an art generator: $name"
         }
     }
     if (@($assembly.GetManifestResourceNames() | Where-Object { $_ -like "PennyPet.Tests.*" }).Count -ne 0) {
