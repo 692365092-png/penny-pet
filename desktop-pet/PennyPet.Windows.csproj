@@ -28,7 +28,7 @@
        duplicated compile list. -->
   <ItemGroup>
     <Compile Include="**\*.cs"
-      Exclude="bin\**;obj\**;Tests\**;PennyPet.AppProgram.cs;PennyPet.SelfTestsProgram.cs;PennyPet.ToolsProgram.cs;PennySelfTests.cs;SelfTestRunner.cs;Infrastructure\SelfTestCommandRouter.cs;Infrastructure\ArtCommandRouter.cs" />
+      Exclude="bin\**;obj\**;Tests\**;SelfTests\**;PennyPet.AppProgram.cs;PennyPet.SelfTestsProgram.cs;PennyPet.ToolsProgram.cs;PennySelfTests.cs;SelfTestRunner.cs;Infrastructure\CommandLineArguments.cs;Infrastructure\SelfTestCommandRouter.cs;Infrastructure\ArtCommandRouter.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -4,8 +4,8 @@ using System.Text;
 
 namespace PennyPet
 {
-    // Shared parsing and failure semantics for the desktop executable and the
-    // dedicated tools/self-test hosts. Every file-producing command now exits
+    // Shared parsing and failure semantics for the tools/self-test hosts.
+    // Every file-producing command exits
     // non-zero and leaves a sibling error file when execution fails.
     internal static class CommandLineArguments
     {

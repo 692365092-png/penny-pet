@@ -63,6 +63,15 @@ try {
         throw "Release version does not match ProductVersion.props."
     }
     $assembly = [Reflection.Assembly]::ReflectionOnlyLoadFrom($Executable)
+    foreach ($name in @("PennyPet.SelfTest", "PennyPet.SelfTestCommandRouter",
+        "PennyPet.ArtCommandRouter", "PennyPet.CommandLineArguments")) {
+        if ($null -ne $assembly.GetType($name, $false)) {
+            throw "Release contains a test/tool entry point: $name"
+        }
+    }
+    if (@($assembly.GetManifestResourceNames() | Where-Object { $_ -like "PennyPet.Tests.*" }).Count -ne 0) {
+        throw "Release contains test fixtures."
+    }
     $required = @(
         "PennyPet.Art.Manifest", "PennyPet.Art.ReleasePack",
         "PennyPet.Art.StartupCache", "PennyPet.Startup.Loading",
