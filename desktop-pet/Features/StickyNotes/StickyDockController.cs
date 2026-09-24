@@ -1213,10 +1213,7 @@ namespace PennyPet
             if (factsById == null ||
                 !factsById.TryGetValue(source.Id, out sourceFacts))
                 return null;
-            Rectangle sourceBounds = new Rectangle(sourceFacts.X,
-                sourceFacts.Y, sourceFacts.Width, sourceFacts.Height);
-            DockTarget best = null;
-            int bestScore = Int32.MaxValue;
+            var candidates = new List<DockWindowTarget>();
             foreach (StickyNoteData candidate in all)
             {
                 if (candidate == null || !candidate.Visible ||
@@ -1227,21 +1224,13 @@ namespace PennyPet
                 DockWindowFacts candidateFacts;
                 if (!factsById.TryGetValue(candidate.Id,
                     out candidateFacts) || !candidateFacts.Visible) continue;
-                Rectangle candidateBounds = new Rectangle(candidateFacts.X,
-                    candidateFacts.Y, candidateFacts.Width,
-                    candidateFacts.Height);
-                if (!CanDockBelow(sourceBounds, candidateBounds, 20)) continue;
-                int score = Math.Abs(sourceFacts.Y -
-                    candidateBounds.Bottom) * 10 +
-                    Math.Min(Math.Abs(sourceFacts.X - candidateFacts.X),
-                        Math.Abs(sourceBounds.Right - candidateBounds.Right));
-                if (score >= bestScore) continue;
-                best = new DockTarget();
-                best.ParentNoteId = candidate.Id;
-                best.ExistingChildNoteId = FindDockChild(candidate.Id,
-                    activeIds);
-                bestScore = score;
+                candidates.Add(new DockWindowTarget(candidate.Id, new PhysicalRect(candidateFacts.X,
+                    candidateFacts.Y, candidateFacts.Width, candidateFacts.Height)));
             }
+            string parentId = StickyDockOperations.FindSnapTarget(new DockWindowTarget(source.Id,
+                new PhysicalRect(sourceFacts.X, sourceFacts.Y, sourceFacts.Width, sourceFacts.Height)), candidates, 20);
+            DockTarget best = parentId == null ? null : new DockTarget {
+                ParentNoteId = parentId, ExistingChildNoteId = FindDockChild(parentId, activeIds) };
             if (best != null && !CanSafelyCombineDockComponents(best, source,
                 factsById))
                 return null;

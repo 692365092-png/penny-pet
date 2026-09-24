@@ -35,19 +35,16 @@ namespace PennyPet
         internal static List<StickyNoteData> ExtractSingleDockMember(
             IList<StickyNoteData> ordered, StickyNoteData extracted)
         {
-            List<StickyNoteData> remaining = new List<StickyNoteData>();
+            var notes = new Dictionary<string, StickyNoteData>(StringComparer.OrdinalIgnoreCase);
+            var ids = new List<string>();
             StickyNoteData matched = null;
             if (ordered != null)
-            {
                 foreach (StickyNoteData note in ordered)
-                {
-                    if (note == null) continue;
-                    if (extracted != null && String.Equals(note.Id,
-                        extracted.Id, StringComparison.OrdinalIgnoreCase))
-                        matched = note;
-                    else remaining.Add(note);
-                }
-            }
+                    if (note != null) { notes[note.Id] = note; ids.Add(note.Id); }
+            if (extracted != null) notes.TryGetValue(extracted.Id, out matched);
+            var remaining = new List<StickyNoteData>();
+            foreach (string id in DockOrderRules.Remove(ids, extracted == null ? null : extracted.Id))
+                remaining.Add(notes[id]);
             StickyDockGroups.ApplyOrderedGroup(remaining);
             StickyDockGroups.ClearMembership(matched ?? extracted);
             return remaining;
@@ -73,34 +70,20 @@ namespace PennyPet
             IList<StickyNoteData> targetSnapshot, StickyNoteData parent,
             IList<StickyNoteData> insertedSnapshot)
         {
-            List<StickyNoteData> inserted = new List<StickyNoteData>();
-            HashSet<string> insertedIds = new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase);
-            if (insertedSnapshot != null)
-            {
-                foreach (StickyNoteData note in insertedSnapshot)
-                    if (note != null && insertedIds.Add(note.Id))
-                        inserted.Add(note);
-            }
-            List<StickyNoteData> result = new List<StickyNoteData>();
+            var notes = new Dictionary<string, StickyNoteData>(StringComparer.OrdinalIgnoreCase);
+            var targetIds = new List<string>();
+            var insertedIds = new List<string>();
+            var insertedSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (targetSnapshot != null)
-            {
                 foreach (StickyNoteData note in targetSnapshot)
-                    if (note != null && !insertedIds.Contains(note.Id))
-                        result.Add(note);
-            }
-            int insertion = result.Count;
-            if (parent != null)
-            {
-                int parentIndex = result.FindIndex(
-                    delegate(StickyNoteData note)
-                    {
-                        return String.Equals(note.Id, parent.Id,
-                            StringComparison.OrdinalIgnoreCase);
-                    });
-                if (parentIndex >= 0) insertion = parentIndex + 1;
-            }
-            result.InsertRange(insertion, inserted);
+                    if (note != null) { notes[note.Id] = note; targetIds.Add(note.Id); }
+            if (insertedSnapshot != null)
+                foreach (StickyNoteData note in insertedSnapshot)
+                    if (note != null && insertedSet.Add(note.Id))
+                    { notes[note.Id] = note; insertedIds.Add(note.Id); }
+            var result = new List<StickyNoteData>();
+            foreach (string id in DockOrderRules.MergeAfter(targetIds, parent == null ? null : parent.Id, insertedIds))
+                result.Add(notes[id]);
             return result;
         }
 
@@ -150,25 +133,47 @@ namespace PennyPet
             return tail;
         }
 
+        internal static string FindSnapTarget(DockWindowTarget source,
+            IEnumerable<DockWindowTarget> candidates, int threshold)
+        {
+            string best = null;
+            long bestScore = Int64.MaxValue;
+            PhysicalRect moving = source.PhysicalBounds;
+            foreach (DockWindowTarget candidate in candidates)
+            {
+                PhysicalRect target = candidate.PhysicalBounds;
+                if (String.Equals(source.NoteId, candidate.NoteId, StringComparison.OrdinalIgnoreCase) ||
+                    !CanDockBelow(moving.Left, moving.Top, moving.Width, moving.Height,
+                        target.Left, target.Top, target.Width, target.Height, threshold)) continue;
+                long score = Math.Abs((long)moving.Top - ((long)target.Top + target.Height)) * 10 +
+                    Math.Min(Math.Abs((long)moving.Left - target.Left),
+                        Math.Abs(((long)moving.Left + moving.Width) - ((long)target.Left + target.Width)));
+                if (score >= bestScore) continue;
+                best = candidate.NoteId;
+                bestScore = score;
+            }
+            return best;
+        }
+
         internal static bool CanDockBelow(int movingLeft, int movingTop,
             int movingWidth, int movingHeight, int targetLeft, int targetTop,
             int targetWidth, int targetHeight, int threshold)
         {
             int limit = Math.Max(4, threshold);
-            int targetBottom = targetTop + targetHeight;
+            long targetBottom = (long)targetTop + targetHeight;
             if (Math.Abs(movingTop - targetBottom) > limit) return false;
 
-            int movingRight = movingLeft + movingWidth;
-            int targetRight = targetLeft + targetWidth;
-            int overlap = Math.Min(movingRight, targetRight) -
+            long movingRight = (long)movingLeft + movingWidth;
+            long targetRight = (long)targetLeft + targetWidth;
+            long overlap = Math.Min(movingRight, targetRight) -
                 Math.Max(movingLeft, targetLeft);
             int narrowerWidth = Math.Min(movingWidth, targetWidth);
             int widerWidth = Math.Max(movingWidth, targetWidth);
-            bool aligned = Math.Abs(movingLeft - targetLeft) <= limit ||
+            bool aligned = Math.Abs((long)movingLeft - targetLeft) <= limit ||
                 Math.Abs(movingRight - targetRight) <= limit ||
                 Math.Abs((movingLeft + movingRight) -
-                    (targetLeft + targetRight)) <= limit * 2;
-            bool differentWidths = widerWidth >= narrowerWidth * 3 / 2;
+                    (targetLeft + targetRight)) <= (long)limit * 2;
+            bool differentWidths = widerWidth >= (long)narrowerWidth * 3 / 2;
             return overlap >= Math.Max(48, narrowerWidth / 2) &&
                 (aligned || differentWidths);
         }

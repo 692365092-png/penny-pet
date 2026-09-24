@@ -74,7 +74,10 @@ namespace PennyPet
             if (focusEditor && !ids.Contains(focusId ?? String.Empty)) return null;
             if (!HasCompletePreferred(ordered))
             {
-                DockGroupReprojectPlan recovery = StickyPlacementRecovery.SelectDockPhysical(ordered, topology, planSequence);
+                DockPhysicalRecovery layout = StickyPlacementRecovery.SelectDockPhysical(ordered, topology);
+                DockGroupReprojectPlan recovery = DockGroupReprojectPlan.RecoverPhysical(
+                    topology.Generation, planSequence, layout.TargetSurfaceId,
+                    new List<DockWindowTarget>(layout.Targets));
                 return new DockRestoreOperation(ordered, focusId, focusEditor, persistVisibility,
                     topology, topology.FindByRuntimeSurfaceId(recovery.TargetSurfaceId),
                     DockTopologyReprojectReason.LegacyRecovery, recovery);

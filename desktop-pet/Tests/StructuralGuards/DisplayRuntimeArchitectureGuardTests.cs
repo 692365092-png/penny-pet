@@ -53,7 +53,7 @@ namespace PennyPet.Tests
         public void DockExecutionRules_KeepGenerationAndEpochGate()
         {
             string method = SliceMethod(
-                ReadSource("Core/Display/DockInteractionState.cs"),
+                ReadSource("Features/StickyNotes/DockInteractionState.cs"),
                 "internal static bool CanExecute(");
 
             StringAssert.Contains(method,

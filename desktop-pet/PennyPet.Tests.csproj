@@ -13,6 +13,9 @@
     <!-- Exercise the actual platform-neutral protocol/runtime implementations. -->
     <Compile Include="Features\Interaction\InteractionRuntime.cs" />
     <Compile Include="Features\StickyNotes\DockFrameMailbox.cs" />
+    <Compile Include="Features\StickyNotes\DockPlacementPlanner.cs" />
+    <Compile Include="Features\StickyNotes\DockInteractionState.cs" />
+    <Compile Include="Features\StickyNotes\DockMutationQueue.cs" />
     <Compile Include="Features\StickyNotes\DockResizeSession.cs" />
     <Compile Include="Features\StickyNotes\DockGestureOwner.cs" />
     <Compile Include="Features\StickyNotes\DockRestoreOperation.cs" />

@@ -159,7 +159,7 @@ namespace PennyPet
             for (int index = 0; index < layout.Count; index++)
             {
                 DockRect rect = layout[index];
-                targets.Add(new DockWindowTarget(_members[_sourceIndex + index + 1].WindowId,
+                targets.Add(new DockWindowTarget(_members[FollowerIndex(index)].WindowId,
                     new PhysicalRect(rect.Left, rect.Top, rect.Width, rect.Height)));
             }
             return new DockResizeBatch(TopologyGeneration, targets, Input);
@@ -170,14 +170,8 @@ namespace PennyPet
 
         private DockResizeBatch HorizontalBatch(int left, int width)
         {
-            List<DockWindowTarget> targets = new List<DockWindowTarget>(FollowerCount);
-            for (int index = 0; index < FollowerCount; index++)
-            {
-                WindowFacts facts = _members[FollowerIndex(index)];
-                targets.Add(new DockWindowTarget(facts.WindowId,
-                    new PhysicalRect(left, facts.PhysicalBounds.Top, width, facts.PhysicalBounds.Height)));
-            }
-            return new DockResizeBatch(TopologyGeneration, targets, Input);
+            return BatchFromLayout(StickyDockGeometry.CalculateHorizontalResizeTargets(
+                _startBounds, _sourceIndex, left, width));
         }
 
         internal bool IsCurrentFinal(DockResizeBatch batch)
@@ -219,15 +213,11 @@ namespace PennyPet
         {
             if (!IsCurrentFinal(expected) || _corrected || !HasExpectedFollowers(actual) || LayoutIsExact(actual)) return null;
             List<DockWindowTarget> targets = new List<DockWindowTarget>(actual.Members.Count);
-            int bottom = _finalSource.Bottom;
-            foreach (DockBatchMemberResult member in actual.Members)
-            {
-                PhysicalRect rect = member.Facts.PhysicalBounds;
-                targets.Add(new DockWindowTarget(member.NoteId, Kind == DockResizeKind.Horizontal
-                    ? new PhysicalRect(_finalSource.Left, rect.Top, _finalSource.Width, rect.Height)
-                    : new PhysicalRect(rect.Left, bottom, rect.Width, rect.Height)));
-                bottom += rect.Height;
-            }
+            var followers = new List<PhysicalRect>(actual.Members.Count);
+            foreach (DockBatchMemberResult member in actual.Members) followers.Add(member.Facts.PhysicalBounds);
+            List<PhysicalRect> corrected = StickyDockGeometry.CorrectResizeFollowers(Kind, _finalSource, followers);
+            for (int index = 0; index < corrected.Count; index++)
+                targets.Add(new DockWindowTarget(actual.Members[index].NoteId, corrected[index]));
             _corrected = true;
             _finalBatch = new DockResizeBatch(TopologyGeneration, targets, Input);
             Mailbox.QueueFinal(_finalBatch);
