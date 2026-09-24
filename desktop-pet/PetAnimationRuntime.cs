@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
-using System.Threading;
 using System.Windows.Forms;
 
 namespace PennyPet
@@ -112,85 +111,36 @@ namespace PennyPet
             _interaction.Type(DateTime.UtcNow);
         }
 
-        private void QueueStartupInteractionPreload()
+        private async void QueueStartupInteractionPreload()
         {
-            // Warm optional interaction rows off the UI thread. The idle row
-            // already establishes startup readiness; a first hover can use
-            // the safe idle frame while an optional row is still decoding.
-            Thread preloadThread = new Thread(new ThreadStart(delegate
+            int[] warmRows = { HoverRow, FailedRow, WaitingRow, ThinkingRow, WavingRow };
+            foreach (int row in warmRows)
             {
-                int[] warmRows = { HoverRow, FailedRow, WaitingRow, ThinkingRow, WavingRow };
+                if (_exiting || IsDisposed) return;
+                try { await _art.LoadRowAsync(row); }
+                catch (Exception error)
+                {
+                    if (!_exiting && !IsDisposed)
+                        ApplicationDiagnostics.ReportNonFatal("art-preload-" + row, error);
+                }
+            }
+            if (_exiting || IsDisposed) return;
+            try
+            {
                 foreach (int row in warmRows)
-                {
-                    try
-                    {
-                        if (!_art.IsRowLoaded(row)) _art.PreloadRow(row);
-                    }
-                    catch (Exception error)
-                    {
-                        if (!_exiting && !IsDisposed)
-                            ApplicationDiagnostics.ReportNonFatal(
-                                "art-preload-" + row, error);
-                    }
-                }
-                if (_exiting || IsDisposed || !IsHandleCreated) return;
-                try
-                {
-                    BeginInvoke((MethodInvoker)delegate
-                    {
-                        if (_exiting || IsDisposed) return;
-                        try
-                        {
-                            foreach (int row in warmRows)
-                                if (_art.IsRowLoaded(row))
-                                    EnsureRenderedRow(row);
-                        }
-                        catch (Exception error)
-                        {
-                            ApplicationDiagnostics.ReportNonFatal(
-                                "startup-interaction-render", error);
-                        }
-                        // Idle is the safe fallback if an optional animation
-                        // is damaged; never leave the loading window stranded.
-                        _startupArtReady = _art.IsRowLoaded(IdleRow);
-                        TryRaiseStartupReady();
-                    });
-                }
-                catch (InvalidOperationException) { }
-            }));
-            preloadThread.IsBackground = true;
-            preloadThread.Priority = ThreadPriority.BelowNormal;
-            preloadThread.Name = "Penny animation warmup";
-            preloadThread.Start();
+                    if (_art.IsRowLoaded(row)) EnsureRenderedRow(row);
+            }
+            catch (Exception error)
+            {
+                ApplicationDiagnostics.ReportNonFatal("startup-interaction-render", error);
+            }
+            _startupArtReady = _art.IsRowLoaded(IdleRow);
+            TryRaiseStartupReady();
         }
 
         private void QueueArtPreload(int row)
         {
-            if (!ReserveArtPreload(row)) return;
-            ThreadPool.QueueUserWorkItem(delegate
-            {
-                try { _art.PreloadRow(row); }
-                catch (Exception error)
-                {
-                    if (!_exiting && !IsDisposed)
-                        ApplicationDiagnostics.ReportNonFatal(
-                            "art-preload-" + row, error);
-                }
-                finally { CompleteArtPreload(row); }
-            });
-        }
-
-        private bool ReserveArtPreload(int row)
-        {
-            if (_art == null) return false;
-            return _artPreloads.TryReserve(row, _art.IsRowLoaded(row),
-                DateTime.UtcNow);
-        }
-
-        private void CompleteArtPreload(int row)
-        {
-            bool loaded = _art != null && _art.IsRowLoaded(row);
-            _artPreloads.Complete(row, loaded, DateTime.UtcNow);
+            _art.LoadRowAsync(row);
         }
 
         internal static int NormalizeScalePercent(int value)

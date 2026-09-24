@@ -57,8 +57,6 @@ namespace PennyPet
         private readonly StickyFeature _notes;
         private readonly StickyWorkspace _stickyWorkspace;
         private readonly object _keyboardQueueGate = new object();
-        private readonly ArtPreloadReservations _artPreloads =
-            new ArtPreloadReservations();
         private readonly InteractionRuntime _interaction;
         internal readonly HashSet<string> _expectedFirstRenderNoteIds =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);

@@ -125,8 +125,7 @@ namespace PennyPet
 
         Task IReminderPresentation.PrepareAttentionAsync()
         {
-            if (_art.IsRowLoaded(NotificationRow)) return Task.FromResult(0);
-            return Task.Run(() => _art.PreloadRow(NotificationRow));
+            return _art.LoadRowAsync(NotificationRow);
         }
 
         void IReminderPresentation.BeginAttention()

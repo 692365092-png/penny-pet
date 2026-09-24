@@ -50,51 +50,11 @@ namespace PennyPet
 
         private static bool RunReadyArtReadCheck()
         {
-            using (PetArtPackage art = PetArtPackage.Load(192, 208))
-            using (ManualResetEvent locked = new ManualResetEvent(false))
-            using (ManualResetEvent release = new ManualResetEvent(false))
-            using (ManualResetEvent read = new ManualResetEvent(false))
-            {
-                art.PreloadRow(IdleRow);
-                AnimationClip expected = art.GetLoadedClip(IdleRow);
-                object gate = Pc2Get(art, "_resolveGate");
-                Exception failure = null;
-                bool ready = false;
-                // Hold the exact decoder gate from another thread. A ready-row
-                // render read must complete before that thread is released.
-                Thread decoder = new Thread(() => {
-                    lock (gate) { locked.Set(); release.WaitOne(); }
-                });
-                Thread reader = new Thread(() => {
-                    try
-                    {
-                        ready = art.IsRowLoaded(IdleRow) &&
-                            Object.ReferenceEquals(expected, art.GetLoadedClip(IdleRow)) &&
-                            expected.Frames[0] != null && expected.FrameDuration(0) > 0;
-                    }
-                    catch (Exception error) { failure = error; }
-                    finally { read.Set(); }
-                });
-                decoder.IsBackground = reader.IsBackground = true;
-                decoder.Start();
-                bool completed;
-                bool readerStarted = false;
-                try
-                {
-                    if (!locked.WaitOne(5000)) return false;
-                    reader.Start();
-                    readerStarted = true;
-                    completed = read.WaitOne(5000);
-                }
-                finally
-                {
-                    release.Set();
-                    decoder.Join();
-                    if (readerStarted) reader.Join();
-                }
-                if (failure != null) throw failure;
-                return completed && ready;
-            }
+            if (!RunArtTaskSharingCheck()) throw new InvalidOperationException("Art task sharing failed.");
+            if (!RunArtRetryCheck()) throw new InvalidOperationException("Art retry bound failed.");
+            if (!RunArtShutdownCheck()) throw new InvalidOperationException("Art late-result disposal failed.");
+            if (!RunArtAliasCheck()) throw new InvalidOperationException("Art row alias sharing failed.");
+            return true;
         }
     }
 }

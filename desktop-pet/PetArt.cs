@@ -9,7 +9,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Threading;
+using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 
 namespace PennyPet
@@ -36,15 +36,10 @@ namespace PennyPet
         private readonly bool _usesEmbeddedArt;
         private readonly PetArtManifest _manifest;
         private readonly PetArtRenderSettings _render;
-        private readonly object _resolveGate = new object();
-        private readonly Dictionary<string, AnimationClip> _resolved =
-            new Dictionary<string, AnimationClip>(StringComparer.OrdinalIgnoreCase);
-        private readonly AnimationClip[] _runtimeClips;
-        private readonly Dictionary<int, AnimationClip> _packedLoadedClips =
-            new Dictionary<int, AnimationClip>();
+        // Rows sharing a terminal state (or packed index) share one asset owner.
+        private readonly ArtClipAsset[] _runtimeAssets;
         private int[] _packedStateToClip;
         private PackedClipMetadata[] _packedClips;
-        private bool _packedMetadataAttempted;
         private volatile bool _disposed;
         private bool _loadedStartupCache;
 
@@ -75,11 +70,13 @@ namespace PennyPet
             _canvasWidth = canvasWidth;
             _canvasHeight = canvasHeight;
             _render = PetArtRules.NormalizeRenderSettings(manifest.render);
-            _runtimeClips = new AnimationClip[RuntimeStateNames.Length];
+            _runtimeAssets = new ArtClipAsset[RuntimeStateNames.Length];
             // A release build regenerates this cache from the current art, so
             // use it even when a development art folder sits next to the EXE.
             // This keeps test and friend-facing startup behavior identical.
-            TryLoadEmbeddedStartupCache();
+            AnimationClip startup = TryLoadEmbeddedStartupCache();
+            if (_usesEmbeddedArt) TryLoadEmbeddedReleasePackMetadata();
+            InitializeAssets(startup);
         }
 
         internal string DisplayName
@@ -157,7 +154,7 @@ namespace PennyPet
             return new PetArtPackage(root, manifest, canvasWidth, canvasHeight);
         }
 
-        private void TryLoadEmbeddedStartupCache()
+        private AnimationClip TryLoadEmbeddedStartupCache()
         {
             Stream stream = null;
             List<Bitmap> created = new List<Bitmap>();
@@ -165,7 +162,7 @@ namespace PennyPet
             {
                 stream = typeof(PetArtPackage).Assembly.GetManifestResourceStream(
                     EmbeddedStartupCacheResourceName);
-                if (stream == null) return;
+                if (stream == null) return null;
                 using (BinaryReader reader = new BinaryReader(stream,
                     Encoding.UTF8))
                 {
@@ -178,7 +175,7 @@ namespace PennyPet
                         magic != "PCAF0003") ||
                         width != _canvasWidth ||
                         height != _canvasHeight || count <= 0 || count > 500)
-                        return;
+                        return null;
                     int[] durations = new int[count];
                     for (int index = 0; index < count; index++)
                         durations[index] = reader.ReadInt32();
@@ -194,7 +191,7 @@ namespace PennyPet
                             (pixelEncoding == 1 &&
                                 (paletteCount <= 0 || paletteCount > 256)) ||
                             (pixelEncoding == 2 && paletteCount <= 0))
-                            return;
+                            return null;
                         palette = new int[paletteCount];
                         for (int index = 0; index < paletteCount; index++)
                             palette[index] = reader.ReadInt32();
@@ -274,10 +271,9 @@ namespace PennyPet
                     finally { if (deflate != null) deflate.Dispose(); }
                     AnimationClip clip = new AnimationClip(
                         "embedded-startup-cache", created.ToArray(), durations);
-                    Volatile.Write(ref _runtimeClips[0], clip);
-                    _resolved[RuntimeStateNames[0]] = clip;
                     _loadedStartupCache = true;
                     created.Clear();
+                    return clip;
                 }
             }
             catch
@@ -290,11 +286,11 @@ namespace PennyPet
                 if (stream != null) stream.Dispose();
                 foreach (Bitmap frame in created) frame.Dispose();
             }
+            return null;
         }
 
         private bool TryLoadEmbeddedReleasePackMetadata()
         {
-            _packedMetadataAttempted = true;
             try
             {
                 using (Stream stream = typeof(PetArtPackage).Assembly
@@ -382,9 +378,6 @@ namespace PennyPet
 
         private AnimationClip LoadPackedClip(int clipIndex)
         {
-            AnimationClip existing;
-            if (_packedLoadedClips.TryGetValue(clipIndex, out existing))
-                return existing;
             if (_packedClips == null || clipIndex < 0 ||
                 clipIndex >= _packedClips.Length)
                 throw new InvalidDataException("发布资源包动画索引无效。");
@@ -447,11 +440,6 @@ namespace PennyPet
                 AnimationClip clip = new AnimationClip(
                     "embedded-pack:" + metadata.Source, frames,
                     (int[])metadata.Durations.Clone());
-                _packedLoadedClips[clipIndex] = clip;
-                if (_packedStateToClip != null &&
-                    _packedStateToClip.Length > 0 &&
-                    _packedStateToClip[0] == clipIndex)
-                    _loadedStartupCache = true;
                 return clip;
             }
             catch
@@ -550,7 +538,7 @@ namespace PennyPet
             if (File.Exists(outputPath)) return;
             string directory = Path.GetDirectoryName(outputPath);
             if (!String.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
-            string temporaryPath = outputPath + ".tmp";
+            string temporaryPath = outputPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
                 using (Stream input = assembly.GetManifestResourceStream(resourceName))
@@ -574,53 +562,53 @@ namespace PennyPet
             }
         }
 
-        private AnimationClip ResolveState(string stateName,
-            HashSet<string> resolving)
+        private void InitializeAssets(AnimationClip startup)
         {
-            AnimationClip existing;
-            if (_resolved.TryGetValue(stateName, out existing)) return existing;
-            if (!resolving.Add(stateName))
-                throw new InvalidDataException("美术状态 alias 形成循环：" + stateName);
+            var assets = new Dictionary<string, ArtClipAsset>(StringComparer.OrdinalIgnoreCase);
+            for (int row = 0; row < _runtimeAssets.Length; row++)
+            {
+                string key;
+                Func<AnimationClip> decode;
+                try
+                {
+                    if (_packedStateToClip != null)
+                    {
+                        int index = _packedStateToClip[row];
+                        key = "pack:" + index;
+                        decode = () => LoadPackedClip(index);
+                    }
+                    else
+                    {
+                        string terminal = PetArtRules.ResolveTerminalStateName(
+                            _manifest, RuntimeStateNames[row]);
+                        key = "state:" + terminal;
+                        PetArtStateDefinition definition = _manifest.states[terminal];
+                        decode = () => LoadState(definition);
+                    }
+                }
+                catch (InvalidDataException error)
+                {
+                    // Invalid optional aliases do not prevent the idle fallback.
+                    key = "invalid:" + row;
+                    decode = () => { throw new InvalidDataException(error.Message, error); };
+                }
+                ArtClipAsset asset;
+                if (!assets.TryGetValue(key, out asset))
+                {
+                    asset = new ArtClipAsset(decode, row == 0 ? startup : null);
+                    assets.Add(key, asset);
+                }
+                _runtimeAssets[row] = asset;
+            }
+        }
 
-            PetArtStateDefinition definition;
-            if (!_manifest.states.TryGetValue(stateName, out definition) ||
-                definition == null)
-            {
-                string fallback = String.IsNullOrWhiteSpace(_manifest.fallbackState)
-                    ? "idle" : _manifest.fallbackState.Trim();
-                if (String.Equals(fallback, stateName,
-                    StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException("缺少美术状态：" + stateName);
-                AnimationClip fallbackClip = ResolveState(fallback, resolving);
-                _resolved[stateName] = fallbackClip;
-                resolving.Remove(stateName);
-                return fallbackClip;
-            }
-
-            AnimationClip clip;
-            if (!String.IsNullOrWhiteSpace(definition.alias))
-            {
-                clip = ResolveState(definition.alias.Trim(), resolving);
-            }
-            else if (!String.IsNullOrWhiteSpace(definition.file))
-            {
-                string path = ResolveAssetPath(definition.file, true);
-                clip = LoadFileClip(path, definition);
-            }
-            else if (!String.IsNullOrWhiteSpace(definition.folder))
-            {
-                string path = ResolveAssetPath(definition.folder, false);
-                clip = LoadFolderClip(path, definition);
-            }
-            else
-            {
-                throw new InvalidDataException("状态没有 file、folder 或 alias：" +
-                    stateName);
-            }
-
-            _resolved[stateName] = clip;
-            resolving.Remove(stateName);
-            return clip;
+        private AnimationClip LoadState(PetArtStateDefinition definition)
+        {
+            if (!String.IsNullOrWhiteSpace(definition.file))
+                return LoadFileClip(ResolveAssetPath(definition.file, true), definition);
+            if (!String.IsNullOrWhiteSpace(definition.folder))
+                return LoadFolderClip(ResolveAssetPath(definition.folder, false), definition);
+            throw new InvalidDataException("状态没有 file、folder 或 alias。");
         }
 
         internal string ResolveAssetPath(string relativePath, bool embeddedFile)
@@ -675,21 +663,30 @@ namespace PennyPet
                     DefaultDuration(definition));
                 Bitmap[] frames = new Bitmap[count];
                 int[] durations = new int[count];
-                for (int index = 0; index < count; index++)
+                try
                 {
-                    gif.SelectActiveFrame(dimension, index);
-                    using (Bitmap decoded = new Bitmap(gif.Width, gif.Height,
-                        PixelFormat.Format32bppArgb))
-                    using (Graphics graphics = Graphics.FromImage(decoded))
+                    for (int index = 0; index < count; index++)
                     {
-                        graphics.Clear(Color.Transparent);
-                        graphics.CompositingMode = CompositingMode.SourceCopy;
-                        graphics.DrawImageUnscaled(gif, 0, 0);
-                        frames[index] = NormalizeFrame(decoded, definition);
+                        gif.SelectActiveFrame(dimension, index);
+                        using (Bitmap decoded = new Bitmap(gif.Width, gif.Height,
+                            PixelFormat.Format32bppArgb))
+                        using (Graphics graphics = Graphics.FromImage(decoded))
+                        {
+                            graphics.Clear(Color.Transparent);
+                            graphics.CompositingMode = CompositingMode.SourceCopy;
+                            graphics.DrawImageUnscaled(gif, 0, 0);
+                            frames[index] = NormalizeFrame(decoded, definition);
+                        }
+                        durations[index] = NormalizeDuration(rawDurations[index], definition);
                     }
-                    durations[index] = NormalizeDuration(rawDurations[index], definition);
+                    return new AnimationClip(path, frames, durations);
                 }
-                return new AnimationClip(path, frames, durations);
+                catch
+                {
+                    foreach (Bitmap frame in frames)
+                        if (frame != null) frame.Dispose();
+                    throw;
+                }
             }
         }
 
@@ -703,16 +700,25 @@ namespace PennyPet
                 throw new InvalidDataException("逐帧 PNG 文件夹是空的：" + folder);
             Bitmap[] frames = new Bitmap[files.Length];
             int[] durations = new int[files.Length];
-            for (int index = 0; index < files.Length; index++)
+            try
             {
-                using (Image image = Image.FromFile(files[index]))
-                    frames[index] = NormalizeFrame(image, definition);
-                int raw = definition.durationsMs != null &&
-                    index < definition.durationsMs.Length
-                    ? definition.durationsMs[index] : DefaultDuration(definition);
-                durations[index] = NormalizeDuration(raw, definition);
+                for (int index = 0; index < files.Length; index++)
+                {
+                    using (Image image = Image.FromFile(files[index]))
+                        frames[index] = NormalizeFrame(image, definition);
+                    int raw = definition.durationsMs != null &&
+                        index < definition.durationsMs.Length
+                        ? definition.durationsMs[index] : DefaultDuration(definition);
+                    durations[index] = NormalizeDuration(raw, definition);
+                }
+                return new AnimationClip(folder, frames, durations);
             }
-            return new AnimationClip(folder, frames, durations);
+            catch
+            {
+                foreach (Bitmap frame in frames)
+                    if (frame != null) frame.Dispose();
+                throw;
+            }
         }
 
         internal static int[] ReadGifDurations(Image image, int frameCount, int fallback)
@@ -778,86 +784,57 @@ namespace PennyPet
             return clip.Frames[index];
         }
 
-        // Fully constructed clips are published once. Reading a ready row must
-        // not wait on another row's decoder holding _resolveGate. UI consumption
-        // stops before owner-thread disposal; workers still serialize with Dispose.
+        // UI reads never enter a loader lock. The display owner stops consuming
+        // bitmaps before disposing the package; late workers dispose their result.
         internal bool IsRowLoaded(int row)
         {
-            return row >= 0 && row < _runtimeClips.Length && !_disposed &&
-                Volatile.Read(ref _runtimeClips[row]) != null;
+            return row >= 0 && row < _runtimeAssets.Length && !_disposed &&
+                _runtimeAssets[row].Ready != null;
         }
 
         internal AnimationClip GetLoadedClip(int row)
         {
             if (_disposed) throw new ObjectDisposedException("PetArtPackage");
-            AnimationClip clip = Volatile.Read(ref _runtimeClips[row]);
+            AnimationClip clip = _runtimeAssets[row].Ready;
             if (clip == null) throw new InvalidOperationException("Animation row is not ready.");
             return clip;
         }
 
-        internal void PreloadRow(int row)
+        internal Task<AnimationClip> LoadRowAsync(int row)
         {
-            GetClip(row);
+            if (row < 0 || row >= _runtimeAssets.Length)
+                throw new ArgumentOutOfRangeException(nameof(row));
+            return _runtimeAssets[row].LoadAsync();
         }
+
+        // Explicit synchronous boundary for startup Idle and offline art tools.
+        // Rendering and optional runtime loads use GetLoadedClip/LoadRowAsync.
+        internal void PreloadRow(int row) { GetClip(row); }
 
         internal AnimationClip GetClip(int row)
         {
-            if (row < 0 || row >= _runtimeClips.Length)
-                throw new ArgumentOutOfRangeException(nameof(row));
-            lock (_resolveGate)
-            {
-                if (_disposed) throw new ObjectDisposedException("PetArtPackage");
-                AnimationClip clip = _runtimeClips[row];
-                if (clip == null)
-                {
-                    if (_usesEmbeddedArt && !_packedMetadataAttempted)
-                        TryLoadEmbeddedReleasePackMetadata();
-                    if (_packedStateToClip != null &&
-                        row < _packedStateToClip.Length)
-                        clip = LoadPackedClip(_packedStateToClip[row]);
-                    else
-                        clip = ResolveState(RuntimeStateNames[row],
-                            new HashSet<string>(StringComparer.OrdinalIgnoreCase));
-                }
-                if (clip == null || clip.FrameCount == 0)
-                    throw new InvalidDataException("美术状态没有可播放帧：" +
-                        RuntimeStateNames[row]);
-                Volatile.Write(ref _runtimeClips[row], clip);
-                return clip;
-            }
+            AnimationClip clip = LoadRowAsync(row).GetAwaiter().GetResult();
+            if (row == 0 && _packedStateToClip != null) _loadedStartupCache = true;
+            return clip;
         }
 
         internal int LoadedRuntimeStateCount
         {
             get
             {
-                lock (_resolveGate)
-                {
-                    int count = 0;
-                    foreach (AnimationClip clip in _runtimeClips)
-                        if (clip != null) count++;
-                    return count;
-                }
+                int count = 0;
+                for (int row = 0; row < _runtimeAssets.Length; row++)
+                    if (IsRowLoaded(row)) count++;
+                return count;
             }
         }
 
         public void Dispose()
         {
-            lock (_resolveGate)
-            {
-                if (_disposed) return;
-                _disposed = true;
-                HashSet<AnimationClip> unique = new HashSet<AnimationClip>();
-                foreach (AnimationClip clip in _runtimeClips)
-                    if (clip != null && unique.Add(clip)) clip.Dispose();
-                foreach (AnimationClip clip in _resolved.Values)
-                    if (clip != null && unique.Add(clip)) clip.Dispose();
-                foreach (AnimationClip clip in _packedLoadedClips.Values)
-                    if (clip != null && unique.Add(clip)) clip.Dispose();
-                _resolved.Clear();
-                _packedLoadedClips.Clear();
-                Array.Clear(_runtimeClips, 0, _runtimeClips.Length);
-            }
+            if (_disposed) return;
+            _disposed = true;
+            foreach (ArtClipAsset asset in new HashSet<ArtClipAsset>(_runtimeAssets))
+                asset.Dispose();
         }
     }
 }

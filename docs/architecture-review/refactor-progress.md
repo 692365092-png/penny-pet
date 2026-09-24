@@ -17,7 +17,7 @@ Implementation follows the approved R01–R27 roadmap on `codex/simplify-dock-pi
 
 R10 passed [Windows CI #65](https://github.com/692365092-png/penny-pet/actions/runs/35857017185), including the ten interaction tests, native ready-art check and formal EXE smoke.
 
-## R11 — implementation complete, Windows validation pending
+## R11 — implementation complete, Windows functional gates passed
 
 First checkpoint introduced the memory model and snapshot writer. The second checkpoint removes the transitional repository: `StickyModel` owns the canonical collection, note creation/removal, tab ordering, Dock member removal and detached snapshot capture. It has no store, file path, writer, window, dispatcher or Drawing dependency. `StickyStore` owns loading/recovery, the serial writer and independent emergency export. It returns a loaded model to the owner and retains no live model field. Background writes receive detached requests only.
 
@@ -83,3 +83,16 @@ Ready clip publication uses release/acquire reads and writes. UI readiness, timi
 No native drag-latency, mixed-DPI visual or IME performance improvement is claimed from source checks alone. Windows CI remains required for this change; the local environment has no .NET SDK.
 
 R11.1 initial [CI #66](https://github.com/692365092-png/penny-pet/actions/runs/35890263969) compiled product code but rejected two new test fixtures that assumed parameterless todo/schedule constructors. The follow-up uses the actual text/state/date constructors.
+
+
+R11 completed on `27746ac`: [Windows CI #69](https://github.com/692365092-png/penny-pet/actions/runs/36010301854) passed build, 609 discoverable tests, modular native self-tests and the formal single-file EXE smoke. CI #68 exposed two source guards still expecting direct PetForm calls; the follow-up follows the actual presentation port and typing event subscription. The native feature-boundary test continues to exercise typing and lifecycle delivery.
+
+## R12 — shared clip tasks and resource lifetime
+
+Each terminal manifest state / release-pack clip index has one `ArtClipAsset`, shared by its row aliases. Startup warmup, interactive requests and reminder attention all use its task. Ready frame reads and loaded-row counts do not acquire a decoder lock. Pack metadata and alias mapping are established once during package construction; bitmap decoding runs outside short task/publication gates.
+
+Each asset permits one initial decode plus one retry, with a one-second backoff. A failed task is reused during backoff and after the retry budget is exhausted. Idle remains the interaction fallback. The row reservation component and separate startup worker thread are removed. Reminder intent invalidation stays with ReminderRuntime; abandoning an intent does not cancel another consumer's shared task.
+
+Disposal cancels pending consumers without waiting for decoding. A late worker disposes its unpublished result; published aliases share one disposal owner. Failed GIF/folder decode attempts release partial frames. Embedded fallback extraction uses unique temporary paths so different definitions cannot overwrite the same staging file. Startup Idle and offline art tools retain an explicit synchronous loading entry; optional UI playback never waits there.
+
+Native regression checks cover 20 simultaneous consumers, ready reads during blocked decode, bounded failure/backoff, cancellation before decode completes, late bitmap release, actual packaged row identity, external alias chains/fallback and invalid optional aliases. The existing lazy-load check now counts all three ready hover aliases. Windows CI is required; this Linux workspace has no .NET SDK or interactive Windows desktop. No rendered latency or memory-performance improvement is claimed without measurement.

@@ -58,7 +58,8 @@ namespace PennyPet
                 result.InteractionPreloadOk = !art.IsRowLoaded(4);
                 art.PreloadRow(4);
                 result.InteractionPreloadOk = result.InteractionPreloadOk &&
-                    art.IsRowLoaded(4) && art.LoadedRuntimeStateCount == 2;
+                    art.IsRowLoaded(4) && art.IsRowLoaded(1) && art.IsRowLoaded(2) &&
+                    art.LoadedRuntimeStateCount == 4;
                 art.PreloadRow(9);
                 result.NotificationPlaybackOk = art.IsRowLoaded(9) &&
                     art.GetFrame(9, 0) != null &&

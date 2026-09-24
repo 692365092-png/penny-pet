@@ -1644,25 +1644,6 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void ArtPreloadReservations_RetryOnlyAfterBackoff()
-        {
-            ArtPreloadReservations reservations = new ArtPreloadReservations();
-            DateTime now = new DateTime(2030, 1, 1, 0, 0, 0,
-                DateTimeKind.Utc);
-
-            Assert.IsTrue(reservations.TryReserve(4, false, now));
-            Assert.IsFalse(reservations.TryReserve(4, false, now));
-            reservations.Complete(4, false, now);
-            Assert.IsFalse(reservations.TryReserve(4, false,
-                now.AddMilliseconds(999)));
-            Assert.IsTrue(reservations.TryReserve(4, false,
-                now.AddSeconds(1)));
-            reservations.Complete(4, true, now.AddSeconds(1));
-            Assert.IsFalse(reservations.TryReserve(4, true,
-                now.AddSeconds(2)));
-        }
-
-        [TestMethod]
         public void PetArtRules_ResolveAliasesAndNormalizeTimingWithoutBitmaps()
         {
             PetArtManifest manifest = new PetArtManifest
