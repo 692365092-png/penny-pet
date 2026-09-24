@@ -149,7 +149,7 @@ namespace PennyPet.Tests
                 runtime.Contains("ExitPrepared"),
                 "Runtime must own hosted membership, sequence, input and exit state.");
             Assert.IsFalse(runtime.Contains("StickyNoteWindow") ||
-                runtime.Contains("StickyNoteRepository"),
+                runtime.Contains("StickyFeature"),
                 "Hosted runtime must not own WPF windows or persistence.");
         }
 
@@ -168,7 +168,8 @@ namespace PennyPet.Tests
                 "StickyUiEventKind.FirstRendered"),
                 "StickyUiHost must emit FirstRendered.");
             Assert.IsTrue(coordinator.Contains(
-                "MarkFirstRendered(value.NoteId)"),
+                "FirstRendered?.Invoke(value.NoteId)") &&
+                ReadSource("PetStickyPresentation.cs").Contains("workspace.FirstRendered += MarkFirstRendered"),
                 "Pet coordinator must mark hosted first render.");
         }
 

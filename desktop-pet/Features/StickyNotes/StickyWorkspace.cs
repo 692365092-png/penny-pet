@@ -10,20 +10,30 @@ namespace PennyPet
     // Constructing this component has no window/startup side effects.
     internal sealed class StickyWorkspace : IDisposable
     {
-        private readonly PetForm _pet;
-        internal readonly StickyNoteRepository Notes;
+        private readonly IStickyPetSurface _surface;
+        private readonly IStickyPresentation _presentation;
+        private readonly IStickyReminderActions _reminders;
+        internal readonly StickyFeature Notes;
         internal readonly StickyDockController Dock;
         private bool _disposed;
-        internal bool IsDisposed { get { return _disposed || _pet.IsDisposed || _pet.Disposing; } }
-        internal Rectangle PetBounds { get { return _pet.Bounds; } }
-        internal ReminderSchedule Reminders { get { return _pet._reminders; } }
+        internal bool IsDisposed { get { return _disposed || _surface.IsDisposed; } }
+        internal Rectangle PetBounds { get { return _surface.Bounds; } }
+        internal List<ReminderItem> ReminderItems { get { return _reminders.GetItems(); } }
+        internal event Action<string> FirstRendered;
+        internal event Action<string, bool> WindowRemoved;
+        internal event Action TypingActivity;
+        internal event Action ExitReady;
 
-        internal StickyWorkspace(PetForm pet, StickyNoteRepository notes, SynchronizationContext context)
+        internal StickyWorkspace(StickyFeature notes, IStickyPetSurface surface,
+            IStickyPresentation presentation, IStickyReminderActions reminders,
+            SynchronizationContext context)
         {
-            _pet = pet;
+            _surface = surface;
+            _presentation = presentation;
+            _reminders = reminders;
             Notes = notes;
             Context = context;
-            Facts = new StickyFactsReceiver(Notes, Hosted, Placement);
+            Facts = new StickyFactsReceiver(Notes.Model, Hosted, Placement);
             Dock = new StickyDockController(this);
         }
 
@@ -38,8 +48,8 @@ namespace PennyPet
 
         internal void ApplyWindowLayer()
         {
-            _pet._windowLayers.KeepTransientBelowModal(_leftNoteTabs);
-            _pet._windowLayers.KeepTransientBelowModal(_rightNoteTabs);
+            _presentation.KeepBelowModal(_leftNoteTabs);
+            _presentation.KeepBelowModal(_rightNoteTabs);
         }
 
         private StickyNoteTabsForm CreateTabs(StickyTabSide side)
@@ -60,15 +70,15 @@ namespace PennyPet
             if (_rightNoteTabs != null) _rightNoteTabs.Close();
         }
 
-        internal DisplayTopologySnapshot CurrentTopologySnapshot() { return _pet.CurrentTopologySnapshot(); }
-        internal WindowFacts CapturePetWindowFacts(DisplayTopologySnapshot topology) { return _pet.CapturePetWindowFacts(topology); }
-        internal void RefreshMenuText() { _pet.RefreshMenuText(); }
-        internal void ShowBubble(string text) { _pet.ShowBubble(text); }
+        internal DisplayTopologySnapshot CurrentTopologySnapshot() { return _surface.CurrentTopologySnapshot(); }
+        internal WindowFacts CapturePetWindowFacts(DisplayTopologySnapshot topology) { return _surface.CaptureWindowFacts(topology); }
+        internal void RefreshMenuText() { _presentation.RefreshMenu(); }
+        internal void ShowBubble(string text) { _presentation.ShowBubble(text); }
 
         internal void UpdateAllStickyNoteReminderBanners()
         {
             PostHostedStickyCommand(
-                StickyUiCommand.UpdateAllReminders(_pet._reminders.GetItems()),
+                StickyUiCommand.UpdateAllReminders(ReminderItems),
                 delegate(StickyUiCommandResult result)
                 {
                     if (result == null ||
@@ -85,7 +95,7 @@ namespace PennyPet
             if (existing == null ||
                 String.IsNullOrEmpty(existing.SourceNoteId)) return;
             System.Collections.Generic.List<ReminderItem> preview =
-                _pet._reminders.GetItems();
+                ReminderItems;
             int index = preview.IndexOf(existing);
             if (index < 0) return;
             preview[index] = new ReminderItem(existing.DeadlineUtc,
@@ -179,7 +189,7 @@ namespace PennyPet
         private void DeleteStickyNoteAfterWindowClosed(StickyNoteData note)
         {
             Dock.ClearHostedDockResizeSessionIfMember(note.Id);
-            _pet.CancelReminderForNote(note, false);
+            _reminders.CancelForNote(note, false);
             Notes.Remove(note);
             Dock.RefreshDockResizeRoles();
             RefreshMenuText();
@@ -189,10 +199,9 @@ namespace PennyPet
         internal void ConfirmDeleteStickyNote(StickyNoteData note)
         {
             if (note == null) return;
-            if (MessageBox.Show(_pet,
+            if (!_presentation.Confirm(
                 "确定删除便签“" + note.DisplayTitle + "”吗？此操作无法撤销。",
-                "删除侧边页签", MessageBoxButtons.YesNo,
-                MessageBoxIcon.Warning) != DialogResult.Yes) return;
+                "删除侧边页签")) return;
             DeleteStickyNote(note);
         }
 
@@ -221,12 +230,13 @@ namespace PennyPet
         internal void QueueStickyWindowAction(Action action, string context)
         {
             if (action == null || IsDisposed) return;
-            if (_pet._menu != null && _pet._menu.Visible) _pet._menu.Close();
-            _pet.BeginInvoke((MethodInvoker)delegate
+            _presentation.CloseMenu();
+            Context.Post(delegate
             {
+                if (IsDisposed) return;
                 try { action(); }
                 catch (Exception error) { ShowStickyWindowFailure(context, error); }
-            });
+            }, null);
         }
 
         internal static List<Rectangle> CalculateStickyRecoveryLayout(
@@ -304,12 +314,12 @@ namespace PennyPet
         internal void ShowStickyWindowFailure(string kind, Exception error)
         {
             ApplicationDiagnostics.ReportNonFatal(kind ?? "sticky-window", error);
-            MessageBox.Show(_pet,
+            _presentation.ShowError(
                 "未能显示" + (String.IsNullOrEmpty(kind) ? "便利贴" : kind) +
                 "。程序没有保留不可见的空白项目。\n\n" +
                 "请把下面的诊断文件发给作者：\n" +
                 ApplicationDiagnostics.LogFilePath,
-                "Penny pet", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                "Penny pet");
         }
 
         // One creation attempt = one topology snapshot + one in-memory draft
@@ -384,7 +394,7 @@ namespace PennyPet
             // normal path: centered in Penny's current screen WorkArea, with
             // the logical default size. No durable preferred identity is
             // fabricated here.
-            Rectangle work = Screen.FromRectangle(_pet.Bounds).WorkingArea;
+            Rectangle work = Screen.FromRectangle(PetBounds).WorkingArea;
             PhysicalRect centered = StickySpawnPolicy.CenterInWorkArea(
                 new PhysicalRect(work.Left, work.Top, work.Width,
                     work.Height),
@@ -611,7 +621,7 @@ namespace PennyPet
             StickyNoteUiSnapshot createSnapshot =
                 StickyNoteUiSnapshot.Capture(note);
             StickyUiCommand command = StickyUiCommand.Create(
-                createSnapshot, focusEditor, _pet._reminders.GetItems(), topology,
+                createSnapshot, focusEditor, ReminderItems, topology,
                 rehomeTarget, StickyPlacementRecovery.SelectForShow(note, topology));
             PostHostedStickyCommand(command,
                 delegate(StickyUiCommandResult result)
@@ -754,7 +764,7 @@ namespace PennyPet
                     "hosted-sticky-faulted", error);
             // Hosted Sticky windows are degraded, but canonical note data stays
             // untouched and Penny itself can still exit safely.
-            if (_pet._exiting || IsDisposed) return;
+            if (_surface.IsExiting || IsDisposed) return;
             ShowBubble(
                 "便利贴界面遇到问题，已停止使用，数据仍然保留。请重启 Penny 后再试。");
         }
@@ -783,7 +793,7 @@ namespace PennyPet
             }
             if (value.Kind == StickyUiEventKind.TypingActivity)
             {
-                if (!_pet._exiting) _pet.TriggerTypingAnimation();
+                if (!_surface.IsExiting) TypingActivity?.Invoke();
                 return;
             }
             if (value.Kind == StickyUiEventKind.InputFocusChanged)
@@ -804,7 +814,7 @@ namespace PennyPet
             }
             if (value.Kind == StickyUiEventKind.FirstRendered)
             {
-                _pet.MarkFirstRendered(value.NoteId);
+                FirstRendered?.Invoke(value.NoteId);
                 return;
             }
             if (value.Kind == StickyUiEventKind.HeaderDragStarted ||
@@ -922,7 +932,7 @@ namespace PennyPet
                 if (!ApplyHostedStickyEvent(value)) return;
                 Hosted.RemoveNote(value.NoteId);
                 Placement.Remove(value.NoteId);
-                _pet._renderedFirstRenderNoteIds.Remove(value.NoteId);
+                WindowRemoved?.Invoke(value.NoteId, false);
                 Dock.ClearHostedDockResizeSessionIfMember(value.NoteId);
                 Dock.CancelDockFinalizationIfMember(value.NoteId);
                 return;
@@ -930,17 +940,17 @@ namespace PennyPet
             if (value.Kind == StickyUiEventKind.CancelReminderRequested)
             {
                 StickyNoteData note = Notes.Find(value.NoteId);
-                if (note != null) _pet.CancelReminderForNote(note, true);
+                if (note != null) _reminders.CancelForNote(note, true);
                 return;
             }
             if (value.Kind == StickyUiEventKind.ModifyReminderRequested)
             {
-                if (value.Reminder != null) _pet.EditReminder(value.Reminder);
+                if (value.Reminder != null) _reminders.Edit(value.Reminder);
                 return;
             }
             if (value.Kind == StickyUiEventKind.DeleteReminderRequested)
             {
-                if (value.Reminder != null) _pet.CancelReminder(value.Reminder, true);
+                if (value.Reminder != null) _reminders.Cancel(value.Reminder, true);
                 return;
             }
             if (value.Kind == StickyUiEventKind.DeleteRequested)
@@ -1041,7 +1051,7 @@ namespace PennyPet
         {
             if (String.IsNullOrWhiteSpace(noteId) || IsDisposed ||
                 !_pendingStandaloneTopologyNotes.Add(noteId)) return;
-            _pet.BeginInvoke((MethodInvoker)delegate
+            Context.Post(delegate
             {
                 _pendingStandaloneTopologyNotes.Remove(noteId);
                 if (IsDisposed || String.Equals(noteId,
@@ -1053,7 +1063,7 @@ namespace PennyPet
                     return;
                 ReconcileStandaloneSticky(note, snapshot,
                     CapturePetWindowFacts(snapshot));
-            });
+            }, null);
         }
 
         // Fills a missing preference only. v10 migration is attempted first
@@ -1115,8 +1125,7 @@ namespace PennyPet
                     Dock.CancelHostedDockRestores(noteId);
                     Hosted.RemoveNote(noteId);
                     Placement.InvalidateEffective(noteId);
-                    _pet._renderedFirstRenderNoteIds.Remove(noteId);
-                    _pet._expectedFirstRenderNoteIds.Remove(noteId);
+                    WindowRemoved?.Invoke(noteId, true);
                     if (note != null) note.Visible = false;
                     PostHostedStickyCommand(StickyUiCommand.Close(noteId),
                         delegate(StickyUiCommandResult closeResult) { });
@@ -1141,7 +1150,7 @@ namespace PennyPet
 
         internal bool BeginHostedStickyExitIfNeeded()
         {
-            if (Dock.DeferDockMutation(null, _pet.BeginExitSequence)) return true;
+            if (Dock.DeferDockMutation(null, () => ExitReady?.Invoke())) return true;
             Dock.CancelHostedDockRestores();
             if (Hosted.NoteCount == 0 ||
                 Hosted.ExitPrepared)
@@ -1172,7 +1181,7 @@ namespace PennyPet
                     }
                     ApplyClosedHostedStickySnapshots(result);
                     Hosted.PrepareExit();
-                    _pet.BeginExitSequence();
+                    ExitReady?.Invoke();
                 });
         }
 
@@ -1252,10 +1261,8 @@ namespace PennyPet
         {
             StickyNoteData note = Notes.Find(noteId);
             if (note == null || !IsHostedSticky(note)) return;
-            if (MessageBox.Show(_pet,
-                "确定删除这张便利贴吗？此操作无法撤销。", "删除便利贴",
-                MessageBoxButtons.YesNo, MessageBoxIcon.Warning) ==
-                DialogResult.Yes) DeleteStickyNote(note);
+            if (_presentation.Confirm(
+                "确定删除这张便利贴吗？此操作无法撤销。", "删除便利贴")) DeleteStickyNote(note);
         }
 
         internal void RecoverFailedHostedStickyWindow(StickyNoteData note)
@@ -1389,8 +1396,7 @@ namespace PennyPet
 
             DisplayTopologySnapshot topology = CurrentTopologySnapshot();
 
-            if (topology == null || !_pet.IsHandleCreated ||
-                _pet.Handle == IntPtr.Zero)
+            if (topology == null || !_surface.HasHandle)
                 return false;
 
             petFacts = CapturePetWindowFacts(topology);
@@ -1479,7 +1485,7 @@ namespace PennyPet
         {
             if (_leftNoteTabs == null ||
                 _rightNoteTabs == null ||
-                !_pet.IsHandleCreated ||
+                !_surface.HasHandle ||
                 IsDisposed ||
                 _positioningNoteTabs)
                 return;
@@ -1558,10 +1564,7 @@ namespace PennyPet
 
         internal void ShowStickyNotesManager()
         {
-            bool createRequested = false;
-            bool fullRestoreRequested = false;
-            StickyNoteData showRequested = null;
-            using (StickyNotesManagerForm manager = new StickyNotesManagerForm(
+            _presentation.ShowManager(
                 delegate { return Notes.GetAll(); },
                 new StickyNotesManagerCommands
                 {
@@ -1577,30 +1580,18 @@ namespace PennyPet
                         QueueStickyWindowAction(
                             Dock.ExpandAndTileAllStickyNotesToPetScreen,
                             "sticky-manager-expand-and-tile");
-                    },
-                    ExportBackup = _pet.ExportStickyNotesBackup,
-                    PrepareImport = _pet.PrepareStickyNotesImport,
-                    ConfirmImport = _pet.CommitStickyNotesImport,
-                    FullRestore = _pet.RestoreStickyNotesBackup
-                }))
-            {
-                _pet._windowLayers.ShowModal(_pet, manager);
-                createRequested = manager.CreateRequested;
-                showRequested = manager.ShowRequested;
-                fullRestoreRequested = manager.FullRestoreRequested;
-            }
-            if (fullRestoreRequested)
-                _pet.RestoreStickyNotesBackup();
-            else if (createRequested)
+                    }
+                },
+                () =>
                 QueueStickyWindowAction(delegate
                 {
                     CreateStickyNote(String.Empty);
-                }, "sticky-manager-create");
-            else if (showRequested != null)
+                }, "sticky-manager-create"),
+                showRequested =>
                 QueueStickyWindowAction(delegate
                 {
                     ShowHostedSticky(showRequested, true);
-                }, "sticky-manager-show");
+                }, "sticky-manager-show"));
             RefreshMenuText();
         }
     }

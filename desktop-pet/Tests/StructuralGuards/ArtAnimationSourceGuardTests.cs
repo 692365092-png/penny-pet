@@ -19,7 +19,7 @@ namespace PennyPet.Tests
         [TestMethod]
         public void StickyPersistence_WorkspaceEntryPointsUseOneQueuedWriter()
         {
-            string source = ReadSource("Features/StickyNotes/StickyNoteRepository.cs");
+            string source = ReadSource("Features/StickyNotes/StickyFeature.cs");
             foreach (string entry in new[] { "internal void SaveAsync()",
                 "internal PersistenceResult SaveToFile",
                 "private PersistenceResult CommitPreparedSnapshot" })
@@ -43,15 +43,16 @@ namespace PennyPet.Tests
         public void StickyPersistence_FutureSchemaFailsClosedBeforeRecovery()
         {
             string repository = ReadSource(
-                "Features/StickyNotes/StickyNoteRepository.cs");
+                "Features/StickyNotes/StickyFeature.cs");
+            string loader = ReadSource("Features/StickyNotes/StickyStore.Load.cs");
             string exception = ReadSource(
                 "Features/StickyNotes/UnsupportedStickySchemaException.cs");
             string host = ReadSource("PennyApplicationHost.cs");
             string pet = ReadSource("PetForm.cs");
-            string load = Between(repository,
-                "internal static StickyNoteRepository LoadFromFile(string filePath)",
+            string load = Between(loader,
+                "internal static StickyLoadResult LoadFromFile(string filePath)",
                 "private static bool TryPopulateFromFile");
-            string populate = Between(repository,
+            string populate = Between(loader,
                 "private static bool TryPopulateFromFile",
                 "private static void AddParsedLine");
             string save = Between(repository,
@@ -77,7 +78,7 @@ namespace PennyPet.Tests
                 StringComparison.Ordinal);
             Assert.IsTrue(preflight >= 0 && parse > preflight,
                 "Every file must be version-preflighted before payload parsing.");
-            Assert.IsTrue(save.IndexOf("if (!_loadSucceeded)",
+            Assert.IsTrue(save.IndexOf("if (!LoadSucceeded)",
                     StringComparison.Ordinal) <
                 save.IndexOf("Model.CaptureSnapshot()",
                     StringComparison.Ordinal),
@@ -168,13 +169,13 @@ namespace PennyPet.Tests
         public void Drt6Supplement_CreateDraftDoesNotPersistIntermediateState()
         {
             string repository = ReadSource(
-                "Features/StickyNotes/StickyNoteRepository.cs");
+                "Features/StickyNotes/StickyFeature.cs");
             string create = Between(repository,
                 "public StickyNoteData Create(string text, Point location)",
                 "public List<StickyNoteData> GetAll()");
             string draft = RawSource.SliceMethod(
                 ReadSource("Core/StickyNotes/StickyModel.cs"),
-                "internal StickyNoteData CreateDraft(string text, Point location)");
+                "internal StickyNoteData CreateDraft(string text, int x, int y)");
 
             Assert.IsTrue(create.Contains("CreateDraft(text, location)") &&
                 create.Contains("Save();"),
@@ -209,7 +210,7 @@ namespace PennyPet.Tests
 
             Assert.IsTrue(fallback.Contains(
                     "StickySpawnPolicy.CenterInWorkArea(") &&
-                fallback.Contains("Screen.FromRectangle(_pet.Bounds)"),
+                fallback.Contains("Screen.FromRectangle(PetBounds)"),
                 "The degraded spawn fallback must center on Penny's current working area.");
             Assert.IsFalse(fallback.Contains("Left - 332") ||
                 fallback.Contains("Right + 12") ||

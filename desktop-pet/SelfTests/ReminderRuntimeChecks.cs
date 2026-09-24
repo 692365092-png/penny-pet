@@ -14,7 +14,7 @@ namespace PennyPet
             Pc2Context context = new Pc2Context();
             SynchronizationContext.SetSynchronizationContext(context);
             PetSettings settings = new PetSettings(_ => PersistenceResult.Success());
-            StickyNoteRepository notes = new StickyNoteRepository(
+            StickyFeature notes = new StickyFeature(
                 System.IO.Path.Combine(System.IO.Path.GetTempPath(), "reminder-runtime-test.dat"),
                 _ => PersistenceResult.Success());
             ReminderSchedule schedule = new ReminderSchedule();

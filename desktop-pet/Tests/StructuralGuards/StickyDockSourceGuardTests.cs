@@ -98,7 +98,7 @@ namespace PennyPet.Tests
                 petOwned.Contains("RestoreStickyDockComponent") ||
                 petOwned.Contains("new StickyNoteWindow("),
                 "PetForm must not retain a legacy Sticky Window executor.");
-            Assert.IsFalse(host.Contains("StickyNoteRepository") ||
+            Assert.IsFalse(host.Contains("StickyFeature") ||
                 host.Contains("IsTodoList") || host.Contains("IsSchedule"),
                 "The host must own sessions, not canonical persistence or content modes.");
         }

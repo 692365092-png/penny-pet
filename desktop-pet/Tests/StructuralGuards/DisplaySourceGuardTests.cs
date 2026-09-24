@@ -161,7 +161,7 @@ namespace PennyPet.Tests
                     "Dictionary<string, NotePlacementState> _states") &&
                 runtime.Contains("internal bool TryUpdateEffective("),
                 "Effective WindowFacts must live in runtime memory.");
-            Assert.IsFalse(runtime.Contains("StickyNoteRepository") ||
+            Assert.IsFalse(runtime.Contains("StickyFeature") ||
                 runtime.Contains("SaveAsync") ||
                 runtime.Contains("SetWindowPos") ||
                 runtime.Contains("WindowInteropHelper") ||

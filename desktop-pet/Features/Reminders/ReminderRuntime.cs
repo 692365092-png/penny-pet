@@ -23,7 +23,7 @@ namespace PennyPet
     {
         private readonly ReminderSchedule _schedule;
         private readonly PetSettings _settings;
-        private readonly StickyNoteRepository _notes;
+        private readonly StickyFeature _notes;
         private readonly IReminderPresentation _view;
         private readonly Timer _clock;
         private ReminderItem _preAlertItem;
@@ -31,7 +31,7 @@ namespace PennyPet
         private bool _running;
 
         internal ReminderRuntime(ReminderSchedule schedule, PetSettings settings,
-            StickyNoteRepository notes, IReminderPresentation view)
+            StickyFeature notes, IReminderPresentation view)
         {
             _schedule = schedule;
             _settings = settings;

@@ -211,7 +211,7 @@ namespace PennyPet
             _opaqueQaHost = opaqueQaHost;
             _hostedNativePlacement = hostedNativePlacement;
             _initializing = true;
-            _typingFontFamilyName = StickyNoteRepository.NormalizeFontFamily(
+            _typingFontFamilyName = StickyNoteCodec.NormalizeFontFamily(
                 data.FontFamilyName);
             _typingFontSizePoints = Math.Max(6F, Math.Min(72F,
                 data.FontSizeTwips / 20F));
@@ -1671,7 +1671,7 @@ namespace PennyPet
         internal static Font CreateSafeFont(string familyName, float points,
             FontStyle style)
         {
-            string family = StickyNoteRepository.NormalizeFontFamily(familyName);
+            string family = StickyNoteCodec.NormalizeFontFamily(familyName);
             float size = Math.Max(6F, Math.Min(72F, points));
             int sizeTwips = (int)Math.Round(size * 20F);
             string key = family + "|" + sizeTwips + "|" + (int)style;

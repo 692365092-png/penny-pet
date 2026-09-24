@@ -30,7 +30,7 @@ namespace PennyPet.Tests
             Assert.IsFalse(loading.Contains("PetArtPackage") ||
                 loading.Contains("StickyUiHost") ||
                 loading.Contains("StickyUiThreadHost") ||
-                loading.Contains("StickyNoteRepository") ||
+                loading.Contains("StickyFeature") ||
                 loading.Contains("StickyHostedRuntime") ||
                 loading.Contains("WpfApplicationHost") ||
                 loading.Contains("PetForm.") ||
@@ -65,7 +65,7 @@ namespace PennyPet.Tests
             Assert.IsFalse(loadingThread.Contains("new PetForm") ||
                 loadingThread.Contains("PetArtPackage") ||
                 loadingThread.Contains("StickyUiHost") ||
-                loadingThread.Contains("StickyNoteRepository") ||
+                loadingThread.Contains("StickyFeature") ||
                 loadingThread.Contains("PetSettings"),
                 "The loading thread must own only bootstrap presentation and never read settings.");
             string closeLoading = Between(loadingThread,

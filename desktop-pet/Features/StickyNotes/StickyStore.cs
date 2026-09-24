@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 
 namespace PennyPet
 {
-    internal sealed class StickyStore
+    internal sealed partial class StickyStore
     {
         private readonly string _filePath;
         private readonly PersistenceWriter<StickyWriteRequest> _writer;
@@ -16,6 +16,8 @@ namespace PennyPet
             _filePath = filePath;
             _writer = new PersistenceWriter<StickyWriteRequest>(write ?? WriteSnapshot);
         }
+
+        internal string FilePath { get { return _filePath; } }
 
         internal event EventHandler<PersistenceFailedEventArgs> SaveFailed
         {

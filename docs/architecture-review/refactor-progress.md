@@ -17,11 +17,19 @@ Implementation follows the approved R01–R27 roadmap on `codex/simplify-dock-pi
 
 R10 passed [Windows CI #65](https://github.com/692365092-png/penny-pet/actions/runs/35857017185), including the ten interaction tests, native ready-art check and formal EXE smoke.
 
-## R11 — in progress
+## R11 — implementation complete, Windows validation pending
 
-First checkpoint: `StickyModel` owns the canonical in-memory collection, note creation/removal, tab ordering, Dock member removal and detached snapshot capture. It has no store, file path, writer, window or dispatcher dependency. `StickyStore` owns the serial writer and independent emergency export and accepts only captured requests. Existing loading/recovery and owner-side import publication remain in the transitional repository until the next checkpoint; Workspace still needs its PetForm dependency removed. R11 is not complete.
+First checkpoint introduced the memory model and snapshot writer. The second checkpoint removes the transitional repository: `StickyModel` owns the canonical collection, note creation/removal, tab ordering, Dock member removal and detached snapshot capture. It has no store, file path, writer, window, dispatcher or Drawing dependency. `StickyStore` owns loading/recovery, the serial writer and independent emergency export. It returns a loaded model to the owner and retains no live model field. Background writes receive detached requests only.
+
+`StickyFeature` owns the model, Store and attached Windows workspace. It accepts owner-side commands, captures save snapshots, and publishes an import/restore replacement only after the existing backup/primary commit succeeds. Startup still explicitly attaches and starts the UI runtime. Existing disk format, future-schema blocking, salvage/backups, hidden Dock slots and placement preferences are unchanged.
+
+Workspace no longer has a PetForm reference. Its dependencies are read-only Pet surface facts, concrete presentation operations and reminder projection/actions; startup, typing and exit are explicit events. Modal management and backup dialogs remain in Pet presentation, not behind writable shell fields. Owner-context posts replace direct Form.BeginInvoke calls and ignore work after workspace disposal. StickyFactsReceiver accepts only StickyModel, without a file or writer dependency. The three redundant codec-forwarding methods were removed; UI callers use Core codec functions directly.
 
 Five new tests exercise memory-only commands, hidden-tab ordering without changing Dock slots, hidden Dock-member removal, deep snapshot isolation and a blocked store while the live model changes. Existing real-file recovery, future-schema, import/restore and serial-writer tests remain the compatibility gates.
+
+The new native `sticky_feature_boundary_ok` check constructs the actual feature/workspace without PetForm or real I/O. It checks canonical model identity, accepted content, reminder actions, lifecycle notifications, manager command wiring, deferred execution and suppression after disposal. Existing PC2 native scenarios now attach through the composition entry and inspect the writer through Store.
+
+CI #67 compiled successfully but correctly rejected System.Drawing in the new Core model. Its creation API now takes plain x/y coordinates; the original platform boundary guard remains intact. Synchronous import/exit persistence barriers are preserved in this item; R17/R25 own their asynchronous redesign. SideTabs and live Dock execution ownership are still R21–R24, not claimed complete here.
 
 R09 passed [Windows CI #64](https://github.com/692365092-png/penny-pet/actions/runs/35853802433), including runtime integration, release smoke and artifact checks.
 

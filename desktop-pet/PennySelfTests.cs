@@ -19,7 +19,7 @@ namespace PennyPet
         private sealed class Pc2Scene : IDisposable
         {
             internal readonly PetForm Pet;
-            internal readonly StickyNoteRepository Repository;
+            internal readonly StickyFeature Repository;
             internal readonly StickyWorkspace Workspace;
             internal StickyHostedRuntime Hosted { get { return Workspace.Hosted; } }
             internal StickyPlacementRuntime Placement { get { return Workspace.Placement; } }
@@ -42,7 +42,7 @@ namespace PennyPet
                 string directory = Path.Combine(root, name);
                 Directory.CreateDirectory(directory);
                 PathName = Path.Combine(directory, "sticky-notes.dat");
-                Repository = new StickyNoteRepository(PathName);
+                Repository = new StickyFeature(PathName);
                 Pet = (PetForm)System.Runtime.Serialization.FormatterServices
                     .GetUninitializedObject(typeof(PetForm));
                 GC.SuppressFinalize(Pet); // no native Pet resource was created
@@ -76,7 +76,7 @@ namespace PennyPet
 
                 Pc2Set(Pet, "_expectedFirstRenderNoteIds", new HashSet<string>());
                 Pc2Set(Pet, "_renderedFirstRenderNoteIds", new HashSet<string>());
-                Workspace = new StickyWorkspace(Pet, Repository, Context);
+                Workspace = Pet.AttachStickyWorkspace(Context);
                 Pc2Set(Pet, "_stickyWorkspace", Workspace);
                 Pc2Set(Pet, "_reminderRuntime", new ReminderRuntime(
                     (ReminderSchedule)Pc2Get(Pet, "_reminders"),
@@ -109,7 +109,7 @@ namespace PennyPet
             internal DisplayTopologySnapshot Topology { get { return Display.Current; } }
             internal DisplaySurfaceSnapshot Surface { get { return Topology.PrimaryOrFirst(); } }
             internal string[] Ids { get { return Notes.ConvertAll(n => n.Id).ToArray(); } }
-            internal long Saves { get { return (long)Pc2Get(Pc2Get(Repository, "_writer"), "_requestedRevision"); } }
+            internal long Saves { get { return (long)Pc2Get(Pc2Get(Pc2Get(Repository, "_store"), "_writer"), "_requestedRevision"); } }
             internal long Sequence(int i)
             { return ((Dictionary<string, long>)Pc2Get(Hosted, "_appliedSequences"))[Notes[i].Id]; }
             internal WindowFacts Facts(int i, long sequence, int x)
@@ -461,7 +461,7 @@ namespace PennyPet
                     note.X == moved.Facts.PhysicalBounds.Left &&
                     note.Y == moved.Facts.PhysicalBounds.Top &&
                     s.Sequence(0) == moved.Sequence && s.Saves == saves + 1 &&
-                    StickyNoteRepository.LoadFromFile(s.PathName).Find(note.Id).X == note.X,
+                    StickyFeature.LoadFromFile(s.PathName).Find(note.Id).X == note.X,
                     "recreated HWND: canonical and Effective both equal new actual facts and save once");
                 evidence.Add("A2 real EnsureSession/CloseAll/recreation/Reproject: old HWND sequence=" + old.Sequence +
                     "; recreated lease=" + ensured.Sequence + "; new HWND sequence=" + moved.Sequence +

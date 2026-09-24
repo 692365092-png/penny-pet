@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Drawing;
 using System.IO;
 using System.Threading;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -14,9 +13,9 @@ namespace PennyPet.Tests
         public void MemoryCommands_NeedNeitherStoreNorWindows()
         {
             var model = new StickyModel();
-            var a = model.CreateDraft("A", new Point(10, 20));
-            var b = model.CreateDraft("B", Point.Empty);
-            var c = model.CreateDraft("C", Point.Empty);
+            var a = model.CreateDraft("A", 10, 20);
+            var b = model.CreateDraft("B", 0, 0);
+            var c = model.CreateDraft("C", 0, 0);
             a.Id = "mixed-Case";
             Assert.AreSame(a, model.Find("MIXED-case"));
             Assert.AreEqual(10, a.X); Assert.AreEqual(20, a.Y);
@@ -31,10 +30,10 @@ namespace PennyPet.Tests
         public void HiddenReorder_PreservesVisibleSlotsAndDockOrder()
         {
             var model = new StickyModel();
-            var a = model.CreateDraft("A", Point.Empty);
-            var b = model.CreateDraft("B", Point.Empty);
-            var c = model.CreateDraft("C", Point.Empty);
-            var d = model.CreateDraft("D", Point.Empty);
+            var a = model.CreateDraft("A", 0, 0);
+            var b = model.CreateDraft("B", 0, 0);
+            var c = model.CreateDraft("C", 0, 0);
+            var d = model.CreateDraft("D", 0, 0);
             StickyDockGroups.ApplyOrderedGroup(new[] { a, b, c, d });
             a.Visible = c.Visible = d.Visible = false; b.Visible = true;
             Assert.IsTrue(model.ReorderHidden(d, 0));
@@ -49,9 +48,9 @@ namespace PennyPet.Tests
         public void RemovingHiddenDockMember_KeepsRemainingOrderAndPreferredPlacement()
         {
             var model = new StickyModel();
-            var a = model.CreateDraft("A", Point.Empty);
-            var b = model.CreateDraft("B", Point.Empty);
-            var c = model.CreateDraft("C", Point.Empty);
+            var a = model.CreateDraft("A", 0, 0);
+            var b = model.CreateDraft("B", 0, 0);
+            var c = model.CreateDraft("C", 0, 0);
             StickyDockGroups.ApplyOrderedGroup(new[] { a, b, c });
             b.Visible = false;
             c.PreferredPlacement = new WindowPlacementPreference("mdp:one",
@@ -68,7 +67,7 @@ namespace PennyPet.Tests
         public void CapturedSnapshot_IsDetachedFromNestedEditsAndDatasetReplacement()
         {
             var model = new StickyModel();
-            var note = model.CreateDraft("before", Point.Empty);
+            var note = model.CreateDraft("before", 0, 0);
             note.TodoItems.Add(new StickyTodoItem("todo-before", false));
             note.ScheduleItems.Add(new StickyScheduleItem("schedule-before", new DateTime(2035, 1, 1)));
             var captured = model.CaptureSnapshot();
@@ -88,7 +87,7 @@ namespace PennyPet.Tests
         public void Store_ProcessesCapturedSnapshotsWhileLiveModelKeepsChanging()
         {
             var model = new StickyModel();
-            var note = model.CreateDraft("before", Point.Empty);
+            var note = model.CreateDraft("before", 0, 0);
             using (var entered = new ManualResetEventSlim())
             using (var release = new ManualResetEventSlim())
             {

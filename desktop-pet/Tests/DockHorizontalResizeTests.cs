@@ -252,7 +252,7 @@ namespace PennyPet.Tests
         {
             string directory = Path.Combine(Path.GetTempPath(), "penny-horizontal-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(directory);
-            var repository = new StickyNoteRepository(Path.Combine(directory, "notes.dat"));
+            var repository = new StickyFeature(Path.Combine(directory, "notes.dat"));
             try
             {
                 StickyNoteData root = repository.CreateDraft("root", Point.Empty);
@@ -283,7 +283,7 @@ namespace PennyPet.Tests
                 CommitPreference(root, actual.Members[0].Facts);
                 foreach (Action action in session.Finish()) action();
                 Assert.IsTrue(repository.WaitForPendingSaves(TimeSpan.FromSeconds(5)).Succeeded);
-                StickyNoteRepository restored = StickyNoteRepository.LoadFromFile(Path.Combine(directory, "notes.dat"));
+                StickyFeature restored = StickyFeature.LoadFromFile(Path.Combine(directory, "notes.dat"));
                 StickyNoteData savedRoot = restored.Find(root.Id), savedSource = restored.Find(source.Id);
                 Assert.IsFalse(savedRoot.Visible);
                 Assert.AreEqual(600, savedRoot.PreferredPlacement.LocalLogicalRect.Width);

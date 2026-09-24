@@ -54,7 +54,7 @@ namespace PennyPet
         private readonly KeyboardOverlayForm _keyOverlay;
         internal readonly PetWindowLayerCoordinator _windowLayers =
             new PetWindowLayerCoordinator();
-        private readonly StickyNoteRepository _notes;
+        private readonly StickyFeature _notes;
         private readonly StickyWorkspace _stickyWorkspace;
         private readonly object _keyboardQueueGate = new object();
         private readonly ArtPreloadReservations _artPreloads =
@@ -143,11 +143,11 @@ namespace PennyPet
             BuildRenderedFrameCache();
 
             _reminders = new ReminderSchedule();
-            _notes = StickyNoteRepository.Load();
+            _notes = StickyFeature.Load();
             if (_notes.IsFutureSchemaBlocked)
                 throw _notes.FutureSchemaError;
             _notes.SaveFailed += PersistenceSaveFailed;
-            _stickyWorkspace = new StickyWorkspace(this, _notes,
+            _stickyWorkspace = AttachStickyWorkspace(
                 SynchronizationContext.Current as WindowsFormsSynchronizationContext
                 ?? new WindowsFormsSynchronizationContext());
             _reminderRuntime = new ReminderRuntime(_reminders, _settings, _notes, this);

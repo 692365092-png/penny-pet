@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Drawing;
 
 namespace PennyPet
 {
@@ -16,15 +15,15 @@ namespace PennyPet
         internal bool CanCreate { get { return Count < StickyNoteLimits.MaximumNotes; } }
         internal IReadOnlyList<StickyNoteData> InStorageOrder { get { return _view; } }
 
-        internal StickyNoteData CreateDraft(string text, Point location)
+        internal StickyNoteData CreateDraft(string text, int x, int y)
         {
             if (!CanCreate) return null;
             StickyNoteData note = new StickyNoteData();
             string body = text ?? String.Empty;
             note.Text = body.Length <= StickyNoteLimits.MaximumBodyCharacters
                 ? body : body.Substring(0, StickyNoteLimits.MaximumBodyCharacters);
-            note.X = location.X;
-            note.Y = location.Y;
+            note.X = x;
+            note.Y = y;
             note.TabOrder = NextTabOrder();
             _notes.Add(note);
             return note;

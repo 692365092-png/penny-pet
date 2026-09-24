@@ -2022,7 +2022,7 @@ namespace PennyPet
             if (!_dockRestores.TryBegin(operation)) return false;
             try
             {
-                _workspace.PostHostedStickyCommand(StickyUiCommand.RestoreDockGroup(operation, _workspace.Reminders.GetItems()),
+                _workspace.PostHostedStickyCommand(StickyUiCommand.RestoreDockGroup(operation, _workspace.ReminderItems),
                     result => CompleteHostedDockRestore(operation, result));
                 return true;
             }

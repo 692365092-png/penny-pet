@@ -228,7 +228,7 @@ namespace PennyPet
             _editor.Document.PagePadding = new W.Thickness(0);
             _editor.Document.FontFamily = SafeWpfFontFamily(Data.FontFamilyName);
             _editor.Document.FontSize = PointSizeToDip(Data.FontSizeTwips / 20F);
-            string rtf = StickyNoteRepository.NormalizeRtf(Data.RichTextRtf);
+            string rtf = StickyNoteCodec.NormalizeRtf(Data.RichTextRtf);
             if (!String.IsNullOrEmpty(rtf))
             {
                 try
@@ -284,7 +284,7 @@ namespace PennyPet
                 using (MemoryStream stream = new MemoryStream())
                 {
                     range.Save(stream, W.DataFormats.Rtf);
-                    Data.RichTextRtf = StickyNoteRepository.NormalizeRtf(
+                    Data.RichTextRtf = StickyNoteCodec.NormalizeRtf(
                         Encoding.UTF8.GetString(stream.ToArray()));
                 }
             }

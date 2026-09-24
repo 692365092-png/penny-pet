@@ -79,9 +79,10 @@ namespace PennyPet.Tests
                 persistence.Contains("ImportPlansMatch") &&
                 persistence.Contains("CommitImportedMerge"),
                 "Import must read, plan, revalidate, then use the existing commit owner.");
-            Assert.IsTrue(coordinator.Contains("PrepareImport = _pet.PrepareStickyNotesImport") &&
-                coordinator.Contains("ConfirmImport = _pet.CommitStickyNotesImport") &&
-                coordinator.Contains("FullRestore = _pet.RestoreStickyNotesBackup") &&
+            string presentation = ReadSource("PetStickyPresentation.cs");
+            Assert.IsTrue(presentation.Contains("commands.PrepareImport = PrepareStickyNotesImport") &&
+                presentation.Contains("commands.ConfirmImport = CommitStickyNotesImport") &&
+                presentation.Contains("commands.FullRestore = RestoreStickyNotesBackup") &&
                 manager.Contains("高级：完整恢复…"),
                 "The manager must receive typed prepare/confirm commands from PetForm.");
         }

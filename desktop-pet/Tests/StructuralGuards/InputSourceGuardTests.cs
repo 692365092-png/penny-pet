@@ -37,7 +37,7 @@ namespace PennyPet.Tests
         public void StickyPersistence_BarriersAreBoundedAndExitResolvesBothFailures()
         {
             string repository = ReadSource(
-                "Features/StickyNotes/StickyNoteRepository.cs");
+                "Features/StickyNotes/StickyFeature.cs");
             string writer = ReadSource("Infrastructure/Persistence/PersistenceWriter.cs");
             string wait = RawSource.SliceMethod(writer,
                 "internal PersistenceResult Flush(TimeSpan timeout)");

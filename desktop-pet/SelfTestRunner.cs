@@ -336,7 +336,7 @@ namespace PennyPet
         private sealed class StickyPersistenceCheckResult
         {
             internal string FilePath;
-            internal StickyNoteRepository Repository;
+            internal StickyFeature Repository;
             internal StickyNoteData RestoredNote;
             internal bool PersistenceOk;
             internal bool FailureDirtyRetryOk;
@@ -360,8 +360,8 @@ namespace PennyPet
                 {
                     FilePath = outputPath + ".sticky-test.dat"
                 };
-            StickyNoteRepository stickyRepository =
-                StickyNoteRepository.LoadFromFile(result.FilePath);
+            StickyFeature stickyRepository =
+                StickyFeature.LoadFromFile(result.FilePath);
             const string multilingualSample =
                 "English line\n日本語 한국어 Русский العربية Français";
             StickyNoteData sticky = stickyRepository.Create(multilingualSample,
@@ -387,7 +387,7 @@ namespace PennyPet
                 sticky.RichTextRtf = richSource.Rtf;
             }
             stickyRepository.SaveToFile(result.FilePath);
-            result.Repository = StickyNoteRepository.LoadFromFile(
+            result.Repository = StickyFeature.LoadFromFile(
                 result.FilePath);
             List<StickyNoteData> restoredNotes = result.Repository.GetAll();
 
@@ -437,8 +437,8 @@ namespace PennyPet
 
             string persistenceStatePath = outputPath +
                 ".persistence-state-test.dat";
-            StickyNoteRepository persistenceStateRepository =
-                StickyNoteRepository.LoadFromFile(persistenceStatePath);
+            StickyFeature persistenceStateRepository =
+                StickyFeature.LoadFromFile(persistenceStatePath);
             persistenceStateRepository.Create("dirty-state", Point.Empty);
             File.Delete(persistenceStatePath);
             Directory.CreateDirectory(persistenceStatePath);
@@ -457,14 +457,14 @@ namespace PennyPet
                 File.Delete(persistenceStatePath + ".bak");
 
             string generationPath = outputPath + ".generation-test.dat";
-            StickyNoteRepository generationRepository =
-                StickyNoteRepository.LoadFromFile(generationPath);
+            StickyFeature generationRepository =
+                StickyFeature.LoadFromFile(generationPath);
             StickyNoteData generationNote = generationRepository.CreateDraft(
                 "older-snapshot", Point.Empty);
             generationRepository.SaveAsync();
             generationNote.Text = "newer-snapshot";
             PersistenceResult finalWrite = generationRepository.Save();
-            List<StickyNoteData> generationRestored = StickyNoteRepository
+            List<StickyNoteData> generationRestored = StickyFeature
                 .LoadFromFile(generationPath).GetAll();
             result.GenerationMonotonicOk = finalWrite.Succeeded &&
                 generationRestored.Count == 1 &&
@@ -478,8 +478,8 @@ namespace PennyPet
             string mergeBackupPath = mergePath + ".before-import.pennysticky";
             try
             {
-                StickyNoteRepository mergeRepository =
-                    StickyNoteRepository.LoadFromFile(mergePath);
+                StickyFeature mergeRepository =
+                    StickyFeature.LoadFromFile(mergePath);
                 StickyNoteData currentVersion = mergeRepository.Create(
                     "current-version", Point.Empty);
                 mergeRepository.SaveToFile(mergePath);
@@ -499,10 +499,10 @@ namespace PennyPet
                         });
                 PersistenceResult mergeCommit =
                     mergeRepository.CommitImportedMerge(mergePlan);
-                StickyNoteRepository reopenedMerge =
-                    StickyNoteRepository.LoadFromFile(mergePath);
-                StickyNoteRepository preMergeBackup =
-                    StickyNoteRepository.LoadFromFile(mergeBackupPath);
+                StickyFeature reopenedMerge =
+                    StickyFeature.LoadFromFile(mergePath);
+                StickyFeature preMergeBackup =
+                    StickyFeature.LoadFromFile(mergeBackupPath);
                 int conflictCopies = reopenedMerge.GetAll().Count - 2;
                 result.ImportMergeCommitOk = mergeCommit.Succeeded &&
                     reopenedMerge.GetAll().Count == 3 && conflictCopies == 1 &&
@@ -525,8 +525,8 @@ namespace PennyPet
                     if (Directory.Exists(blockedPath))
                         Directory.Delete(blockedPath, true);
                     Directory.CreateDirectory(blockedPath);
-                    StickyNoteRepository blockedRepository =
-                        StickyNoteRepository.LoadFromFile(blockedPath);
+                    StickyFeature blockedRepository =
+                        StickyFeature.LoadFromFile(blockedPath);
                     StickyNoteData blockedCurrent = blockedRepository.Create(
                         "blocked-current", Point.Empty);
                     StickyNoteData blockedIncoming =
@@ -570,8 +570,8 @@ namespace PennyPet
             string restoreBackupPath = restorePath + ".before-restore.pennysticky";
             try
             {
-                StickyNoteRepository restoreRepository =
-                    StickyNoteRepository.LoadFromFile(restorePath);
+                StickyFeature restoreRepository =
+                    StickyFeature.LoadFromFile(restorePath);
                 StickyNoteData restoreCurrent = restoreRepository.Create(
                     "restore-current", Point.Empty);
                 restoreRepository.SaveToFile(restorePath);
@@ -583,10 +583,10 @@ namespace PennyPet
                 PersistenceResult restoreCommit =
                     restoreRepository.CommitFullRestore(
                         new[] { replacement }, restoreBackupPath);
-                StickyNoteRepository reopenedRestore =
-                    StickyNoteRepository.LoadFromFile(restorePath);
-                StickyNoteRepository preRestore =
-                    StickyNoteRepository.LoadFromFile(restoreBackupPath);
+                StickyFeature reopenedRestore =
+                    StickyFeature.LoadFromFile(restorePath);
+                StickyFeature preRestore =
+                    StickyFeature.LoadFromFile(restoreBackupPath);
                 result.FullRestoreCommitOk = restoreCommit.Succeeded &&
                     reopenedRestore.Count == 1 &&
                     reopenedRestore.Find("restored-only") != null &&
@@ -647,8 +647,8 @@ namespace PennyPet
             if (File.Exists(longStickyPath + ".bak"))
                 File.Delete(longStickyPath + ".bak");
             string longVisibleText = new string('长', 13050) + "结尾保留";
-            StickyNoteRepository longRepository =
-                StickyNoteRepository.LoadFromFile(longStickyPath);
+            StickyFeature longRepository =
+                StickyFeature.LoadFromFile(longStickyPath);
             StickyNoteData longNote = longRepository.Create(longVisibleText,
                 Point.Empty);
             using (RichTextBox longRichText = new RichTextBox())
@@ -657,7 +657,7 @@ namespace PennyPet
                 longNote.RichTextRtf = longRichText.Rtf;
             }
             longRepository.SaveToFile(longStickyPath);
-            List<StickyNoteData> longRestored = StickyNoteRepository
+            List<StickyNoteData> longRestored = StickyFeature
                 .LoadFromFile(longStickyPath).GetAll();
             string rtfAboveOldLimit = "{\\rtf1\\ansi " +
                 new string('x', 350000) + "}";
@@ -666,7 +666,7 @@ namespace PennyPet
                 longRestored[0].Text == longVisibleText &&
                 longRestored[0].Text.EndsWith("结尾保留",
                     StringComparison.Ordinal) &&
-                StickyNoteRepository.NormalizeRtf(rtfAboveOldLimit) ==
+                StickyNoteCodec.NormalizeRtf(rtfAboveOldLimit) ==
                     rtfAboveOldLimit;
             if (File.Exists(longStickyPath)) File.Delete(longStickyPath);
             if (File.Exists(longStickyPath + ".bak"))
@@ -680,8 +680,8 @@ namespace PennyPet
                 result.RestoredNote.TodoItems[1].Completed;
 
             string scheduleTestPath = outputPath + ".schedule-test.dat";
-            StickyNoteRepository scheduleRepository =
-                StickyNoteRepository.LoadFromFile(scheduleTestPath);
+            StickyFeature scheduleRepository =
+                StickyFeature.LoadFromFile(scheduleTestPath);
             StickyNoteData scheduleNote = scheduleRepository.Create(
                 String.Empty, new Point(210, 180));
             scheduleNote.IsSchedule = true;
@@ -693,7 +693,7 @@ namespace PennyPet
             scheduleNote.ScheduleItems.Add(new StickyScheduleItem(
                 "朋友生日", DateTime.Today.AddDays(58)));
             scheduleRepository.SaveToFile(scheduleTestPath);
-            List<StickyNoteData> restoredSchedules = StickyNoteRepository
+            List<StickyNoteData> restoredSchedules = StickyFeature
                 .LoadFromFile(scheduleTestPath).GetAll();
             result.ScheduleOk = restoredSchedules.Count == 1 &&
                 restoredSchedules[0].IsSchedule &&
@@ -752,7 +752,7 @@ namespace PennyPet
             File.WriteAllText(legacyStickyPath, legacyLine,
                 new UTF8Encoding(false));
             List<StickyNoteData> legacyNotes =
-                StickyNoteRepository.LoadFromFile(legacyStickyPath).GetAll();
+                StickyFeature.LoadFromFile(legacyStickyPath).GetAll();
             result.LegacyMigrationOk = legacyNotes.Count == 1 &&
                 legacyNotes[0].Text == legacyChinese &&
                 !legacyNotes[0].IsTodoList &&
@@ -765,7 +765,7 @@ namespace PennyPet
                 ".legacy-import-source.dat";
             File.WriteAllText(legacyImportSource, legacyLine,
                 new UTF8Encoding(false));
-            StickyNoteRepository legacyImported = StickyNoteRepository
+            StickyFeature legacyImported = StickyFeature
                 .LoadFromFileWithLegacyCandidates(legacyImportCurrent,
                     new string[] { legacyImportSource });
             result.OldestFolderCacheImportOk = legacyImported.Count == 1 &&
@@ -793,8 +793,8 @@ namespace PennyPet
             });
             File.WriteAllText(versionFourStickyPath, versionFourLine,
                 new UTF8Encoding(false));
-            StickyNoteRepository versionFourRepository =
-                StickyNoteRepository.LoadFromFile(versionFourStickyPath);
+            StickyFeature versionFourRepository =
+                StickyFeature.LoadFromFile(versionFourStickyPath);
             List<StickyNoteData> versionFourNotes =
                 versionFourRepository.GetAll();
             result.VersionFourMigrationOk = versionFourNotes.Count == 1 &&
@@ -810,7 +810,7 @@ namespace PennyPet
             ancientDisplayData.IsTodoList = true;
             ancientDisplayData.IsSchedule = true;
             result.AncientCacheDisplayRepairOk =
-                StickyNoteRepository.RepairForDisplay(
+                StickyNoteCodec.RepairForDisplay(
                     ancientDisplayData, true) &&
                 ancientDisplayData.Width == 280 &&
                 ancientDisplayData.Height == 700 &&
@@ -833,8 +833,8 @@ namespace PennyPet
                 ".sticky-corrupt-test.dat";
             File.WriteAllText(corruptStickyPath, "this-is-not-a-note",
                 new UTF8Encoding(false));
-            StickyNoteRepository corruptRepository =
-                StickyNoteRepository.LoadFromFile(corruptStickyPath);
+            StickyFeature corruptRepository =
+                StickyFeature.LoadFromFile(corruptStickyPath);
             string preservedCorruptPath = corruptRepository.RecoveryBackupPath;
             StickyNoteData recoveredCreate = corruptRepository.Create(
                 "损坏数据恢复后仍可新建", Point.Empty);
@@ -861,8 +861,8 @@ namespace PennyPet
                 new UTF8Encoding(false));
             File.WriteAllText(backupRecoveryPath + ".bak", legacyLine,
                 new UTF8Encoding(false));
-            StickyNoteRepository backupRecoveryRepository =
-                StickyNoteRepository.LoadFromFile(backupRecoveryPath);
+            StickyFeature backupRecoveryRepository =
+                StickyFeature.LoadFromFile(backupRecoveryPath);
             result.BackupRecoveryOk =
                 backupRecoveryRepository.LoadSucceeded &&
                 backupRecoveryRepository.RecoveredFromLoadFailure &&
@@ -899,8 +899,8 @@ namespace PennyPet
                     File.WriteAllText(path, ReadStickyFixture(
                         "sticky-v" + version + ".txt"),
                         new UTF8Encoding(false));
-                    StickyNoteRepository historical =
-                        StickyNoteRepository.LoadFromFile(path);
+                    StickyFeature historical =
+                        StickyFeature.LoadFromFile(path);
                     result.HistoricalStartupMatrixOk =
                         result.HistoricalStartupMatrixOk &&
                         historical.LoadSucceeded &&
@@ -927,8 +927,8 @@ namespace PennyPet
                 File.WriteAllText(currentPath,
                     StickyNoteCodec.SerializeLine(current),
                     new UTF8Encoding(false));
-                StickyNoteRepository currentRepository =
-                    StickyNoteRepository.LoadFromFile(currentPath);
+                StickyFeature currentRepository =
+                    StickyFeature.LoadFromFile(currentPath);
                 result.CurrentStartupRoundTripOk =
                     currentRepository.LoadSucceeded &&
                     !currentRepository.IsFutureSchemaBlocked &&
@@ -961,8 +961,8 @@ namespace PennyPet
                 string primaryHash = CalculateSha256(futurePath);
                 string backupHash = CalculateSha256(backupPath);
 
-                StickyNoteRepository blocked =
-                    StickyNoteRepository.LoadFromFile(futurePath);
+                StickyFeature blocked =
+                    StickyFeature.LoadFromFile(futurePath);
                 int rejectedSaveEvents = 0;
                 blocked.SaveFailed += delegate { rejectedSaveEvents++; };
                 UnsupportedStickySchemaException schemaError =
@@ -1099,8 +1099,8 @@ namespace PennyPet
             DockPersistenceCheckResult result =
                 new DockPersistenceCheckResult();
             string tabOrderPath = outputPath + ".tab-order-test.dat";
-            StickyNoteRepository tabOrderRepository =
-                StickyNoteRepository.LoadFromFile(tabOrderPath);
+            StickyFeature tabOrderRepository =
+                StickyFeature.LoadFromFile(tabOrderPath);
             StickyNoteData tabA = tabOrderRepository.Create("A", Point.Empty);
             StickyNoteData tabB = tabOrderRepository.Create("B", Point.Empty);
             StickyNoteData tabC = tabOrderRepository.Create("C", Point.Empty);
@@ -1112,8 +1112,8 @@ namespace PennyPet
             // ReorderHidden persists through the nonblocking writer; flush
             // before reloading so the round trip observes the new order.
             tabOrderRepository.WaitForPendingSaves();
-            StickyNoteRepository restoredTabOrder =
-                StickyNoteRepository.LoadFromFile(tabOrderPath);
+            StickyFeature restoredTabOrder =
+                StickyFeature.LoadFromFile(tabOrderPath);
             List<StickyNoteData> orderedTabs =
                 restoredTabOrder.GetHiddenInTabOrder();
             result.SideTabOrderOk = orderedTabs.Count == 3 &&
@@ -1126,8 +1126,8 @@ namespace PennyPet
                 File.Delete(tabOrderPath + ".bak");
 
             string dockPath = outputPath + ".dock-test.dat";
-            StickyNoteRepository dockRepository =
-                StickyNoteRepository.LoadFromFile(dockPath);
+            StickyFeature dockRepository =
+                StickyFeature.LoadFromFile(dockPath);
             StickyNoteData dockParent = dockRepository.Create("上层",
                 new Point(100, 100));
             StickyNoteData dockChild = dockRepository.Create("下层",
@@ -1135,7 +1135,7 @@ namespace PennyPet
             StickyDockGroups.ApplyOrderedGroup(new[] { dockParent, dockChild });
             dockRepository.SaveToFile(dockPath);
             List<StickyNoteData> restoredDockNotes =
-                StickyNoteRepository.LoadFromFile(dockPath).GetAll();
+                StickyFeature.LoadFromFile(dockPath).GetAll();
             result.DockRoundTripOk = restoredDockNotes.Count == 2 &&
                 restoredDockNotes.Exists(delegate(StickyNoteData value)
                 {
@@ -1177,8 +1177,8 @@ namespace PennyPet
                 snapshotOrder[1].Id == dockInsertedTodo.Id &&
                 snapshotOrder[2].Id == dockChild.Id;
             dockRepository.SaveToFile(dockPath);
-            StickyNoteRepository persistedDockRepository =
-                StickyNoteRepository.LoadFromFile(dockPath);
+            StickyFeature persistedDockRepository =
+                StickyFeature.LoadFromFile(dockPath);
             StickyNoteData persistedDockMember =
                 persistedDockRepository.Find(dockInsertedTodo.Id);
             List<StickyNoteData> persistedDockOrder = StickyDockGroups
@@ -1206,8 +1206,8 @@ namespace PennyPet
             if (File.Exists(dockPath + ".bak")) File.Delete(dockPath + ".bak");
 
             string hiddenSlotPath = outputPath + ".hidden-slot-test.dat";
-            StickyNoteRepository hiddenSlotRepository =
-                StickyNoteRepository.LoadFromFile(hiddenSlotPath);
+            StickyFeature hiddenSlotRepository =
+                StickyFeature.LoadFromFile(hiddenSlotPath);
             StickyNoteData persistedHideA = hiddenSlotRepository.Create(
                 "A", Point.Empty);
             StickyNoteData persistedHideB = hiddenSlotRepository.Create(
@@ -1218,8 +1218,8 @@ namespace PennyPet
                 persistedHideA, persistedHideB, persistedHideC });
             persistedHideB.Visible = false;
             hiddenSlotRepository.SaveToFile(hiddenSlotPath);
-            StickyNoteRepository restoredHiddenSlotRepository =
-                StickyNoteRepository.LoadFromFile(hiddenSlotPath);
+            StickyFeature restoredHiddenSlotRepository =
+                StickyFeature.LoadFromFile(hiddenSlotPath);
             StickyNoteData restoredHiddenMiddle =
                 restoredHiddenSlotRepository.Find(persistedHideB.Id);
             List<StickyNoteData> restoredHiddenSlotOrder =
@@ -1237,8 +1237,8 @@ namespace PennyPet
                 File.Delete(hiddenSlotPath + ".bak");
 
             string expandPath = outputPath + ".expand-and-tile-test.dat";
-            StickyNoteRepository expandRepository =
-                StickyNoteRepository.LoadFromFile(expandPath);
+            StickyFeature expandRepository =
+                StickyFeature.LoadFromFile(expandPath);
             StickyNoteData expandA = expandRepository.Create("普通",
                 new Point(-5000, -5000));
             StickyNoteData expandB = expandRepository.Create("待办",
@@ -1277,8 +1277,8 @@ namespace PennyPet
                 note.Height = target.Height;
             }
             expandRepository.SaveToFile(expandPath);
-            StickyNoteRepository restoredExpandRepository =
-                StickyNoteRepository.LoadFromFile(expandPath);
+            StickyFeature restoredExpandRepository =
+                StickyFeature.LoadFromFile(expandPath);
             List<StickyNoteData> restoredExpanded =
                 restoredExpandRepository.GetAll();
             result.ExpandAndTileRoundTripOk = planningPreservedActual &&
@@ -2280,7 +2280,7 @@ namespace PennyPet
         }
 
         private static StickyWindowPolicyCheckResult
-            RunStickyWindowPolicyChecks(StickyNoteRepository repository)
+            RunStickyWindowPolicyChecks(StickyFeature repository)
         {
             StickyWindowPolicyCheckResult result =
                 new StickyWindowPolicyCheckResult();
@@ -2296,12 +2296,12 @@ namespace PennyPet
                 StickyNoteLimits.MaximumTodoItemsPerNote == 500 &&
                 StickyNoteLimits.MaximumBodyCharacters == 4000000 &&
                 StickyNoteLimits.MaximumRichTextCharacters == 16000000 &&
-                StickyNoteRepository.CanCreateAtCount(true, 0) &&
-                StickyNoteRepository.CanCreateAtCount(true,
+                StickyFeature.CanCreateAtCount(true, 0) &&
+                StickyFeature.CanCreateAtCount(true,
                     StickyNoteLimits.MaximumNotes - 1) &&
-                !StickyNoteRepository.CanCreateAtCount(true,
+                !StickyFeature.CanCreateAtCount(true,
                     StickyNoteLimits.MaximumNotes) &&
-                !StickyNoteRepository.CanCreateAtCount(false, 0);
+                !StickyFeature.CanCreateAtCount(false, 0);
             result.SoftPaletteOk =
                 StickyNoteWindow.PaletteColorForTest(0).ToArgb() ==
                     Color.FromArgb(255, 255, 117, 112).ToArgb() &&
@@ -5862,8 +5862,8 @@ namespace PennyPet
                 "penny-hosted-dock-" + Guid.NewGuid().ToString("N") + ".dat");
             try
             {
-                StickyNoteRepository repository =
-                    StickyNoteRepository.LoadFromFile(path);
+                StickyFeature repository =
+                    StickyFeature.LoadFromFile(path);
                 List<StickyNoteData> stored = new List<StickyNoteData>();
                 if (results == null || results.Length < 2) return false;
                 foreach (StickyUiCommandResult result in results)
@@ -5885,8 +5885,8 @@ namespace PennyPet
                 }
                 StickyDockGroups.ApplyOrderedGroup(stored);
                 if (!repository.Save().Succeeded) return false;
-                StickyNoteRepository reopened =
-                    StickyNoteRepository.LoadFromFile(path);
+                StickyFeature reopened =
+                    StickyFeature.LoadFromFile(path);
                 StickyNoteData member = reopened.Find(
                     stored[stored.Count - 1].Id);
                 List<StickyNoteData> order = StickyDockGroups.GetOrderedGroup(
@@ -6714,6 +6714,7 @@ namespace PennyPet
                 // PC-2A: execute production rejection paths before any harness
                 // decomposition. Characterization success is not defect absence.
                 RunPc2CharacterizationChecks(outputPath);
+                bool stickyFeatureBoundaryOk = RunStickyFeatureBoundaryChecks();
                 RunDisplayResolverConsistencyCheck();
                 ArtResourceCheckResult artChecks = RunArtResourceChecks();
                 SettingsPersistenceCheckResult settingsChecks =
@@ -6749,6 +6750,7 @@ namespace PennyPet
                 // detailed report when a new check is added.
                 BeginCheckCollection();
                 string reportBody =
+                    "  \"sticky_feature_boundary_ok\": " + Bool(stickyFeatureBoundaryOk) + ",\n" +
                     BuildPc2CharacterizationReportFields() +
                     BuildArtAndSettingsReportFields(artChecks, settingsChecks) +
                     BuildPersistenceReportFields(settingsChecks,
