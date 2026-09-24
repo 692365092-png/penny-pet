@@ -2906,6 +2906,19 @@ namespace PennyPet
         {
             private readonly string _forecastJson;
             private readonly bool _failForecast;
+            private TaskCompletionSource<HttpResponseMessage> _heldForecast;
+
+            internal void HoldNextForecast()
+            {
+                _heldForecast = new TaskCompletionSource<HttpResponseMessage>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+
+            internal void ReleaseForecast()
+            {
+                var held = Interlocked.Exchange(ref _heldForecast, null);
+                if (held != null) held.SetResult(JsonResponse(_forecastJson));
+            }
 
             internal WeatherFixtureHandler(string forecastJson,
                 bool failForecast)
@@ -2937,7 +2950,8 @@ namespace PennyPet
                 if (_failForecast)
                     return Task.FromResult(new HttpResponseMessage(
                         System.Net.HttpStatusCode.ServiceUnavailable));
-                return Task.FromResult(JsonResponse(_forecastJson));
+                var held = Volatile.Read(ref _heldForecast);
+                return held == null ? Task.FromResult(JsonResponse(_forecastJson)) : held.Task;
             }
 
             private static HttpResponseMessage JsonResponse(string json)
@@ -3017,10 +3031,14 @@ namespace PennyPet
                         "format=json") &&
                     OpenMeteoGeocodingClient.BuildUri("武汉").Query.IndexOf(
                         "apikey", StringComparison.OrdinalIgnoreCase) < 0;
-                Task<WeatherForecastWindow> first = source.GetForecastAsync(
-                    location);
-                Task<WeatherForecastWindow> concurrent =
-                    source.GetForecastAsync(location);
+                Task<WeatherForecastWindow> first, concurrent;
+                handler.HoldNextForecast();
+                try
+                {
+                    first = source.GetForecastAsync(location);
+                    concurrent = source.GetForecastAsync(location);
+                }
+                finally { handler.ReleaseForecast(); }
                 WeatherForecastWindow firstValue = first.GetAwaiter()
                     .GetResult();
                 WeatherForecastWindow cached = source.GetForecastAsync(
