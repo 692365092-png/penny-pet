@@ -344,8 +344,8 @@ namespace PennyPet.Tests
                     "_windowLayers.ShowModal(this, dialog)") &&
                 reminders.Contains(
                     "_windowLayers.ShowModal(this, dialog)") &&
-                sticky.Contains(
-                    "_windowLayers.ShowModal(_pet, manager)") &&
+                ReadSource("PetStickyPresentation.cs").Contains(
+                    "_windowLayers.ShowModal(this, manager)") &&
                 !menu.Contains("ShowOwnedModalDialog") &&
                 !menu.Contains("_ownedModalUi"),
                 "Pet-owned Form dialogs, including nested weather settings, must use the shared layer boundary.");
@@ -356,7 +356,9 @@ namespace PennyPet.Tests
                 keyboard.Contains(
                     "_windowLayers.KeepTransientBelowModal(_keyOverlay)") &&
                 keyboard.Contains("_stickyWorkspace.ApplyWindowLayer()") && sticky.Contains(
-                    "_windowLayers.KeepTransientBelowModal(_leftNoteTabs)") &&
+                    "_presentation.KeepBelowModal(_leftNoteTabs)") &&
+                ReadSource("PetStickyPresentation.cs").Contains(
+                    "_windowLayers.KeepTransientBelowModal(window)") &&
                 bubble.Contains("ApplyWindowLayer()") &&
                 bubble.Contains(
                     "_windowLayers.KeepTransientBelowModal(_bubble)") &&

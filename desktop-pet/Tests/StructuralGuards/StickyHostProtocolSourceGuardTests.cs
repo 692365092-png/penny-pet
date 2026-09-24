@@ -15,7 +15,9 @@ namespace PennyPet.Tests
                 "if (value.Kind == StickyUiEventKind.TypingActivity)",
                 "if (value.Kind == StickyUiEventKind.InputFocusChanged)");
 
-            Assert.IsTrue(handler.Contains("TriggerTypingAnimation();"),
+            Assert.IsTrue(handler.Contains("TypingActivity?.Invoke()") &&
+                ReadSource("PetStickyPresentation.cs").Contains(
+                    "workspace.TypingActivity += TriggerTypingAnimation;"),
                 "Own-note typing should restore the typing animation.");
             Assert.IsFalse(handler.Contains("_typingSession = false"),
                 "Own-note typing must not clear the animation session.");
