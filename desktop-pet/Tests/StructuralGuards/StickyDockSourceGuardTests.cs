@@ -87,11 +87,13 @@ namespace PennyPet.Tests
             string petOwned = startup + form + coordinator + dock +
                 persistence + reminder + menu;
 
-            Assert.IsTrue(startup.Contains("ShowHostedSticky(") &&
+            Assert.IsTrue(startup.Contains("QueueStartupStickyRestore(note)") &&
                 coordinator.Contains("StartHostedSticky(") &&
+                coordinator.Contains("Host.PostStartupRestore(command") &&
                 host.Contains("Dictionary<string, StickyWindowSession> _sessions") &&
+                host.Contains("handler(command)") &&
                 session.Contains("new StickyNoteWindow("),
-                "Startup and creation must route through the hosted session executor.");
+                "Startup and creation must route through the hosted session executor; startup may use its dedicated budgeted transport.");
             Assert.IsFalse(petOwned.Contains("_noteWindows") ||
                 petOwned.Contains("GetOrCreateStickyNoteWindow") ||
                 petOwned.Contains("FallBackHostedStickyToLegacy") ||
