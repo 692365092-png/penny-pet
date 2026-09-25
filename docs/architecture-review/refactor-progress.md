@@ -180,3 +180,5 @@ Deterministic runtime tests cover repeated failure coalescing, pending-writer su
 Startup restore no longer measures a 6 ms stopwatch on Pet STA while merely posting work to another thread. Pet now dequeues one immutable restore request per deferred tick and hands it to a dedicated startup-restore transport. StickyUiThreadHost owns the restore queue and measures the 6 ms slice around the actual WPF Create/Show execution on Sticky STA, yielding through DispatcherPriority.Background when more work remains.
 
 Normal interactive commands, Dock frame transport and restore semantics are unchanged. The dedicated path is startup-only: it prevents a fast producer from disguising an arbitrarily expensive WPF burst behind cheap cross-thread posts, without introducing a general scheduler. First-render acknowledgements still gate startup readiness.
+
+R18 passed Windows CI #92 on `1bc550c`: build, all 663 discoverable tests, modular native self-tests, formal single-file EXE smoke, managed Dock baseline and release artifacts.
