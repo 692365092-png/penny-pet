@@ -147,11 +147,11 @@ Sticky Backup v1 的 portable dataset 是 `sticky-notes.dat` 中的 Sticky 模�
 | `Core/Keyboard` | 首次确认、偏好和 fail-closed 隐私判定 | 平台无关标准化输入 |
 | `Features/KeyboardOverlay` | Hook、虚拟键、UIA/Win32 敏感输入证据和覆盖窗口 | Windows-only |
 | `PetWindowLayerCoordinator.cs` | Pet-owned Form modal stack 和 no-activate transient z-order | Windows-only 必要运行状态；不持久化 |
-| `PetStartupCoordinator.cs` | Timer、Registry、窗口创建、首帧等待和事件触发 | Windows-only 启动协调 |
-| `StartupLoadingForm.cs` | 直接读取 embedded loading asset、按 Pet canvas 等比贴底呈现 | Windows-only bootstrap visual；不依赖 `PetArtPackage` 或 Sticky runtime |
-| `StartupLoadingThreadHost.cs` | 临时 WinForms STA、独立 message loop、异步置前/关闭和线程退出 | Windows-only bootstrap host；不创建 `PetForm`、Art 或 Sticky state |
+| `PennyApplicationHost.cs` | 单实例、Shell-first 组装、后台 Sticky 数据准备和 fatal startup 边界 | Windows-only application composition |
+| `PetRuntimeComposition.cs` | 在 Pet STA 发布准备好的 Sticky/持久化/提醒/UI runtime | Windows-only runtime publication |
+| `PetStartupCoordinator.cs` | 键盘/Registry 延后阶段、等待 runtime、向 Sticky STA 喂入启动恢复、后台完成事件 | Windows-only 启动协调 |
 
-`PennyApplicationHost` 先启动临时 loading STA，确认 loading 已呈现后才在主 Pet STA 构造 `PetForm`。同步 bootstrap 工作不会阻塞 loading message loop；既有 UI + art readiness 满足并触发 `StartupReady` 后，loading host 异步关闭窗口并退出。启动方面目前只有 `PetStartupRules` 中的小范围 readiness 纯门禁可复用；它不是完整的跨平台 startup framework 或状态机。
+`PennyApplicationHost` 先构造并显示只含必要 idle 资源的 `PetForm`。Pet 首帧可交互并触发 `ShellReady` 后，Sticky 文件读取才在 thread pool 准备；准备结果回到 Pet STA，由 `PetRuntimeComposition` 一次发布 Sticky、持久化和提醒 runtime。便利贴窗口恢复继续使用 Sticky STA 的 R18 执行侧预算，`StartupBackgroundReady` 与 Shell readiness 分离。旧的第三个 loading STA、loading form、ready/exit wait chain 和专用 loading artwork 已退役。
 
 ## 4. Windows / macOS 迁移地图
 
@@ -238,12 +238,13 @@ Sticky WPF STA
 - Side Tabs 保持 no-activate chrome，并只在真实被可见 Sticky 覆盖时按 strip 降层；monitor/work-area/scale 改变时按需重新验证左右布局。
 - Side Tabs 仍在 WinForms Pet STA，直接消费 detached `SideTabSnapshot`；便利贴业务身份使用稳定 `NoteId`，拖拽来源 UI identity 保持平台本地 opaque object。OLE nested-loop、TransparencyKey canvas、BringToFront timing 等 workaround 是 Windows-only，不是未来 macOS UI 的复用契约。
 
-启动 loading ownership：
+启动 ownership：
 
-- `StartupLoadingForm` 只负责 embedded bootstrap visual、Pet scale 和保存位置/fallback；不依赖 `PetArtPackage`、Sticky repository 或 hosted runtime。
-- `StartupLoadingThreadHost` 是短生命周期 WinForms STA host，拥有独立 message loop、loading form、ready/exit signal，以及异步 `BringToFront` / `Close`。
-- `PetForm` 仍由主 Pet STA 创建；Art decode、Sticky restore 和 `StickyUiThreadHost.Start` 没有迁到 loading thread。
-- `_startupUiReady + _startupArtReady` 仍通过 `PetStartupRules` 纯门禁释放 normal Pet frame，并由 `StartupReady` 关闭 loading。
+- `PetForm` 构造只同步准备窗口基础、设置和 mandatory idle clip；不会扫描 Sticky 文件、等待天气或恢复便笺窗口。
+- `ShellReady` 只表示 Pet 首帧已可交互，不依赖 Sticky 首帧确认。
+- `PennyApplicationHost` 在 `ShellReady` 后后台执行 `StickyFeature.PrepareLoad`；`PetRuntimeComposition` 回到 Pet STA 后才发布 live runtime，以保留正确的 owner `SynchronizationContext`。
+- `PetStartupCoordinator` 等待 runtime 后才恢复提醒/便笺；实际窗口创建预算属于 Sticky STA。全部预期便笺首帧完成后才发 `StartupBackgroundReady`。
+- 关闭或 fatal startup 期间，晚到的准备结果在发布前检查 disposed/exiting 状态，不能重新创建窗口。future-schema 数据在 publication 前 fail closed，不会用默认模型覆盖。
 
 ## 8. Dock 帧与手势生命周期
 

@@ -80,9 +80,10 @@
 - `.pennysticky` v1 只携带 Sticky dataset。完整 reminder records 仍在 `settings.ini`，linked/standalone reminder 都不属于当前 portable contract；未来若扩展必须重映射 conflict copy 的 `SourceNoteId`。
 - macOS 可复用 `StickyNoteData`、codec、validator、merge planner、Dock pure rules 和 `SideTabSnapshot`；WinForms Manager、Open/Save dialogs、Windows 文件路径/原子替换及 Hosted runtime reconcile 必须由平台侧实现。
 
-## Startup loading ownership
+## Startup ownership
 
-- `StartupLoadingForm` 直接读取 embedded `PennyPet.Startup.Loading`，在 Pet-size transparent canvas 内等比、水平居中、底部对齐；它不依赖 `PetArtPackage` 或 Sticky runtime。
-- `StartupLoadingThreadHost` 是临时 WinForms STA，独立运行 loading message loop；`BringToFront` / `Close` marshal 回该线程，关闭后线程退出。
-- `PennyApplicationHost` 确认 loading 已呈现后，仍在主 Pet STA 构造 `PetForm`。Art decode、Sticky 初始化与恢复不属于 loading thread。
-- `_startupUiReady + _startupArtReady`、normal frame suppression 和 `StartupReady` 语义保持不变。`PetStartupRules` 只是这两个 readiness 输入的纯 gate，不是完整 startup framework。
+- `PennyApplicationHost` 先显示轻量 `PetForm`；`ShellReady` 后才在 thread pool 调用 `StickyFeature.PrepareLoad`。
+- 准备结果 marshal 回 Pet STA，由 `PetRuntimeComposition` 发布 Sticky、持久化、Workspace 和 Reminder runtime；这样 live owner context 不会被后台线程污染。
+- `PetStartupCoordinator` 在 runtime 尚未发布时停在 `WaitForStickyRuntime`，之后才向 Sticky STA 喂入恢复请求；R18 的 6 ms 预算包住实际 WPF Create/Show。
+- `StartupBackgroundReady` 只表示后台便笺恢复完成，不再阻塞 Pet 首帧。`ShellReady` 与它是两个独立阶段。
+- 关闭中的 shell 会拒绝晚到 publication；future-schema 数据在 runtime publication 前 fail closed。旧 loading form、独立 loading STA、ready/exit wait chain 与专用 loading artwork已经删除。

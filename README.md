@@ -2,7 +2,6 @@
 
 Penny pet 是一款 Windows 桌面宠物，包含透明角色动画、普通便利贴、待办清单、日程、提醒、侧边页签、每日互动内容，以及可选的按键显示和本地天气。
 
-![Penny pet](art/loading.png)
 
 ## 下载 Penny pet
 
