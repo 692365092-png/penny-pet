@@ -145,5 +145,27 @@ namespace PennyPet.Tests
                 "The persistence runtime must own single retry scheduling and recovery state.");
         }
 
+
+        [TestMethod]
+        public void R18_StartupRestoreBudget_IsOwnedByStickySta()
+        {
+            string startup = ReadSource("PetStartupCoordinator.cs");
+            string workspace = ReadSource(
+                "Features/StickyNotes/StickyWorkspace.cs");
+            string thread = ReadSource("StickyUiThreadHost.cs");
+
+            Assert.IsFalse(startup.Contains("Stopwatch") ||
+                startup.Contains("ElapsedMilliseconds < 6"),
+                "Pet STA must not budget work that executes on another STA.");
+            Assert.IsTrue(startup.Contains("QueueStartupStickyRestore(note)") &&
+                workspace.Contains("Host.PostStartupRestore(command"),
+                "Startup restore must use the dedicated budgeted Sticky transport.");
+            Assert.IsTrue(thread.Contains("StartupRestoreBudgetMilliseconds = 6") &&
+                thread.Contains("Stopwatch budget = Stopwatch.StartNew()") &&
+                thread.Contains("DispatcherPriority.Background") &&
+                thread.Contains("PumpStartupRestore"),
+                "The actual Sticky STA must own and yield the 6 ms restore budget.");
+        }
+
     }
 }
