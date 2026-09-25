@@ -78,7 +78,7 @@ namespace PennyPet.Tests
             using (var s = new Scene())
             {
                 s.Worker.Offer(Key("A")); s.AwaitPost();
-                Assert.AreEqual(ApartmentState.MTA, s.Apartment);
+                if (OperatingSystem.IsWindows()) Assert.AreEqual(ApartmentState.MTA, s.Apartment);
                 Assert.IsTrue(s.Shown.IsEmpty);
                 s.Pump();
                 CollectionAssert.AreEqual(new[] { "A" }, s.Shown.ToArray());

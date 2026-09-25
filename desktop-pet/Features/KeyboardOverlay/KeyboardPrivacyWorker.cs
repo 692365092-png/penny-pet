@@ -40,7 +40,11 @@ namespace PennyPet
                 if (_enabled && _thread == null)
                 {
                     _thread = new Thread(Run) { IsBackground = true, Name = "PennyPet keyboard privacy" };
+#if NET8_0_OR_GREATER
+                    if (OperatingSystem.IsWindows()) _thread.SetApartmentState(ApartmentState.MTA);
+#else
                     _thread.SetApartmentState(ApartmentState.MTA);
+#endif
                     _thread.Start();
                 }
             }

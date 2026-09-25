@@ -152,3 +152,5 @@ This intentionally narrows compatibility: browser/WPF/self-drawn inputs sharing 
 Deterministic worker/policy tests cover unsupported password properties, same-host identity ambiguity, focus changes after dispatch, disable/re-enable, exit, deadlines, provider errors and 1,000 replacements while inspection is blocked. Native tests exercise actual WinForms password/plain HWND transitions and WPF TextBox/PasswordBox sharing an HWND. Windows CI is required; no real third-party browser/provider penetration test or measured hook latency is claimed.
 
 Platform references: [Microsoft UIA threading](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-threading) requires non-UI MTA use; [EM_SETPASSWORDCHAR](https://learn.microsoft.com/en-us/windows/win32/controls/em-setpasswordchar) documents native password style behavior. Native classification is used for control correlation, never as the sole privacy verdict.
+
+R16 CI #76 rejected the linked .NET 8 test runtime because SetApartmentState is Windows-only (CA1416). The follow-up adds an OS guard for the cross-platform test target; the net48 Windows product continues to set MTA explicitly.
