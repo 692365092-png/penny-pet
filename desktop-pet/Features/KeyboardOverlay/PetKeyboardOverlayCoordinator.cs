@@ -87,7 +87,8 @@ namespace PennyPet
         {
             _keyOverlay.UpdatePosition(this);
             _windowLayers.KeepTransientBelowModal(_keyOverlay);
-            _stickyWorkspace.ApplyWindowLayer();
+            if (_stickyWorkspace != null)
+                _stickyWorkspace.ApplyWindowLayer();
             _bubbleCoordinator.ApplyWindowLayer();
         }
 

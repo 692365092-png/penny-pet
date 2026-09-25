@@ -414,7 +414,8 @@ namespace PennyPet
                     _petDpiDragHandoffActive = false;
             }
 
-            _stickyWorkspace.PositionNoteTabs();
+            if (_stickyWorkspace != null)
+                _stickyWorkspace.PositionNoteTabs();
             RepositionCurrentBubble();
         }
 
