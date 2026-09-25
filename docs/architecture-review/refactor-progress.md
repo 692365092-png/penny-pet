@@ -173,3 +173,10 @@ The existing `PersistenceWriter<T>` queue, revisions, adjacent autosave coalesci
 PetForm no longer owns a persistence retry timer, polls writer dirty/pending flags, or subscribes directly to raw failure events. It consumes one warning/recovered notice stream. Repeated failures in the same unresolved episode produce one warning rather than another bubble every timer interval. Existing synchronous exit/import barriers are intentionally retained for R25.
 
 Deterministic runtime tests cover repeated failure coalescing, pending-writer suppression, recovery notification and startup dirty state. Windows CI remains the execution gate for this item.
+
+
+## R18 — budget startup restore on the execution STA
+
+Startup restore no longer measures a 6 ms stopwatch on Pet STA while merely posting work to another thread. Pet now dequeues one immutable restore request per deferred tick and hands it to a dedicated startup-restore transport. StickyUiThreadHost owns the restore queue and measures the 6 ms slice around the actual WPF Create/Show execution on Sticky STA, yielding through DispatcherPriority.Background when more work remains.
+
+Normal interactive commands, Dock frame transport and restore semantics are unchanged. The dedicated path is startup-only: it prevents a fast producer from disguising an arbitrarily expensive WPF burst behind cheap cross-thread posts, without introducing a general scheduler. First-render acknowledgements still gate startup readiness.
