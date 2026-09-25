@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 
 namespace PennyPet
 {
@@ -81,21 +80,18 @@ namespace PennyPet
             if (_startupVisibleNotes != null &&
                 _startupVisibleNotes.Count > 0)
             {
-                Stopwatch budget = Stopwatch.StartNew();
-                while (_startupVisibleNotes.Count > 0 &&
-                    budget.ElapsedMilliseconds < 6)
+                // Pet STA only feeds immutable restore work. The Sticky STA owns
+                // the real 6 ms construction budget.
+                StickyNoteData note = _startupVisibleNotes.Dequeue();
+                try
                 {
-                    StickyNoteData note = _startupVisibleNotes.Dequeue();
-                    try
-                    {
-                        _stickyWorkspace.ShowHostedSticky(note, false, false);
-                    }
-                    catch (Exception error)
-                    {
-                        ApplicationDiagnostics.ReportNonFatal(
-                            "deferred-sticky-restore", error);
-                        _stickyWorkspace.RecoverFailedHostedStickyWindow(note);
-                    }
+                    _stickyWorkspace.QueueStartupStickyRestore(note);
+                }
+                catch (Exception error)
+                {
+                    ApplicationDiagnostics.ReportNonFatal(
+                        "deferred-sticky-restore", error);
+                    _stickyWorkspace.RecoverFailedHostedStickyWindow(note);
                 }
                 return;
             }
