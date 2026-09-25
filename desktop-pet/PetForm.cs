@@ -23,8 +23,8 @@ namespace PennyPet
         private const int NotificationRow = PetAnimationController.NotificationRow;
 
         private readonly System.Windows.Forms.Timer _animationTimer;
-        private readonly PetPersistenceRuntime _persistence;
-        private readonly ReminderRuntime _reminderRuntime;
+        private PetPersistenceRuntime _persistence;
+        private ReminderRuntime _reminderRuntime;
         private readonly PetBubbleCoordinator _bubbleCoordinator;
         private readonly ConversationRuntime _conversation;
         private readonly PetWeatherSource _weatherSource;
@@ -54,8 +54,8 @@ namespace PennyPet
         private readonly KeyboardOverlayForm _keyOverlay;
         internal readonly PetWindowLayerCoordinator _windowLayers =
             new PetWindowLayerCoordinator();
-        private readonly StickyFeature _notes;
-        private readonly StickyWorkspace _stickyWorkspace;
+        private StickyFeature _notes;
+        private StickyWorkspace _stickyWorkspace;
         private readonly object _keyboardQueueGate = new object();
         private readonly InteractionRuntime _interaction;
         internal readonly HashSet<string> _expectedFirstRenderNoteIds =
@@ -78,16 +78,16 @@ namespace PennyPet
         private System.Windows.Forms.Timer _startupWorkTimer;
         private StartupWorkPhase _startupWorkPhase;
         private Queue<StickyNoteData> _startupVisibleNotes;
-        private bool _startupUiReady;
+        private bool _startupBackgroundReady;
         private bool _startupArtReady;
-        private bool _startupReadyRaised;
+        private bool _shellReadyRaised;
         // The loading window is the only startup visual. Keep the layered pet
         // window alive for initialization, but do not publish one of its
         // frames until the restored notes and the first idle frame are ready.
         // Optional interaction rows continue warming after startup.
         private bool _startupDisplaySuppressed = true;
 
-        internal event EventHandler StartupReady;
+        internal event EventHandler ShellReady;\n        internal event EventHandler StartupBackgroundReady;
 
         public PetForm() : this(null)
         {
@@ -138,19 +138,9 @@ namespace PennyPet
             BuildRenderedFrameCache();
 
             _reminders = new ReminderSchedule();
-            _notes = StickyFeature.Load();
-            if (_notes.IsFutureSchemaBlocked)
-                throw _notes.FutureSchemaError;
-            WindowsFormsSynchronizationContext persistenceContext =
-                SynchronizationContext.Current as WindowsFormsSynchronizationContext
-                ?? new WindowsFormsSynchronizationContext();
-            _persistence = new PetPersistenceRuntime(
-                _notes, _settings, persistenceContext);
-            _persistence.Notice += PersistenceNoticeReceived;
+            // Sticky disk parsing is prepared by PennyApplicationHost only
+            // after this shell has rendered and become interactive.
             if (persistKeyboardPrivacyReset) _settings.SaveAsync();
-            _stickyWorkspace = AttachStickyWorkspace(persistenceContext);
-            _reminderRuntime = new ReminderRuntime(_reminders, _settings, _notes, this);
-            _reminderRuntime.Restore(DateTime.UtcNow);
             if (!_settings.StartupPreferenceInitialized)
             {
                 // Startup is an explicit opt-in. First launch records the safe
@@ -181,34 +171,53 @@ namespace PennyPet
                         _interaction.HoverSuppressed))
                     ShowOrUpdateHoverBubble();
             };
-            menuCommands.ShowReminder = ShowReminderDialog;
+            menuCommands.ShowReminder = delegate
+            {
+                RunWhenReminderRuntimeReady(ShowReminderDialog);
+            };
             menuCommands.CreateNote = delegate
             {
-                _stickyWorkspace.QueueStickyWindowAction(delegate
+                RunWhenStickyRuntimeReady(delegate(StickyWorkspace workspace)
                 {
-                    _stickyWorkspace.CreateStickyNote(String.Empty);
-                }, "sticky-note-menu-create");
+                    workspace.QueueStickyWindowAction(delegate
+                    {
+                        workspace.CreateStickyNote(String.Empty);
+                    }, "sticky-note-menu-create");
+                });
             };
             menuCommands.CreateTodo = delegate
             {
-                _stickyWorkspace.QueueStickyWindowAction(delegate
+                RunWhenStickyRuntimeReady(delegate(StickyWorkspace workspace)
                 {
-                    _stickyWorkspace.CreateTodoStickyNote();
-                }, "sticky-todo-menu-create");
+                    workspace.QueueStickyWindowAction(
+                        workspace.CreateTodoStickyNote,
+                        "sticky-todo-menu-create");
+                });
             };
             menuCommands.CreateSchedule = delegate
             {
-                _stickyWorkspace.QueueStickyWindowAction(delegate
+                RunWhenStickyRuntimeReady(delegate(StickyWorkspace workspace)
                 {
-                    _stickyWorkspace.CreateScheduleStickyNote();
-                }, "sticky-schedule-menu-create");
+                    workspace.QueueStickyWindowAction(
+                        workspace.CreateScheduleStickyNote,
+                        "sticky-schedule-menu-create");
+                });
             };
-            menuCommands.ManageNotes = _stickyWorkspace.ShowStickyNotesManager;
+            menuCommands.ManageNotes = delegate
+            {
+                RunWhenStickyRuntimeReady(delegate(StickyWorkspace workspace)
+                {
+                    workspace.ShowStickyNotesManager();
+                });
+            };
             menuCommands.TileAllNotes = delegate
             {
-                _stickyWorkspace.QueueStickyWindowAction(
-                    _stickyWorkspace.Dock.ExpandAndTileAllStickyNotesToPetScreen,
-                    "sticky-menu-expand-and-tile");
+                RunWhenStickyRuntimeReady(delegate(StickyWorkspace workspace)
+                {
+                    workspace.QueueStickyWindowAction(
+                        workspace.Dock.ExpandAndTileAllStickyNotesToPetScreen,
+                        "sticky-menu-expand-and-tile");
+                });
             };
             menuCommands.ShowDailyContentSettings =
                 ShowDailyContentSettingsDialog;
@@ -240,7 +249,6 @@ namespace PennyPet
             _animationTimer.Interval = 15;
             _animationTimer.Tick += AnimationTick;
             _animationTimer.Start();
-            _reminderRuntime.Start();
             MouseDown += PetMouseDown;
             MouseMove += PetMouseMove;
             MouseUp += PetMouseUp;
@@ -250,13 +258,15 @@ namespace PennyPet
             LocationChanged += delegate
             {
                 if (_petDpiDragHandoffActive) return;
-                _stickyWorkspace.PositionNoteTabs();
+                if (_stickyWorkspace != null)
+                    _stickyWorkspace.PositionNoteTabs();
                 RepositionCurrentBubble();
             };
             SizeChanged += delegate
             {
                 if (_petDpiDragHandoffActive) return;
-                _stickyWorkspace.PositionNoteTabs();
+                if (_stickyWorkspace != null)
+                    _stickyWorkspace.PositionNoteTabs();
             };
 
             _keyOverlay = new KeyboardOverlayForm(_settings.KeyOverlayScalePercent);
@@ -276,24 +286,16 @@ namespace PennyPet
             _displayTopologyRuntime.TopologyChanged +=
                 DisplayTopologyChanged;
             _displayTopologyRuntime.CaptureInitial();
-            _stickyWorkspace.Start();
 
             Shown += delegate
             {
                 _petDisplay.Initialize();
-                _stickyWorkspace.RefreshNoteTabs();
 
-                RenderCurrentFrame();
-                // The first idle frame is the startup contract. Optional
-                // interaction rows continue warming in the background and
-                // must not keep the loading surface visible.
+                // Shell readiness is intentionally independent of Sticky disk
+                // parsing and first-render acknowledgements.
                 _startupArtReady = _art.IsRowLoaded(IdleRow);
-                TryRaiseStartupReady();
+                TryRaiseShellReady();
                 QueueStartupInteractionPreload();
-
-                if (_reminders.Count > 0)
-                    QueueArtPreload(NotificationRow);
-
                 BeginDeferredStartupWork();
             };
         }
@@ -482,14 +484,18 @@ namespace PennyPet
                 StringComparison.Ordinal))
                 DisplayDiagnostics.Trace("TopologyChanged",
                     details.ToString());
-            _stickyWorkspace.Host.SetCurrentTopology(snapshot);
+            if (_stickyWorkspace != null)
+                _stickyWorkspace.Host.SetCurrentTopology(snapshot);
 
-            // Pet is upstream of SideTabs and is also fallback context for Sticky.
+            // Pet is upstream of SideTabs and remains independently live while
+            // Sticky runtime is still preparing.
             _petDisplay.Reconcile(snapshot, reason);
 
-            _stickyWorkspace.HandleStickyTopologyChanged(snapshot);
-
-            _stickyWorkspace.PositionNoteTabs();
+            if (_stickyWorkspace != null)
+            {
+                _stickyWorkspace.HandleStickyTopologyChanged(snapshot);
+                _stickyWorkspace.PositionNoteTabs();
+            }
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
@@ -502,7 +508,7 @@ namespace PennyPet
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
-            _stickyWorkspace.Dispose();
+            if (_stickyWorkspace != null) _stickyWorkspace.Dispose();
             if (_displayTopologyRuntime != null)
             {
                 _displayTopologyRuntime.TopologyChanged -=
@@ -510,8 +516,11 @@ namespace PennyPet
                 _displayTopologyRuntime.Dispose();
                 _displayTopologyRuntime = null;
             }
-            _persistence.Notice -= PersistenceNoticeReceived;
-            _persistence.Dispose();
+            if (_persistence != null)
+            {
+                _persistence.Notice -= PersistenceNoticeReceived;
+                _persistence.Dispose();
+            }
             _keyboardPrivacy.Dispose();
             _keyboard.FocusChanged -= KeyboardFocusChanged;
             _keyboard.Activity -= KeyboardActivity;
@@ -528,7 +537,7 @@ namespace PennyPet
             if (_appIcon != null) _appIcon.Dispose();
             _menu.Dispose();
             _animationTimer.Dispose();
-            _reminderRuntime.Dispose();
+            if (_reminderRuntime != null) _reminderRuntime.Dispose();
             _conversation.Stop();
             StopDeferredStartupWork();
             DisposeRenderedFrameCache();

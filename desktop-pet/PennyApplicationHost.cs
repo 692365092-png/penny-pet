@@ -1,5 +1,6 @@
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace PennyPet
@@ -11,9 +12,6 @@ namespace PennyPet
         internal static void Run()
         {
             bool createdNew;
-            // Local\ scopes the mutex to the current interactive session.
-            // Global\ would also block other terminal-service users from
-            // running a desktop pet in their own session, which is not wanted.
             _singleInstance = new Mutex(true, "Local\\PennyPet.SingleInstance",
                 out createdNew);
             if (!createdNew)
@@ -27,35 +25,17 @@ namespace PennyPet
             ApplicationDiagnostics.Initialize();
             try
             {
-                PetSettings preloadedSettings = PetSettings.Load();
-                DisplayTopologySnapshot startupTopology =
-                    new WindowsDisplayTopologyProvider().Capture();
-                StartupPetPlacementSnapshot startupPlacement =
-                    ResolveStartupPetPlacement(preloadedSettings,
-                        startupTopology);
-                using (StartupLoadingThreadHost loading =
-                    new StartupLoadingThreadHost())
+                PetSettings settings = PetSettings.Load();
+                PetForm pet = new PetForm(settings);
+                bool runtimeLoadStarted = false;
+                pet.ShellReady += delegate
                 {
-                    loading.Start(startupPlacement);
-                    PetForm pet = new PetForm(preloadedSettings);
-                    pet.StartupReady += delegate
-                    {
-                        loading.Close();
-                    };
-                    pet.FormClosed += delegate
-                    {
-                        loading.Close();
-                    };
-                    pet.Show();
-                    loading.BringToFront();
-                    Application.Run(pet);
-                }
-            }
-            catch (UnsupportedStickySchemaException error)
-            {
-                MessageBox.Show(BuildFutureSchemaBlockedMessage(error),
-                    "Penny pet - 便利贴数据版本不兼容",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    if (runtimeLoadStarted) return;
+                    runtimeLoadStarted = true;
+                    BeginRuntimeComposition(pet);
+                };
+                pet.Show();
+                Application.Run(pet);
             }
             catch (Exception error)
             {
@@ -69,30 +49,85 @@ namespace PennyPet
             GC.KeepAlive(_singleInstance);
         }
 
-        // One-time immutable prediction of the formal Pet's first-settled
-        // placement. The loading thread only projects this rect; it never
-        // writes settings, mutates preference or creates runtime authority.
-        private static StartupPetPlacementSnapshot ResolveStartupPetPlacement(
-            PetSettings settings, DisplayTopologySnapshot topology)
+        private static void BeginRuntimeComposition(PetForm pet)
         {
-            System.Drawing.Size logical = PetForm.ScaledPetSize(
-                settings == null ? 100 : settings.ScalePercent);
-            return PetPlacementPolicy.ResolveStartupPetPlacement(
-                settings == null ? String.Empty :
-                    settings.PetPreferredTargetKey,
-                new LogicalPoint
+            Task.Run(delegate
+            {
+                return StickyFeature.PrepareLoad();
+            }).ContinueWith(delegate(Task<StickyLoadResult> task)
+            {
+                Exception failure = task.IsFaulted && task.Exception != null
+                    ? task.Exception.GetBaseException() : null;
+                StickyLoadResult prepared = task.Status ==
+                    TaskStatus.RanToCompletion ? task.Result : null;
+
+                if (pet == null || pet.IsDisposed || pet.Disposing) return;
+                try
                 {
-                    X = settings == null ? 0 :
-                        settings.PetPreferredLocalLogicalX,
-                    Y = settings == null ? 0 :
-                        settings.PetPreferredLocalLogicalY
-                },
-                settings != null && settings.HasLocation,
-                settings == null ? 0 : settings.X,
-                settings == null ? 0 : settings.Y,
-                Math.Max(1, logical.Width),
-                Math.Max(1, logical.Height),
-                topology);
+                    pet.BeginInvoke((MethodInvoker)delegate
+                    {
+                        CompleteRuntimeComposition(pet, prepared, failure);
+                    });
+                }
+                catch (InvalidOperationException)
+                {
+                    // The shell closed while disk preparation was completing.
+                    // Never recreate windows or publish late runtime state.
+                }
+            }, TaskScheduler.Default);
+        }
+
+        private static void CompleteRuntimeComposition(PetForm pet,
+            StickyLoadResult prepared, Exception failure)
+        {
+            if (pet == null || pet.IsDisposed || pet.Disposing ||
+                pet.IsExitingForComposition) return;
+
+            UnsupportedStickySchemaException future =
+                failure as UnsupportedStickySchemaException ??
+                StickyFeature.PreparedFutureSchemaError(prepared);
+            if (future != null)
+            {
+                MessageBox.Show(pet, BuildFutureSchemaBlockedMessage(future),
+                    "Penny pet - 便利贴数据版本不兼容",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                pet.AbortStartupComposition();
+                return;
+            }
+
+            if (failure != null)
+            {
+                ApplicationDiagnostics.ReportFatal(
+                    "runtime-composition-load", failure);
+                MessageBox.Show(pet,
+                    "Penny pet 无法安全恢复便利贴数据。诊断记录已保存到：\n" +
+                    ApplicationDiagnostics.LogFilePath,
+                    "Penny pet", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                pet.AbortStartupComposition();
+                return;
+            }
+
+            try
+            {
+                pet.AttachPreparedStickyRuntime(prepared);
+            }
+            catch (UnsupportedStickySchemaException error)
+            {
+                MessageBox.Show(pet, BuildFutureSchemaBlockedMessage(error),
+                    "Penny pet - 便利贴数据版本不兼容",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                pet.AbortStartupComposition();
+            }
+            catch (Exception error)
+            {
+                ApplicationDiagnostics.ReportFatal(
+                    "runtime-composition-publish", error);
+                MessageBox.Show(pet,
+                    "Penny pet 无法完成后台功能初始化。诊断记录已保存到：\n" +
+                    ApplicationDiagnostics.LogFilePath,
+                    "Penny pet", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                pet.AbortStartupComposition();
+            }
         }
 
         internal static string BuildFutureSchemaBlockedMessage(

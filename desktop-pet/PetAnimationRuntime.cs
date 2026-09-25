@@ -135,7 +135,7 @@ namespace PennyPet
                 ApplicationDiagnostics.ReportNonFatal("startup-interaction-render", error);
             }
             _startupArtReady = _art.IsRowLoaded(IdleRow);
-            TryRaiseStartupReady();
+            TryRaiseShellReady();
         }
 
         private void QueueArtPreload(int row)

@@ -10,6 +10,7 @@ namespace PennyPet
         {
             StartInputs,
             ApplyStartupPreferences,
+            WaitForStickyRuntime,
             RestoreNotes
         }
 
@@ -65,13 +66,28 @@ namespace PennyPet
                             new InvalidOperationException(startupError));
                     }
                     _settings.SaveAsync();
+                }
+                catch (Exception error)
+                {
+                    ApplicationDiagnostics.ReportNonFatal(
+                        "deferred-secondary-startup", error);
+                }
+                _startupWorkPhase = StartupWorkPhase.WaitForStickyRuntime;
+                return;
+            }
+            if (_startupWorkPhase == StartupWorkPhase.WaitForStickyRuntime)
+            {
+                if (_notes == null || _stickyWorkspace == null ||
+                    _reminderRuntime == null) return;
+                try
+                {
                     _reminderRuntime.Tick(DateTime.UtcNow);
                     _startupVisibleNotes = BuildStartupRestoreQueue();
                 }
                 catch (Exception error)
                 {
                     ApplicationDiagnostics.ReportNonFatal(
-                        "deferred-secondary-startup", error);
+                        "deferred-sticky-startup", error);
                     _startupVisibleNotes = new Queue<StickyNoteData>();
                 }
                 _startupWorkPhase = StartupWorkPhase.RestoreNotes;
@@ -110,19 +126,21 @@ namespace PennyPet
                 ApplicationDiagnostics.ReportNonFatal(
                     "deferred-startup-finalize", error);
             }
-            _startupUiReady = true;
-            TryRaiseStartupReady();
+            _startupBackgroundReady = true;
+            EventHandler backgroundReady = StartupBackgroundReady;
+            if (backgroundReady != null)
+                backgroundReady(this, EventArgs.Empty);
             StopDeferredStartupWork();
         }
 
-        private void TryRaiseStartupReady()
+        private void TryRaiseShellReady()
         {
-            if (_startupReadyRaised || !_startupUiReady || !_startupArtReady ||
+            if (_shellReadyRaised || !_startupArtReady ||
                 IsDisposed || _exiting) return;
             _startupDisplaySuppressed = false;
-            _startupReadyRaised = true;
+            _shellReadyRaised = true;
             RenderCurrentFrame();
-            EventHandler ready = StartupReady;
+            EventHandler ready = ShellReady;
             if (ready != null) ready(this, EventArgs.Empty);
         }
 

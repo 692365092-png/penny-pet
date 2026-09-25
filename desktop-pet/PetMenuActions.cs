@@ -50,7 +50,9 @@ namespace PennyPet
             _setReminderItem.Enabled = items.Count < ReminderSchedule.MaximumItems;
             _setReminderItem.Text = "添加提醒…（" + items.Count + "/" +
                 ReminderSchedule.MaximumItems + "）";
-            _manageNotesItem.Text = "便利贴管理…（" + _notes.Count + "张）";
+            _manageNotesItem.Text = _notes == null
+                ? "便利贴管理…（正在恢复）"
+                : "便利贴管理…（" + _notes.Count + "张）";
             _silentItem.Checked = _settings.SilentMode;
             _scaleItem.Text = "调整大小…（桌宠 " + _scalePercent + "% / 按键" +
                 KeyTextSizeName(_settings.KeyOverlayScalePercent) + "）";
@@ -230,18 +232,39 @@ namespace PennyPet
         internal void BeginExitSequence()
         {
             if (_exiting) return;
-            if (_stickyWorkspace.BeginHostedStickyExitIfNeeded()) return;
+            if (_stickyWorkspace != null &&
+                _stickyWorkspace.BeginHostedStickyExitIfNeeded()) return;
             CaptureLocationForSave();
-            if (!FlushPersistenceBeforeExit())
+
+            if (_notes != null)
             {
-                _stickyWorkspace.CancelPreparedStickyExit();
-                return;
+                if (!FlushPersistenceBeforeExit())
+                {
+                    if (_stickyWorkspace != null)
+                        _stickyWorkspace.CancelPreparedStickyExit();
+                    return;
+                }
             }
+            else
+            {
+                PersistenceResult pending = _settings.WaitForPendingSaves();
+                PersistenceResult result = pending.Error is TimeoutException
+                    ? pending : _settings.Save();
+                if (!result.Succeeded)
+                {
+                    MessageBox.Show(this,
+                        "设置尚未写入磁盘。\n\n" + result.ErrorMessage,
+                        "Penny pet - 有未保存内容",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+            }
+
             _exiting = true;
             _keyboardPrivacy.SetEnabled(false);
-            _reminderRuntime.Stop();
+            if (_reminderRuntime != null) _reminderRuntime.Stop();
             _conversation.Stop();
-            _persistence.Dispose();
+            if (_persistence != null) _persistence.Dispose();
             _interaction.BeginExit(DateTime.UtcNow);
             Capture = false;
             _keyOverlay.HideImmediately();
@@ -253,7 +276,8 @@ namespace PennyPet
 
         private bool HasFocusedOwnNoteTextInput()
         {
-            return _stickyWorkspace.Hosted.HasInputFocus;
+            return _stickyWorkspace != null &&
+                _stickyWorkspace.Hosted.HasInputFocus;
         }
 
         internal static string FormatRemaining(TimeSpan value)

@@ -51,7 +51,30 @@ namespace PennyPet
 
         public static StickyFeature Load()
         {
-            return new StickyFeature(StickyStore.Load());
+            return PublishPreparedLoad(PrepareLoad());
+        }
+
+        // Disk parsing/recovery is safe to prepare away from the Pet STA.
+        // Publication is separate so StickyFeature captures the real owner
+        // SynchronizationContext only when it joins the live application.
+        internal static StickyLoadResult PrepareLoad()
+        {
+            return StickyStore.Load();
+        }
+
+        internal static UnsupportedStickySchemaException
+            PreparedFutureSchemaError(StickyLoadResult prepared)
+        {
+            return prepared == null || prepared.Store == null
+                ? null : prepared.Store.FutureSchemaError;
+        }
+
+        internal static StickyFeature PublishPreparedLoad(
+            StickyLoadResult prepared)
+        {
+            if (prepared == null)
+                throw new ArgumentNullException(nameof(prepared));
+            return new StickyFeature(prepared);
         }
 
         internal static StickyFeature LoadFromFile(string filePath)
