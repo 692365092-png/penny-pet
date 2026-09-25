@@ -368,13 +368,11 @@ namespace PennyPet
 
             foreach (StickyWindowSession session in _sessions.Values)
             {
-                if (!session.IsAvailable) continue;
-                StickyUiCommandResult current = session.CurrentResult();
-                if (current == null || current.Snapshot == null ||
-                    !current.Snapshot.Visible || current.Facts == null)
-                    continue;
+                WindowFacts facts =
+                    session.CaptureVisibleFactsForChrome();
+                if (facts == null) continue;
 
-                PhysicalRect actual = current.Facts.PhysicalBounds;
+                PhysicalRect actual = facts.PhysicalBounds;
                 Rectangle bounds = new Rectangle(
                     actual.Left, actual.Top,
                     actual.Width, actual.Height);

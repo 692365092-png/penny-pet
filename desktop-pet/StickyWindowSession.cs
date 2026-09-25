@@ -686,6 +686,14 @@ namespace PennyPet
                 CaptureWindowFacts(_sequence), _topology);
         }
 
+        // SideTab overlap needs only local HWND facts. Do not capture note
+        // content on every live drag frame.
+        internal WindowFacts CaptureVisibleFactsForChrome()
+        {
+            if (!IsAvailable || !_window.IsVisible) return null;
+            return CaptureWindowFacts(_sequence);
+        }
+
         private void WireEvents()
         {
             _window.IsVisibleChanged += WindowVisibilityChanged;
