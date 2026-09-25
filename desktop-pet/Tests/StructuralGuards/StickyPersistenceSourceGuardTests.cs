@@ -117,5 +117,33 @@ namespace PennyPet.Tests
                 coordinator.Contains("StickyPlacementMath.FromSpawn("),
                 "The cascade and beside-pet spawn paths must be retired.");
         }
+
+        [TestMethod]
+        public void R17_PersistenceRetryOwnership_IsOutsidePetForm()
+        {
+            string form = ReadSource("PetForm.cs");
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetPersistenceCoordinator.cs");
+            string runtime = ReadSource(
+                "Infrastructure/Persistence/PetPersistenceRuntime.cs");
+
+            Assert.IsTrue(form.Contains("new PetPersistenceRuntime(") &&
+                form.Contains("_persistence.Notice += PersistenceNoticeReceived"),
+                "Pet composition should create one application persistence runtime.");
+            Assert.IsFalse(form.Contains("_persistenceRetryTimer") ||
+                form.Contains("RetryUnsavedPersistence") ||
+                form.Contains("SaveFailed += PersistenceSaveFailed"),
+                "PetForm must not poll writer state or subscribe to raw save failures.");
+            Assert.IsTrue(coordinator.Contains("PersistenceNoticeReceived") &&
+                !coordinator.Contains("RetryUnsavedPersistence") &&
+                !coordinator.Contains("_lastPersistenceWarningUtc"),
+                "Pet presentation should consume only high-level persistence notices.");
+            Assert.IsTrue(runtime.Contains("HasPendingSaves") &&
+                runtime.Contains("RequestAutosave()") &&
+                runtime.Contains("_retryArmed") &&
+                runtime.Contains("PersistenceNoticeKind.Recovered"),
+                "The persistence runtime must own single retry scheduling and recovery state.");
+        }
+
     }
 }

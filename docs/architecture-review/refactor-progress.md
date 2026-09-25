@@ -158,3 +158,18 @@ R16 CI #76 rejected the linked .NET 8 test runtime because SetApartmentState is 
 R16 CI #77 compiled and passed 657 of 658 tests, including all new worker/privacy cases. One existing source guard still expected the removed worker-local `focusSnapshot` variable; it now checks the validated delivery input while retaining the own-process/modal policy assertions.
 
 R16 CI #78 passed all 658 tests; native QA rejected the WinForms wrapper fixture at the event-time identity assertion. The follow-up creates explicit Win32 Edit child windows, records non-content HWND diagnostics on assertion failure, and uses GetClassName exact registered classes in production. Superclass aliases remain unknown instead of relying on an underlying-type query inside the hook.
+
+
+## R16 — completed
+
+R16 closed on `2bd1d27`. The hook still performs only cheap native correlation. UI Automation stays on one background MTA worker, unknown/same-HWND virtual controls never publish key labels, focus-version changes invalidate queued results, and exact native Edit controls are the only cheap event-time identity. Hosted CI cannot reliably steal the desktop foreground, so native QA now exercises the same capture primitive against its own top-level GUI thread while production `CaptureCheap` still begins with `GetForegroundWindow()`.
+
+[Windows CI #82](https://github.com/692365092-png/penny-pet/actions/runs/36132673981) passed build, all discoverable tests, modular native self-tests, formal single-file EXE smoke and the managed Dock baseline.
+
+## R17 — persistence retry ownership
+
+The existing `PersistenceWriter<T>` queue, revisions, adjacent autosave coalescing and explicit barriers remain unchanged. `StickyFeature` and `PetSettings` expose only a narrow retry-target contract to one application `PetPersistenceRuntime`. The runtime owns the one-shot retry cadence and unresolved failure episode; retries execute on the captured owner context so each target captures its newest detached snapshot. A pending writer is never duplicated, and explicit save/import barriers remain in the writer queue.
+
+PetForm no longer owns a persistence retry timer, polls writer dirty/pending flags, or subscribes directly to raw failure events. It consumes one warning/recovered notice stream. Repeated failures in the same unresolved episode produce one warning rather than another bubble every timer interval. Existing synchronous exit/import barriers are intentionally retained for R25.
+
+Deterministic runtime tests cover repeated failure coalescing, pending-writer suppression, recovery notification and startup dirty state. Windows CI remains the execution gate for this item.

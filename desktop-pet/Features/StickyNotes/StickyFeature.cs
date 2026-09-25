@@ -8,7 +8,7 @@ namespace PennyPet
 {
     // Owner-side sticky commands and durable dataset publication. Model and Store
     // have independent responsibilities; the Windows partial attaches the UI runtime.
-    internal sealed partial class StickyFeature
+    internal sealed partial class StickyFeature : IPersistenceRetryTarget
     {
         private readonly string _filePath;
         internal readonly StickyModel Model;
@@ -18,6 +18,17 @@ namespace PennyPet
         private int _blockedSaveFailures;
 
         internal event EventHandler<PersistenceFailedEventArgs> SaveFailed;
+
+        event EventHandler<PersistenceFailedEventArgs> IPersistenceRetryTarget.SaveFailed
+        {
+            add { SaveFailed += value; }
+            remove { SaveFailed -= value; }
+        }
+        bool IPersistenceRetryTarget.HasUnsavedChanges
+        { get { return HasUnsavedChanges; } }
+        bool IPersistenceRetryTarget.HasPendingSaves
+        { get { return HasPendingSaves; } }
+        void IPersistenceRetryTarget.RequestAutosave() { SaveAsync(); }
 
         internal StickyFeature(string filePath,
             Func<StickyWriteRequest, PersistenceResult> write = null)

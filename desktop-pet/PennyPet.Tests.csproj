@@ -33,6 +33,7 @@
     <Compile Include="Features\StickyNotes\StickyStore.cs" />
     <Compile Include="Features\StickyNotes\StickyStore.Load.cs" />
     <Compile Include="Infrastructure\Persistence\PersistenceWriter.cs" />
+    <Compile Include="Infrastructure\Persistence\PetPersistenceRuntime.cs" />
     <Compile Include="PetSettings.cs" />
     <Compile Include="Features\StickyNotes\StickyFeature.cs" />
     <Compile Include="Features\StickyNotes\UnsupportedStickySchemaException.cs" />

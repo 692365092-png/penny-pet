@@ -23,7 +23,7 @@ namespace PennyPet
         private const int NotificationRow = PetAnimationController.NotificationRow;
 
         private readonly System.Windows.Forms.Timer _animationTimer;
-        private readonly System.Windows.Forms.Timer _persistenceRetryTimer;
+        private readonly PetPersistenceRuntime _persistence;
         private readonly ReminderRuntime _reminderRuntime;
         private readonly PetBubbleCoordinator _bubbleCoordinator;
         private readonly ConversationRuntime _conversation;
@@ -114,15 +114,15 @@ namespace PennyPet
             _weatherSource = new PetWeatherSource();
             _conversation = new ConversationRuntime(_settings,
                 _weatherSource.GetForecastAsync, ShowConversationMessage);
-            _settings.SaveFailed += PersistenceSaveFailed;
-            if (PetKeyboardPrivacyPolicy.ShouldDisableUnacknowledgedLegacyOptIn(
-                _settings.ShowKeyOverlay,
-                _settings.KeyboardPrivacyNoticeAccepted))
+            bool persistKeyboardPrivacyReset =
+                PetKeyboardPrivacyPolicy.ShouldDisableUnacknowledgedLegacyOptIn(
+                    _settings.ShowKeyOverlay,
+                    _settings.KeyboardPrivacyNoticeAccepted);
+            if (persistKeyboardPrivacyReset)
             {
                 // Older versions could enable the hook without the explicit
                 // first-use notice. Require a fresh opt-in after this upgrade.
                 _settings.ShowKeyOverlay = false;
-                _settings.SaveAsync();
             }
             _art = PetArtPackage.Load(CellWidth, CellHeight);
             Text = _art.DisplayName;
@@ -141,10 +141,14 @@ namespace PennyPet
             _notes = StickyFeature.Load();
             if (_notes.IsFutureSchemaBlocked)
                 throw _notes.FutureSchemaError;
-            _notes.SaveFailed += PersistenceSaveFailed;
-            _stickyWorkspace = AttachStickyWorkspace(
+            WindowsFormsSynchronizationContext persistenceContext =
                 SynchronizationContext.Current as WindowsFormsSynchronizationContext
-                ?? new WindowsFormsSynchronizationContext());
+                ?? new WindowsFormsSynchronizationContext();
+            _persistence = new PetPersistenceRuntime(
+                _notes, _settings, persistenceContext);
+            _persistence.Notice += PersistenceNoticeReceived;
+            if (persistKeyboardPrivacyReset) _settings.SaveAsync();
+            _stickyWorkspace = AttachStickyWorkspace(persistenceContext);
             _reminderRuntime = new ReminderRuntime(_reminders, _settings, _notes, this);
             _reminderRuntime.Restore(DateTime.UtcNow);
             if (!_settings.StartupPreferenceInitialized)
@@ -237,12 +241,6 @@ namespace PennyPet
             _animationTimer.Tick += AnimationTick;
             _animationTimer.Start();
             _reminderRuntime.Start();
-            _persistenceRetryTimer = new System.Windows.Forms.Timer();
-            _persistenceRetryTimer.Interval = 5000;
-            _persistenceRetryTimer.Tick += RetryUnsavedPersistence;
-            if (_notes.HasUnsavedChanges || _settings.HasUnsavedChanges)
-                _persistenceRetryTimer.Start();
-
             MouseDown += PetMouseDown;
             MouseMove += PetMouseMove;
             MouseUp += PetMouseUp;
@@ -512,8 +510,8 @@ namespace PennyPet
                 _displayTopologyRuntime.Dispose();
                 _displayTopologyRuntime = null;
             }
-            _notes.SaveFailed -= PersistenceSaveFailed;
-            _settings.SaveFailed -= PersistenceSaveFailed;
+            _persistence.Notice -= PersistenceNoticeReceived;
+            _persistence.Dispose();
             _keyboardPrivacy.Dispose();
             _keyboard.FocusChanged -= KeyboardFocusChanged;
             _keyboard.Activity -= KeyboardActivity;
@@ -532,7 +530,6 @@ namespace PennyPet
             _animationTimer.Dispose();
             _reminderRuntime.Dispose();
             _conversation.Stop();
-            _persistenceRetryTimer.Dispose();
             StopDeferredStartupWork();
             DisposeRenderedFrameCache();
             _art.Dispose();

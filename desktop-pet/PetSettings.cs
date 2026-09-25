@@ -8,7 +8,7 @@ namespace PennyPet
 {
     // Windows storage adapter for the platform-neutral PetSettingsData and
     // PetSettingsCodec types in PennyPet.Core.
-    internal sealed class PetSettings : PetSettingsData
+    internal sealed class PetSettings : PetSettingsData, IPersistenceRetryTarget
     {
         private const long MaximumSettingsFileBytes = 1024L * 1024L;
         private string _unreadablePrimaryPath;
@@ -31,6 +31,17 @@ namespace PennyPet
         }
 
         internal event EventHandler<PersistenceFailedEventArgs> SaveFailed;
+
+        event EventHandler<PersistenceFailedEventArgs> IPersistenceRetryTarget.SaveFailed
+        {
+            add { SaveFailed += value; }
+            remove { SaveFailed -= value; }
+        }
+        bool IPersistenceRetryTarget.HasUnsavedChanges
+        { get { return HasUnsavedChanges; } }
+        bool IPersistenceRetryTarget.HasPendingSaves
+        { get { return HasPendingSaves; } }
+        void IPersistenceRetryTarget.RequestAutosave() { SaveAsync(); }
 
         internal bool HasUnsavedChanges { get { return _writer.IsDirty; } }
         internal bool HasPendingSaves { get { return _writer.HasPending; } }
