@@ -376,12 +376,17 @@ namespace PennyPet.Tests
                 !helpers.Contains("parent.Bounds") &&
                 !helpers.Contains("StickyDockOperations"),
                 "Visual helpers must use detached geometry without changing Dock rules.");
-            Assert.IsTrue(coordinator.Contains(
+            string host = ReadSource("StickyUiHost.cs");
+            Assert.IsTrue(host.Contains(
                     "private string _dockPreviewParentNoteId") &&
-                coordinator.Contains("private string _dockPreviewChildNoteId") &&
+                host.Contains("private string _dockPreviewChildNoteId") &&
+                coordinator.Contains(
+                    "_workspace.Host.UpdateDockPreview(") &&
+                !coordinator.Contains(
+                    "DockPulseIndicatorForm _dockPreviewIndicator") &&
                 !form.Contains("StickyNoteWindow _dockPreviewParent") &&
                 !form.Contains("StickyNoteWindow _dockPreviewChild"),
-                "Preview identity must be note-id based, not Window based.");
+                "Preview identity and feedback HWNDs must be Sticky-host owned and note-id based.");
         }
 
         [TestMethod]

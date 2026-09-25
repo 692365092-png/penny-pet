@@ -322,6 +322,7 @@ namespace PennyPet.Tests
             string settings = ReadSource("DailyContentSettingsForm.cs");
             string reminders = ReadSource("PetReminderWindowsCoordinator.cs");
             string sticky = SourceGuardText.ReadStickyWorkflowSource();
+            string stickyHost = ReadSource("StickyUiHost.cs");
             string bubble = ReadSource("PetBubbleCoordinator.cs");
             string keyboard = ReadSource(
                 "Features/KeyboardOverlay/PetKeyboardOverlayCoordinator.cs");
@@ -355,10 +356,15 @@ namespace PennyPet.Tests
                 keyboard.Contains("_keyOverlay.UpdatePosition(this)") &&
                 keyboard.Contains(
                     "_windowLayers.KeepTransientBelowModal(_keyOverlay)") &&
-                keyboard.Contains("_stickyWorkspace.ApplyWindowLayer()") && sticky.Contains(
-                    "_presentation.KeepBelowModal(_leftNoteTabs)") &&
+                keyboard.Contains("_stickyWorkspace.ApplyWindowLayer()") &&
+                sticky.Contains("Host.SetModalZOrderFloor(") &&
                 ReadSource("PetStickyPresentation.cs").Contains(
-                    "_windowLayers.KeepTransientBelowModal(window)") &&
+                    "_windowLayers.ModalZOrderFloorHandle") &&
+                stickyHost.Contains(
+                    "KeepTransientBelowModal(_leftNoteTabs)") &&
+                stickyHost.Contains(
+                    "KeepTransientBelowModal(_rightNoteTabs)") &&
+                stickyHost.Contains("SetWindowPos(transient.Handle, floor") &&
                 bubble.Contains("ApplyWindowLayer()") &&
                 bubble.Contains(
                     "_windowLayers.KeepTransientBelowModal(_bubble)") &&
