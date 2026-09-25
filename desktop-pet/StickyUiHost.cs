@@ -65,6 +65,31 @@ namespace PennyPet
             };
         }
 
+        internal void PostStartupRestore(StickyUiCommand command,
+            Action<StickyUiCommandResult> completed,
+            SynchronizationContext completionContext)
+        {
+            if (command == null) throw new ArgumentNullException(nameof(command));
+            Func<StickyUiCommand, StickyUiCommandResult> handler;
+            lock (_configurationGate) handler = _commandHandler;
+            _threadHost.PostStartupRestore(delegate
+            {
+                StickyUiCommandResult result;
+                try
+                {
+                    result = handler == null
+                        ? StickyUiCommandResult.NotHandled()
+                        : handler(command) ?? StickyUiCommandResult.NotHandled();
+                }
+                catch (Exception error)
+                {
+                    result = StickyUiCommandResult.Failed(error);
+                }
+                StickyUiThreadHost.PostCompletionForHost(
+                    completionContext, completed, result);
+            });
+        }
+
         internal void PostCommand(StickyUiCommand command,
             Action<StickyUiCommandResult> completed)
         {
