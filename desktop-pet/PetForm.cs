@@ -78,7 +78,6 @@ namespace PennyPet
         private System.Windows.Forms.Timer _startupWorkTimer;
         private StartupWorkPhase _startupWorkPhase;
         private Queue<StickyNoteData> _startupVisibleNotes;
-        private bool _startupBackgroundReady;
         private bool _startupArtReady;
         private bool _shellReadyRaised;
         // The loading window is the only startup visual. Keep the layered pet

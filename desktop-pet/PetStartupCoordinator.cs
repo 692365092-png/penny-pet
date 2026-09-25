@@ -126,7 +126,6 @@ namespace PennyPet
                 ApplicationDiagnostics.ReportNonFatal(
                     "deferred-startup-finalize", error);
             }
-            _startupBackgroundReady = true;
             EventHandler backgroundReady = StartupBackgroundReady;
             if (backgroundReady != null)
                 backgroundReady(this, EventArgs.Empty);
