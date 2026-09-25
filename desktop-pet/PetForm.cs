@@ -87,7 +87,8 @@ namespace PennyPet
         // Optional interaction rows continue warming after startup.
         private bool _startupDisplaySuppressed = true;
 
-        internal event EventHandler ShellReady;\n        internal event EventHandler StartupBackgroundReady;
+        internal event EventHandler ShellReady;
+        internal event EventHandler StartupBackgroundReady;
 
         public PetForm() : this(null)
         {
