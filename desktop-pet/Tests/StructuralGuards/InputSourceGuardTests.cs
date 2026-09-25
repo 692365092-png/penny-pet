@@ -436,7 +436,10 @@ namespace PennyPet.Tests
             Assert.IsTrue(exit.IndexOf("CaptureLocationForSave()", StringComparison.Ordinal) <
                 exit.IndexOf("FlushPersistenceBeforeExit()", StringComparison.Ordinal));
             Assert.IsTrue(exit.Contains("CancelPreparedStickyExit()"));
-            Assert.IsTrue(exit.Contains("_persistenceRetryTimer.Stop()"));
+            Assert.IsTrue(exit.Contains("_persistence.Dispose()"),
+                "A committed exit must stop the single persistence runtime before animation.");
+            Assert.IsFalse(exit.Contains("_persistenceRetryTimer"),
+                "Exit must not retain the retired Pet-owned retry timer.");
             string cancel = RawSource.SliceMethod(SourceGuardText.ReadStickyWorkflowSource(),
                 "internal void CancelPreparedStickyExit()");
             Assert.IsTrue(cancel.Contains("Hosted.CancelExit()") && cancel.Contains("ReloadAllHostedStickyRuntime()"));
