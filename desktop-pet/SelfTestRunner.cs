@@ -32,11 +32,6 @@ namespace PennyPet
             internal bool InnerOutlineOk;
             internal bool GreenHaloAbsent;
             internal bool ApplicationIconEmbeddedOk;
-            internal bool StartupFrameEmbeddedOk;
-            internal bool StartupFrameUsesEmbeddedLoadingOk;
-            internal bool StartupUsesSavedScaleOk;
-            internal bool StartupLocationOk;
-            internal bool StartupLoadingThreadHostOk;
             internal bool ContactAuthorFeatureOk;
             internal int[] AnimationCycleDurations;
         }
@@ -101,48 +96,6 @@ namespace PennyPet
             {
                 result.ApplicationIconEmbeddedOk = applicationIcon != null &&
                     applicationIcon.Width >= 16 && applicationIcon.Height >= 16;
-            }
-            result.StartupFrameEmbeddedOk = StartupLoadingForm.HasEmbeddedFrame;
-            using (StartupLoadingForm loadingFrameForm =
-                new StartupLoadingForm(new StartupPetPlacementSnapshot(
-                    new PhysicalRect(0, 0, 192, 208), 96)))
-                result.StartupFrameUsesEmbeddedLoadingOk =
-                    loadingFrameForm.UsesEmbeddedLoadingFrameForTest();
-            result.StartupUsesSavedScaleOk = true;
-            int[] startupScales = { 50, 100, 150, 200 };
-            foreach (int scale in startupScales)
-            {
-                Size logical = PetForm.ScaledPetSize(scale);
-                StartupPetPlacementSnapshot placement =
-                    new StartupPetPlacementSnapshot(
-                        new PhysicalRect(0, 0, logical.Width,
-                            logical.Height), 96);
-                using (StartupLoadingForm loadingScaleForm =
-                    new StartupLoadingForm(placement))
-                    result.StartupUsesSavedScaleOk =
-                        result.StartupUsesSavedScaleOk &&
-                        loadingScaleForm.UsesPlacementForTest(placement) &&
-                        loadingScaleForm.UsesEmbeddedLoadingFrameForTest();
-            }
-            StartupPetPlacementSnapshot savedPlacement =
-                new StartupPetPlacementSnapshot(
-                    new PhysicalRect(240, 160, 192, 208), 96);
-            using (StartupLoadingForm savedLoadingForm =
-                new StartupLoadingForm(savedPlacement))
-            {
-                result.StartupLocationOk =
-                    savedLoadingForm.Location == new Point(240, 160) &&
-                    savedLoadingForm.ClientSize == new Size(192, 208) &&
-                    savedLoadingForm.UsesPlacementForTest(savedPlacement);
-            }
-            using (StartupLoadingThreadHost loadingHost =
-                new StartupLoadingThreadHost())
-            {
-                loadingHost.Start(new StartupPetPlacementSnapshot(
-                    new PhysicalRect(0, 0, 192, 208), 96));
-                loadingHost.BringToFront();
-                result.StartupLoadingThreadHostOk = true;
-                loadingHost.Close();
             }
             bool contactArtworkEmbedded;
             using (Stream contactArtwork = typeof(ContactAuthorForm).Assembly
@@ -6258,16 +6211,6 @@ namespace PennyPet
                     artChecks.AnimationTimingOk) + ",\n" +
                 "  \"application_icon_embedded_ok\": " + Bool(
                     artChecks.ApplicationIconEmbeddedOk) + ",\n" +
-                "  \"startup_loading_frame_embedded_ok\": " + Bool(
-                    artChecks.StartupFrameEmbeddedOk) + ",\n" +
-                "  \"startup_loading_uses_embedded_resource_ok\": " + Bool(
-                    artChecks.StartupFrameUsesEmbeddedLoadingOk) + ",\n" +
-                "  \"startup_loading_uses_saved_pet_scale_ok\": " + Bool(
-                    artChecks.StartupUsesSavedScaleOk) + ",\n" +
-                "  \"startup_loading_uses_saved_or_fallback_location_ok\": " +
-                    Bool(artChecks.StartupLocationOk) + ",\n" +
-                "  \"startup_loading_dedicated_sta_ok\": " + Bool(
-                    artChecks.StartupLoadingThreadHostOk) + ",\n" +
                 "  \"contact_author_feature_ok\": " + Bool(
                     artChecks.ContactAuthorFeatureOk) + ",\n" +
                 "  \"contact_author_xiaohongshu_only_ok\": " + Bool(

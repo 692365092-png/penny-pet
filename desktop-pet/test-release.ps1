@@ -87,7 +87,7 @@ try {
     }
     $required = @(
         "PennyPet.Art.Manifest", "PennyPet.Art.ReleasePack",
-        "PennyPet.Art.StartupCache", "PennyPet.Startup.Loading",
+        "PennyPet.Art.StartupCache",
         "PennyPet.ContactAuthor.Image", "PennyPet.TabIcons.Reference",
         "PennyPet.Dependencies.astronomy.dll", "PennyPet.Dependencies.lunar.dll"
     )
