@@ -70,6 +70,8 @@ namespace PennyPet
                 Pc2Set(Pet, "_displayTopologyRuntime", Display);
 
                 Pc2Set(Pet, "_settings", new PetSettings());
+                Pc2Set(Pet, "_petDisplay", new PetDisplayRuntime(Pet,
+                    (PetSettings)Pc2Get(Pet, "_settings"), () => Display.Current));
                 Pc2Set(Pet, "_reminders", new ReminderSchedule());
                 Pc2Set(Pet, "_petContextMenu", menu);
                 Pc2Set(Pet, "_bubbleCoordinator", bubble);

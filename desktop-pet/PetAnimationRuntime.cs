@@ -60,8 +60,8 @@ namespace PennyPet
             Capture = false;
             if (wasDrag)
             {
-                CommitPetUserPlacement();
-                ReconcilePetDisplayPlacement(CurrentTopologySnapshot(), "PetDragCompleted");
+                _petDisplay.CommitUserPlacement();
+                _petDisplay.Reconcile(CurrentTopologySnapshot(), "PetDragCompleted");
             }
             else
             {
@@ -75,7 +75,7 @@ namespace PennyPet
         {
             if (Capture || !_interaction.PointerDown) return;
             _interaction.CancelPointer();
-            ReconcilePetDisplayPlacement(CurrentTopologySnapshot(), "PetDragCancelled");
+            _petDisplay.Reconcile(CurrentTopologySnapshot(), "PetDragCancelled");
         }
 
         private async void HandlePetPoked()

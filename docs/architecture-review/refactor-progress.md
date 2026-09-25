@@ -109,3 +109,14 @@ New regression cases check the compiled Core assembly boundary, protocol-free re
 
 
 R13 CI #71 built successfully and passed all 619 discoverable tests, including the 11 new pure-rule cases. Native validation exposed an existing weather test race: an immediately completed fixture response could populate cache before the second call, while the test still required in-flight Task identity. The follow-up holds that fixture response until both requests exist, preserving the task-sharing, cached-value and single-request assertions. The report's `typing_moves_pet`, `look_follow_registered` and `keyboard_content_recorded` false fields are fixed capability declarations, not failed checks. Production weather behavior is unchanged.
+
+
+R13 passed [Windows CI #72](https://github.com/692365092-png/penny-pet/actions/runs/36024112230) on `29e69c9`: build, all 619 discoverable tests, modular native self-tests, formal single-file EXE smoke and artifacts.
+
+## R14 — independent Pet display runtime
+
+`Features/Display/PetDisplayRuntime` now owns preferred-placement commits, temporary rehome/user-move state, programmatic placement scopes and the effective WindowFacts/topology pair. PetForm implements a narrow native window port on Pet STA: actual HWND DPI/facts, movement, size application and follower presentation. The existing DisplayTopologyRuntime remains the single runtime snapshot source; its settling and StickyHost snapshot delivery are unchanged.
+
+Captures publish only against the exact current snapshot and a newer window sequence. Native reentry that changes topology or produces newer facts cannot relabel old pixels or overwrite the newer pair. Programmatic placement uses nested scopes; a nested DPI handoff cannot prematurely enable user commits. Placement checks snapshot currency after native capture and scaling before applying projected coordinates.
+
+Fourteen new deterministic runtime cases cover 96/120/144/192 DPI at a negative origin, unplug/return without preference loss, user placement on durable and ephemeral surfaces, topology changes during drag/capture/scaling, nested capture and programmatic movement, invalid facts, work-area clamping and compatibility-only save. Architecture guards enforce the native adapter boundary. The existing native scene fixture now constructs the runtime explicitly. Windows CI is required; local .NET SDK and a physical mixed-DPI Windows desktop are unavailable. These checks do not claim measured drag latency or manual hotplug/visual validation.

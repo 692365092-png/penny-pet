@@ -12,6 +12,8 @@
     <Compile Include="Tests\**\*.cs" />
     <!-- Exercise the actual platform-neutral protocol/runtime implementations. -->
     <Compile Include="Features\Interaction\InteractionRuntime.cs" />
+    <Compile Include="Features\Display\PetDisplayRuntime.cs" />
+    <Compile Include="Features\Display\IPetDisplayWindow.cs" />
     <Compile Include="Features\StickyNotes\DockFrameMailbox.cs" />
     <Compile Include="Features\StickyNotes\DockPlacementPlanner.cs" />
     <Compile Include="Features\StickyNotes\DockInteractionState.cs" />

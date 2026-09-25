@@ -69,6 +69,7 @@ namespace PennyPet
         private Size _renderedTargetSize;
         private ContactAuthorForm _contactAuthorForm;
         private DisplayTopologyRuntime _displayTopologyRuntime;
+        private PetDisplayRuntime _petDisplay;
         internal bool _exiting;
         private int _scalePercent = 100;
         private KeyboardInputEventArgs _latestKeyboardEvent;
@@ -114,6 +115,8 @@ namespace PennyPet
                 RestoreAmbientBubble, null, _windowLayers);
 
             _settings = preloadedSettings ?? PetSettings.Load();
+            _petDisplay = new PetDisplayRuntime(this, _settings,
+                CurrentTopologySnapshot, DisplayDiagnostics.Trace);
             _weatherSource = new PetWeatherSource();
             _conversation = new ConversationRuntime(_settings,
                 _weatherSource.GetForecastAsync, ShowConversationMessage);
@@ -278,7 +281,7 @@ namespace PennyPet
 
             Shown += delegate
             {
-                InitializePetDisplayPlacement();
+                _petDisplay.Initialize();
                 _stickyWorkspace.RefreshNoteTabs();
 
                 RenderCurrentFrame();
@@ -308,7 +311,7 @@ namespace PennyPet
 
         protected override void OnDpiChanged(DpiChangedEventArgs e)
         {
-            if (e == null || IsDisposed || Disposing)
+            if (e == null || IsDisposed || Disposing || _petDisplay == null)
             {
                 base.OnDpiChanged(e);
                 return;
@@ -368,18 +371,7 @@ namespace PennyPet
                             oldTopLeft, oldCursor, newCursor,
                             oldDpi, actualDpi);
 
-                    bool previousProgrammatic =
-                        _petProgrammaticPlacement;
-                    _petProgrammaticPlacement = true;
-                    try
-                    {
-                        TrySetPetTopLeft(rebased.X, rebased.Y);
-                    }
-                    finally
-                    {
-                        _petProgrammaticPlacement =
-                            previousProgrammatic;
-                    }
+                    _petDisplay.MoveForDpiHandoff(rebased.X, rebased.Y);
 
                     WindowFacts afterRebase =
                         CapturePetWindowFacts(topology);
@@ -414,7 +406,6 @@ namespace PennyPet
                     " topology=" +
                     (topology == null ? -1 : topology.Generation) +
                     " drag=" + (activeDrag ? "1" : "0"));
-                if (facts != null) _petEffectiveFacts = facts;
             }
             finally
             {
@@ -495,7 +486,7 @@ namespace PennyPet
             _stickyWorkspace.Host.SetCurrentTopology(snapshot);
 
             // Pet is upstream of SideTabs and is also fallback context for Sticky.
-            ReconcilePetDisplayPlacement(snapshot, reason);
+            _petDisplay.Reconcile(snapshot, reason);
 
             _stickyWorkspace.HandleStickyTopologyChanged(snapshot);
 
@@ -589,17 +580,18 @@ namespace PennyPet
 
         private bool IsVisible(Point location)
         {
-            return IsPetVisibleInTopology(location, ClientSize, CurrentTopologySnapshot());
+            return _petDisplay.IsVisible(new PhysicalRect(location.X, location.Y,
+                ClientSize.Width, ClientSize.Height), CurrentTopologySnapshot());
         }
 
         private void EnsureVisible()
         {
-            EnsurePetVisibleOnCurrentTopology();
+            _petDisplay.EnsureVisible();
         }
 
         private void KeepFullyVisible()
         {
-            KeepPetFullyVisibleOnCurrentSurface();
+            _petDisplay.KeepFullyVisible();
         }
 
         private void SaveLocation()
@@ -610,13 +602,7 @@ namespace PennyPet
 
         private void CaptureLocationForSave()
         {
-            // Compatibility-only physical fallback.
-            // Durable PetPreferred* is committed only from actual facts at an
-            // explicit user placement or one-time initial migration/default.
-            _settings.HasLocation = true;
-            _settings.X = Left;
-            _settings.Y = Top;
-            _settings.ScalePercent = _scalePercent;
+            _petDisplay.CaptureForSave();
         }
 
     }
