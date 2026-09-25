@@ -858,7 +858,6 @@ namespace PennyPet
                 else if (value.Kind == StickyUiEventKind.HeaderDragMoved)
                 {
                     Dock.MoveStickyDockDrag(facts, value.Facts, value.Topology);
-                    ApplyNoteTabZOrder();
                 }
                 else
                 {
@@ -869,7 +868,6 @@ namespace PennyPet
             if (value.Kind == StickyUiEventKind.BoundsChanged)
             {
                 ApplyHostedStickyEvent(value, false);
-                ApplyNoteTabZOrder();
                 return;
             }
             if (value.Kind == StickyUiEventKind.DockDividerResizeStarted ||
