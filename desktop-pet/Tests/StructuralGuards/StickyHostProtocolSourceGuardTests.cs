@@ -107,7 +107,7 @@ namespace PennyPet.Tests
                     "Hosted.SetInputFocus(value.NoteId, value.Flag)"),
                 "Sticky STA must asynchronously report a plain focus flag.");
             Assert.IsTrue(overlay.Contains(
-                    "ShouldSuppressOwnApplicationInput(focusSnapshot)") &&
+                    "ShouldSuppressOwnApplicationInput(input.FocusSnapshot)") &&
                 overlay.Contains("HasFocusedOwnNoteTextInput() ||") &&
                 overlay.Contains("_windowLayers.HasActiveModal") &&
                 overlay.Contains("focusSnapshot.ProcessId ==") &&

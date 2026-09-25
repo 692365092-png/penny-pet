@@ -154,3 +154,5 @@ Deterministic worker/policy tests cover unsupported password properties, same-ho
 Platform references: [Microsoft UIA threading](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-threading) requires non-UI MTA use; [EM_SETPASSWORDCHAR](https://learn.microsoft.com/en-us/windows/win32/controls/em-setpasswordchar) documents native password style behavior. Native classification is used for control correlation, never as the sole privacy verdict.
 
 R16 CI #76 rejected the linked .NET 8 test runtime because SetApartmentState is Windows-only (CA1416). The follow-up adds an OS guard for the cross-platform test target; the net48 Windows product continues to set MTA explicitly.
+
+R16 CI #77 compiled and passed 657 of 658 tests, including all new worker/privacy cases. One existing source guard still expected the removed worker-local `focusSnapshot` variable; it now checks the validated delivery input while retaining the own-process/modal policy assertions.
