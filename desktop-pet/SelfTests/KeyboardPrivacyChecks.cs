@@ -17,18 +17,8 @@ namespace PennyPet
             IntPtr instance, IntPtr parameter);
         [DllImport("user32.dll")]
         private static extern IntPtr SetFocus(IntPtr window);
-        [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool SetForegroundWindow(IntPtr window);
-        [DllImport("user32.dll")]
-        private static extern IntPtr SetActiveWindow(IntPtr window);
-
-        private static void FocusNativePrivacyFixture(IntPtr topLevel, IntPtr control)
+        private static void FocusNativePrivacyFixture(IntPtr control)
         {
-            // CI may already own another test window on this desktop. CaptureCheap intentionally
-            // follows the foreground thread, so make this fixture the foreground/active window
-            // before assigning child focus instead of weakening production correlation.
-            SetForegroundWindow(topLevel);
-            SetActiveWindow(topLevel);
             SetFocus(control);
             WF.Application.DoEvents();
         }
@@ -47,17 +37,17 @@ namespace PennyPet
                     IntPtr password = CreateWindowEx(0, "Edit", "", 0x50000020,
                         10, 50, 180, 24, host.Handle, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
                     Pc2Assert(plain != IntPtr.Zero && password != IntPtr.Zero, "create native Edit fixtures");
-                    FocusNativePrivacyFixture(host.Handle, plain);
-                    var first = KeyboardFocusSnapshot.CaptureCheap();
+                    FocusNativePrivacyFixture(plain);
+                    var first = KeyboardFocusSnapshot.CaptureForForegroundWindow(host.Handle);
                     Pc2Assert(first.FocusedWindow == plain && first.HasNativeInputIdentity,
                         "native Edit identity: expected=" + plain + " focused=" + first.FocusedWindow +
                         " foreground=" + first.ForegroundWindow + " host=" + host.Handle +
                         " proof=" + first.HasNativeInputIdentity + " version=" + first.FocusVersion);
-                    FocusNativePrivacyFixture(host.Handle, password);
-                    var secret = KeyboardFocusSnapshot.CaptureCheap();
+                    FocusNativePrivacyFixture(password);
+                    var secret = KeyboardFocusSnapshot.CaptureForForegroundWindow(host.Handle);
                     Pc2Assert(secret.FocusedWindow == password && !secret.HasNativeInputIdentity,
                         "password Edit is rejected before formatting a keyboard label");
-                    FocusNativePrivacyFixture(host.Handle, plain);
+                    FocusNativePrivacyFixture(plain);
                     Pc2Assert(!KeyboardFocusSnapshot.IsSameNativeInput(first, KeyboardFocusSnapshot.CaptureCheap()),
                         "leaving and returning to the same HWND cannot revive a previous result");
                     host.Close(); // destroys both native child windows
@@ -73,13 +63,12 @@ namespace PennyPet
                 {
                     window.Show(); window.Activate(); WF.Application.DoEvents();
                     IntPtr wpfHwnd = new WindowInteropHelper(window).Handle;
-                    SetForegroundWindow(wpfHwnd); SetActiveWindow(wpfHwnd);
                     text.Focus(); Keyboard.Focus(text); WF.Application.DoEvents();
-                    var ordinary = KeyboardFocusSnapshot.CaptureCheap();
+                    var ordinary = KeyboardFocusSnapshot.CaptureForForegroundWindow(wpfHwnd);
                     passwordBox.Focus(); Keyboard.Focus(passwordBox); WF.Application.DoEvents();
-                    var secret = KeyboardFocusSnapshot.CaptureCheap();
+                    var secret = KeyboardFocusSnapshot.CaptureForForegroundWindow(wpfHwnd);
                     text.Focus(); Keyboard.Focus(text); WF.Application.DoEvents();
-                    var returned = KeyboardFocusSnapshot.CaptureCheap();
+                    var returned = KeyboardFocusSnapshot.CaptureForForegroundWindow(wpfHwnd);
                     Pc2Assert(ordinary.IsComplete && secret.IsComplete && returned.IsComplete &&
                         ordinary.FocusedWindow == secret.FocusedWindow && !ordinary.HasNativeInputIdentity &&
                         !secret.HasNativeInputIdentity && !returned.HasNativeInputIdentity,

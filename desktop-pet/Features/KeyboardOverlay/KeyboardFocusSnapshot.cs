@@ -40,9 +40,16 @@ namespace PennyPet
 
         internal static KeyboardFocusSnapshot CaptureCheap()
         {
+            return CaptureForForegroundWindow(GetForegroundWindow());
+        }
+
+        // Capture the focused control from the GUI thread that owns a known top-level
+        // window. Production always supplies GetForegroundWindow(); native QA supplies
+        // its own host HWND so hosted CI does not need permission to steal OS foreground.
+        internal static KeyboardFocusSnapshot CaptureForForegroundWindow(IntPtr foreground)
+        {
             long version = KeyboardFocusMonitor.Version;
             long capturedAt = Stopwatch.GetTimestamp();
-            IntPtr foreground = GetForegroundWindow();
             uint processId;
             uint threadId = GetWindowThreadProcessId(foreground, out processId);
             var info = new GuiThreadInfo { cbSize = Marshal.SizeOf(typeof(GuiThreadInfo)) };
