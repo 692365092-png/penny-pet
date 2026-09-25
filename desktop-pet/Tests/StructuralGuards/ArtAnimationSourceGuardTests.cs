@@ -83,11 +83,16 @@ namespace PennyPet.Tests
                 save.IndexOf("Model.CaptureSnapshot()",
                     StringComparison.Ordinal),
                 "A blocked repository must reject save before snapshot generation.");
-            Assert.IsTrue(pet.Contains("if (_notes.IsFutureSchemaBlocked)") &&
-                pet.Contains("throw _notes.FutureSchemaError;") &&
-                host.Contains("catch (UnsupportedStickySchemaException error)") &&
-                host.Contains("BuildFutureSchemaBlockedMessage(error)"),
-                "Startup must show the dedicated message and exit before Pet UI continues.");
+            string composition = ReadSource("PetRuntimeComposition.cs");
+            Assert.IsTrue(repository.Contains("PreparedFutureSchemaError(") &&
+                host.Contains(
+                    "StickyFeature.PreparedFutureSchemaError(prepared)") &&
+                host.Contains("BuildFutureSchemaBlockedMessage(future)") &&
+                host.Contains("pet.AbortStartupComposition()") &&
+                composition.Contains(
+                    "StickyFeature.PreparedFutureSchemaError(prepared)") &&
+                composition.Contains("if (future != null) throw future;"),
+                "Background preparation must detect future schema before runtime publication, show the dedicated message and close without overwriting the blocked store.");
         }
 
         [TestMethod]

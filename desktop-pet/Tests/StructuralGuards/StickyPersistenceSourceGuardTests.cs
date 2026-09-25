@@ -122,14 +122,16 @@ namespace PennyPet.Tests
         public void R17_PersistenceRetryOwnership_IsOutsidePetForm()
         {
             string form = ReadSource("PetForm.cs");
+            string composition = ReadSource("PetRuntimeComposition.cs");
             string coordinator = ReadSource(
                 "Features/StickyNotes/PetPersistenceCoordinator.cs");
             string runtime = ReadSource(
                 "Infrastructure/Persistence/PetPersistenceRuntime.cs");
 
-            Assert.IsTrue(form.Contains("new PetPersistenceRuntime(") &&
-                form.Contains("_persistence.Notice += PersistenceNoticeReceived"),
-                "Pet composition should create one application persistence runtime.");
+            Assert.IsTrue(composition.Contains("new PetPersistenceRuntime(") &&
+                composition.Contains(
+                    "_persistence.Notice += PersistenceNoticeReceived"),
+                "Runtime composition should create one application persistence runtime after Sticky publication.");
             Assert.IsFalse(form.Contains("_persistenceRetryTimer") ||
                 form.Contains("RetryUnsavedPersistence") ||
                 form.Contains("SaveFailed += PersistenceSaveFailed"),
