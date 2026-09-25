@@ -8,11 +8,11 @@ namespace PennyPet.Tests
     public sealed class PetDisplayRuntimeTests
     {
         private static DisplaySurfaceSnapshot Surface(string id, int left = 0,
-            bool durable = true, int workHeight = 1040)
+            bool durable = true, int workHeight = 1040, bool primary = true)
         {
             return new DisplaySurfaceSnapshot(id, id,
                 new PhysicalRect(left, -200, 1920, 1080),
-                new PhysicalRect(left, -200, 1920, workHeight), true, 0,
+                new PhysicalRect(left, -200, 1920, workHeight), primary, 0,
                 new[] { new DisplayTargetIdentity("mdp:" + id, durable, "", "", 0, 0, 0) });
         }
 
@@ -104,7 +104,7 @@ namespace PennyPet.Tests
         [TestMethod]
         public void UnplugAndReturn_PreservesPreferredPointThroughTemporaryRehome()
         {
-            using (var s = new Scene(Surface("a", -1920), Surface("b")))
+            using (var s = new Scene(Surface("a", -1920, primary: false), Surface("b")))
             {
                 s.Runtime.Initialize();
                 s.SetTopology(Surface("b"));
@@ -113,7 +113,7 @@ namespace PennyPet.Tests
                 Assert.AreEqual("b", s.Runtime.EffectiveFacts.RuntimeGdiName);
                 Assert.AreEqual("mdp:a", s.Settings.PetPreferredTargetKey);
                 Assert.AreEqual(100, s.Settings.PetPreferredLocalLogicalX);
-                s.SetTopology(Surface("a", -1920), Surface("b"));
+                s.SetTopology(Surface("a", -1920, primary: false), Surface("b"));
                 s.Runtime.Reconcile(s.Topology, "return");
                 Assert.AreEqual(-1820, s.Window.Bounds.Left);
                 Assert.IsFalse(s.Runtime.IsTemporarilyRehomed);
@@ -130,7 +130,7 @@ namespace PennyPet.Tests
                 Assert.IsTrue(s.Runtime.IsTemporarilyRehomed);
                 s.Window.MoveTopLeft(240, 150);
                 Assert.IsFalse(s.Runtime.CommitUserPlacement());
-                s.SetTopology(Surface("a", -1920), Surface("b", durable: false));
+                s.SetTopology(Surface("a", -1920, primary: false), Surface("b", durable: false));
                 s.Runtime.Reconcile(s.Topology, "return");
                 Assert.AreEqual(240, s.Window.Bounds.Left);
                 Assert.AreEqual("mdp:a", s.Settings.PetPreferredTargetKey);
