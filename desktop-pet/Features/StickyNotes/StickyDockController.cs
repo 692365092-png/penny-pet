@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Text;
 using System.Threading;
-using System.Windows.Forms;
 
 namespace PennyPet
 {
@@ -57,10 +56,6 @@ namespace PennyPet
         // messages can address reliably. This is a Windows platform limit, not
         // a Penny business rule, so Core receives it as a parameter.
         private const int DockCoordinateSafetyLimit = 30000;
-        private string _dockPreviewParentNoteId;
-        private string _dockPreviewChildNoteId;
-        private DockPulseIndicatorForm _dockPreviewIndicator;
-        private DockPulseIndicatorForm _splitGuideIndicator;
         private bool _movingDockGroup;
         private bool _synchronizingDockLayout;
         internal readonly DockGestureOwner Gestures = new DockGestureOwner();
@@ -1133,34 +1128,31 @@ namespace PennyPet
             if (source == null) return;
             DockWindowFacts parentFacts;
             Rectangle seam = factsById != null &&
-                factsById.TryGetValue(FindVisibleDockParentId(source), out parentFacts)
-                ? CalculateDockVisualSeam(parentFacts) :
-                Rectangle.Empty;
-            if (seam.IsEmpty) return;
-            _splitGuideIndicator = new DockPulseIndicatorForm(
-                Color.FromArgb(255, 151, 62), 0);
-            _splitGuideIndicator.ShowSeam(seam);
+                factsById.TryGetValue(
+                    FindVisibleDockParentId(source), out parentFacts)
+                ? CalculateDockVisualSeam(parentFacts)
+                : Rectangle.Empty;
+            if (!seam.IsEmpty)
+                _workspace.Host.ShowSplitGuide(seam);
         }
 
         private void UpdateSplitGuide(StickyNoteData source,
             IReadOnlyDictionary<string, DockWindowFacts> factsById)
         {
-            if (_splitGuideIndicator == null ||
-                _splitGuideIndicator.IsDisposed || source == null) return;
+            if (source == null) return;
             DockWindowFacts parentFacts;
             Rectangle seam = factsById != null &&
-                factsById.TryGetValue(FindVisibleDockParentId(source), out parentFacts)
-                ? CalculateDockVisualSeam(parentFacts) :
-                Rectangle.Empty;
-            if (!seam.IsEmpty) _splitGuideIndicator.UpdateSeam(seam);
+                factsById.TryGetValue(
+                    FindVisibleDockParentId(source), out parentFacts)
+                ? CalculateDockVisualSeam(parentFacts)
+                : Rectangle.Empty;
+            if (!seam.IsEmpty)
+                _workspace.Host.UpdateSplitGuide(seam);
         }
 
         internal void ClearSplitGuide()
         {
-            if (_splitGuideIndicator != null &&
-                !_splitGuideIndicator.IsDisposed)
-                _splitGuideIndicator.Close();
-            _splitGuideIndicator = null;
+            _workspace.Host.ClearSplitGuide();
         }
 
         private void UpdateDockPreview(StickyNoteData source,
@@ -1171,23 +1163,16 @@ namespace PennyPet
                 _workspace.Notes.Find(target.ParentNoteId);
             StickyNoteData child = target == null ? null :
                 _workspace.Notes.Find(target.ExistingChildNoteId);
-            if (String.Equals(parent == null ? String.Empty : parent.Id,
-                _dockPreviewParentNoteId ?? String.Empty,
-                StringComparison.OrdinalIgnoreCase) &&
-                String.Equals(child == null ? String.Empty : child.Id,
-                _dockPreviewChildNoteId ?? String.Empty,
-                StringComparison.OrdinalIgnoreCase)) return;
-            ClearDockPreview();
-            if (parent == null) return;
-            _dockPreviewParentNoteId = parent.Id;
-            _dockPreviewChildNoteId = child == null ? String.Empty : child.Id;
-            _dockPreviewIndicator = new DockPulseIndicatorForm(
-                Color.FromArgb(32, 160, 255), 0);
             DockWindowFacts parentFacts;
-            if (factsById != null && factsById.TryGetValue(parent.Id,
-                out parentFacts))
-                _dockPreviewIndicator.ShowSeam(
-                    CalculateDockVisualSeam(parentFacts));
+            Rectangle seam = parent != null && factsById != null &&
+                factsById.TryGetValue(parent.Id, out parentFacts)
+                ? CalculateDockVisualSeam(parentFacts)
+                : Rectangle.Empty;
+
+            _workspace.Host.UpdateDockPreview(
+                parent == null ? String.Empty : parent.Id,
+                child == null ? String.Empty : child.Id,
+                seam);
         }
 
         internal static Rectangle CalculateDockVisualSeam(
@@ -1254,20 +1239,15 @@ namespace PennyPet
 
         internal void ClearDockPreview()
         {
-            if (_dockPreviewIndicator != null &&
-                !_dockPreviewIndicator.IsDisposed)
-                _dockPreviewIndicator.Close();
-            _dockPreviewParentNoteId = null;
-            _dockPreviewChildNoteId = null;
-            _dockPreviewIndicator = null;
+            _workspace.Host.ClearDockPreview();
         }
 
-        private static void ShowTransientDockPulse(Rectangle seam, Color color)
+        private void ShowTransientDockPulse(
+            Rectangle seam, Color color)
         {
-            DockPulseIndicatorForm indicator = new DockPulseIndicatorForm(
-                color, 720);
-            indicator.ShowSeam(seam);
+            _workspace.Host.ShowTransientDockPulse(seam, color);
         }
+
         private readonly DockRestoreOperations _dockRestores = new DockRestoreOperations();
 
         internal void ExpandAndTileAllStickyNotesToPetScreen()
