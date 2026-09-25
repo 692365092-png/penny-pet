@@ -243,7 +243,7 @@ namespace PennyPet
         private static Bitmap CreateProbeBitmap()
         {
             Bitmap bitmap = new Bitmap(192, 208,
-                PixelFormat.Format32bppPArgb);
+                System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
             using (Graphics graphics = Graphics.FromImage(bitmap))
             {
                 graphics.Clear(System.Drawing.Color.Transparent);
