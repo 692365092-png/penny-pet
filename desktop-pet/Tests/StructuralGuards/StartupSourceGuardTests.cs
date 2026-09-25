@@ -17,12 +17,18 @@ namespace PennyPet.Tests
             string startup = ReadSource("PetStartupCoordinator.cs");
             string feature = ReadSource(
                 "Features/StickyNotes/StickyFeature.cs");
+            string artResources = ReadSource("PennyPet.ArtResources.targets");
+            string selfTests = ReadSource("SelfTestRunner.cs");
+            string releaseSmoke = ReadSource("test-release.ps1");
 
             Assert.IsFalse(host.Contains("StartupLoadingThreadHost") ||
                 host.Contains("loading.Start(") ||
                 host.Contains("loading.BringToFront(") ||
-                host.Contains("WaitOne("),
-                "Application startup must not hide Pet construction behind a third STA or manual ready wait.");
+                host.Contains("WaitOne(") ||
+                artResources.Contains("PennyPet.Startup.Loading") ||
+                selfTests.Contains("StartupLoading") ||
+                releaseSmoke.Contains("PennyPet.Startup.Loading"),
+                "The retired loading STA, loading visual/resource and its validation contract must not remain in the product pipeline.");
             Assert.IsTrue(host.Contains("pet.ShellReady += delegate") &&
                 host.Contains("Task.Run(delegate") &&
                 host.Contains("StickyFeature.PrepareLoad()") &&
