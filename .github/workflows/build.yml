@@ -103,6 +103,48 @@ jobs:
           dotnet run --project $project --configuration Release -- $report
           if ($LASTEXITCODE -ne 0) { throw "Managed Dock baseline failed." }
 
+      - name: Record render cost experiment
+        shell: powershell
+        run: |
+          $project = Join-Path $env:GITHUB_WORKSPACE `
+            "docs\architecture-review\render-cost-benchmark\RenderCostBenchmark.csproj"
+          dotnet build $project --configuration Release
+          if ($LASTEXITCODE -ne 0) { throw "Render-cost benchmark failed to build." }
+
+          $exe = Join-Path $env:GITHUB_WORKSPACE `
+            "docs\architecture-review\render-cost-benchmark\bin\Release\net48\PennyPet.RenderCostBenchmark.exe"
+          $defaultReport = Join-Path $env:RUNNER_TEMP "penny-render-default.json"
+          $softwareReport = Join-Path $env:RUNNER_TEMP "penny-render-software.json"
+          $combinedReport = Join-Path $env:RUNNER_TEMP "penny-render-cost.json"
+
+          & $exe "default" $defaultReport
+          $defaultExit = $LASTEXITCODE
+          & $exe "software" $softwareReport
+          $softwareExit = $LASTEXITCODE
+
+          if (Test-Path $defaultReport) {
+            $default = Get-Content -LiteralPath $defaultReport -Raw | ConvertFrom-Json
+          } else {
+            $default = [ordered]@{ ok = $false; error = "default probe did not produce a report" }
+          }
+          if (Test-Path $softwareReport) {
+            $software = Get-Content -LiteralPath $softwareReport -Raw | ConvertFrom-Json
+          } else {
+            $software = [ordered]@{ ok = $false; error = "software probe did not produce a report" }
+          }
+
+          $combined = [ordered]@{
+            observational = $true
+            environment = "windows-2022 hosted runner"
+            defaultExitCode = $defaultExit
+            softwareExitCode = $softwareExit
+            default = $default
+            software = $software
+          }
+          $json = $combined | ConvertTo-Json -Depth 8
+          Set-Content -LiteralPath $combinedReport -Value $json -Encoding UTF8
+          Write-Host $json
+
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -113,6 +155,9 @@ jobs:
             ${{ runner.temp }}/penny-release-smoke.json
             ${{ runner.temp }}/penny-dock-baseline.json
             ${{ runner.temp }}/penny-art-validation.json
+            ${{ runner.temp }}/penny-render-cost.json
+            ${{ runner.temp }}/penny-render-default.json
+            ${{ runner.temp }}/penny-render-software.json
           if-no-files-found: warn
           retention-days: 14
 

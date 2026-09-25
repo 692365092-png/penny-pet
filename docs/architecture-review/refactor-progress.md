@@ -182,3 +182,9 @@ Startup restore no longer measures a 6 ms stopwatch on Pet STA while merely post
 Normal interactive commands, Dock frame transport and restore semantics are unchanged. The dedicated path is startup-only: it prevents a fast producer from disguising an arbitrarily expensive WPF burst behind cheap cross-thread posts, without introducing a general scheduler. First-render acknowledgements still gate startup readiness.
 
 R18 passed Windows CI #92 on `1bc550c`: build, all 663 discoverable tests, modular native self-tests, formal single-file EXE smoke, managed Dock baseline and release artifacts.
+
+## R19 — render-cost experiment, measurement first
+
+R19 is conditional by design. Production rendering is unchanged in this checkpoint: the global WPF SoftwareOnly setting remains, and LayeredSpriteRenderer still uses its existing per-call HBITMAP/DC lifetime. A standalone Windows benchmark links the production layered renderer and records same-machine default-vs-software transparent WPF work plus repeated UpdateLayeredWindow wall/CPU time, memory and GUI-handle deltas.
+
+The CI report is observational and has no arbitrary performance threshold. Hosted Windows results cannot establish mixed-DPI, GPU/driver or Remote Desktop visual correctness, so they are evidence for whether a deeper experiment is justified, not permission to replace the renderer by themselves. Windows CI measurement pending.
