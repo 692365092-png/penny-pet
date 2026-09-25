@@ -1,4 +1,6 @@
 using System;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -8,6 +10,13 @@ namespace PennyPet
 {
     internal static partial class SelfTest
     {
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr CreateWindowEx(uint extendedStyle, string className, string title,
+            uint style, int x, int y, int width, int height, IntPtr parent, IntPtr menu,
+            IntPtr instance, IntPtr parameter);
+        [DllImport("user32.dll")]
+        private static extern IntPtr SetFocus(IntPtr window);
+
         private static bool RunKeyboardPrivacyNativeChecks()
         {
             using (var monitor = new KeyboardFocusMonitor(() => { }))
@@ -15,22 +24,27 @@ namespace PennyPet
                 monitor.Start();
                 Pc2Assert(KeyboardFocusMonitor.IsRunning, "focus monitoring must be available in native QA");
                 using (var host = new WF.Form())
-                using (var plain = new WF.TextBox())
-                using (var password = new WF.TextBox { UseSystemPasswordChar = true, Top = 40 })
                 {
-                    host.Controls.Add(plain); host.Controls.Add(password);
-                    host.Show(); host.Activate(); plain.Focus(); WF.Application.DoEvents();
+                    host.Show(); host.Activate();
+                    IntPtr plain = CreateWindowEx(0, "Edit", "", 0x50000000,
+                        10, 10, 180, 24, host.Handle, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+                    IntPtr password = CreateWindowEx(0, "Edit", "", 0x50000020,
+                        10, 50, 180, 24, host.Handle, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+                    Pc2Assert(plain != IntPtr.Zero && password != IntPtr.Zero, "create native Edit fixtures");
+                    SetFocus(plain); WF.Application.DoEvents();
                     var first = KeyboardFocusSnapshot.CaptureCheap();
-                    Pc2Assert(first.FocusedWindow == plain.Handle && first.HasNativeInputIdentity,
-                        "standard native edit supplies an event-time control identity");
-                    password.Focus(); WF.Application.DoEvents();
+                    Pc2Assert(first.FocusedWindow == plain && first.HasNativeInputIdentity,
+                        "native Edit identity: expected=" + plain + " focused=" + first.FocusedWindow +
+                        " foreground=" + first.ForegroundWindow + " host=" + host.Handle +
+                        " proof=" + first.HasNativeInputIdentity + " version=" + first.FocusVersion);
+                    SetFocus(password); WF.Application.DoEvents();
                     var secret = KeyboardFocusSnapshot.CaptureCheap();
-                    Pc2Assert(secret.FocusedWindow == password.Handle && !secret.HasNativeInputIdentity,
-                        "password edit is rejected before formatting a keyboard label");
-                    plain.Focus(); WF.Application.DoEvents();
+                    Pc2Assert(secret.FocusedWindow == password && !secret.HasNativeInputIdentity,
+                        "password Edit is rejected before formatting a keyboard label");
+                    SetFocus(plain); WF.Application.DoEvents();
                     Pc2Assert(!KeyboardFocusSnapshot.IsSameNativeInput(first, KeyboardFocusSnapshot.CaptureCheap()),
                         "leaving and returning to the same HWND cannot revive a previous result");
-                    host.Close();
+                    host.Close(); // destroys both native child windows
                 }
                 // WPF TextBox and PasswordBox have the same owning HWND: neither
                 // is granted a native input identity, even when the later UIA target is safe.

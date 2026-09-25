@@ -149,10 +149,12 @@ One dedicated background MTA thread performs inspection without windows. There i
 
 This intentionally narrows compatibility: browser/WPF/self-drawn inputs sharing an HWND are not sufficiently attributable at hook time, so they retain typing animation but suppress key labels. Adding an asynchronous focus cache would not prove which virtual control received an earlier key. The existing first-use explanation and menu text reflect suppression when uncertain.
 
-Deterministic worker/policy tests cover unsupported password properties, same-host identity ambiguity, focus changes after dispatch, disable/re-enable, exit, deadlines, provider errors and 1,000 replacements while inspection is blocked. Native tests exercise actual WinForms password/plain HWND transitions and WPF TextBox/PasswordBox sharing an HWND. Windows CI is required; no real third-party browser/provider penetration test or measured hook latency is claimed.
+Deterministic worker/policy tests cover unsupported password properties, same-host identity ambiguity, focus changes after dispatch, disable/re-enable, exit, deadlines, provider errors and 1,000 replacements while inspection is blocked. Native tests exercise actual native Win32 Edit password/plain HWND transitions and WPF TextBox/PasswordBox sharing an HWND. Windows CI is required; no real third-party browser/provider penetration test or measured hook latency is claimed.
 
 Platform references: [Microsoft UIA threading](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-threading) requires non-UI MTA use; [EM_SETPASSWORDCHAR](https://learn.microsoft.com/en-us/windows/win32/controls/em-setpasswordchar) documents native password style behavior. Native classification is used for control correlation, never as the sole privacy verdict.
 
 R16 CI #76 rejected the linked .NET 8 test runtime because SetApartmentState is Windows-only (CA1416). The follow-up adds an OS guard for the cross-platform test target; the net48 Windows product continues to set MTA explicitly.
 
 R16 CI #77 compiled and passed 657 of 658 tests, including all new worker/privacy cases. One existing source guard still expected the removed worker-local `focusSnapshot` variable; it now checks the validated delivery input while retaining the own-process/modal policy assertions.
+
+R16 CI #78 passed all 658 tests; native QA rejected the WinForms wrapper fixture at the event-time identity assertion. The follow-up creates explicit Win32 Edit child windows, records non-content HWND diagnostics on assertion failure, and uses GetClassName exact registered classes in production. Superclass aliases remain unknown instead of relying on an underlying-type query inside the hook.

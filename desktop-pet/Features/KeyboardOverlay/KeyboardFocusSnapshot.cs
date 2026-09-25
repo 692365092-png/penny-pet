@@ -53,9 +53,9 @@ namespace PennyPet
                 var name = new StringBuilder(128);
                 uint focusedProcess;
                 uint focusedThread = GetWindowThreadProcessId(focused, out focusedProcess);
-                // RealGetWindowClass recognizes standard controls even when WinForms subclasses them.
-                // These calls read native metadata, never a provider, control text or SendMessage.
-                uint length = RealGetWindowClass(focused, name, (uint)name.Capacity);
+                // Accept only an exact registered native edit class. Superclass aliases
+                // stay unknown; do not ask another window to identify its underlying type.
+                int length = GetClassName(focused, name, name.Capacity);
                 int style = GetWindowLong(focused, -16);
                 plain = length > 0 && IsNativeEditClass(name.ToString()) && style != 0 &&
                     (style & 0x0020) == 0 && focusedProcess == processId && focusedThread == threadId;
@@ -107,7 +107,7 @@ namespace PennyPet
         [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool GetGUIThreadInfo(uint threadId, ref GuiThreadInfo info);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-        private static extern uint RealGetWindowClass(IntPtr window, StringBuilder name, uint length);
+        private static extern int GetClassName(IntPtr window, StringBuilder name, int length);
         [DllImport("user32.dll", EntryPoint = "GetWindowLongW")]
         private static extern int GetWindowLong(IntPtr window, int index);
     }
