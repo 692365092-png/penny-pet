@@ -223,14 +223,7 @@ namespace PennyPet
         }
 
         private void ClearListSelections()
-        {
-            bool todoChanged = _selectedTodo != null;
-            bool scheduleChanged = _selectedSchedule != null;
-            _selectedTodo = null;
-            _selectedSchedule = null;
-            if (todoChanged) RefreshTodoRowColors();
-            if (scheduleChanged) RefreshScheduleRowColors();
-        }
+        { _contentView.ClearSelection(); }
 
         private IntPtr WindowHook(IntPtr hwnd, int message, IntPtr wParam,
             IntPtr lParam, ref bool handled)

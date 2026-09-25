@@ -122,3 +122,16 @@ Captures publish only against the exact current snapshot and a newer window sequ
 Fourteen new deterministic runtime cases cover 96/120/144/192 DPI at a negative origin, unplug/return without preference loss, user placement on durable and ephemeral surfaces, topology changes during drag/capture/scaling, nested capture and programmatic movement, invalid facts, work-area clamping and compatibility-only save. Architecture guards enforce the native adapter boundary. The existing native scene fixture now constructs the runtime explicitly. Windows CI is required; local .NET SDK and a physical mixed-DPI Windows desktop are unavailable. These checks do not claim measured drag latency or manual hotplug/visual validation.
 
 R14 [CI #73](https://github.com/692365092-png/penny-pet/actions/runs/36076537966) compiled successfully. Two new multi-display fixtures incorrectly marked both surfaces primary and were rejected by topology validation. The follow-up explicitly marks the secondary surface; production code is unchanged.
+
+
+R14 passed [Windows CI #74](https://github.com/692365092-png/penny-pet/actions/runs/36076763441) on `c95caac`: all 634 discoverable tests, native self-tests, single-file EXE smoke and artifact upload.
+
+## R15 — one content view per sticky window
+
+The shell creates one fixed-type content object: ordinary text, todo or schedule. RichTextBox, font-family choices, selection/typing-format state, composition handlers and link refresh belong only to the text view. Todo owns its row editors, completion/pin/order actions and selected row; schedule owns its list, date dialogs and minute refresh timer. List views share only their compact size selector and creation buttons. The unattached hidden todo input and inactive editor trees are removed. Shell keeps title, native geometry, persistence scheduling and common chrome.
+
+Reminder controls are created on the first nonempty projection and updated independently of the body. The shared reminder semantics remain unchanged. Font preview/countdown updates retain the existing current view and keyboard target. Closing disposes the selected view and stops its timer; queued input callbacks retain their existing disposed-window checks.
+
+All `Exercise...ForTest` scripts move from the product window into the Windows integration-test assembly. Tests inspect and operate the real current controls through a test-side driver. Scenarios that formerly changed one window's type now use correctly typed windows; production does not construct hidden controls for tests. New native checks cover control-tree ownership, lazy banners, focus/body stability during reminders, document undo, routed composition signals and timer shutdown. Architecture checks guard allocation and ownership boundaries.
+
+The extraction preserves the existing WPF selection and IME event order. Native synthetic composition checks and multilingual text round trips do not substitute for manual Chinese/Japanese IME candidate-window verification. Windows CI is required; this workspace has no .NET SDK or interactive Windows desktop. No measured startup or input latency improvement is claimed.

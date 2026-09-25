@@ -1729,42 +1729,40 @@ namespace PennyPet
                 result.RichTextToolbarOk =
                     richToolbarNote.HasRichTextFormattingToolbar &&
                     richToolbarNote.HeaderTypeIconVisibleForTest &&
-                    richToolbarNote.ExerciseRichTextFormattingForTest();
+                    new StickyWindowInteractionDriver(richToolbarNote).ExerciseRichTextFormattingForTest();
                 result.SmoothFormatInteractionOk =
-                    richToolbarNote.ExerciseSmoothFormatInteractionForTest();
+                    new StickyWindowInteractionDriver(richToolbarNote).ExerciseSmoothFormatInteractionForTest();
                 result.StableFormatSelectorModelOk =
-                    richToolbarNote.UsesStableListFormatSelectors;
+                    richToolbarNote.UsesStableListFormatSelectors && RunStickyContentViewChecks();
                 result.FormatToolbarFocusOk =
                     richToolbarNote.FormatControlsPreserveSelectionForTest;
                 result.FormatSelectorsAlwaysBlackOk =
                     richToolbarNote.FormatSelectorsAlwaysBlackForTest;
                 result.BodyTextColorSwitchOk =
-                    richToolbarNote.ExerciseBodyTextColorSwitchForTest();
+                    new StickyWindowInteractionDriver(richToolbarNote).ExerciseBodyTextColorSwitchForTest();
                 result.DockResizeRoleOk =
-                    richToolbarNote.ExerciseDockResizeRoleForTest();
+                    new StickyWindowInteractionDriver(richToolbarNote).ExerciseDockResizeRoleForTest();
                 result.NativeWindowStyleAppliedOk =
                     richToolbarNote.NativeMaximizeStyleDisabledForTest;
                 result.GroupTopMostSyncOk =
-                    richToolbarNote.ExerciseGroupTopMostForTest();
+                    new StickyWindowInteractionDriver(richToolbarNote).ExerciseGroupTopMostForTest();
                 result.MultilingualInputOk =
-                    richToolbarNote.ExerciseMultilingualInputForTest();
-                result.TabSwitchContentPreservedOk = richToolbarNote
-                    .ExerciseReminderSwitchContentPreservationForTest();
+                    new StickyWindowInteractionDriver(richToolbarNote).ExerciseMultilingualInputForTest();
+                result.TabSwitchContentPreservedOk = new StickyWindowInteractionDriver(richToolbarNote).ExerciseReminderSwitchContentPreservationForTest();
             }
 
             using (StickyNoteWindow firstFormatNote =
                 new StickyNoteWindow(new StickyNoteData()))
             {
                 result.FirstFormatCommitOk =
-                    firstFormatNote.ExerciseFirstFormatCommitForTest();
+                    new StickyWindowInteractionDriver(firstFormatNote).ExerciseFirstFormatCommitForTest();
                 result.EmptyNoteFormattingOk =
-                    firstFormatNote.ExerciseEmptyNoteFormattingForTest();
+                    new StickyWindowInteractionDriver(firstFormatNote).ExerciseEmptyNoteFormattingForTest();
                 result.CaretTypingFormatSwitchOk =
-                    firstFormatNote.ExerciseCaretTypingFormatSwitchForTest();
-                result.SingleNativeImeCommitOk = firstFormatNote
-                    .ExerciseSingleNativeImeCommitAfterFormatForTest();
+                    new StickyWindowInteractionDriver(firstFormatNote).ExerciseCaretTypingFormatSwitchForTest();
+                result.SingleNativeImeCommitOk = new StickyWindowInteractionDriver(firstFormatNote).ExerciseSingleNativeImeCommitAfterFormatForTest();
                 result.UnifiedContextMenusOk =
-                    firstFormatNote.ExerciseUnifiedNoteContextMenusForTest();
+                    new StickyWindowInteractionDriver(firstFormatNote).ExerciseUnifiedNoteContextMenusForTest();
             }
             return result;
         }
@@ -1800,11 +1798,11 @@ namespace PennyPet
             result.CompactBannerOk = Math.Abs(
                 note.ReminderBannerFirstFontSize - 24F) < 0.2F;
             result.SelectionActionsOk =
-                note.ExerciseReminderSelectionActionsForTest();
+                new StickyWindowInteractionDriver(note).ExerciseReminderSelectionActionsForTest();
             result.InlineCreationActionsRemovedOk =
-                note.ExerciseInlineCreationActionsRemovedForTest();
+                new StickyWindowInteractionDriver(note).ExerciseInlineCreationActionsRemovedForTest();
             result.FirstClickStableOk =
-                note.ExerciseReminderFirstClickStabilityForTest(
+                new StickyWindowInteractionDriver(note).ExerciseReminderFirstClickStabilityForTest(
                     out result.BlankAreaClearOk,
                     out result.BannerRefreshInPlaceOk);
             return result;
@@ -1846,13 +1844,13 @@ namespace PennyPet
                 new StickyNoteWindow(new StickyNoteData()))
             {
                 result.FixedTypeActionsOk =
-                    todoStressNote.ExerciseFixedNoteTypeActionsForTest();
+                    new StickyWindowInteractionDriver(todoStressNote).ExerciseFixedNoteTypeActionsForTest();
                 result.WrapAndInlineEditOk =
-                    todoStressNote.ExerciseTodoWrapAndInlineEditForTest();
+                    new StickyWindowInteractionDriver(todoStressNote).ExerciseTodoWrapAndInlineEditForTest();
                 result.OverallFontSizeOk =
-                    todoStressNote.ExerciseTodoOverallFontSizeForTest();
+                    new StickyWindowInteractionDriver(todoStressNote).ExerciseTodoOverallFontSizeForTest();
                 result.DedicatedRowContextMenusOk =
-                    todoStressNote.ExerciseDedicatedRowContextMenusForTest();
+                    new StickyWindowInteractionDriver(todoStressNote).ExerciseDedicatedRowContextMenusForTest();
             }
             return result;
         }
@@ -1892,7 +1890,7 @@ namespace PennyPet
             data.IsSchedule = true;
             using (StickyNoteWindow note = new StickyNoteWindow(data))
                 result.PinMarkerToggleOk = note.HeaderTypeIconVisibleForTest &&
-                    note.ExerciseSchedulePinMarkerForTest();
+                    new StickyWindowInteractionDriver(note).ExerciseSchedulePinMarkerForTest();
             return result;
         }
 
@@ -1981,7 +1979,7 @@ namespace PennyPet
             using (StickyNoteWindow note =
                 new StickyNoteWindow(new StickyNoteData()))
                 result.ReminderLiveSizePreviewOk =
-                    note.ExerciseReminderLiveSizePreviewForTest();
+                    new StickyWindowInteractionDriver(note).ExerciseReminderLiveSizePreviewForTest();
             using (NoteTitleDialog dialog = new NoteTitleDialog("周计划"))
             {
                 result.RenameInitialFocusOk = dialog.TitleInputIsInitialActive;
@@ -2488,7 +2486,7 @@ namespace PennyPet
                 "https://www.baidu.com/";
             using (StickyNoteWindow note = new StickyNoteWindow(linkData, true))
                 result.OrdinaryLinkDetectionOk =
-                    note.ExerciseOrdinaryLinkRefreshForTest();
+                    new StickyWindowInteractionDriver(note).ExerciseOrdinaryLinkRefreshForTest();
             return result;
         }
 

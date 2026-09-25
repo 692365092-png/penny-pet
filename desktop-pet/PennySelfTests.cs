@@ -657,10 +657,10 @@ namespace PennyPet
                             }
                             if (caseCount == 0)
                                 appearanceCloseStressOk &=
-                                    note.ExerciseAppearanceCloseStressForTest(20);
+                                    new StickyWindowInteractionDriver(note).ExerciseAppearanceCloseStressForTest(20);
                             editorInteractionOk &= todoMode
-                                ? note.ExerciseTodoWrapAndInlineEditForTest()
-                                : note.ExerciseSmoothFormatInteractionForTest();
+                                ? new StickyWindowInteractionDriver(note).ExerciseTodoWrapAndInlineEditForTest()
+                                : new StickyWindowInteractionDriver(note).ExerciseSmoothFormatInteractionForTest();
                             interactionCount += 5;
                             note.HideNote();
                             closeOk &= !note.Visible;
@@ -731,7 +731,7 @@ namespace PennyPet
                         visible = note.Visible;
                         handleCreated = note.Handle != IntPtr.Zero &&
                             note.LegacyInputProxyHandleForTest == IntPtr.Zero;
-                        editorOk = note.ExerciseSmoothFormatInteractionForTest();
+                        editorOk = new StickyWindowInteractionDriver(note).ExerciseSmoothFormatInteractionForTest();
                         Point moved = new Point(note.Left + 17, note.Top + 13);
                         note.Location = moved;
                         dragPositionOk = note.Location == moved;
@@ -1121,7 +1121,7 @@ namespace PennyPet
                 note.Location = new Point(stage.Left + 28, stage.Top + 95);
                 note.TopMost = true;
                 note.Show();
-                note.OpenAppearanceDialogForTest();
+                new StickyWindowInteractionDriver(note).OpenAppearanceDialogForTest();
                 Application.DoEvents();
                 System.Threading.Thread.Sleep(650);
                 Application.DoEvents();
