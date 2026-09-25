@@ -59,9 +59,10 @@ namespace PennyPet.Tests
                     "StartupWorkPhase.WaitForStickyRuntime") &&
                 startup.Contains(
                     "if (_notes == null || _stickyWorkspace == null") &&
-                startup.Contains("_startupBackgroundReady = true") &&
+                startup.Contains(
+                    "EventHandler backgroundReady = StartupBackgroundReady") &&
                 startup.Contains("EventHandler ready = ShellReady"),
-                "Shell readiness and background Sticky restore completion must be independent states.");
+                "Shell readiness and background Sticky restore completion must be independent event boundaries.");
             Assert.IsFalse(startup.Contains(
                     "!_startupUiReady || !_startupArtReady"),
                 "Sticky first-render completion must not gate the interactive Pet shell.");
