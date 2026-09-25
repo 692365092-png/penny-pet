@@ -85,7 +85,7 @@ namespace PennyPet
             public void RefreshMenu() { }
             public void CloseMenu() { MenuCloses++; }
             public void ShowBubble(string text) { }
-            public void KeepBelowModal(Form window) { }
+            public IntPtr ModalZOrderFloorHandle { get { return IntPtr.Zero; } }
             public bool Confirm(string text, string title) { return false; }
             public void ShowError(string text, string title) { throw new InvalidOperationException(text); }
             public void ShowManager(Func<List<StickyNoteData>> notes, StickyNotesManagerCommands commands,
