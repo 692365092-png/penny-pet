@@ -73,14 +73,8 @@ namespace PennyPet
         internal bool _exiting;
         private int _scalePercent = 100;
         private KeyboardInputEventArgs _latestKeyboardEvent;
-        private int _pendingKeyboardOccurrences;
         private bool _keyboardUiDispatchQueued;
-        private bool _privacyScanRunning;
-        private string _pendingOverlayText = String.Empty;
-        private int _pendingOverlayOccurrences;
-        private int _pendingOverlayVirtualKeyCode;
-        private KeyboardFocusSnapshot _pendingOverlayFocusSnapshot;
-        private long _pendingOverlayGeneration;
+        private readonly KeyboardPrivacyWorker _keyboardPrivacy;
         private System.Windows.Forms.Timer _startupWorkTimer;
         private StartupWorkPhase _startupWorkPhase;
         private Queue<StickyNoteData> _startupVisibleNotes;
@@ -271,6 +265,13 @@ namespace PennyPet
             _windowLayers.LayerChanged += PetWindowLayerChanged;
             _keyboard = new GlobalKeyboardActivity();
             _keyboard.Activity += KeyboardActivity;
+            _keyboard.FocusChanged += KeyboardFocusChanged;
+            _keyboardPrivacy = new KeyboardPrivacyWorker(
+                snapshot => !SensitiveInputDetector.IsSensitiveFocus(snapshot),
+                snapshot => snapshot.StillMatchesCurrentTarget(),
+                action => BeginInvoke((MethodInvoker)(() => action())),
+                PublishCheckedKeyboardInput);
+            _keyboardPrivacy.SetEnabled(_settings.ShowKeyOverlay);
             RefreshKeyboardMenuText();
             _displayTopologyRuntime = new DisplayTopologyRuntime(
                 delegate { return new WindowsDisplayTopologyProvider().Capture(); });
@@ -513,6 +514,9 @@ namespace PennyPet
             }
             _notes.SaveFailed -= PersistenceSaveFailed;
             _settings.SaveFailed -= PersistenceSaveFailed;
+            _keyboardPrivacy.Dispose();
+            _keyboard.FocusChanged -= KeyboardFocusChanged;
+            _keyboard.Activity -= KeyboardActivity;
             _keyboard.Dispose();
             _windowLayers.LayerChanged -= PetWindowLayerChanged;
             _keyOverlay.Dispose();

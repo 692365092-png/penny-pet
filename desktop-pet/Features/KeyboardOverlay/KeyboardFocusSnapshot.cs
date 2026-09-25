@@ -1,150 +1,114 @@
 using System;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Windows.Automation;
+using System.Text;
 
 namespace PennyPet
 {
-    // Cheap target identity captured synchronously with a low-level keyboard
-    // event. Privacy inspection may run later, but it is valid only while this
-    // exact window/process/thread/focused HWND remains unchanged. UI Automation
-    // identity is optional and is captured only by the privacy worker.
+    // Only a real native edit HWND gives the cheap hook a control identity.
+    // A browser/WPF host HWND cannot identify its virtual focused descendant.
     internal sealed class KeyboardFocusSnapshot
     {
         private readonly int[] _automationRuntimeId;
+        internal KeyboardFocusSnapshot(IntPtr foregroundWindow, uint processId,
+            uint threadId, IntPtr focusedWindow, int[] automationRuntimeId)
+            : this(foregroundWindow, processId, threadId, focusedWindow,
+                automationRuntimeId, false, 0, 0) { }
 
-        internal KeyboardFocusSnapshot(IntPtr foregroundWindow,
-            uint processId, uint threadId, IntPtr focusedWindow,
-            int[] automationRuntimeId)
+        internal KeyboardFocusSnapshot(IntPtr foregroundWindow, uint processId,
+            uint threadId, IntPtr focusedWindow, int[] automationRuntimeId,
+            bool plainNativeEdit, long focusVersion, long capturedAt)
         {
             ForegroundWindow = foregroundWindow;
             ProcessId = processId;
             ThreadId = threadId;
             FocusedWindow = focusedWindow;
-            _automationRuntimeId = automationRuntimeId == null
-                ? null : (int[])automationRuntimeId.Clone();
+            _automationRuntimeId = automationRuntimeId == null ? null : (int[])automationRuntimeId.Clone();
+            HasNativeInputIdentity = plainNativeEdit && IsComplete;
+            FocusVersion = focusVersion;
+            CapturedAt = capturedAt;
         }
-
         internal IntPtr ForegroundWindow { get; private set; }
         internal uint ProcessId { get; private set; }
         internal uint ThreadId { get; private set; }
         internal IntPtr FocusedWindow { get; private set; }
-
+        internal bool HasNativeInputIdentity { get; private set; }
+        internal long FocusVersion { get; private set; }
+        internal long CapturedAt { get; private set; }
         internal bool IsComplete
-        {
-            get
-            {
-                return ForegroundWindow != IntPtr.Zero && ProcessId != 0 &&
-                    ThreadId != 0 && FocusedWindow != IntPtr.Zero;
-            }
-        }
-
-        internal static KeyboardFocusSnapshot Capture()
-        {
-            return CaptureCore(true);
-        }
+        { get { return ForegroundWindow != IntPtr.Zero && ProcessId != 0 && ThreadId != 0 && FocusedWindow != IntPtr.Zero; } }
 
         internal static KeyboardFocusSnapshot CaptureCheap()
         {
-            return CaptureCore(false);
+            long version = KeyboardFocusMonitor.Version;
+            long capturedAt = Stopwatch.GetTimestamp();
+            IntPtr foreground = GetForegroundWindow();
+            uint processId;
+            uint threadId = GetWindowThreadProcessId(foreground, out processId);
+            var info = new GuiThreadInfo { cbSize = Marshal.SizeOf(typeof(GuiThreadInfo)) };
+            IntPtr focused = threadId != 0 && GetGUIThreadInfo(threadId, ref info) ? info.hwndFocus : IntPtr.Zero;
+            bool plain = false;
+            if (focused != IntPtr.Zero)
+            {
+                var name = new StringBuilder(128);
+                uint focusedProcess;
+                uint focusedThread = GetWindowThreadProcessId(focused, out focusedProcess);
+                // RealGetWindowClass recognizes standard controls even when WinForms subclasses them.
+                // These calls read native metadata, never a provider, control text or SendMessage.
+                uint length = RealGetWindowClass(focused, name, (uint)name.Capacity);
+                int style = GetWindowLong(focused, -16);
+                plain = length > 0 && IsNativeEditClass(name.ToString()) && style != 0 &&
+                    (style & 0x0020) == 0 && focusedProcess == processId && focusedThread == threadId;
+            }
+            plain = plain && KeyboardFocusMonitor.IsRunning && version == KeyboardFocusMonitor.Version;
+            return new KeyboardFocusSnapshot(foreground, processId, threadId, focused,
+                null, plain, version, capturedAt);
         }
 
-        private static KeyboardFocusSnapshot CaptureCore(bool includeAutomation)
+        internal static bool IsNativeEditClass(string name)
         {
-            IntPtr foreground = IntPtr.Zero;
-            uint processId = 0;
-            uint threadId = 0;
-            IntPtr focused = IntPtr.Zero;
-            int[] runtimeId = null;
-            try
-            {
-                foreground = GetForegroundWindow();
-                threadId = GetWindowThreadProcessId(foreground, out processId);
-                GuiThreadInfo info = new GuiThreadInfo();
-                info.cbSize = Marshal.SizeOf(typeof(GuiThreadInfo));
-                if (threadId != 0 && GetGUIThreadInfo(threadId, ref info))
-                    focused = info.hwndFocus;
-                if (includeAutomation)
-                {
-                    AutomationElement element =
-                        AutomationElement.FocusedElement;
-                    if (element != null) runtimeId = element.GetRuntimeId();
-                }
-            }
-            catch
-            {
-                // An incomplete snapshot deliberately fails closed later.
-            }
-            return new KeyboardFocusSnapshot(foreground, processId, threadId,
-                focused, runtimeId);
+            return String.Equals(name, "Edit", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(name, "RichEdit20W", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(name, "RichEdit20A", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(name, "RICHEDIT50W", StringComparison.OrdinalIgnoreCase);
         }
-
         internal bool StillMatchesCurrentTarget()
-        {
-            KeyboardFocusSnapshot current = Capture();
-            if (!IsSameTarget(this, current)) return false;
-            // The privacy worker must still obtain a UIA identity even when
-            // the original snapshot came from the cheap hook path.
-            return current._automationRuntimeId != null &&
-                current._automationRuntimeId.Length > 0;
-        }
+        { return IsSameNativeInput(this, CaptureCheap()); }
 
-        internal static bool IsSameTarget(KeyboardFocusSnapshot expected,
-            KeyboardFocusSnapshot current)
+        internal static bool IsSameNativeInput(KeyboardFocusSnapshot expected, KeyboardFocusSnapshot current)
         {
-            if (expected == null || current == null || !expected.IsComplete ||
-                !current.IsComplete) return false;
-            if (expected.ForegroundWindow != current.ForegroundWindow ||
-                expected.ProcessId != current.ProcessId ||
-                expected.ThreadId != current.ThreadId ||
-                expected.FocusedWindow != current.FocusedWindow) return false;
-            // A cheap hook snapshot intentionally has no UIA id. A full
-            // snapshot remains strict when both sides contain one.
-            if (expected._automationRuntimeId != null)
-            {
-                if (current._automationRuntimeId == null ||
-                    expected._automationRuntimeId.Length !=
-                        current._automationRuntimeId.Length) return false;
-                for (int index = 0; index < expected._automationRuntimeId.Length;
-                    index++)
-                    if (expected._automationRuntimeId[index] !=
-                        current._automationRuntimeId[index]) return false;
-            }
+            return expected != null && current != null && expected.HasNativeInputIdentity &&
+                current.HasNativeInputIdentity && expected.FocusVersion == current.FocusVersion &&
+                IsSameTarget(expected, current);
+        }
+        internal static bool IsSameTarget(KeyboardFocusSnapshot expected, KeyboardFocusSnapshot current)
+        {
+            if (expected == null || current == null || !expected.IsComplete || !current.IsComplete) return false;
+            if (expected.ForegroundWindow != current.ForegroundWindow || expected.ProcessId != current.ProcessId ||
+                expected.ThreadId != current.ThreadId || expected.FocusedWindow != current.FocusedWindow) return false;
+            return SameRuntimeId(expected._automationRuntimeId, current._automationRuntimeId);
+        }
+        internal static bool SameRuntimeId(int[] expected, int[] current)
+        {
+            if (expected == null || current == null) return expected == null && current == null;
+            if (expected.Length == 0 || expected.Length != current.Length) return false;
+            for (int i = 0; i < expected.Length; i++) if (expected[i] != current[i]) return false;
             return true;
         }
-
         [StructLayout(LayoutKind.Sequential)]
         private struct GuiThreadInfo
         {
-            public int cbSize;
-            public int flags;
-            public IntPtr hwndActive;
-            public IntPtr hwndFocus;
-            public IntPtr hwndCapture;
-            public IntPtr hwndMenuOwner;
-            public IntPtr hwndMoveSize;
-            public IntPtr hwndCaret;
-            public NativeRect rcCaret;
+            public int cbSize, flags;
+            public IntPtr hwndActive, hwndFocus, hwndCapture, hwndMenuOwner, hwndMoveSize, hwndCaret;
+            public int left, top, right, bottom;
         }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct NativeRect
-        {
-            public int Left;
-            public int Top;
-            public int Right;
-            public int Bottom;
-        }
-
-        [DllImport("user32.dll")]
-        private static extern IntPtr GetForegroundWindow();
-
-        [DllImport("user32.dll")]
-        private static extern uint GetWindowThreadProcessId(IntPtr window,
-            out uint processId);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool GetGUIThreadInfo(uint threadId,
-            ref GuiThreadInfo info);
+        [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+        [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetGUIThreadInfo(uint threadId, ref GuiThreadInfo info);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern uint RealGetWindowClass(IntPtr window, StringBuilder name, uint length);
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongW")]
+        private static extern int GetWindowLong(IntPtr window, int index);
     }
 }

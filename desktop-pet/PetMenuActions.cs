@@ -10,8 +10,8 @@ namespace PennyPet
     {
         internal const string WindowsKeyboardFirstUseNotice =
             "按键显示会使用 Windows 全局键盘活动监听，在桌宠旁显示按键名称。\n\n" +
-            "Penny 不会保存或上传按键内容，并会尽力识别密码框和敏感输入。" +
-            "但第三方、自绘、跨权限或远程窗口可能无法被完全识别。\n\n" +
+            "Penny 不会保存或上传按键内容。只有通过输入目标和密码检查的按键才会显示。" +
+            "浏览器、自绘、跨权限或远程窗口无法可靠识别时，不显示按键。\n\n" +
             "由于此功能会使用 Windows 全局键盘监听，部分杀毒软件或安全软件" +
             "可能会将它误报为风险行为或进行拦截。\n\n" +
             "处理密码、验证码、支付或其他高敏感信息时，请先关闭按键显示。" +
@@ -154,6 +154,7 @@ namespace PennyPet
                 {
                     _keyboardItem.Checked = false;
                     _settings.ShowKeyOverlay = false;
+                    _keyboardPrivacy.SetEnabled(false);
                     _settings.SaveAsync();
                     RefreshKeyboardMenuText();
                     return;
@@ -177,6 +178,7 @@ namespace PennyPet
                 _keyboard.Dispose();
             _keyboardItem.Checked = desired;
             _settings.ShowKeyOverlay = desired;
+            _keyboardPrivacy.SetEnabled(desired);
             _settings.SaveAsync();
             if (!_settings.ShowKeyOverlay) _keyOverlay.HideImmediately();
             RefreshKeyboardMenuText();
@@ -203,7 +205,7 @@ namespace PennyPet
             if (!_settings.ShowKeyOverlay)
                 _keyboardItem.Text = "按键显示：已关闭";
             else if (_keyboard.IsRunning)
-                _keyboardItem.Text = "按键显示：已开启（密码框自动隐藏）";
+                _keyboardItem.Text = "按键显示：已开启（不确定时隐藏）";
             else
                 _keyboardItem.Text = "按键显示：当前不可用";
         }
@@ -236,6 +238,7 @@ namespace PennyPet
                 return;
             }
             _exiting = true;
+            _keyboardPrivacy.SetEnabled(false);
             _reminderRuntime.Stop();
             _conversation.Stop();
             _persistenceRetryTimer.Stop();

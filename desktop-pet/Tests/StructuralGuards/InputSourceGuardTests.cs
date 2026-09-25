@@ -351,7 +351,7 @@ namespace PennyPet.Tests
                 "Pet-owned Form dialogs, including nested weather settings, must use the shared layer boundary.");
             Assert.IsTrue(keyboard.Contains("_windowLayers.HasActiveModal") &&
                 keyboard.Contains("HasFocusedOwnNoteTextInput() ||") &&
-                keyboard.Contains("ShowKeyRepeatCount(this, displayText") &&
+                keyboard.Contains("ShowKeyRepeatCount(this, input.DisplayText") &&
                 keyboard.Contains("_keyOverlay.UpdatePosition(this)") &&
                 keyboard.Contains(
                     "_windowLayers.KeepTransientBelowModal(_keyOverlay)") &&
@@ -362,7 +362,7 @@ namespace PennyPet.Tests
                 bubble.Contains("ApplyWindowLayer()") &&
                 bubble.Contains(
                     "_windowLayers.KeepTransientBelowModal(_bubble)") &&
-                keyboard.Contains("SensitiveInputDetector.IsSensitiveFocus") &&
+                ReadSource("PetForm.cs").Contains("SensitiveInputDetector.IsSensitiveFocus") &&
                 !keyboard.Contains("ModalAvoidanceBounds") &&
                 !overlay.Contains("avoidBounds"),
                 "Pet chrome must stay below modal windows without moving keyboard hints away from the Pet.");

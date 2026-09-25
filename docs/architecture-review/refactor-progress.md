@@ -135,3 +135,20 @@ Reminder controls are created on the first nonempty projection and updated indep
 All `Exercise...ForTest` scripts move from the product window into the Windows integration-test assembly. Tests inspect and operate the real current controls through a test-side driver. Scenarios that formerly changed one window's type now use correctly typed windows; production does not construct hidden controls for tests. New native checks cover control-tree ownership, lazy banners, focus/body stability during reminders, document undo, routed composition signals and timer shutdown. Architecture checks guard allocation and ownership boundaries.
 
 The extraction preserves the existing WPF selection and IME event order. Native synthetic composition checks and multilingual text round trips do not substitute for manual Chinese/Japanese IME candidate-window verification. Windows CI is required; this workspace has no .NET SDK or interactive Windows desktop. No measured startup or input latency improvement is claimed.
+
+
+R15 passed [Windows CI #75](https://github.com/692365092-png/penny-pet/actions/runs/36077981822) on `93052fe`: all 637 discoverable tests, native view/editor regressions, formal EXE smoke and artifacts.
+
+## R16 — bind keyboard display to verifiable event-time input
+
+The hook still captures native metadata only. It now distinguishes a recognized native Edit/RichEdit HWND from a shared browser/WPF host; unknown/password targets produce no formatted key text. A missing event-time UIA RuntimeId is no longer a wildcard for a later identity. Native control identity, foreground/process/thread, a focus/state-event revision and capture timestamp travel with each candidate. Focus events invalidate queued results and hide the overlay; repeat counts do not span unknown targets or focus revisions.
+
+SensitiveInputDetector accepts only an explicit supported `IsPassword=false` on the focused UIA Edit whose NativeWindowHandle/process match the event-time native control. It verifies RuntimeId before/after inspection and rechecks native identity. Missing properties, provider failures, credential-process/name signals and ambiguous virtual descendants suppress display. Native metadata inspection alone never substitutes for missing UIA password evidence.
+
+One dedicated background MTA thread performs inspection without windows. There is one replaceable pending input and one coalesced UI delivery slot. Capture age is limited to 750 ms at inspection and publication. UI publication performs only cheap native checks; settings disable/re-enable, focus changes and shutdown invalidate prior generations. A blocked provider cannot block either UI STA, spawn replacement inspectors or accumulate a queue. Shutdown does not join the provider and releases delivery delegates; the background call itself cannot be forcibly cancelled.
+
+This intentionally narrows compatibility: browser/WPF/self-drawn inputs sharing an HWND are not sufficiently attributable at hook time, so they retain typing animation but suppress key labels. Adding an asynchronous focus cache would not prove which virtual control received an earlier key. The existing first-use explanation and menu text reflect suppression when uncertain.
+
+Deterministic worker/policy tests cover unsupported password properties, same-host identity ambiguity, focus changes after dispatch, disable/re-enable, exit, deadlines, provider errors and 1,000 replacements while inspection is blocked. Native tests exercise actual WinForms password/plain HWND transitions and WPF TextBox/PasswordBox sharing an HWND. Windows CI is required; no real third-party browser/provider penetration test or measured hook latency is claimed.
+
+Platform references: [Microsoft UIA threading](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-threading) requires non-UI MTA use; [EM_SETPASSWORDCHAR](https://learn.microsoft.com/en-us/windows/win32/controls/em-setpasswordchar) documents native password style behavior. Native classification is used for control correlation, never as the sole privacy verdict.

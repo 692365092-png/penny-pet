@@ -17,15 +17,27 @@ namespace PennyPet
         private uint _lastVirtualKeyCode;
         private uint _lastKeyTime;
         private int _repeatCount;
+        private KeyboardFocusSnapshot _repeatFocus;
         private readonly HashSet<uint> _pressedKeys = new HashSet<uint>();
 
+        private readonly KeyboardFocusMonitor _focusMonitor;
+        public event EventHandler FocusChanged;
         public event EventHandler<KeyboardInputEventArgs> Activity;
+        internal GlobalKeyboardActivity()
+        {
+            _focusMonitor = new KeyboardFocusMonitor(delegate
+            {
+                EventHandler changed = FocusChanged;
+                if (changed != null) changed(this, EventArgs.Empty);
+            });
+        }
         public bool IsRunning { get { return _hook != IntPtr.Zero; } }
 
         public void Start()
         {
             if (_hook != IntPtr.Zero) return;
             _pressedKeys.Clear();
+            _focusMonitor.Start();
             _callback = HookCallback;
             using (Process process = Process.GetCurrentProcess())
             using (ProcessModule module = process.MainModule)
@@ -37,6 +49,7 @@ namespace PennyPet
 
         public void Dispose()
         {
+            _focusMonitor.Dispose();
             if (_hook != IntPtr.Zero)
             {
                 UnhookWindowsHookEx(_hook);
@@ -44,6 +57,8 @@ namespace PennyPet
             }
             _pressedKeys.Clear();
             _callback = null;
+            _repeatFocus = null;
+            _repeatCount = 0;
         }
 
         private IntPtr HookCallback(int code, IntPtr wParam, IntPtr lParam)
@@ -69,15 +84,17 @@ namespace PennyPet
                             bool alreadyPressed = !_pressedKeys.Add(
                                 data.VirtualKeyCode);
                             // Keep the hook cheap. UI Automation inspection
-                            // runs in the existing privacy worker; this
-                            // snapshot still pins the physical target that
-                            // received the key-down event.
+                            // runs only in the privacy worker. Shared HWND
+                            // hosts deliberately carry no input-control proof.
                             KeyboardFocusSnapshot focus =
                                 KeyboardFocusSnapshot.CaptureCheap();
                             if (ShouldPublishKeyDown(alreadyPressed))
                             {
-                                string display = KeyboardInputFormatter.Format(
-                                    (int)data.VirtualKeyCode);
+                                string display = focus.HasNativeInputIdentity
+                                    ? KeyboardInputFormatter.Format((int)data.VirtualKeyCode) : String.Empty;
+                                if (!KeyboardFocusSnapshot.IsSameNativeInput(_repeatFocus, focus))
+                                    _repeatCount = 0;
+                                _repeatFocus = focus.HasNativeInputIdentity ? focus : null;
                                 _repeatCount = NextRepeatCount(_lastVirtualKeyCode,
                                     data.VirtualKeyCode, _lastKeyTime, data.Time,
                                     _repeatCount);
@@ -87,7 +104,7 @@ namespace PennyPet
                                     Activity;
                                 if (handler != null)
                                     handler(this, new KeyboardInputEventArgs(
-                                        (int)data.VirtualKeyCode, display,
+                                        focus.HasNativeInputIdentity ? (int)data.VirtualKeyCode : 0, display,
                                         _repeatCount, focus));
                             }
                         }

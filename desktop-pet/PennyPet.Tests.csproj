@@ -12,6 +12,10 @@
     <Compile Include="Tests\**\*.cs" />
     <!-- Exercise the actual platform-neutral protocol/runtime implementations. -->
     <Compile Include="Features\Interaction\InteractionRuntime.cs" />
+    <Compile Include="Features\KeyboardOverlay\KeyboardInputEventArgs.cs" />
+    <Compile Include="Features\KeyboardOverlay\KeyboardFocusSnapshot.cs" />
+    <Compile Include="Features\KeyboardOverlay\KeyboardFocusMonitor.cs" />
+    <Compile Include="Features\KeyboardOverlay\KeyboardPrivacyWorker.cs" />
     <Compile Include="Features\Display\PetDisplayRuntime.cs" />
     <Compile Include="Features\Display\IPetDisplayWindow.cs" />
     <Compile Include="Features\StickyNotes\DockFrameMailbox.cs" />

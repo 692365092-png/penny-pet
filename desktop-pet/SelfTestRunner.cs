@@ -2637,8 +2637,7 @@ namespace PennyPet
                     true, true) &&
                 PetKeyboardPrivacyPolicy.ShouldSuppressOwnApplicationInput(
                     true, false);
-            result.PrivacyGenerationOk = PetForm.IsCurrentPrivacyScan(12, 12) &&
-                !PetForm.IsCurrentPrivacyScan(12, 13);
+            result.PrivacyGenerationOk = RunKeyboardPrivacyNativeChecks();
             KeyboardFocusSnapshot captured = new KeyboardFocusSnapshot(
                 new IntPtr(10), 20, 30, new IntPtr(40),
                 new int[] { 1, 2, 3 });
