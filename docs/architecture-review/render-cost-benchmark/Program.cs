@@ -193,7 +193,7 @@ namespace PennyPet
             using (Bitmap bitmap = CreateProbeBitmap())
             {
                 form.StartPosition = WinForms.FormStartPosition.Manual;
-                form.Location = new Point(320, 40);
+                form.Location = new System.Drawing.Point(320, 40);
                 form.ClientSize = bitmap.Size;
                 form.FormBorderStyle = WinForms.FormBorderStyle.None;
                 form.ShowInTaskbar = false;
