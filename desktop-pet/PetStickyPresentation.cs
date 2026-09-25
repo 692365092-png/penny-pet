@@ -33,7 +33,8 @@ namespace PennyPet
         void IStickyPresentation.RefreshMenu() { RefreshMenuText(); }
         void IStickyPresentation.CloseMenu() { if (_menu != null && _menu.Visible) _menu.Close(); }
         void IStickyPresentation.ShowBubble(string text) { ShowBubble(text); }
-        void IStickyPresentation.KeepBelowModal(Form window) { _windowLayers.KeepTransientBelowModal(window); }
+        IntPtr IStickyPresentation.ModalZOrderFloorHandle
+        { get { return _windowLayers.ModalZOrderFloorHandle; } }
         bool IStickyPresentation.Confirm(string text, string title)
         { return MessageBox.Show(this, text, title, MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes; }
         void IStickyPresentation.ShowError(string text, string title)

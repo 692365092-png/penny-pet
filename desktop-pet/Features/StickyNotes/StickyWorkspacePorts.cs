@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Windows.Forms;
 
 namespace PennyPet
 {
@@ -21,7 +20,7 @@ namespace PennyPet
         void RefreshMenu();
         void CloseMenu();
         void ShowBubble(string text);
-        void KeepBelowModal(Form window);
+        IntPtr ModalZOrderFloorHandle { get; }
         bool Confirm(string text, string title);
         void ShowError(string text, string title);
         void ShowManager(Func<List<StickyNoteData>> notes, StickyNotesManagerCommands commands,

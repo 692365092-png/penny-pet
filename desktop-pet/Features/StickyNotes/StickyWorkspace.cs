@@ -39,25 +39,31 @@ namespace PennyPet
 
         internal void Start()
         {
-            _leftNoteTabs = CreateTabs(StickyTabSide.Left);
-            _rightNoteTabs = CreateTabs(StickyTabSide.Right);
             Host.Start();
             Host.Configure(HostedStickyEventReceived, Context);
+            Host.ConfigureSideTabs(
+                id =>
+                {
+                    StickyNoteData note = Notes.Find(id);
+                    if (note != null) ShowHostedSticky(note, true);
+                },
+                id =>
+                {
+                    StickyNoteData note = Notes.Find(id);
+                    if (note != null) ConfirmDeleteStickyNote(note);
+                },
+                (id, index) =>
+                {
+                    StickyNoteData note = Notes.Find(id);
+                    if (note != null) ReorderStickyNoteTab(note, index);
+                });
             Host.SetFaultHandler(HostedStickyFaulted);
         }
 
         internal void ApplyWindowLayer()
         {
-            _presentation.KeepBelowModal(_leftNoteTabs);
-            _presentation.KeepBelowModal(_rightNoteTabs);
-        }
-
-        private StickyNoteTabsForm CreateTabs(StickyTabSide side)
-        {
-            return new StickyNoteTabsForm(side,
-                id => { StickyNoteData note = Notes.Find(id); if (note != null) ShowHostedSticky(note, true); },
-                id => { StickyNoteData note = Notes.Find(id); if (note != null) ConfirmDeleteStickyNote(note); },
-                (id, index) => { StickyNoteData note = Notes.Find(id); if (note != null) ReorderStickyNoteTab(note, index); });
+            Host.SetModalZOrderFloor(
+                _presentation.ModalZOrderFloorHandle);
         }
 
         public void Dispose()
@@ -66,8 +72,6 @@ namespace PennyPet
             _disposed = true;
             Dock.Dispose();
             Host.BeginShutdown();
-            if (_leftNoteTabs != null) _leftNoteTabs.Close();
-            if (_rightNoteTabs != null) _rightNoteTabs.Close();
         }
 
         internal DisplayTopologySnapshot CurrentTopologySnapshot() { return _surface.CurrentTopologySnapshot(); }
@@ -106,8 +110,6 @@ namespace PennyPet
                 delegate(StickyUiCommandResult result) { });
         }
         internal readonly StickyFactsReceiver Facts;
-        private StickyNoteTabsForm _leftNoteTabs;
-        private StickyNoteTabsForm _rightNoteTabs;
         internal static int HostedStickyWindowCreatedCount;
         internal readonly StickyUiHost Host = new StickyUiHost();
         internal readonly SynchronizationContext Context;
@@ -115,11 +117,7 @@ namespace PennyPet
             new StickyHostedRuntime();
         internal readonly StickyPlacementRuntime Placement =
             new StickyPlacementRuntime();
-        private bool _positioningNoteTabs;
         private List<SideTabSnapshot> _hiddenNoteTabs = new List<SideTabSnapshot>();
-        private bool _noteTabsContentChanged;
-        private bool? _leftTabsCovered;
-        private bool? _rightTabsCovered;
         private readonly HashSet<string> _pendingStandaloneTopologyNotes =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -1450,142 +1448,43 @@ namespace PennyPet
 
         internal void RefreshNoteTabs()
         {
-            ApplicationDiagnostics.WriteWindowLayerEvent("RefreshNoteTabs",
-                "structural");
-            if (_leftNoteTabs == null || _rightNoteTabs == null || IsDisposed)
-                return;
-            // Only model changes rebuild this projection. Pet motion, DPI and
-            // edge-driven redistribution reuse it without reading the repository.
+            ApplicationDiagnostics.WriteWindowLayerEvent(
+                "RefreshNoteTabs", "structural");
+            if (IsDisposed) return;
+
             List<StickyNoteData> hidden = Notes.GetHiddenInTabOrder();
-            _hiddenNoteTabs = new List<SideTabSnapshot>(hidden.Count);
+            _hiddenNoteTabs =
+                new List<SideTabSnapshot>(hidden.Count);
             foreach (StickyNoteData note in hidden)
                 _hiddenNoteTabs.Add(SideTabSnapshot.FromData(note));
-            _noteTabsContentChanged = true;
+
             PositionNoteTabs();
         }
 
-        private void ApplyNoteTabZOrder()
-        {
-            if (_leftNoteTabs == null || _rightNoteTabs == null || IsDisposed)
-                return;
-            bool leftCovered = false;
-            bool rightCovered = false;
-            Rectangle leftBounds = _leftNoteTabs.Bounds;
-            Rectangle rightBounds = _rightNoteTabs.Bounds;
-            foreach (StickyNoteData note in Notes.InStorageOrder)
-            {
-                if (note == null || !note.Visible) continue;
-                WindowFacts facts = Placement.GetEffective(note.Id);
-                if (facts == null) continue;
-                PhysicalRect actual = facts.PhysicalBounds;
-                Rectangle bounds = new Rectangle(actual.Left, actual.Top,
-                    actual.Width, actual.Height);
-                leftCovered |= _leftNoteTabs.Visible && leftBounds.IntersectsWith(bounds);
-                rightCovered |= _rightNoteTabs.Visible && rightBounds.IntersectsWith(bounds);
-                if (leftCovered && rightCovered) break;
-            }
-            if (!_leftTabsCovered.HasValue || _leftTabsCovered.Value != leftCovered)
-            {
-                _leftTabsCovered = leftCovered;
-                _leftNoteTabs.TopMost =
-                    StickyNoteWindowRules.ShouldKeepSideTabsTopMost(leftCovered);
-                if (!leftCovered && _leftNoteTabs.Visible)
-                    _leftNoteTabs.BringToFront();
-                ApplicationDiagnostics.WriteWindowLayerEvent("SideTabsLeft",
-                    leftCovered ? "covered" : "clear");
-            }
-            if (!_rightTabsCovered.HasValue ||
-                _rightTabsCovered.Value != rightCovered)
-            {
-                _rightTabsCovered = rightCovered;
-                _rightNoteTabs.TopMost =
-                    StickyNoteWindowRules.ShouldKeepSideTabsTopMost(rightCovered);
-                if (!rightCovered && _rightNoteTabs.Visible)
-                    _rightNoteTabs.BringToFront();
-                ApplicationDiagnostics.WriteWindowLayerEvent("SideTabsRight",
-                    rightCovered ? "covered" : "clear");
-            }
-        }
-
+        // Pet supplies only its current display projection. SideTab HWNDs,
+        // overlap and z-order remain owned by the Sticky STA.
         internal void PositionNoteTabs()
         {
-            if (_leftNoteTabs == null ||
-                _rightNoteTabs == null ||
-                !_surface.HasHandle ||
-                IsDisposed ||
-                _positioningNoteTabs)
-                return;
+            if (!_surface.HasHandle || IsDisposed) return;
 
             WindowFacts petFacts;
             DisplaySurfaceSnapshot surface;
             Rectangle work;
             SideTabPhysicalMetrics metrics;
-
             if (!TryGetPetDerivedDisplayContext(
-                out petFacts,
-                out surface,
-                out work,
-                out metrics))
+                out petFacts, out surface, out work, out metrics))
                 return;
 
-            _leftNoteTabs.ApplyPhysicalMetrics(metrics);
-            _rightNoteTabs.ApplyPhysicalMetrics(metrics);
-            PositionNoteTabs(petFacts, surface, work, metrics);
-        }
-
-        private void PositionNoteTabs(WindowFacts petFacts,
-            DisplaySurfaceSnapshot surface, Rectangle work,
-            SideTabPhysicalMetrics metrics)
-        {
-            if (_leftNoteTabs == null || _rightNoteTabs == null ||
-                IsDisposed || _positioningNoteTabs)
-                return;
-
+            PhysicalRect actual = petFacts.PhysicalBounds;
             Rectangle petBounds = new Rectangle(
-                petFacts.PhysicalBounds.Left,
-                petFacts.PhysicalBounds.Top,
-                petFacts.PhysicalBounds.Width,
-                petFacts.PhysicalBounds.Height);
-            DockRect petRect = new DockRect(
-                petBounds.Left, petBounds.Top,
-                petBounds.Width, petBounds.Height);
-            DockRect workRect = new DockRect(
-                work.Left, work.Top, work.Width, work.Height);
-            int total = _hiddenNoteTabs.Count;
-            int overlap = SideTabLayoutPolicy.CalculatePhysicalOverlap(
-                petBounds.Width, metrics);
-            int desiredLeftCount =
-                SideTabLayoutPolicy.CalculateEdgeAwareLeftCount(
-                    total, petRect, workRect, metrics.Width, overlap,
-                    metrics.WindowMarginX);
+                actual.Left, actual.Top, actual.Width, actual.Height);
 
-            _positioningNoteTabs = true;
-            try
-            {
-                if (_noteTabsContentChanged ||
-                    _leftNoteTabs.NoteCount != desiredLeftCount ||
-                    _rightNoteTabs.NoteCount != total - desiredLeftCount)
-                {
-                    _leftNoteTabs.SetNotes(_hiddenNoteTabs.GetRange(0, desiredLeftCount), 0);
-                    _rightNoteTabs.SetNotes(_hiddenNoteTabs.GetRange(desiredLeftCount,
-                        total - desiredLeftCount), desiredLeftCount);
-                    _noteTabsContentChanged = false;
-                    DisplayDiagnostics.Trace("SideTabsLayout",
-                        "topology=" + petFacts.TopologyGeneration +
-                        " dpi=" + metrics.Dpi + " total=" + total +
-                        " left=" + desiredLeftCount +
-                        " surface=" + surface.RuntimeSurfaceId);
-                }
-
-                _leftNoteTabs.ShowNear(petBounds, work);
-                _rightNoteTabs.ShowNear(petBounds, work);
-
-                ApplyNoteTabZOrder();
-            }
-            finally
-            {
-                _positioningNoteTabs = false;
-            }
+            Host.UpdateSideTabs(new StickySideTabsProjection(
+                _hiddenNoteTabs,
+                petBounds,
+                work,
+                metrics,
+                petFacts.TopologyGeneration));
         }
 
         internal void ShowStickyNotesManager()
