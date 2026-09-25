@@ -48,7 +48,8 @@ namespace PennyPet
                     Pc2Assert(secret.FocusedWindow == password && !secret.HasNativeInputIdentity,
                         "password Edit is rejected before formatting a keyboard label");
                     FocusNativePrivacyFixture(plain);
-                    Pc2Assert(!KeyboardFocusSnapshot.IsSameNativeInput(first, KeyboardFocusSnapshot.CaptureCheap()),
+                    Pc2Assert(!KeyboardFocusSnapshot.IsSameNativeInput(first,
+                        KeyboardFocusSnapshot.CaptureForForegroundWindow(host.Handle)),
                         "leaving and returning to the same HWND cannot revive a previous result");
                     host.Close(); // destroys both native child windows
                 }
