@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Threading;
+using System.Windows.Forms;
 
 namespace PennyPet
 {
@@ -23,6 +26,25 @@ namespace PennyPet
         // Pet is still waiting for an older finalization acknowledgment.
         private DockInput _currentDockInput;
         private System.Windows.Threading.DispatcherTimer _reminderClock;
+        private StickyNoteTabsForm _leftNoteTabs;
+        private StickyNoteTabsForm _rightNoteTabs;
+        private StickySideTabsProjection _pendingSideTabsProjection;
+        private bool _sideTabsProjectionPosted;
+        private bool? _leftTabsCovered;
+        private bool? _rightTabsCovered;
+        private Action<string> _sideTabOpen;
+        private Action<string> _sideTabDelete;
+        private Action<string, int> _sideTabReorder;
+        private IntPtr _modalZOrderFloor;
+        private DockPulseIndicatorForm _dockPreviewIndicator;
+        private DockPulseIndicatorForm _splitGuideIndicator;
+        private string _dockPreviewParentNoteId;
+        private string _dockPreviewChildNoteId;
+
+        private const uint SwpNoSize = 0x0001;
+        private const uint SwpNoMove = 0x0002;
+        private const uint SwpNoActivate = 0x0010;
+        private const uint SwpNoOwnerZOrder = 0x0200;
 
         internal void Start()
         {
@@ -47,6 +69,372 @@ namespace PennyPet
                 _eventContext = eventContext;
                 _commandHandler = HandleCommand;
             }
+        }
+
+        internal void ConfigureSideTabs(
+            Action<string> openNote,
+            Action<string> deleteNote,
+            Action<string, int> reorderNote)
+        {
+            lock (_configurationGate)
+            {
+                _sideTabOpen = openNote;
+                _sideTabDelete = deleteNote;
+                _sideTabReorder = reorderNote;
+            }
+        }
+
+        // Latest-wins Pet projection. A Pet drag may publish many positions,
+        // but the Sticky dispatcher never queues an unbounded trail of them.
+        internal void UpdateSideTabs(StickySideTabsProjection projection)
+        {
+            if (projection == null) return;
+            bool post = false;
+            lock (_configurationGate)
+            {
+                _pendingSideTabsProjection = projection;
+                if (!_sideTabsProjectionPosted)
+                {
+                    _sideTabsProjectionPosted = true;
+                    post = true;
+                }
+            }
+            if (post) PostSideTabsProjectionPump();
+        }
+
+        private void PostSideTabsProjectionPump()
+        {
+            _threadHost.PostToDispatcher(
+                ApplyLatestSideTabsProjection, null, null);
+        }
+
+        private StickyUiCommandResult ApplyLatestSideTabsProjection()
+        {
+            StickySideTabsProjection projection;
+            lock (_configurationGate)
+            {
+                projection = _pendingSideTabsProjection;
+                _pendingSideTabsProjection = null;
+            }
+
+            if (projection != null)
+                ApplySideTabsProjection(projection);
+
+            bool again;
+            lock (_configurationGate)
+            {
+                again = _pendingSideTabsProjection != null;
+                if (!again) _sideTabsProjectionPosted = false;
+            }
+            if (again) PostSideTabsProjectionPump();
+
+            return StickyUiCommandResult.Handled();
+        }
+
+        private void ApplySideTabsProjection(
+            StickySideTabsProjection projection)
+        {
+            EnsureSideTabs();
+            if (_leftNoteTabs == null || _rightNoteTabs == null)
+                return;
+
+            SideTabPhysicalMetrics metrics = projection.Metrics;
+            _leftNoteTabs.ApplyPhysicalMetrics(metrics);
+            _rightNoteTabs.ApplyPhysicalMetrics(metrics);
+
+            List<SideTabSnapshot> notes =
+                new List<SideTabSnapshot>(projection.Notes);
+            int total = notes.Count;
+            int overlap = SideTabLayoutPolicy.CalculatePhysicalOverlap(
+                projection.PetBounds.Width, metrics);
+            int desiredLeftCount =
+                SideTabLayoutPolicy.CalculateEdgeAwareLeftCount(
+                    total,
+                    new DockRect(projection.PetBounds.Left,
+                        projection.PetBounds.Top,
+                        projection.PetBounds.Width,
+                        projection.PetBounds.Height),
+                    new DockRect(projection.WorkArea.Left,
+                        projection.WorkArea.Top,
+                        projection.WorkArea.Width,
+                        projection.WorkArea.Height),
+                    metrics.Width, overlap, metrics.WindowMarginX);
+
+            _leftNoteTabs.SetNotes(
+                notes.GetRange(0, desiredLeftCount), 0);
+            _rightNoteTabs.SetNotes(
+                notes.GetRange(desiredLeftCount,
+                    total - desiredLeftCount),
+                desiredLeftCount);
+            _leftNoteTabs.ShowNear(
+                projection.PetBounds, projection.WorkArea);
+            _rightNoteTabs.ShowNear(
+                projection.PetBounds, projection.WorkArea);
+
+            DisplayDiagnostics.Trace("SideTabsLayout",
+                "topology=" + projection.TopologyGeneration +
+                " dpi=" + metrics.Dpi + " total=" + total +
+                " left=" + desiredLeftCount +
+                " owner=sticky-sta");
+
+            ApplySideTabZOrder();
+        }
+
+        private void EnsureSideTabs()
+        {
+            if (_leftNoteTabs != null && !_leftNoteTabs.IsDisposed &&
+                _rightNoteTabs != null && !_rightNoteTabs.IsDisposed)
+                return;
+
+            _leftNoteTabs = CreateSideTabs(StickyTabSide.Left);
+            _rightNoteTabs = CreateSideTabs(StickyTabSide.Right);
+        }
+
+        private StickyNoteTabsForm CreateSideTabs(StickyTabSide side)
+        {
+            return new StickyNoteTabsForm(
+                side,
+                id => PostSideTabOpen(id),
+                id => PostSideTabDelete(id),
+                (id, index) => PostSideTabReorder(id, index));
+        }
+
+        private void PostSideTabOpen(string noteId)
+        {
+            Action<string> handler;
+            lock (_configurationGate) handler = _sideTabOpen;
+            if (handler != null)
+                PostSemantic(delegate { handler(noteId); });
+        }
+
+        private void PostSideTabDelete(string noteId)
+        {
+            Action<string> handler;
+            lock (_configurationGate) handler = _sideTabDelete;
+            if (handler != null)
+                PostSemantic(delegate { handler(noteId); });
+        }
+
+        private void PostSideTabReorder(string noteId, int index)
+        {
+            Action<string, int> handler;
+            lock (_configurationGate) handler = _sideTabReorder;
+            if (handler != null)
+                PostSemantic(delegate { handler(noteId, index); });
+        }
+
+        private void PostSemantic(Action action)
+        {
+            if (action == null) return;
+            SynchronizationContext context;
+            lock (_configurationGate) context = _eventContext;
+            if (context != null)
+            {
+                context.Post(delegate { action(); }, null);
+                return;
+            }
+            ThreadPool.QueueUserWorkItem(delegate { action(); });
+        }
+
+        internal void SetModalZOrderFloor(IntPtr hwnd)
+        {
+            lock (_configurationGate) _modalZOrderFloor = hwnd;
+            PostChrome(ApplyModalFloorToChrome);
+        }
+
+        internal void ShowSplitGuide(Rectangle seam)
+        {
+            PostChrome(delegate
+            {
+                ClearSplitGuideOnThread();
+                if (seam.IsEmpty) return;
+                _splitGuideIndicator = new DockPulseIndicatorForm(
+                    Color.FromArgb(255, 151, 62), 0);
+                _splitGuideIndicator.ShowSeam(seam);
+                KeepTransientBelowModal(_splitGuideIndicator);
+            });
+        }
+
+        internal void UpdateSplitGuide(Rectangle seam)
+        {
+            if (seam.IsEmpty) return;
+            PostChrome(delegate
+            {
+                if (_splitGuideIndicator == null ||
+                    _splitGuideIndicator.IsDisposed) return;
+                _splitGuideIndicator.UpdateSeam(seam);
+                KeepTransientBelowModal(_splitGuideIndicator);
+            });
+        }
+
+        internal void ClearSplitGuide()
+        {
+            PostChrome(ClearSplitGuideOnThread);
+        }
+
+        internal void UpdateDockPreview(
+            string parentNoteId,
+            string childNoteId,
+            Rectangle seam)
+        {
+            PostChrome(delegate
+            {
+                string parent = parentNoteId ?? String.Empty;
+                string child = childNoteId ?? String.Empty;
+                bool same = String.Equals(parent,
+                        _dockPreviewParentNoteId ?? String.Empty,
+                        StringComparison.OrdinalIgnoreCase) &&
+                    String.Equals(child,
+                        _dockPreviewChildNoteId ?? String.Empty,
+                        StringComparison.OrdinalIgnoreCase);
+                if (same)
+                {
+                    if (_dockPreviewIndicator != null &&
+                        !_dockPreviewIndicator.IsDisposed &&
+                        !seam.IsEmpty)
+                        _dockPreviewIndicator.UpdateSeam(seam);
+                    return;
+                }
+
+                ClearDockPreviewOnThread();
+                if (String.IsNullOrEmpty(parent) || seam.IsEmpty)
+                    return;
+
+                _dockPreviewParentNoteId = parent;
+                _dockPreviewChildNoteId = child;
+                _dockPreviewIndicator = new DockPulseIndicatorForm(
+                    Color.FromArgb(32, 160, 255), 0);
+                _dockPreviewIndicator.ShowSeam(seam);
+                KeepTransientBelowModal(_dockPreviewIndicator);
+            });
+        }
+
+        internal void ClearDockPreview()
+        {
+            PostChrome(ClearDockPreviewOnThread);
+        }
+
+        internal void ShowTransientDockPulse(
+            Rectangle seam, Color color)
+        {
+            if (seam.IsEmpty) return;
+            PostChrome(delegate
+            {
+                DockPulseIndicatorForm indicator =
+                    new DockPulseIndicatorForm(color, 720);
+                indicator.ShowSeam(seam);
+                KeepTransientBelowModal(indicator);
+            });
+        }
+
+        private void PostChrome(Action action)
+        {
+            if (action == null) return;
+            _threadHost.PostToDispatcher(delegate
+            {
+                action();
+                return StickyUiCommandResult.Handled();
+            }, null, null);
+        }
+
+        private void ClearSplitGuideOnThread()
+        {
+            if (_splitGuideIndicator != null &&
+                !_splitGuideIndicator.IsDisposed)
+                _splitGuideIndicator.Close();
+            _splitGuideIndicator = null;
+        }
+
+        private void ClearDockPreviewOnThread()
+        {
+            if (_dockPreviewIndicator != null &&
+                !_dockPreviewIndicator.IsDisposed)
+                _dockPreviewIndicator.Close();
+            _dockPreviewIndicator = null;
+            _dockPreviewParentNoteId = null;
+            _dockPreviewChildNoteId = null;
+        }
+
+        private void ApplySideTabZOrder()
+        {
+            if (_leftNoteTabs == null || _rightNoteTabs == null ||
+                _leftNoteTabs.IsDisposed || _rightNoteTabs.IsDisposed)
+                return;
+
+            bool leftCovered = false;
+            bool rightCovered = false;
+            Rectangle leftBounds = _leftNoteTabs.Bounds;
+            Rectangle rightBounds = _rightNoteTabs.Bounds;
+
+            foreach (StickyWindowSession session in _sessions.Values)
+            {
+                if (!session.IsAvailable) continue;
+                StickyUiCommandResult current = session.CurrentResult();
+                if (current == null || current.Snapshot == null ||
+                    !current.Snapshot.Visible || current.Facts == null)
+                    continue;
+
+                PhysicalRect actual = current.Facts.PhysicalBounds;
+                Rectangle bounds = new Rectangle(
+                    actual.Left, actual.Top,
+                    actual.Width, actual.Height);
+                leftCovered |= _leftNoteTabs.Visible &&
+                    leftBounds.IntersectsWith(bounds);
+                rightCovered |= _rightNoteTabs.Visible &&
+                    rightBounds.IntersectsWith(bounds);
+                if (leftCovered && rightCovered) break;
+            }
+
+            ApplySideTabCoverage(
+                _leftNoteTabs, leftCovered, ref _leftTabsCovered,
+                "SideTabsLeft");
+            ApplySideTabCoverage(
+                _rightNoteTabs, rightCovered, ref _rightTabsCovered,
+                "SideTabsRight");
+            ApplyModalFloorToChrome();
+        }
+
+        private void ApplySideTabCoverage(
+            StickyNoteTabsForm tabs,
+            bool covered,
+            ref bool? previous,
+            string diagnosticName)
+        {
+            if (!previous.HasValue || previous.Value != covered)
+            {
+                previous = covered;
+                tabs.TopMost =
+                    StickyNoteWindowRules.ShouldKeepSideTabsTopMost(
+                        covered);
+                if (!covered && tabs.Visible)
+                    tabs.BringToFront();
+                ApplicationDiagnostics.WriteWindowLayerEvent(
+                    diagnosticName,
+                    covered ? "covered" : "clear");
+            }
+        }
+
+        private void ApplyModalFloorToChrome()
+        {
+            KeepTransientBelowModal(_leftNoteTabs);
+            KeepTransientBelowModal(_rightNoteTabs);
+            KeepTransientBelowModal(_dockPreviewIndicator);
+            KeepTransientBelowModal(_splitGuideIndicator);
+        }
+
+        private void KeepTransientBelowModal(Form transient)
+        {
+            IntPtr floor;
+            lock (_configurationGate) floor = _modalZOrderFloor;
+            if (floor == IntPtr.Zero || transient == null ||
+                transient.IsDisposed || !transient.Visible ||
+                !transient.IsHandleCreated)
+                return;
+
+            SetWindowPos(transient.Handle, floor,
+                0, 0, 0, 0,
+                SwpNoSize | SwpNoMove | SwpNoActivate |
+                SwpNoOwnerZOrder);
         }
 
         internal void SetFaultHandler(Action<Exception> handler)
@@ -242,6 +630,7 @@ namespace PennyPet
             {
                 foreach (StickyWindowSession session in sessions)
                     session.SetEventsSuppressed(false);
+                ApplySideTabZOrder();
             }
         }
 
@@ -714,6 +1103,18 @@ namespace PennyPet
                     _sessions.Remove(value.NoteId);
                 RefreshReminderClock();
             }
+
+            if (value.Kind == StickyUiEventKind.BoundsChanged ||
+                value.Kind == StickyUiEventKind.HeaderDragStarted ||
+                value.Kind == StickyUiEventKind.HeaderDragMoved ||
+                value.Kind == StickyUiEventKind.HeaderDragCompleted ||
+                value.Kind == StickyUiEventKind.DockHorizontalResizing ||
+                value.Kind == StickyUiEventKind.DockDividerResizing ||
+                value.Kind == StickyUiEventKind.UserResizeCompleted ||
+                value.Kind == StickyUiEventKind.FirstRendered ||
+                value.Kind == StickyUiEventKind.Closed)
+                ApplySideTabZOrder();
+
             PostEvent(value);
         }
 
@@ -952,6 +1353,7 @@ namespace PennyPet
                         transitions[index], placementApplied);
                 foreach (StickyWindowSession session in expectedSessions)
                     session.SetEventsSuppressed(false);
+                ApplySideTabZOrder();
             }
         }
 
@@ -1197,8 +1599,28 @@ namespace PennyPet
                 new List<StickyWindowSession>(_sessions.Values))
                 session.CloseForHostShutdown();
             _sessions.Clear();
+
+            ClearDockPreviewOnThread();
+            ClearSplitGuideOnThread();
+            if (_leftNoteTabs != null && !_leftNoteTabs.IsDisposed)
+                _leftNoteTabs.Close();
+            if (_rightNoteTabs != null && !_rightNoteTabs.IsDisposed)
+                _rightNoteTabs.Close();
+            _leftNoteTabs = null;
+            _rightNoteTabs = null;
+
             if (_reminderClock != null) _reminderClock.Stop();
         }
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SetWindowPos(
+            IntPtr window,
+            IntPtr insertAfter,
+            int x,
+            int y,
+            int width,
+            int height,
+            uint flags);
 
         internal bool WaitForExit(int timeoutMilliseconds)
         {
