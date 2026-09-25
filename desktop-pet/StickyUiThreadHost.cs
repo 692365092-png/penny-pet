@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Windows.Threading;
 
@@ -13,6 +15,9 @@ namespace PennyPet
         private Exception _startupError;
         private bool _acceptingCommands = true;
         private bool _faulted;
+        private readonly Queue<Action> _startupRestoreQueue = new Queue<Action>();
+        private bool _startupRestorePumpPosted;
+        private const long StartupRestoreBudgetMilliseconds = 6;
 
         internal event Action<Exception> Faulted;
 
@@ -75,6 +80,61 @@ namespace PennyPet
             }
             PostToDispatcher(delegate { return handler(command); },
                 completed, completionContext);
+        }
+
+        internal void PostStartupRestore(Action invoke)
+        {
+            if (invoke == null) throw new ArgumentNullException(nameof(invoke));
+            Dispatcher dispatcher;
+            lock (_gate)
+            {
+                if (!_acceptingCommands || _dispatcher == null ||
+                    _dispatcher.HasShutdownStarted || _dispatcher.HasShutdownFinished) return;
+                _startupRestoreQueue.Enqueue(invoke);
+                if (_startupRestorePumpPosted) return;
+                _startupRestorePumpPosted = true;
+                dispatcher = _dispatcher;
+            }
+            dispatcher.BeginInvoke(DispatcherPriority.Background,
+                new Action(PumpStartupRestore));
+        }
+
+        private void PumpStartupRestore()
+        {
+            Stopwatch budget = Stopwatch.StartNew();
+            while (budget.ElapsedMilliseconds < StartupRestoreBudgetMilliseconds)
+            {
+                Action work;
+                lock (_gate)
+                {
+                    if (_startupRestoreQueue.Count == 0)
+                    {
+                        _startupRestorePumpPosted = false;
+                        return;
+                    }
+                    work = _startupRestoreQueue.Dequeue();
+                }
+                try { work(); }
+                catch (Exception error)
+                {
+                    Action<Exception> faulted = Faulted;
+                    if (faulted != null) faulted(error);
+                }
+            }
+            Dispatcher dispatcher;
+            lock (_gate)
+            {
+                if (_startupRestoreQueue.Count == 0)
+                {
+                    _startupRestorePumpPosted = false;
+                    return;
+                }
+                dispatcher = _dispatcher;
+            }
+            if (dispatcher != null && !dispatcher.HasShutdownStarted &&
+                !dispatcher.HasShutdownFinished)
+                dispatcher.BeginInvoke(DispatcherPriority.Background,
+                    new Action(PumpStartupRestore));
         }
 
         // Thread transport: callers own payload selection and cancellation.
@@ -209,6 +269,14 @@ namespace PennyPet
             if (thread != null && thread != Thread.CurrentThread)
                 return thread.Join(timeoutMilliseconds);
             return thread == null || thread == Thread.CurrentThread;
+        }
+
+        internal static void PostCompletionForHost(
+            SynchronizationContext context,
+            Action<StickyUiCommandResult> completed,
+            StickyUiCommandResult result)
+        {
+            PostCompletion(context, completed, result);
         }
 
         private static void PostCompletion(SynchronizationContext context,
