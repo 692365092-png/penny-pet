@@ -748,6 +748,32 @@ namespace PennyPet
             return true;
         }
 
+        internal void QueueStartupStickyRestore(StickyNoteData note)
+        {
+            if (note == null || IsDisposed) return;
+            string noteId = note.Id;
+            if (!Hosted.AddNote(noteId)) return;
+            HostedStickyWindowCreatedCount++;
+            DisplayTopologySnapshot topology = CurrentTopologySnapshot();
+            StickyUiCommand command = StickyUiCommand.Create(
+                StickyNoteUiSnapshot.Capture(note), false,
+                ReminderItems, topology, null,
+                StickyPlacementRecovery.SelectForShow(note, topology));
+            Host.PostStartupRestore(command,
+                delegate(StickyUiCommandResult result)
+                {
+                    if (result != null &&
+                        result.Status == StickyUiCommandStatus.Handled)
+                    {
+                        ApplyHostedStickySnapshot(result.Snapshot,
+                            result.Sequence, true, result.Facts, result.Topology);
+                        return;
+                    }
+                    HandleHostedStickyFailure(new string[] { noteId },
+                        "deferred-sticky-restore", result);
+                }, Context);
+        }
+
         internal void PostHostedStickyCommand(StickyUiCommand command,
             Action<StickyUiCommandResult> completed)
         {
