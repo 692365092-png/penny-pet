@@ -241,7 +241,7 @@ namespace PennyPet
             _keyboardPrivacy.SetEnabled(false);
             _reminderRuntime.Stop();
             _conversation.Stop();
-            _persistenceRetryTimer.Stop();
+            _persistence.Dispose();
             _interaction.BeginExit(DateTime.UtcNow);
             Capture = false;
             _keyOverlay.HideImmediately();
