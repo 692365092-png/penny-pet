@@ -202,7 +202,7 @@ namespace PennyPet
     internal sealed class StickyDockLocalGestureRuntime
     {
         private readonly Func<string, WindowFacts> _captureFacts;
-        private readonly Action<IReadOnlyList<DockWindowTarget>, string>
+        private readonly Func<IReadOnlyList<DockWindowTarget>, string, bool>
             _applyFollowers;
         private StickyDockSceneProjection _scene;
         private DisplayTopologySnapshot _topology;
@@ -212,7 +212,7 @@ namespace PennyPet
 
         internal StickyDockLocalGestureRuntime(
             Func<string, WindowFacts> captureFacts,
-            Action<IReadOnlyList<DockWindowTarget>, string> applyFollowers)
+            Func<IReadOnlyList<DockWindowTarget>, string, bool> applyFollowers)
         {
             _captureFacts = captureFacts ??
                 throw new ArgumentNullException(nameof(captureFacts));
@@ -630,8 +630,8 @@ namespace PennyPet
                     !String.Equals(target.NoteId, sourceNoteId,
                         StringComparison.OrdinalIgnoreCase))
                     followers.Add(target);
-            _applyFollowers(followers.AsReadOnly(), sourceNoteId);
-            return true;
+            return _applyFollowers(
+                followers.AsReadOnly(), sourceNoteId);
         }
 
         private sealed class LocalGesture

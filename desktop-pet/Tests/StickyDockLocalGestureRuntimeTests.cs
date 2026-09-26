@@ -302,7 +302,7 @@ namespace PennyPet.Tests
                 new PhysicalRect(0, 0, 1920, 1080));
             DisplaySurfaceSnapshot second = Surface(
                 "two", "\\\\.\\DISPLAY2", "mdp:two",
-                new PhysicalRect(1920, 0, 1920, 1080));
+                new PhysicalRect(1920, 0, 1920, 1080), false);
             Dictionary<string, WindowFacts> facts =
                 new Dictionary<string, WindowFacts>(
                     StringComparer.OrdinalIgnoreCase)
@@ -376,6 +376,33 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void NativeFollowerFailure_IsReportedToGestureOwner()
+        {
+            DisplaySurfaceSnapshot surface = Surface(
+                "one", "\\\\.\\DISPLAY1", "mdp:one",
+                new PhysicalRect(0, 0, 1920, 1080));
+            Dictionary<string, WindowFacts> facts =
+                GroupFacts(surface, 61);
+            StickyDockLocalGestureRuntime runtime =
+                new StickyDockLocalGestureRuntime(
+                    id => facts.ContainsKey(id)
+                        ? facts[id] : null,
+                    (targets, source) => false);
+            runtime.SetTopology(new DisplayTopologySnapshot(
+                61, new[] { surface }));
+            runtime.SetScene(Scene(13, "A", "B", "C"));
+
+            Assert.AreNotEqual(0, runtime.TryBegin(
+                StickyDockLocalGestureKind.HeaderDrag, "A"));
+            Assert.IsFalse(runtime.MoveHeader(facts["A"]));
+            Assert.IsTrue(runtime.IsActive,
+                "The host owns the rollback timing after a native failure.");
+            Assert.AreEqual(3,
+                runtime.CancelAndRestore().Count);
+            Assert.IsFalse(runtime.IsActive);
+        }
+
+        [TestMethod]
         public void Runtime_HasNoPetCallbackRepositoryOrSaveChannel()
         {
             DisplaySurfaceSnapshot surface = Surface(
@@ -412,7 +439,11 @@ namespace PennyPet.Tests
         {
             return new StickyDockLocalGestureRuntime(
                 id => facts.ContainsKey(id) ? facts[id] : null,
-                apply);
+                (targets, source) =>
+                {
+                    apply(targets, source);
+                    return true;
+                });
         }
 
         private static StickyDockSceneProjection Scene(

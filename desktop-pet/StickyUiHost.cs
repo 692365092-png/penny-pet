@@ -44,6 +44,8 @@ namespace PennyPet
         private readonly StickyDockCommitQueue _dockCommitQueue;
         private StickyDockSceneProjection _deferredDockScene;
         private long _activeLocalDockDependency;
+        private IReadOnlyList<DockWindowTarget>
+            _pendingLocalDockRollback;
 
         private const uint SwpNoSize = 0x0001;
         private const uint SwpNoMove = 0x0002;
@@ -116,28 +118,28 @@ namespace PennyPet
         // Same-STA executor for the R22 candidate path. The source HWND stays
         // owned by the native moving/sizing loop; only followers are batched.
         // No content snapshot or Pet callback is involved.
-        private void ApplyLocalDockFollowers(
+        private bool ApplyLocalDockFollowers(
             IReadOnlyList<DockWindowTarget> targets,
             string sourceNoteId)
         {
-            if (targets == null || targets.Count == 0) return;
+            if (targets == null || targets.Count == 0) return true;
 
             StickyWindowSession source;
-            if (!TryGetSession(sourceNoteId, out source)) return;
+            if (!TryGetSession(sourceNoteId, out source)) return false;
             WindowFacts sourceFacts =
                 source.CaptureVisibleFactsForChrome();
-            if (sourceFacts == null) return;
+            if (sourceFacts == null) return false;
 
             DisplayTopologySnapshot topology;
             lock (_configurationGate) topology = _currentTopology;
             if (topology == null ||
                 topology.Generation != sourceFacts.TopologyGeneration)
-                return;
+                return false;
             DisplaySurfaceSnapshot surface =
                 topology.FindByRuntimeGdiName(
                     sourceFacts.RuntimeGdiName) ??
                 topology.FindByTargetKey(sourceFacts.ActiveTargetKey);
-            if (surface == null || sourceFacts.Dpi <= 0) return;
+            if (surface == null || sourceFacts.Dpi <= 0) return false;
 
             List<StickyWindowSession> sessions =
                 new List<StickyWindowSession>(targets.Count);
@@ -150,7 +152,7 @@ namespace PennyPet
                 if (target == null ||
                     !TryGetSession(target.NoteId, out session) ||
                     session.PlacementHwnd == IntPtr.Zero)
-                    return;
+                    return false;
                 sessions.Add(session);
                 handles.Add(session.PlacementHwnd);
                 rects.Add(target.PhysicalBounds);
@@ -160,17 +162,17 @@ namespace PennyPet
                 new List<StickyWindowSession.DockDpiTransition>();
             List<StickyWindowSession> transitionSessions =
                 new List<StickyWindowSession>();
-            bool applied = false;
-            foreach (StickyWindowSession session in sessions)
-                session.SetEventsSuppressed(true);
+            bool placementAttempted = false;
             try
             {
+                foreach (StickyWindowSession session in sessions)
+                    session.SetEventsSuppressed(true);
                 foreach (StickyWindowSession session in sessions)
                 {
                     StickyWindowSession.DockDpiTransition transition;
                     if (!session.TryPrepareDockTargetDpi(
                         surface, sourceFacts.Dpi, out transition))
-                        return;
+                        return false;
                     transitionSessions.Add(session);
                     transitions.Add(transition);
                 }
@@ -178,25 +180,66 @@ namespace PennyPet
                 WindowsBatchPlacementStatus status =
                     WindowsBatchWindowPlacementExecutor.Apply(
                         handles, rects);
+                placementAttempted = true;
+                bool corrected = false;
                 if (status != WindowsBatchPlacementStatus.Applied)
                 {
+                    // EndDeferWindowPos is not transactional. One bounded
+                    // correction is allowed, then actual HWND facts decide.
                     for (int index = 0; index < sessions.Count; index++)
                         sessions[index].SetBounds(new StickyUiBounds(
                             rects[index].Left, rects[index].Top,
-                            rects[index].Width, rects[index].Height));
+                            rects[index].Width, rects[index].Height),
+                            topology);
+                    corrected = true;
                 }
-                applied = true;
+
+                List<int> mismatches = LocalDockPlacementMismatches(
+                    sessions, rects, topology.Generation);
+                if (mismatches.Count > 0 && !corrected)
+                {
+                    foreach (int index in mismatches)
+                        sessions[index].SetBounds(new StickyUiBounds(
+                            rects[index].Left, rects[index].Top,
+                            rects[index].Width, rects[index].Height),
+                            topology);
+                    corrected = true;
+                }
+
+                return LocalDockPlacementMismatches(
+                    sessions, rects,
+                    topology.Generation).Count == 0;
             }
             finally
             {
                 for (int index = transitions.Count - 1;
                     index >= 0; index--)
                     transitionSessions[index].CompleteDockTargetDpi(
-                        transitions[index], applied);
+                        transitions[index], placementAttempted);
                 foreach (StickyWindowSession session in sessions)
                     session.SetEventsSuppressed(false);
                 ApplySideTabZOrder();
             }
+        }
+
+        private static List<int> LocalDockPlacementMismatches(
+            IList<StickyWindowSession> sessions,
+            IList<PhysicalRect> expected, long topologyGeneration)
+        {
+            List<int> result = new List<int>();
+            if (sessions == null || expected == null ||
+                sessions.Count != expected.Count)
+                return result;
+            for (int index = 0; index < sessions.Count; index++)
+            {
+                WindowFacts facts =
+                    sessions[index].CaptureVisibleFactsForChrome();
+                if (facts == null ||
+                    facts.TopologyGeneration != topologyGeneration ||
+                    !facts.PhysicalBounds.Equals(expected[index]))
+                    result.Add(index);
+            }
+            return result;
         }
 
         internal void ConfigureSideTabs(
@@ -768,6 +811,7 @@ namespace PennyPet
             if (snapshot == null) return;
             _threadHost.PostToDispatcher(delegate
             {
+                _pendingLocalDockRollback = null;
                 if (!_localDockGestures.TryRebaseTopology(snapshot))
                 {
                     _localDockGestures.Cancel();
@@ -1363,6 +1407,12 @@ namespace PennyPet
             if (start)
             {
                 // Fail closed: never fall back to the old per-frame Pet path.
+                if (_pendingLocalDockRollback != null)
+                {
+                    ApplyLocalDockCorrections(
+                        _pendingLocalDockRollback);
+                    _pendingLocalDockRollback = null;
+                }
                 if (!_dockCommitQueue.CanBeginGesture)
                     return true;
                 _activeLocalDockDependency =
@@ -1377,21 +1427,37 @@ namespace PennyPet
             {
                 if (!_localDockGestures.IsActive)
                     return true;
-                if (kind == StickyDockLocalGestureKind.HeaderDrag)
-                    MoveLocalDockHeader(value.Facts);
-                else if (kind ==
-                    StickyDockLocalGestureKind.HorizontalResize)
-                    ResizeLocalDockHorizontal(
-                        value.Left, value.Width);
-                else
-                    ResizeLocalDockDivider(value.Height);
+                bool applied =
+                    kind == StickyDockLocalGestureKind.HeaderDrag
+                        ? MoveLocalDockHeader(value.Facts)
+                    : kind ==
+                        StickyDockLocalGestureKind.HorizontalResize
+                        ? ResizeLocalDockHorizontal(
+                            value.Left, value.Width)
+                        : ResizeLocalDockDivider(value.Height);
+                if (!applied)
+                {
+                    _pendingLocalDockRollback =
+                        _localDockGestures.CancelAndRestore();
+                    _activeLocalDockDependency = 0;
+                    ClearDockPreviewOnThread();
+                    ClearSplitGuideOnThread();
+                }
                 return true;
             }
 
             if (complete)
             {
                 if (!_localDockGestures.IsActive)
+                {
+                    if (_pendingLocalDockRollback != null)
+                    {
+                        ApplyLocalDockCorrections(
+                            _pendingLocalDockRollback);
+                        _pendingLocalDockRollback = null;
+                    }
                     return true;
+                }
                 if (kind == StickyDockLocalGestureKind.HeaderDrag &&
                     value.Facts != null)
                 {
@@ -1483,6 +1549,12 @@ namespace PennyPet
         private StickyUiCommandResult PrepareLocalDockStructure(
             IEnumerable<string> affectedNoteIds)
         {
+            if (_pendingLocalDockRollback != null)
+            {
+                ApplyLocalDockCorrections(
+                    _pendingLocalDockRollback);
+                _pendingLocalDockRollback = null;
+            }
             if (!_localDockGestures.AffectsStructure(
                 affectedNoteIds))
                 return StickyUiCommandResult.Handled();
