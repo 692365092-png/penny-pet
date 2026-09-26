@@ -225,3 +225,17 @@ All three R13 geometry paths execute locally. Header drag rebuilds the whole gro
 This checkpoint intentionally does **not** select the local driver from `SessionEventRaised`. The roadmap requires R22–R24 to remain one migration batch, and specifically forbids switching the formal runtime before R23 supplies the one-shot final commit/ack handoff. Thus the old live transport remains the selected production path at the R22 checkpoint; R23 will remove it when completion can be committed atomically rather than leaving a window/model half-migration.
 
 Windows CI #124 on `bce306d` passed build, all 670 discoverable tests, modular native self-tests, single-file EXE smoke, managed Dock baseline, render-cost observation and release artifacts.
+
+## R23 — Dock commit/ACK handoff and continuous gestures
+
+The R22 candidate path is now the selected production path. Header drag, horizontal Dock resize and divider resize are consumed inside `StickyUiHost` before generic event dispatch, so their live frames never cross to Pet. `StickyWindowSession` also emits a lightweight named `DockGeometry` payload for these inputs instead of capturing note content every frame; header-drag `BoundsChanged` echoes are suppressed at the session source. Pet receives one low-frequency `DockGestureCommitRequested` only after the native gesture completes.
+
+Completion captures fresh actual `WindowFacts` and window leases for the affected HWNDs exactly once. The commit carries `GestureId`, dependency, semantic intent, target, topology generation and Dock-only baseline versions. `StickyDockCommitVersion` intentionally hashes only Dock membership/visibility and fallback geometry, so body text, reminders and appearance edits cannot invalidate a geometry commit.
+
+Pet validates topology, affected-model versions, window leases/facts and preferred-placement construction before any mutation. Merge/detach semantics and geometry then commit in one Pet turn; persistence is queued only afterwards. Pet replies with `StickyDockCommitAck`. Accepted ACKs never reposition windows, so they cannot make the next active gesture jump. Rejected ACKs carry the current model scene plus corrective physical targets and Sticky restores those targets locally before rebuilding dependent state.
+
+Completed-but-unacknowledged gestures are separate from the active native gesture. `StickyDockCommitQueue` serializes dependent results, ignores duplicate/late ACKs, bounds pending results at eight, and retains a small accepted-dependency window so B may have started while A was awaiting ACK. Relation-changing completion applies a provisional Sticky-side scene immediately; therefore merge A can be followed by split B before A's ACK. When A is accepted, B's baseline versions are rebound to the acknowledged canonical scene before B is sent. When A is rejected, only results/active state depending on A are cancelled and rebuilt.
+
+The old Pet-side live planner/mailbox implementation remains compiled as a migration fallback surface for the R22–R24 batch, but it is no longer reachable from hosted Dock input: `SessionEventRaised` consumes all three Dock lifecycles first. R24 can now retire that dead transport together with the old mutation/restore paths rather than deleting pieces before the structural-operation migration is ready.
+
+Windows CI #142 on `29d9901` passed the full pipeline: build, all 679 discoverable tests, modular native self-tests, single-file EXE smoke, managed Dock baseline, render-cost observation and release artifacts.
