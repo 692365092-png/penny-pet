@@ -11,8 +11,8 @@ namespace PennyPet
 
         internal DockPlacementPlan(long topologyGeneration,
             long planSequence, string sourceNoteId, string targetSurfaceId,
-            int targetDpi, IEnumerable<DockWindowTarget> windowTargets,
-            long interactionEpoch = 0, DockInput input = null)
+            int targetDpi,
+            IEnumerable<DockWindowTarget> windowTargets)
         {
             TopologyGeneration = topologyGeneration;
             PlanSequence = planSequence;
@@ -125,8 +125,7 @@ namespace PennyPet
         internal static DockPlacementPlan Plan(
             DockGroupLogicalState group, WindowFacts sourceFacts,
             DisplaySurfaceSnapshot targetSurface, int targetDpi,
-            long topologyGeneration, long planSequence,
-            long interactionEpoch = 0, DockInput input = null)
+            long topologyGeneration, long planSequence)
         {
             if (group == null) throw new ArgumentNullException(nameof(group));
             if (sourceFacts == null)
@@ -157,8 +156,9 @@ namespace PennyPet
 
             return new DockPlacementPlan(topologyGeneration, planSequence,
                 sourceFacts.WindowId, targetSurface.RuntimeSurfaceId,
-                targetDpi, DockLayout.ProjectGroup(group, group.RootAnchor, targetSurface, targetDpi),
-                interactionEpoch, input);
+                targetDpi, DockLayout.ProjectGroup(
+                    group, group.RootAnchor,
+                    targetSurface, targetDpi));
         }
 
         private static bool IsSourceOnTarget(WindowFacts sourceFacts,

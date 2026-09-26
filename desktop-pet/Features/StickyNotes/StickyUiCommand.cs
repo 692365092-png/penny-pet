@@ -548,17 +548,6 @@ namespace PennyPet
 
     internal sealed class StickyUiEvent
     {
-        // Stamped once by the emitting session, before crossing to the Pet thread.
-        internal DockInput Input { get; set; }
-        internal bool BeginsDockInput { get { return Kind == StickyUiEventKind.HeaderDragStarted ||
-            Kind == StickyUiEventKind.DockHorizontalResizeStarted ||
-            Kind == StickyUiEventKind.DockDividerResizeStarted || Kind == StickyUiEventKind.UserResizeStarted; } }
-        internal bool IsDockInput { get { return BeginsDockInput ||
-            Kind == StickyUiEventKind.HeaderDragMoved || Kind == StickyUiEventKind.HeaderDragCompleted ||
-            Kind == StickyUiEventKind.DockHorizontalResizing || Kind == StickyUiEventKind.DockHorizontalResizeCompleted ||
-            Kind == StickyUiEventKind.DockDividerResizing || Kind == StickyUiEventKind.DockDividerResizeCompleted ||
-            Kind == StickyUiEventKind.UserResizeCompleted; } }
-
         // Kept internal for focused self-tests; sessions use payload factories.
         internal StickyUiEvent(StickyUiEventKind kind, string noteId,
             StickyNoteUiSnapshot snapshot, bool flag, long sequence,
