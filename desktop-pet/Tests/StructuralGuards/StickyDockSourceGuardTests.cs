@@ -1042,5 +1042,37 @@ namespace PennyPet.Tests
                     "Facts.TryPrepare(member, snapshot,") &&
                 apply.Contains("remaining.Count != expectedIds.Count") && apply.Contains("!remaining.Remove(member.NoteId)"));
         }
+
+        [TestMethod]
+        public void R22_LocalGestureRuntime_HasStickyOwnedSceneAndExecutor()
+        {
+            string dock = SourceGuardText.ReadSource(
+                "Features/StickyNotes/StickyDockController.cs");
+            string host = SourceGuardText.ReadSource("StickyUiHost.cs");
+            string runtime = SourceGuardText.ReadSource(
+                "Features/StickyNotes/StickyDockLocalGestureRuntime.cs");
+
+            Assert.IsTrue(dock.Contains("PublishDockScene(all)") &&
+                dock.Contains("_workspace.Host.SetDockScene("),
+                "Dock model changes must publish a detached scene before local gestures.");
+            Assert.IsTrue(host.Contains(
+                    "new StickyDockLocalGestureRuntime(") &&
+                host.Contains("ApplyLocalDockFollowers(") &&
+                host.Contains("WindowsBatchWindowPlacementExecutor.Apply(") &&
+                host.Contains("session.SetEventsSuppressed(true)"),
+                "Sticky host must own the same-STA follower executor.");
+            Assert.IsFalse(runtime.Contains("StickyNoteRepository") ||
+                runtime.Contains("SaveAsync(") ||
+                runtime.Contains("SynchronizationContext") ||
+                runtime.Contains("DockFrameMailbox"),
+                "The local live runtime must have no Pet, persistence or transport channel.");
+            Assert.IsTrue(runtime.Contains(
+                    "StickyDockGeometry.CalculateHorizontalResizeTargets(") &&
+                runtime.Contains(
+                    "CalculateDockMemberResizeTargetsExact(") &&
+                runtime.Contains("DockPlacementPlanner.Plan("),
+                "All three R13 geometry paths must be available locally.");
+        }
+
     }
 }

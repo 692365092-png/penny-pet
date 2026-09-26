@@ -40,11 +40,18 @@ namespace PennyPet
         private DockPulseIndicatorForm _splitGuideIndicator;
         private string _dockPreviewParentNoteId;
         private string _dockPreviewChildNoteId;
+        private readonly StickyDockLocalGestureRuntime _localDockGestures;
 
         private const uint SwpNoSize = 0x0001;
         private const uint SwpNoMove = 0x0002;
         private const uint SwpNoActivate = 0x0010;
         private const uint SwpNoOwnerZOrder = 0x0200;
+
+        internal StickyUiHost()
+        {
+            _localDockGestures = new StickyDockLocalGestureRuntime(
+                CaptureLocalDockFacts, ApplyLocalDockFollowers);
+        }
 
         internal void Start()
         {
@@ -68,6 +75,119 @@ namespace PennyPet
                 _eventHandler = handler;
                 _eventContext = eventContext;
                 _commandHandler = HandleCommand;
+            }
+        }
+
+        // Low-frequency model projection. R22 prepares the local visual
+        // runtime here; R23 will switch gesture completion to commit/ack.
+        internal void SetDockScene(StickyDockSceneProjection scene)
+        {
+            if (scene == null) return;
+            _threadHost.PostToDispatcher(delegate
+            {
+                _localDockGestures.SetScene(scene);
+                return StickyUiCommandResult.Handled();
+            }, null, null);
+        }
+
+        private WindowFacts CaptureLocalDockFacts(string noteId)
+        {
+            StickyWindowSession session;
+            return TryGetSession(noteId, out session)
+                ? session.CaptureVisibleFactsForChrome()
+                : null;
+        }
+
+        private void PrepareLocalDockTopology()
+        {
+            DisplayTopologySnapshot topology;
+            lock (_configurationGate) topology = _currentTopology;
+            _localDockGestures.SetTopology(topology);
+        }
+
+        // Same-STA executor for the R22 candidate path. The source HWND stays
+        // owned by the native moving/sizing loop; only followers are batched.
+        // No content snapshot or Pet callback is involved.
+        private void ApplyLocalDockFollowers(
+            IReadOnlyList<DockWindowTarget> targets,
+            string sourceNoteId)
+        {
+            if (targets == null || targets.Count == 0) return;
+
+            StickyWindowSession source;
+            if (!TryGetSession(sourceNoteId, out source)) return;
+            WindowFacts sourceFacts =
+                source.CaptureVisibleFactsForChrome();
+            if (sourceFacts == null) return;
+
+            DisplayTopologySnapshot topology;
+            lock (_configurationGate) topology = _currentTopology;
+            if (topology == null ||
+                topology.Generation != sourceFacts.TopologyGeneration)
+                return;
+            DisplaySurfaceSnapshot surface =
+                topology.FindByRuntimeGdiName(
+                    sourceFacts.RuntimeGdiName) ??
+                topology.FindByTargetKey(sourceFacts.ActiveTargetKey);
+            if (surface == null || sourceFacts.Dpi <= 0) return;
+
+            List<StickyWindowSession> sessions =
+                new List<StickyWindowSession>(targets.Count);
+            List<IntPtr> handles = new List<IntPtr>(targets.Count);
+            List<PhysicalRect> rects =
+                new List<PhysicalRect>(targets.Count);
+            foreach (DockWindowTarget target in targets)
+            {
+                StickyWindowSession session;
+                if (target == null ||
+                    !TryGetSession(target.NoteId, out session) ||
+                    session.PlacementHwnd == IntPtr.Zero)
+                    return;
+                sessions.Add(session);
+                handles.Add(session.PlacementHwnd);
+                rects.Add(target.PhysicalBounds);
+            }
+
+            List<StickyWindowSession.DockDpiTransition> transitions =
+                new List<StickyWindowSession.DockDpiTransition>();
+            List<StickyWindowSession> transitionSessions =
+                new List<StickyWindowSession>();
+            bool applied = false;
+            foreach (StickyWindowSession session in sessions)
+                session.SetEventsSuppressed(true);
+            try
+            {
+                foreach (StickyWindowSession session in sessions)
+                {
+                    StickyWindowSession.DockDpiTransition transition;
+                    if (!session.TryPrepareDockTargetDpi(
+                        surface, sourceFacts.Dpi, out transition))
+                        return;
+                    transitionSessions.Add(session);
+                    transitions.Add(transition);
+                }
+
+                WindowsBatchPlacementStatus status =
+                    WindowsBatchWindowPlacementExecutor.Apply(
+                        handles, rects);
+                if (status != WindowsBatchPlacementStatus.Applied)
+                {
+                    for (int index = 0; index < sessions.Count; index++)
+                        sessions[index].SetBounds(new StickyUiBounds(
+                            rects[index].Left, rects[index].Top,
+                            rects[index].Width, rects[index].Height));
+                }
+                applied = true;
+            }
+            finally
+            {
+                for (int index = transitions.Count - 1;
+                    index >= 0; index--)
+                    transitionSessions[index].CompleteDockTargetDpi(
+                        transitions[index], applied);
+                foreach (StickyWindowSession session in sessions)
+                    session.SetEventsSuppressed(false);
+                ApplySideTabZOrder();
             }
         }
 

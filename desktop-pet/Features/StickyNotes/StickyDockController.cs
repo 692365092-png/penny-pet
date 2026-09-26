@@ -62,6 +62,7 @@ namespace PennyPet
         internal readonly DockGestureOwner Gestures = new DockGestureOwner();
         internal DockInteractionSession Interaction { get { return Gestures.Drag; } }
         private long _lastAppliedDockPlanSequence = -1;
+        private long _dockSceneRevision;
         private readonly HashSet<string> _pendingDockTopologyGroups =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         internal void ApplyDockComponentTopMost(StickyNoteData seed,
@@ -1021,7 +1022,10 @@ namespace PennyPet
 
         internal void RefreshDockResizeRoles()
         {
-            IEnumerable<StickyNoteData> all = _workspace.Notes.InStorageOrder;
+            List<StickyNoteData> all =
+                new List<StickyNoteData>(
+                    _workspace.Notes.InStorageOrder);
+            PublishDockScene(all);
             HashSet<string> handled = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (StickyNoteData note in all)
             {
@@ -1040,6 +1044,22 @@ namespace PennyPet
                         grouped && index < ordered.Count - 1, 220, 700);
                 }
             }
+        }
+
+        private void PublishDockScene(
+            IList<StickyNoteData> notes)
+        {
+            List<StickyDockSceneMember> members =
+                new List<StickyDockSceneMember>();
+            if (notes != null)
+                foreach (StickyNoteData note in notes)
+                    if (note != null)
+                        members.Add(new StickyDockSceneMember(
+                            note.Id, note.DockGroupId,
+                            note.DockGroupOrder, note.Visible));
+            _workspace.Host.SetDockScene(
+                new StickyDockSceneProjection(
+                    members, ++_dockSceneRevision));
         }
 
         private void ApplyDockResizeRole(StickyNoteData note, bool grouped,
