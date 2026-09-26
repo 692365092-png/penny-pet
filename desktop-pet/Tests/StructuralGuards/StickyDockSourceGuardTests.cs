@@ -14,9 +14,8 @@ namespace PennyPet.Tests
             string handler = Between(source,
                 "if (value.Kind == StickyUiEventKind.SnapshotChanged)",
                 "if (value.Kind == StickyUiEventKind.Closed)");
-            string apply = Between(source,
-                "private bool ApplyHostedStickyEvent",
-                "internal void ClearHostedDockResizeSession");
+            string apply = RawSource.SliceMethod(source,
+                "private bool ApplyHostedStickyEvent");
 
             Assert.IsTrue(handler.Contains("ApplyHostedStickyEvent(") &&
                 apply.Contains("if (persist) Notes.SaveAsync();"),
@@ -32,9 +31,8 @@ namespace PennyPet.Tests
         public void StickyUiRegistry_CloseAllPreflightsImeAndSuppressesEvents()
         {
             string host = ReadSource("StickyUiHost.cs");
-            string closeAll = Between(host,
-                "private StickyUiCommandResult CloseAllSessions()",
-                "private StickyUiCommandResult ApplyLatestDockPlan");
+            string closeAll = RawSource.SliceMethod(host,
+                "private StickyUiCommandResult CloseAllSessions()");
             int preflight = closeAll.IndexOf(
                 "session.IsImeCompositionActive",
                 StringComparison.Ordinal);
@@ -103,24 +101,6 @@ namespace PennyPet.Tests
             Assert.IsFalse(host.Contains("StickyFeature") ||
                 host.Contains("IsTodoList") || host.Contains("IsSchedule"),
                 "The host must own sessions, not canonical persistence or content modes.");
-        }
-
-        [TestMethod]
-        public void StickyDock_UsesDetachedFactsAndTypedHostedEffectBoundary()
-        {
-            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
-            string form = ReadSource("PetForm.cs");
-
-            Assert.IsTrue(coordinator.Contains("DockInteractionSession Interaction") && !form.Contains("DockInteractionSession") &&
-                !form.Contains("_activeDockGroupIds") &&
-                !form.Contains("_activeDockCurrentFacts") &&
-                coordinator.Contains("Interaction.MemberIds") &&
-                coordinator.Contains("DockPlacementPlanner.Plan(") &&
-                coordinator.Contains("ApplyDockTargets"),
-                "Dock session geometry must be note-id/facts based.");
-            Assert.IsFalse(coordinator.Contains("Object.ReferenceEquals") ||
-                coordinator.Contains("member.Location ="),
-                "Dock decisions and group motion must not use Window/model identity.");
         }
 
         [TestMethod]
@@ -198,195 +178,6 @@ namespace PennyPet.Tests
                 session.Contains("if (_applyingBounds) return;") &&
                 session.Contains("StickyUiEventKind.CloseRequested"),
                 "StickyUiHost must forward dock drag/resize events.");
-        }
-
-        [TestMethod]
-        public void HostedDividerLiveResize_UsesExplicitLeanLifecycle()
-        {
-            string native = ReadSource(
-                "Features/StickyNotes/StickyNativeWindowBehavior.cs");
-            string windowCoordinator = SourceGuardText.ReadStickyWorkflowSource();
-            string dockCoordinator = ReadSource("Features/StickyNotes/StickyDockController.cs");
-            string liveResize = Between(dockCoordinator,
-                "internal void ResizeHostedStickyDock",
-                "private void OnResizeLiveBatchApplied");
-            string progress = Between(windowCoordinator,
-                "if (value.Kind == StickyUiEventKind.DockDividerResizing ||",
-                "if (value.Kind == StickyUiEventKind.DockDividerResizeCompleted ||");
-
-            Assert.IsTrue(native.Contains("WmEnterSizeMove") &&
-                native.Contains("WmSizing") &&
-                native.Contains("WmExitSizeMove") &&
-                native.Contains("DockDividerResizeStarted") &&
-                native.Contains("DockDividerResizing") &&
-                native.Contains("DockDividerResizeCompleted"),
-                "Native sizing must publish an explicit divider lifecycle.");
-            Assert.IsTrue(liveResize.Contains("session.QueueLive") &&
-                liveResize.Contains("PostLatestResizeBatch") &&
-                !liveResize.Contains("LayoutDockChain") &&
-                !liveResize.Contains("RefreshDockResizeRoles") &&
-                !liveResize.Contains("SaveAsync") &&
-                !liveResize.Contains("ApplyDockCanonicalFromPhysical"),
-                "Live ticks must coalesce follower frames through the latest-wins divider mailbox without committing durable preferences.");
-            Assert.IsFalse(progress.Contains("SaveAsync") ||
-                progress.Contains("RefreshDockResizeRoles"),
-                "Live progress must not save or refresh resize roles.");
-            Assert.IsTrue(windowCoordinator.Contains(
-                "CompleteHostedStickyDockResize(value)") &&
-                windowCoordinator.Contains("PostFinalResizeBatch") &&
-                windowCoordinator.Contains("session.LayoutIsExact") &&
-                windowCoordinator.Contains("ClearHostedDockResizeSession()") &&
-                windowCoordinator.Contains("Notes.SaveAsync();"),
-                "Completion must post a final batch, verify the seam, and finish the owning session; source and follower saves may coalesce.");
-            int sourceCommit = windowCoordinator.IndexOf(
-                "CommitResizeSourceFinal", StringComparison.Ordinal);
-            int finalBatch = windowCoordinator.IndexOf(
-                "PostFinalResizeBatch", StringComparison.Ordinal);
-            Assert.IsTrue(sourceCommit >= 0 && finalBatch > sourceCommit &&
-                windowCoordinator.Contains(
-                    "PlacementReason.UserResizeCommit"),
-                "The resized source must commit its preferred height in the Pet turn before posting the async follower batch.");
-        }
-
-        [TestMethod]
-        [TestCategory("ArchitectureSourceBoundary")]
-        public void DividerEffectsCannotBypassSessionOwnershipOrWholeBatchPreflight()
-        {
-            string window = SourceGuardText.ReadStickyWorkflowSource();
-            string dock = SourceGuardText.ReadStickyWorkflowSource();
-            string final = Between(window, "private void OnResizeFinalBatchApplied", "private void CommitResizeSourceFinal");
-            int owner = final.IndexOf("session.IsCurrentFinal(expected)", StringComparison.Ordinal);
-            int validate = final.IndexOf("CanAcceptResizeBatch(", StringComparison.Ordinal);
-            int correction = final.IndexOf("session.TryCorrect(", StringComparison.Ordinal);
-            int commit = final.IndexOf("ApplyResizeBatchCanonical(", StringComparison.Ordinal);
-            Assert.IsTrue(owner >= 0 && validate > owner && correction > validate && commit > correction);
-            Assert.IsTrue(final.Contains("!ReferenceEquals(Gestures.Resize, session)"));
-            string preflight = Between(dock, "private bool CanAcceptResizeBatch", "private bool ApplyResizeBatchCanonical");
-            Assert.IsTrue(preflight.Contains("HasExpectedFollowers") && preflight.Contains("MatchesMembers") &&
-                preflight.Contains("Facts.TryPrepare(") && preflight.Contains("!seen.Add(member.NoteId)"));
-            string start = Between(window, "if (value.Kind == StickyUiEventKind.DockDividerResizeStarted ||",
-                "if (value.Kind == StickyUiEventKind.DockDividerResizing ||");
-            Assert.IsFalse(start.Contains("ClearHostedDockResizeSession"), "Rejected events cannot clear a current gesture.");
-            string host = ReadSource("StickyUiHost.cs");
-            Assert.IsTrue(host.Contains("mailbox.TakeFinal(expected)") && host.Contains("mailbox.CompleteFinal(expected)"));
-        }
-
-        [TestMethod]
-        [TestCategory("ArchitectureSourceBoundary")]
-        public void ResizeNativeEffectsUseOneQuietBatchAndOneCapturePerMember()
-        {
-            string host = ReadSource("StickyUiHost.cs");
-            string apply = RawSource.SliceMethod(host, "private StickyUiCommandResult ApplyResizeBatch(");
-            int validate = apply.IndexOf("!TryGetSession(target.NoteId", StringComparison.Ordinal);
-            int suppress = apply.IndexOf("session.SetEventsSuppressed(true)", StringComparison.Ordinal);
-            int move = apply.IndexOf("WindowsBatchWindowPlacementExecutor.Apply(", StringComparison.Ordinal);
-            int capture = apply.IndexOf(".CaptureDockMember(topology)", StringComparison.Ordinal);
-            Assert.IsTrue(validate >= 0 && suppress > validate && move > suppress && capture > move);
-            Assert.IsTrue(apply.Contains("finally") && apply.Contains("session.SetEventsSuppressed(false)"));
-            Assert.IsFalse(apply.Contains(".SetBounds(") || apply.Contains(".ShowAtPhysicalBounds("));
-            string live = RawSource.SliceMethod(SourceGuardText.ReadStickyWorkflowSource(),
-                "internal void ResizeHostedStickyDock(");
-            int accepted = live.IndexOf("session.QueueLive(value", StringComparison.Ordinal);
-            int facts = live.IndexOf("update.Commit()", StringComparison.Ordinal);
-            Assert.IsTrue(accepted >= 0 && facts > accepted);
-            Assert.IsFalse(live.Contains("SaveAsync") || live.Contains("TryCommitPreferred"));
-        }
-
-        [TestMethod]
-        [TestCategory("ArchitectureSourceBoundary")]
-        public void ResizeDependentMutationsWaitForFactsAndClearOwnerBeforeContinuations()
-        {
-            string window = SourceGuardText.ReadStickyWorkflowSource();
-            string dock = SourceGuardText.ReadStickyWorkflowSource();
-            foreach (string signature in new[] { "private void CollapseAllStickyNotes()",
-                "internal void ExpandAndTileAllStickyNotesToPetScreen()", "internal bool BeginHostedStickyExitIfNeeded()",
-                "internal void CloseHostedStickyRuntimeForReload(" })
-                Assert.IsTrue(RawSource.SliceMethod(window, signature).Contains("DeferDockMutation"), signature);
-            Assert.IsTrue(RawSource.SliceMethod(dock, "internal void CloseStickyDockNote(").Contains("DeferDockMutation"));
-            Assert.IsTrue(dock.Contains("DeferDockMutation(note.Id, () => DeleteStickyNote(Notes.Find(note.Id), completed))"));
-            Assert.IsTrue(window.Contains("DeferDockMutation(note.Id, () => ShowHostedSticky("));
-            string clear = RawSource.SliceMethod(window, "internal void ClearHostedDockResizeSession(");
-            Assert.IsTrue(clear.Contains("RunDeferredDockMutations(Gestures.FinishResize(expected))"));
-            string apply = RawSource.SliceMethod(dock, "private bool ApplyResizeBatchCanonical(");
-            int prepare = apply.IndexOf("StickyResizePreferences.TryBuild", StringComparison.Ordinal);
-            Assert.IsTrue(prepare >= 0 && apply.IndexOf("update.CommitGeometry()", StringComparison.Ordinal) > prepare);
-        }
-
-        [TestMethod]
-        public void HostedDock_ReusesNeutralSessionAndTypedEffectBoundary()
-        {
-            string windowCoordinator = SourceGuardText.ReadStickyWorkflowSource();
-            string dockCoordinator = ReadSource("Features/StickyNotes/StickyDockController.cs");
-
-            Assert.IsTrue(windowCoordinator.Contains(
-                "BeginStickyDockDrag(facts, value.Facts, value.Topology)") &&
-                windowCoordinator.Contains("MoveStickyDockDrag(facts, value.Facts, value.Topology)") &&
-                windowCoordinator.Contains(
-                    "CompleteStickyDockDrag(facts, value)"),
-                "Hosted drag facts must enter the existing Dock session.");
-            Assert.IsTrue(dockCoordinator.Contains(
-                "StickyUiCommand.SetBounds(") &&
-                dockCoordinator.Contains("StickyUiCommand.SetTopMost(") &&
-                dockCoordinator.Contains("ApplyDockTargets") &&
-                dockCoordinator.Contains("ResizeHostedStickyDock") &&
-                dockCoordinator.Contains("CalculateDockDividerTargets") &&
-                dockCoordinator.Contains("CloseStickyDockNote") &&
-                !dockCoordinator.Contains("_noteWindows") &&
-                !dockCoordinator.Contains("StickyNoteWindow"),
-                "Dock effects must terminate at the hosted typed boundary.");
-            Assert.IsFalse(windowCoordinator.Contains("DockMergeRequested") ||
-                windowCoordinator.Contains("DockAttached") ||
-                windowCoordinator.Contains("DockCompleted") ||
-                dockCoordinator.Contains("HostedDockCoordinator"),
-                "The minimum E2E must not add a second Dock protocol.");
-        }
-
-        [TestMethod]
-        public void DockVisualFeedback_UsesDetachedFactsOnHostedPath()
-        {
-            string form = ReadSource("PetForm.cs");
-            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
-            string begin = Between(coordinator,
-                "internal void BeginStickyDockDrag",
-                "internal void MoveStickyDockDrag");
-            string moveVisuals = Between(coordinator,
-                "Interaction.RememberTargets(PlanToDockTargets(livePlan));",
-                "internal void CompleteStickyDockDrag");
-            string mergeVisuals = Between(coordinator,
-                "internal void CompleteStickyDockDrag",
-                "private void StartDockFinalization");
-            string helpers = Between(coordinator,
-                "private void ShowSplitGuide",
-                "private DockTarget FindDockTarget");
-
-            Assert.IsTrue(begin.Contains("ShowSplitGuide(seed, groupFacts)") &&
-                !begin.Contains("StickyNoteWindow"),
-                "Hosted split candidates must receive a detached guide.");
-            Assert.IsTrue(moveVisuals.Contains(
-                    "UpdateSplitGuide(seed, Interaction.PreviewFacts)") &&
-                moveVisuals.Contains("UpdateDockPreview(seed, previewFacts)") &&
-                !moveVisuals.Contains("_activeNoteDragHosted"),
-                "Hosted drag must update previews from detached facts.");
-            Assert.IsTrue(mergeVisuals.Contains("ShowTransientDockPulse") &&
-                !mergeVisuals.Contains("if (!_activeNoteDragHosted)"),
-                "Hosted merge must publish the detached seam pulse.");
-            Assert.IsTrue(helpers.Contains(
-                    "CalculateDockVisualSeam(parentFacts)") &&
-                helpers.Contains("IDictionary<string, DockWindowFacts>") &&
-                !helpers.Contains("parent.Bounds") &&
-                !helpers.Contains("StickyDockOperations"),
-                "Visual helpers must use detached geometry without changing Dock rules.");
-            string host = ReadSource("StickyUiHost.cs");
-            Assert.IsTrue(host.Contains(
-                    "private string _dockPreviewParentNoteId") &&
-                host.Contains("private string _dockPreviewChildNoteId") &&
-                coordinator.Contains(
-                    "_workspace.Host.UpdateDockPreview(") &&
-                !coordinator.Contains(
-                    "DockPulseIndicatorForm _dockPreviewIndicator") &&
-                !form.Contains("StickyNoteWindow _dockPreviewParent") &&
-                !form.Contains("StickyNoteWindow _dockPreviewChild"),
-                "Preview identity and feedback HWNDs must be Sticky-host owned and note-id based.");
         }
 
         [TestMethod]
@@ -528,138 +319,6 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void Drt67Closeout_StandaloneDragCommitUsesEventAuthority()
-        {
-            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
-            string commit = RawSource.SliceMethod(coordinator, "private void CompleteDockDurableCommit(") +
-                RawSource.SliceMethod(coordinator, "private bool TryPrepareDockCommit(");
-
-            Assert.IsTrue(commit.Contains(
-                    "TryPrepareDockCommit(result, expectedTopology, expectedEpoch,") &&
-                commit.Contains("result.DockBatchResult"),
-                "The dock durable commit must consume the captured actual-facts result.");
-            Assert.IsTrue(commit.Contains(
-                    "TryBuildPreferredPlacement(") &&
-                commit.Contains("PlacementReason.DockCommit") &&
-                commit.Contains("Interaction.PendingMerge.TryCommit(") &&
-                commit.Contains("Notes.SaveAsync()"),
-                "Every member preferred must derive from captured facts plus the finalizing topology, then persist once.");
-            Assert.IsFalse(commit.Contains("CurrentTopologySnapshot("),
-                "A G-generation dock commit must never read a later Current generation.");
-        }
-
-        [TestMethod]
-        public void Drt9_DockUsesImmutableMailboxAndNativeDeferBatch()
-        {
-            string host = ReadSource("StickyUiHost.cs");
-            string batch = ReadSource(
-                "Infrastructure/Display/WindowsBatchWindowPlacementExecutor.cs");
-            string native = ReadSource(
-                "Infrastructure/Display/NativeDisplayConfig.cs");
-            string dock = ReadSource(
-                "Features/StickyNotes/DockFrameMailbox.cs");
-            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
-
-            Assert.IsTrue(dock.Contains(
-                    "internal sealed class DockFrameMailbox<T>") &&
-                dock.Contains("TakeLatest()") &&
-                !dock.Contains("DockBatchLayout"),
-                "The mutable DockBatchLayout must be retired for the immutable mailbox.");
-            Assert.IsTrue(host.Contains("PostLatestDockPlan(") &&
-                host.Contains("mailbox.TakeLatest()") &&
-                host.Contains("WindowsBatchWindowPlacementExecutor.Apply("),
-                "The host must apply the newest plan through the native batch executor.");
-            string apply = Between(host,
-                "private StickyUiCommandResult ApplyLatestDockPlan(",
-                "private void PostEvent");
-            Assert.IsTrue(apply.Contains(
-                    "plan.TopologyGeneration != topology.Generation") &&
-                apply.Contains("WindowsBatchWindowPlacementExecutor.Apply("),
-                "The batch must be gated on the host-owned current generation.");
-            Assert.IsTrue(batch.Contains("BeginDeferWindowPos(") &&
-                batch.Contains("DeferWindowPos(") &&
-                batch.Contains("EndDeferWindowPos(") &&
-                native.Contains(
-                    "static extern IntPtr BeginDeferWindowPos("),
-                "Followers must move in one native deferred batch.");
-            Assert.IsTrue(coordinator.Contains(
-                    "Host.PostLatestDockPlan(") &&
-                coordinator.Contains("DockPlacementPlanner.Plan("),
-                "The drag coordinator must post immutable plans into the mailbox.");
-        }
-
-        [TestMethod]
-        public void Drt9_LiveBatchNeverWritesDurablePreferred()
-        {
-            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
-            string batch = Between(coordinator,
-                "private void ApplyLiveDockPlan",
-                "private void ApplyDockBatchResult");
-            Assert.IsFalse(batch.Contains("PreferredPlacement") ||
-                batch.Contains("TryCommitPreferred"),
-                "A live drag batch must never commit the durable preferred placement.");
-
-            string host = ReadSource("StickyUiHost.cs");
-            string apply = Between(host,
-                "private StickyUiCommandResult ApplyLatestDockPlan(",
-                "private void PostEvent");
-            Assert.IsFalse(apply.Contains("Preferred"),
-                "The STA batch executor must not touch durable preferred fields.");
-        }
-
-        [TestMethod]
-        public void Drt10_LiveDragUsesPlannerDrivenBySourceFacts()
-        {
-            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
-            string plannerPath = Between(coordinator,
-                "private DockPlacementPlan PlanLiveDockPlan",
-                "internal void CompleteStickyDockDrag");
-
-            Assert.IsTrue(plannerPath.Contains(
-                    "WindowFacts sourceFacts") &&
-                plannerPath.Contains("DockPlacementPlanner.Plan(") &&
-                plannerPath.Contains("StickyPlacementRules.TryBuildLiveDockState(") &&
-                plannerPath.Contains("BuildDockChainOrder(seed)"),
-                "The live drag must be planned from the source window's actual facts.");
-            Assert.IsFalse(plannerPath.Contains("WindowsDisplayResolver") ||
-                plannerPath.Contains("Screen.FromRectangle") ||
-                plannerPath.Contains("CalculateDockTranslationTargets"),
-                "Followers must never pick a target display or translate old coordinates.");
-            string move = Between(coordinator,
-                "internal void MoveStickyDockDrag",
-                "private DockPlacementPlan PlanLiveDockPlan");
-            Assert.IsTrue(move.Contains("PlanLiveDockPlan(seed, sourceFacts,") &&
-                !move.Contains("CalculateDockTranslationTargets("),
-                "The live move path must route through the planner.");
-        }
-
-        [TestMethod]
-        public void Drt10_PlanSurfaceAndDpiComeFromSourceFacts()
-        {
-            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
-            string batch = Between(coordinator,
-                "private DockPlacementPlan PlanLiveDockPlan",
-                "internal void CompleteStickyDockDrag");
-
-            Assert.IsTrue(batch.Contains(
-                    "WindowFacts sourceFacts") &&
-                batch.Contains("DockPlacementPlanner.Plan(") &&
-                batch.Contains("sourceFacts.Dpi") &&
-                batch.Contains("Interaction.CanPlan(") &&
-                batch.Contains("Gestures.NextPlanSequence()"),
-                "One plan must carry one capture-time generation, surface, DPI and sequence.");
-            Assert.IsFalse(batch.Contains("WindowsDisplayResolver") ||
-                batch.Contains("MonitorFromRect"),
-                "The plan must never consult the legacy resolver.");
-            string post = Between(coordinator,
-                "private void ApplyLiveDockPlan",
-                "private void ApplyDockBatchResult");
-            Assert.IsFalse(post.Contains("CurrentTopologySnapshot(") ||
-                post.Contains("new DockPlacementPlan("),
-                "The plan must not be re-stamped against a later generation after creation.");
-        }
-
-        [TestMethod]
         public void DrtCloseout_ReprojectIsTransactionalAndReturnsFacts()
         {
             string session = ReadSource("StickyWindowSession.cs");
@@ -681,145 +340,6 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void DrtCloseout_DockBatchReturnsFactsWithBoundedFallback()
-        {
-            string host = ReadSource("StickyUiHost.cs");
-            string session = ReadSource("StickyWindowSession.cs");
-            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
-
-            string apply = Between(host,
-                "private StickyUiCommandResult ApplyLatestDockPlan(",
-                "private void PostEvent");
-            Assert.IsTrue(apply.Contains(
-                    "session.CaptureDockMember(topology)") &&
-                apply.Contains("new DockBatchResult(") &&
-                apply.Contains("SetBounds(new StickyUiBounds"),
-                "The batch must capture actual facts and keep one bounded fallback.");
-            string member = Between(session,
-                "internal DockBatchMemberResult CaptureDockMember(",
-                "private WindowFacts CaptureFactsWith");
-            Assert.IsTrue(member.Contains("AdoptTopology(topology)") &&
-                member.Contains("CaptureFactsWith(_topology)") &&
-                member.Contains("new DockBatchMemberResult("),
-                "The member result must carry facts plus a content snapshot.");
-
-            string result = Between(coordinator,
-                "private void ApplyDockBatchResult",
-                "private DockWindowFacts GetHostedDockFacts");
-            Assert.IsTrue(result.Contains("Facts.TryPrepare(member, topology,") &&
-                result.Contains("update.Commit()") &&
-                result.Contains("_lastAppliedDockPlanSequence"),
-                "Only same-generation newest-sequence facts may update the repository.");
-        }
-
-        [TestMethod]
-        public void DrtCloseout_LiveDockNeverPreWritesRepository()
-        {
-            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
-            string live = Between(coordinator,
-                "private void ApplyLiveDockPlan",
-                "private void ApplyDockBatchResult");
-
-            Assert.IsFalse(live.Contains("ApplyDockCanonicalFromPhysical") ||
-                live.Contains("PreferredPlacement") ||
-                live.Contains("WindowsDisplayResolver"),
-                "A live frame must only deposit the desired plan into the mailbox.");
-            string result = Between(coordinator,
-                "private void ApplyDockBatchResult",
-                "private DockWindowFacts GetHostedDockFacts");
-            Assert.IsTrue(result.Contains("update.Commit()") &&
-                !result.Contains("WindowsDisplayResolver"),
-                "Only actual facts derived from the same-generation topology may update geometry.");
-            Assert.IsTrue(
-                result.IndexOf("Facts.TryPrepare(") >= 0 &&
-                result.IndexOf("Facts.TryPrepare(") <
-                    result.IndexOf("_lastAppliedDockPlanSequence = batch.PlanSequence"),
-                "The whole live batch must pass acceptance preflight before any plan-sequence advance.");
-        }
-
-        [TestMethod]
-        public void FinalMouseUpUsesHeaderDragCompletedFacts()
-        {
-            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
-            string complete = Between(coordinator,
-                "internal void CompleteStickyDockDrag",
-                "private static List<string> CollectExpectedPlanMemberIds");
-            Assert.IsTrue(complete.Contains(
-                "StartDockFinalization(seed, remainderSeed)") &&
-                complete.Contains("CaptureDockFacts(expectedIds,") &&
-                complete.Contains("PostFinalDockPlan"));
-            Assert.IsFalse(complete.Contains("value.Facts") ||
-                complete.Contains("Placement.GetEffective(") ||
-                complete.Contains("LayoutDockChain(") ||
-                complete.Contains("ApplyDockTarget("));
-        }
-
-        [TestMethod]
-        public void StandaloneDragUsesFinalStaCaptureBarrier()
-        {
-            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
-            string finalization = Between(coordinator,
-                "private void StartDockFinalization",
-                "private static List<string> CollectExpectedPlanMemberIds");
-            Assert.IsTrue(finalization.Contains("CaptureDockFacts(expectedIds,") &&
-                finalization.Contains("PostFinalDockPlan") &&
-                finalization.Contains("CompleteDockDurableCommit("));
-            Assert.IsFalse(coordinator.Contains("CompleteStandaloneDragCommit"));
-        }
-
-        [TestMethod]
-        public void DockCommitRejectsMissingMember()
-        {
-            string validation = DockCommitValidationSource();
-            Assert.IsTrue(validation.Contains(
-                    "batch.Members.Count != expected.Count") &&
-                validation.Contains("actual.Count != expected.Count"));
-        }
-
-        [TestMethod]
-        public void DockCommitRejectsNullFacts()
-        {
-            Assert.IsTrue(DockCommitValidationSource().Contains(
-                "member.Facts == null"));
-        }
-
-        [TestMethod]
-        public void DockCommitRejectsGenerationMismatch()
-        {
-            string validation = DockCommitValidationSource();
-            Assert.IsTrue(validation.Contains(
-                    "batch.TopologyGeneration != expectedTopology.Generation") &&
-                validation.Contains("Facts.TryPrepare(member, expectedTopology,"));
-        }
-
-        [TestMethod]
-        public void DockCommitFailureDoesNotSaveOrCommitMembership()
-        {
-            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
-            string commit = Between(coordinator,
-                "private void CompleteDockDurableCommit",
-                "private bool TryPrepareDockCommit");
-            int rejectionReturn = commit.IndexOf(
-                "TraceDockCommitRejected(rejection);", StringComparison.Ordinal);
-            int membership = commit.IndexOf("Interaction.PendingMerge.TryCommit(",
-                StringComparison.Ordinal);
-            int save = commit.IndexOf("Notes.SaveAsync()", StringComparison.Ordinal);
-            Assert.IsTrue(rejectionReturn >= 0 && membership > rejectionReturn &&
-                save > membership);
-        }
-
-        [TestMethod]
-        public void LiveDockCaptureDoesNotReachWindowsDisplayResolver()
-        {
-            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
-            string live = Between(coordinator,
-                "private DockPlacementPlan PlanLiveDockPlan",
-                "internal void CompleteStickyDockDrag");
-            Assert.IsFalse(live.Contains("WindowsDisplayResolver") ||
-                live.Contains("ApplyDockTarget("));
-        }
-
-        [TestMethod]
         public void CaptureDockMemberDoesNotCallCaptureCanonicalPlacement()
         {
             string session = ReadSource("StickyWindowSession.cs");
@@ -835,25 +355,6 @@ namespace PennyPet.Tests
             Assert.IsFalse(capture.Contains("CaptureCanonicalPlacement") ||
                 helper.Contains("CaptureCanonicalPlacement") ||
                 helper.Contains("WindowsDisplayResolver"));
-        }
-
-        [TestMethod]
-        public void NativeBatchRejectsPartialExpectedFollowers()
-        {
-            string host = ReadSource("StickyUiHost.cs");
-            string apply = Between(host,
-                "private StickyUiCommandResult ApplyDockPlan(",
-                "private StickyUiCommandResult CaptureDockFactsForCommit");
-            int missing = apply.IndexOf(
-                "!TryGetSession(target.NoteId, out session)",
-                StringComparison.Ordinal);
-            int zero = apply.IndexOf("handle == IntPtr.Zero",
-                StringComparison.Ordinal);
-            int nativeApply = apply.IndexOf(
-                "WindowsBatchWindowPlacementExecutor.Apply(",
-                StringComparison.Ordinal);
-            Assert.IsTrue(missing >= 0 && zero > missing &&
-                nativeApply > zero);
         }
 
         [TestMethod]
@@ -883,108 +384,11 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void Drt10_NativeBatchBootstrapsFollowersToPlanDpi()
-        {
-            string host = ReadSource("StickyUiHost.cs");
-            string apply = Between(host,
-                "private StickyUiCommandResult ApplyDockPlan(",
-                "private StickyUiCommandResult CaptureDockFactsForCommit");
-            string session = ReadSource("StickyWindowSession.cs");
-            string prepare = Between(session,
-                "internal bool TryPrepareDockTargetDpi(",
-                "internal void CompleteDockTargetDpi(");
-
-            int bootstrap = apply.IndexOf("TryPrepareDockTargetDpi(",
-                StringComparison.Ordinal);
-            int batch = apply.IndexOf(
-                "WindowsBatchWindowPlacementExecutor.Apply(",
-                StringComparison.Ordinal);
-            Assert.IsTrue(bootstrap >= 0 && batch > bootstrap &&
-                apply.Contains("topology.FindByRuntimeSurfaceId(") &&
-                apply.Contains("member.Facts.Dpi != plan.TargetDpi") &&
-                apply.Contains("targetSurface.RuntimeGdiName"),
-                "Followers must acquire the one plan DPI before the native batch, then be verified.");
-            Assert.IsTrue(prepare.Contains("_window.Hide()") &&
-                prepare.Contains("MoveHiddenToSurface(") &&
-                prepare.Contains("GetDpiForWindow() != targetDpi"),
-                "A cross-DPI follower must use the hidden target-surface bootstrap.");
-        }
-
-        [TestMethod]
-        public void Drt10_DpiBootstrapFailureRollsBackWholeFrame()
-        {
-            string host = ReadSource("StickyUiHost.cs");
-            string apply = Between(host,
-                "private StickyUiCommandResult ApplyDockPlan(",
-                "private StickyUiCommandResult CaptureDockFactsForCommit");
-            string session = ReadSource("StickyWindowSession.cs");
-            string complete = Between(session,
-                "internal void CompleteDockTargetDpi(",
-                "private void RollbackReproject(");
-
-            Assert.IsTrue(apply.Contains("bool placementApplied = false;") &&
-                apply.Contains("CompleteDockTargetDpi(\n                        transitions[index], placementApplied)") &&
-                complete.Contains("if (!placementApplied)") &&
-                complete.Contains("RollbackReproject("),
-                "A rejected frame must restore every follower's prior bounds and visibility.");
-        }
-
-        [TestMethod]
-        public void Drt10_DurableCommitRejectsMixedTargetFacts()
-        {
-            string validation = DockCommitValidationSource();
-
-            Assert.IsTrue(validation.Contains("batch.TargetDpi <= 0") &&
-                validation.Contains("FindByRuntimeSurfaceId(") &&
-                validation.Contains("member.Facts.Dpi != batch.TargetDpi") &&
-                validation.Contains("targetSurface.RuntimeGdiName"),
-                "A mixed-DPI or wrong-surface result must never become durable.");
-        }
-
-        [TestMethod]
-        public void Drt11_TopologyChangeInvalidatesMailboxBeforeReconcile()
-        {
-            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
-            string changed = Between(coordinator,
-                "internal void HandleStickyTopologyChanged(",
-                "internal void InvalidateDockPlansForTopologyChange(");
-            string invalidate = Between(coordinator,
-                "internal void InvalidateDockPlansForTopologyChange(",
-                "internal void ResumeDockDragAfterTopologyChange(");
-
-            Assert.IsTrue(changed.IndexOf(
-                    "InvalidateDockPlansForTopologyChange(snapshot)",
-                    StringComparison.Ordinal) < changed.IndexOf(
-                    "ReconcileDockGroups(snapshot, petFacts)",
-                    StringComparison.Ordinal));
-            Assert.IsTrue(invalidate.Contains("Gestures.RenewPlans()") &&
-                invalidate.Contains("Interaction.BeginRebase("));
-        }
-
-        [TestMethod]
-        public void Drt11_ActiveDragRecapturesSourceAfterSettledTopology()
-        {
-            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
-            string resume = Between(coordinator,
-                "internal void ResumeDockDragAfterTopologyChange(",
-                "internal void ReconcileDockGroups(");
-
-            Assert.IsTrue(resume.Contains(
-                    "StickyUiCommand.CaptureDockFacts(") &&
-                resume.Contains("TryApplyDockFactsBarrier(result, expectedIds") &&
-                resume.Contains("Interaction.TryEnterDragging(epoch,"));
-            Assert.IsFalse(resume.Contains("StickyDockGroups.") ||
-                resume.Contains("CommitVisibleDockOrder("),
-                "A topology barrier must preserve membership during a drag.");
-        }
-
-        [TestMethod]
         public void Drt11_GroupReprojectUsesOneAtomicNativeBatch()
         {
             string host = ReadSource("StickyUiHost.cs");
-            string apply = Between(host,
-                "private StickyUiCommandResult ApplyDockGroupReproject(",
-                "private StickyUiCommandResult CaptureDockFactsForCommit");
+            string apply = RawSource.SliceMethod(host,
+                "private StickyUiCommandResult ApplyDockGroupReproject(");
 
             Assert.IsTrue(apply.Contains(
                     "session.TryPrepareDockTargetSurface(") &&
@@ -1041,6 +445,170 @@ namespace PennyPet.Tests
                 apply.Contains(
                     "Facts.TryPrepare(member, snapshot,") &&
                 apply.Contains("remaining.Count != expectedIds.Count") && apply.Contains("!remaining.Remove(member.NoteId)"));
+        }
+
+        [TestMethod]
+        [TestCategory("ArchitectureSourceBoundary")]
+        public void R24_LowFrequencyStructureUsesTypedStickyBarrier()
+        {
+            string protocol = ReadSource(
+                "Features/StickyNotes/StickyUiCommand.cs");
+            string workspace =
+                SourceGuardText.ReadStickyWorkflowSource();
+            string dock = ReadSource(
+                "Features/StickyNotes/StickyDockController.cs");
+
+            Assert.IsTrue(protocol.Contains(
+                    "PrepareDockStructure") &&
+                workspace.Contains(
+                    "StickyUiCommand.PrepareDockStructure("));
+            foreach (string signature in new[]
+            {
+                "private void DeleteStickyNote(StickyNoteData note,",
+                "private void CollapseAllStickyNotes()",
+                "internal bool BeginHostedStickyExitIfNeeded()",
+                "internal void CloseHostedStickyRuntimeForReload("
+            })
+                Assert.IsTrue(
+                    RawSource.SliceMethod(workspace, signature)
+                        .Contains("PrepareDockStructure("),
+                    signature);
+            foreach (string signature in new[]
+            {
+                "internal void HideStickyNote(",
+                "internal void CloseStickyDockNote(",
+                "internal void ExpandAndTileAllStickyNotesToPetScreen()",
+                "internal bool TryRestoreHostedDockComponent("
+            })
+                Assert.IsTrue(
+                    RawSource.SliceMethod(dock, signature)
+                        .Contains("PrepareDockStructure("),
+                    signature);
+
+            Assert.IsFalse(workspace.Contains(
+                    "DeferDockMutation(") ||
+                dock.Contains("DeferDockMutation(") ||
+                dock.Contains("DockMutationQueue"));
+        }
+
+        [TestMethod]
+        [TestCategory("ArchitectureSourceBoundary")]
+        public void R24_LiveDockHasOneStickyOwnerAndNoPetMailboxFallback()
+        {
+            string workspace =
+                SourceGuardText.ReadStickyWorkflowSource();
+            string dock = ReadSource(
+                "Features/StickyNotes/StickyDockController.cs");
+            string host = ReadSource("StickyUiHost.cs");
+            string project = ReadSource(
+                "PennyPet.Tests.csproj");
+
+            Assert.IsTrue(host.Contains(
+                    "private bool TryHandleLocalDockEvent(") &&
+                host.Contains(
+                    "StickyDockLocalGestureRuntime"));
+            foreach (string retired in new[]
+            {
+                "BeginStickyDockDrag(",
+                "MoveStickyDockDrag(",
+                "CompleteStickyDockDrag(",
+                "PostLatestDockPlan(",
+                "PostFinalDockPlan(",
+                "PostLatestResizeBatch(",
+                "PostFinalResizeBatch(",
+                "DockFrameMailbox",
+                "DockGestureOwner",
+                "DockInteractionSession",
+                "DockResizeSession"
+            })
+            {
+                Assert.IsFalse(workspace.Contains(retired),
+                    retired + " workspace");
+                Assert.IsFalse(dock.Contains(retired),
+                    retired + " controller");
+                Assert.IsFalse(host.Contains(retired),
+                    retired + " host");
+                Assert.IsFalse(project.Contains(retired),
+                    retired + " project");
+            }
+        }
+
+        [TestMethod]
+        [TestCategory("ArchitectureSourceBoundary")]
+        public void R24_NativeFollowerFailureIsBoundedAndVerified()
+        {
+            string host = ReadSource("StickyUiHost.cs");
+            string apply = RawSource.SliceMethod(host,
+                "private bool ApplyLocalDockFollowers(");
+            string local = RawSource.SliceMethod(host,
+                "private bool TryHandleLocalDockEvent(");
+
+            Assert.AreEqual(1,
+                apply.Split(new[]
+                {
+                    "WindowsBatchWindowPlacementExecutor.Apply("
+                }, StringSplitOptions.None).Length - 1);
+            Assert.IsTrue(apply.Contains(
+                    "LocalDockPlacementMismatches(") &&
+                apply.Contains("!corrected") &&
+                apply.Contains("session.SetBounds("),
+                "One bounded correction must be followed by actual-facts verification.");
+            Assert.IsTrue(local.Contains(
+                    "_pendingLocalDockRollback =") &&
+                local.Contains(
+                    "_localDockGestures.CancelAndRestore()") &&
+                local.Contains(
+                    "ApplyLocalDockCorrections("),
+                "A failed native live frame must converge by restoring the captured baseline at completion.");
+        }
+
+        [TestMethod]
+        [TestCategory("ArchitectureSourceBoundary")]
+        public void R24_TopologyRebaseLivesOnStickySta()
+        {
+            string host = ReadSource("StickyUiHost.cs");
+            string runtime = ReadSource(
+                "Features/StickyNotes/StickyDockLocalGestureRuntime.cs");
+            string workspace =
+                SourceGuardText.ReadStickyWorkflowSource();
+
+            string setTopology = RawSource.SliceMethod(host,
+                "internal void SetCurrentTopology(");
+            string rebase = RawSource.SliceMethod(runtime,
+                "internal bool TryRebaseTopology(");
+            Assert.IsTrue(setTopology.Contains(
+                    "_localDockGestures.TryRebaseTopology(snapshot)") &&
+                setTopology.Contains(
+                    "_localDockGestures.Cancel()"));
+            Assert.IsTrue(rebase.Contains(
+                    "_captureFacts(ids[index])") &&
+                rebase.Contains(
+                    "topology.Generation"));
+            Assert.IsFalse(workspace.Contains(
+                    "InvalidateDockPlansForTopologyChange(") ||
+                workspace.Contains(
+                    "ResumeDockDragAfterTopologyChange("));
+        }
+
+        [TestMethod]
+        [TestCategory("ArchitectureSourceBoundary")]
+        public void R24_OrdinarySessionSequenceRemainsTheStaleCallbackGate()
+        {
+            string workspace =
+                SourceGuardText.ReadStickyWorkflowSource();
+            string hosted = ReadSource(
+                "Features/StickyNotes/StickyHostedRuntime.cs");
+            string receiver = ReadSource(
+                "Features/StickyNotes/StickyFactsReceiver.cs");
+
+            Assert.IsTrue(workspace.Contains(
+                    "Hosted.CanApplySequence(") ||
+                receiver.Contains("CanApplySequence("));
+            Assert.IsTrue(hosted.Contains(
+                    "CanApplySequence(") &&
+                receiver.Contains(
+                    "WindowSequence"),
+                "Deleting the live Dock fallback must not delete ordinary session sequence validity.");
         }
 
         [TestMethod]

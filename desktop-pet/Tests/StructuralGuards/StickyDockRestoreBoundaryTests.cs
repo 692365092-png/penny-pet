@@ -30,9 +30,16 @@ namespace PennyPet.Tests
         public void RestoreRequestsTransactionalVisibilityWithoutOrdinaryShow()
         {
             string source = SourceGuardText.ReadStickyWorkflowSource();
-            string post = SliceMethod(source, "internal bool TryRestoreHostedDockComponent(");
-            Assert.IsTrue(post.Contains("StickyUiCommand.RestoreDockGroup("));
-            Assert.IsFalse(post.Contains("StickyUiCommand.EnsureSession("));
+            string request = SliceMethod(source,
+                "internal bool TryRestoreHostedDockComponent(");
+            Assert.IsTrue(request.Contains(
+                "PrepareDockStructure("));
+            string post = SliceMethod(source,
+                "private bool TryRestoreHostedDockComponentPrepared(");
+            Assert.IsTrue(post.Contains(
+                "StickyUiCommand.RestoreDockGroup("));
+            Assert.IsFalse(post.Contains(
+                "StickyUiCommand.EnsureSession("));
             string complete = SliceMethod(source, "private void CompleteHostedDockRestore(");
             Assert.IsTrue(complete.Contains("forceVisible: true"));
             Assert.IsFalse(complete.Contains("StickyUiCommand.Show("));
@@ -111,10 +118,18 @@ namespace PennyPet.Tests
             int start = restart.IndexOf("TryRestoreHostedDockComponent(", StringComparison.Ordinal);
             Assert.IsTrue(cancel >= 0 && start > cancel);
             Assert.IsTrue(SliceMethod(source, "internal void ReconcileDockGroups(").Contains("_dockRestores.ContainsGroup("));
-            foreach (string signature in new[] { "internal bool BeginHostedStickyExitIfNeeded()",
-                "private void CollapseAllStickyNotes()", "internal void ExpandAndTileAllStickyNotesToPetScreen()",
-                "internal void CloseHostedStickyRuntimeForReload(" })
-                Assert.IsTrue(SliceMethod(source, signature).Contains("CancelHostedDockRestores()"), signature);
+            foreach (string signature in new[]
+            {
+                "private void CollapseAllStickyNotesPrepared()",
+                "private void ExpandAndTileAllStickyNotesPrepared()"
+            })
+                Assert.IsTrue(
+                    SliceMethod(source, signature)
+                        .Contains("CancelHostedDockRestores()"),
+                    signature);
+            Assert.IsTrue(source.Contains(
+                "sticky-exit-structure") &&
+                source.Contains("sticky-reload-structure"));
             string complete = SliceMethod(source, "private void CompleteHostedDockRestore(");
             int owner = complete.IndexOf("_dockRestores.IsCurrent(operation)", StringComparison.Ordinal);
             int membership = complete.IndexOf("operation.MatchesMembers(", StringComparison.Ordinal);
@@ -130,8 +145,12 @@ namespace PennyPet.Tests
         {
             string dock = SourceGuardText.ReadStickyWorkflowSource();
             string delete = SliceMethod(dock, "private void DeleteStickyNote(StickyNoteData note,");
-            Assert.IsTrue(delete.Contains("CancelHostedDockRestores(note.Id)"));
-            Assert.IsTrue(delete.Contains("BeginHostedStickyDelete(note, completed)"));
+            Assert.IsTrue(delete.Contains(
+                "PrepareDockStructure("));
+            Assert.IsTrue(delete.Contains(
+                "Dock.CancelHostedDockRestores(noteId)"));
+            Assert.IsTrue(delete.Contains(
+                "BeginHostedStickyDelete(current, completed)"));
             Assert.IsFalse(delete.Contains("IsHostedSticky(note)") || delete.Contains("DeleteStickyNoteAfterWindowClosed("));
             string close = SliceMethod(ReadSource("StickyWindowSession.cs"), "internal StickyUiCommandResult Close()");
             int ime = close.IndexOf("IsImeCompositionActive", StringComparison.Ordinal);
