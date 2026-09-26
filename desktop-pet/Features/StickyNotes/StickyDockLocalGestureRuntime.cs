@@ -125,6 +125,75 @@ namespace PennyPet
                     if (seen.Add(id)) ids.Add(id);
             return ids.AsReadOnly();
         }
+
+        internal StickyDockSceneProjection ApplyProvisional(
+            StickyDockLocalGestureCompletion completion)
+        {
+            if (completion == null ||
+                (completion.Intent != StickyDockCommitIntent.Detach &&
+                 completion.Intent != StickyDockCommitIntent.MergeAfter))
+                return this;
+
+            Dictionary<string, StickyDockSceneMember> next =
+                new Dictionary<string, StickyDockSceneMember>(
+                    StringComparer.OrdinalIgnoreCase);
+            foreach (StickyDockSceneMember member in _members)
+                next[member.NoteId] = member;
+
+            IReadOnlyList<string> sourceGroup =
+                VisibleGroup(completion.SourceNoteId);
+            if (completion.Intent == StickyDockCommitIntent.Detach)
+            {
+                StickyDockSceneMember source;
+                if (!next.TryGetValue(completion.SourceNoteId,
+                    out source)) return this;
+                next[source.NoteId] = new StickyDockSceneMember(
+                    source.NoteId, String.Empty, -1,
+                    source.Visible, source.DockVersion);
+                int order = 0;
+                foreach (string id in sourceGroup)
+                {
+                    if (String.Equals(id, source.NoteId,
+                        StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    StickyDockSceneMember member = next[id];
+                    next[id] = new StickyDockSceneMember(
+                        member.NoteId, member.GroupId, order++,
+                        member.Visible, member.DockVersion);
+                }
+            }
+            else
+            {
+                IReadOnlyList<string> targetGroup =
+                    VisibleGroup(completion.TargetNoteId);
+                if (targetGroup.Count == 0) return this;
+                List<string> merged = new List<string>();
+                foreach (string id in targetGroup)
+                {
+                    merged.Add(id);
+                    if (String.Equals(id,
+                        completion.TargetNoteId,
+                        StringComparison.OrdinalIgnoreCase))
+                        foreach (string sourceId in sourceGroup)
+                            merged.Add(sourceId);
+                }
+                string groupId = next[completion.TargetNoteId].GroupId;
+                if (String.IsNullOrEmpty(groupId))
+                    groupId = "pending:" +
+                        completion.GestureId.ToString(
+                            System.Globalization.CultureInfo.InvariantCulture);
+                for (int index = 0; index < merged.Count; index++)
+                {
+                    StickyDockSceneMember member = next[merged[index]];
+                    next[member.NoteId] =
+                        new StickyDockSceneMember(
+                            member.NoteId, groupId, index,
+                            member.Visible, member.DockVersion);
+                }
+            }
+            return new StickyDockSceneProjection(
+                next.Values, Revision);
+        }
     }
 
     // R22 candidate runtime. It is deliberately model/repository agnostic:
@@ -169,6 +238,15 @@ namespace PennyPet
         internal void SetScene(StickyDockSceneProjection scene)
         {
             _scene = scene;
+        }
+
+        internal StickyDockSceneProjection ApplyProvisional(
+            StickyDockLocalGestureCompletion completion)
+        {
+            if (_scene == null || completion == null)
+                return _scene;
+            _scene = _scene.ApplyProvisional(completion);
+            return _scene;
         }
 
         internal void SetTopology(DisplayTopologySnapshot topology)

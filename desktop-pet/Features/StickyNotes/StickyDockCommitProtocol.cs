@@ -61,6 +61,25 @@ namespace PennyPet
             { get; private set; }
         internal IReadOnlyList<DockBatchMemberResult> Members
             { get; private set; }
+
+        internal StickyDockGestureCommit RebaseBaselineVersions(
+            StickyDockSceneProjection scene)
+        {
+            if (scene == null) return this;
+            Dictionary<string, long> rebased =
+                new Dictionary<string, long>(
+                    StringComparer.OrdinalIgnoreCase);
+            foreach (string noteId in _baselineVersions.Keys)
+            {
+                long version = scene.VersionOf(noteId);
+                rebased[noteId] = version == Int64.MinValue
+                    ? _baselineVersions[noteId] : version;
+            }
+            return new StickyDockGestureCommit(
+                GestureId, DependsOnGestureId, Intent,
+                SourceNoteId, TargetNoteId,
+                TopologyGeneration, rebased, _members);
+        }
     }
 
     internal sealed class StickyDockCommitAck
@@ -144,6 +163,16 @@ namespace PennyPet
             Pending resolved = _pending[index];
             List<long> cancelled = new List<long>();
             _pending.RemoveAt(index);
+            if (ack.Accepted && ack.Scene != null)
+            {
+                foreach (Pending pending in _pending)
+                    if (!pending.Sent &&
+                        pending.Commit.DependsOnGestureId ==
+                            resolved.Commit.GestureId)
+                        pending.Commit =
+                            pending.Commit.RebaseBaselineVersions(
+                                ack.Scene);
+            }
             if (!ack.Accepted)
             {
                 // Only descendants depend on the rejected local semantic
