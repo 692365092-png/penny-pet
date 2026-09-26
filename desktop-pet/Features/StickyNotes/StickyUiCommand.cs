@@ -23,6 +23,7 @@ namespace PennyPet
         RestoreDockGroup,
         CaptureWindowFacts,
         CaptureDockFacts,
+        AcknowledgeDockCommit,
         Close,
         CloseAll,
         UpdateReminders,
@@ -42,7 +43,8 @@ namespace PennyPet
             string[] dockNoteIds = null,
             DockGroupReprojectPlan dockGroupReprojectPlan = null,
             long interactionEpoch = 0, WindowPlacementPlan placement = null,
-            DockRestoreOperation dockRestore = null, DockInput input = null)
+            DockRestoreOperation dockRestore = null, DockInput input = null,
+            StickyDockCommitAck dockCommitAck = null)
         {
             Kind = kind;
             NoteId = noteId ?? String.Empty;
@@ -61,6 +63,7 @@ namespace PennyPet
             Placement = placement;
             DockRestore = dockRestore;
             Input = input;
+            DockCommitAck = dockCommitAck;
         }
 
         internal static StickyUiCommand Create(StickyNoteUiSnapshot snapshot,
@@ -243,6 +246,16 @@ namespace PennyPet
                 interactionEpoch, input: input);
         }
 
+        internal static StickyUiCommand AcknowledgeDockCommit(
+            StickyDockCommitAck ack)
+        {
+            if (ack == null)
+                throw new ArgumentNullException(nameof(ack));
+            return new StickyUiCommand(
+                StickyUiCommandKind.AcknowledgeDockCommit,
+                String.Empty, false, dockCommitAck: ack);
+        }
+
         internal static StickyUiCommand CaptureWindowFacts(string noteId,
             DisplayTopologySnapshot topology)
         {
@@ -301,6 +314,8 @@ namespace PennyPet
         internal WindowPlacementPlan Placement { get; private set; }
         internal DockRestoreOperation DockRestore { get; private set; }
         internal DockInput Input { get; private set; }
+        internal StickyDockCommitAck DockCommitAck
+            { get; private set; }
 
         private static ReminderItem[] CopyReminders(
             IEnumerable<ReminderItem> reminders)
@@ -590,6 +605,7 @@ namespace PennyPet
         DockDividerResizeStarted,
         DockDividerResizing,
         DockDividerResizeCompleted,
+        DockGestureCommitRequested,
         CancelReminderRequested,
         ModifyReminderRequested,
         DeleteReminderRequested,
@@ -619,7 +635,8 @@ namespace PennyPet
             StickyNoteUiSnapshot snapshot, bool flag, long sequence,
             ReminderItem reminder = null, int left = 0, int width = 0,
             int height = 0, WindowFacts facts = null,
-            DisplayTopologySnapshot topology = null)
+            DisplayTopologySnapshot topology = null,
+            StickyDockGestureCommit dockCommit = null)
         {
             Kind = kind;
             NoteId = noteId ?? String.Empty;
@@ -632,6 +649,7 @@ namespace PennyPet
             Height = height;
             Facts = facts;
             Topology = topology;
+            DockCommit = dockCommit;
         }
 
         internal static StickyUiEvent Signal(StickyUiEventKind kind,
@@ -657,6 +675,17 @@ namespace PennyPet
                 throw new ArgumentNullException(nameof(snapshot));
             return new StickyUiEvent(kind, snapshot.NoteId, snapshot,
                 snapshot.Visible, sequence, null, 0, 0, 0, facts, topology);
+        }
+
+        internal static StickyUiEvent DockCommitRequested(
+            StickyDockGestureCommit commit, long sequence)
+        {
+            if (commit == null)
+                throw new ArgumentNullException(nameof(commit));
+            return new StickyUiEvent(
+                StickyUiEventKind.DockGestureCommitRequested,
+                commit.SourceNoteId, null, false, sequence,
+                dockCommit: commit);
         }
 
         internal static StickyUiEvent ReminderRequest(StickyUiEventKind kind,
@@ -702,6 +731,8 @@ namespace PennyPet
         internal int Height { get; private set; }
         internal WindowFacts Facts { get; private set; }
         internal DisplayTopologySnapshot Topology { get; private set; }
+        internal StickyDockGestureCommit DockCommit
+            { get; private set; }
     }
 
     internal enum StickyUiCommandStatus

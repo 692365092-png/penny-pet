@@ -686,6 +686,20 @@ namespace PennyPet
                 CaptureWindowFacts(_sequence), _topology);
         }
 
+        // One low-frequency capture at local Dock completion. Advancing the
+        // lease here gives Pet a fresh watermark for every affected HWND
+        // without emitting any live geometry event.
+        internal DockBatchMemberResult CaptureDockCommitMember()
+        {
+            if (!IsAvailable) return null;
+            _lastSnapshot = CaptureSnapshot();
+            _sequence++;
+            return new DockBatchMemberResult(
+                _noteId, _sequence,
+                CaptureWindowFacts(_sequence),
+                _lastSnapshot);
+        }
+
         // SideTab overlap needs only local HWND facts. Do not capture note
         // content on every live drag frame.
         internal WindowFacts CaptureVisibleFactsForChrome()
