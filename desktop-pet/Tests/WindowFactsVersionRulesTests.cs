@@ -35,21 +35,5 @@ namespace PennyPet.Tests
             WindowFacts facts = new WindowFacts("note-a", "mdp:missing", "\\\\.\\DISPLAY99", new PhysicalRect(1,1,1,1), 96, 9, 50);
             Assert.AreEqual(WindowFactsVersionDisposition.Invalid, WindowFactsVersionRules.Classify("note-a", 50, facts, Topology(9), 9));
         }
-        [TestMethod]
-        public void DockSession_PreparingAndEpochInvalidateOldCallbacks()
-        {
-            DockInteractionSession session = new DockInteractionSession();
-            long first = session.BeginPreparing("note-a", 5);
-            Assert.IsFalse(session.CanPlan("note-a", 5));
-            Assert.IsTrue(session.TryEnterDragging(first, 5));
-            Assert.IsTrue(session.CanPlan("note-a", 5));
-            long rebase = session.BeginRebase(6);
-            Assert.AreNotEqual(first, rebase);
-            Assert.IsFalse(session.Matches(first, 5, DockInteractionPhase.Dragging));
-            Assert.IsTrue(session.TryEnterDragging(rebase, 6));
-            long reset = session.Reset(out _);
-            Assert.IsFalse(session.Matches(rebase, 6, DockInteractionPhase.Dragging));
-            Assert.AreNotEqual(rebase, reset);
-        }
     }
 }

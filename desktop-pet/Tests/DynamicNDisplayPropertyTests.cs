@@ -255,11 +255,9 @@ namespace PennyPet.Tests
             WindowFacts sourceFacts = new WindowFacts(source.NoteId, key,
                 surface.RuntimeGdiName, surface.WorkArea, dpi,
                 scenario.Topology.Generation, seed + 1L);
-            long epoch = seed + 100L;
-
             DockPlacementPlan plan = DockPlacementPlanner.Plan(group,
                 sourceFacts, surface, dpi,
-                scenario.Topology.Generation, seed + 500L, epoch);
+                scenario.Topology.Generation, seed + 500L);
 
             Assert.AreEqual(surface.RuntimeSurfaceId,
                 plan.TargetSurfaceId, "Dock target seed=" + seed);
@@ -281,16 +279,6 @@ namespace PennyPet.Tests
                         plan.WindowTargets[index].PhysicalBounds.Top,
                         "Dock gap/overlap seed=" + seed);
             }
-
-            Assert.IsTrue(DockExecutionRules.CanExecute(plan,
-                scenario.Topology.Generation, epoch),
-                "current plan rejected seed=" + seed);
-            Assert.IsFalse(DockExecutionRules.CanExecute(plan,
-                scenario.Topology.Generation + 1, epoch),
-                "stale generation executed seed=" + seed);
-            Assert.IsFalse(DockExecutionRules.CanExecute(plan,
-                scenario.Topology.Generation, epoch + 1),
-                "stale epoch executed seed=" + seed);
         }
 
         [TestMethod]
