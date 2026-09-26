@@ -54,19 +54,13 @@ namespace PennyPet
             if (snapshot.Count > 0 && facts.TryGetValue(snapshot[0].Id,
                 out capturedRoot)) rootFacts = capturedRoot;
             note.Visible = false;
-            _synchronizingDockLayout = true;
-            try
-            {
-                LayoutDockChain(snapshot, facts, rootFacts.X, rootFacts.Y,
-                    rootFacts.Width);
-            }
-            finally { _synchronizingDockLayout = false; }
+            LayoutDockChain(snapshot, facts,
+                rootFacts.X, rootFacts.Y, rootFacts.Width);
             _workspace.Notes.SaveAsync();
             RefreshDockResizeRoles();
             _workspace.RefreshNoteTabs();
         }
 
-        private bool _synchronizingDockLayout;
         private long _dockSceneRevision;
         private long _nextDockOperationSequence;
         private readonly Queue<long> _acceptedLocalDockGestureOrder =
@@ -173,13 +167,8 @@ namespace PennyPet
                     out capturedRoot)) rootFacts = capturedRoot;
                 sourceData.Visible = false;
                 _workspace.PostHostedStickyHide(sourceData);
-                _synchronizingDockLayout = true;
-                try
-                {
-                    LayoutDockChain(snapshot, facts, rootFacts.X,
-                        rootFacts.Y, rootFacts.Width);
-                }
-                finally { _synchronizingDockLayout = false; }
+                LayoutDockChain(snapshot, facts,
+                    rootFacts.X, rootFacts.Y, rootFacts.Width);
             }
             _workspace.Notes.SaveAsync();
             RefreshDockResizeRoles();
@@ -394,15 +383,10 @@ namespace PennyPet
         {
             List<StickyNoteData> ordered = BuildDockChainOrder(seed);
             if (ordered.Count <= 1) return;
-            _synchronizingDockLayout = true;
-            try
-            {
-                LayoutDockChain(ordered, factsById, rootAnchor.X,
-                    rootAnchor.Y, rootWidth);
-                ApplyDockComponentTopMost(seed,
-                    ordered[0].AlwaysOnTop, null);
-            }
-            finally { _synchronizingDockLayout = false; }
+            LayoutDockChain(ordered, factsById,
+                rootAnchor.X, rootAnchor.Y, rootWidth);
+            ApplyDockComponentTopMost(seed,
+                ordered[0].AlwaysOnTop, null);
         }
 
         internal void NormalizeAllDockGroups()
