@@ -173,7 +173,6 @@ namespace PennyPet
                 if (completed != null) completed(false);
                 return;
             }
-            Dock.ClearHostedDockResizeSessionIfMember(noteId);
             PostHostedStickyCommand(StickyUiCommand.Close(noteId),
                 delegate(StickyUiCommandResult result)
                 {
@@ -199,7 +198,6 @@ namespace PennyPet
 
         private void DeleteStickyNoteAfterWindowClosed(StickyNoteData note)
         {
-            Dock.ClearHostedDockResizeSessionIfMember(note.Id);
             _reminders.CancelForNote(note, false);
             Notes.Remove(note);
             Dock.RefreshDockResizeRoles();
@@ -738,7 +736,6 @@ namespace PennyPet
             if (note != null) Dock.CancelHostedDockRestores(note.Id);
             if (!IsHostedSticky(note)) return false;
             string noteId = note.Id;
-            Dock.ClearHostedDockResizeSessionIfMember(noteId);
             PostHostedStickyCommand(StickyUiCommand.Hide(noteId),
                 delegate(StickyUiCommandResult result)
                 {

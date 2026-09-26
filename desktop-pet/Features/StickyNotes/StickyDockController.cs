@@ -138,7 +138,6 @@ namespace PennyPet
         {
             if (sourceData == null || sourceFacts == null) return;
             CancelHostedDockRestores(sourceData.Id);
-            ClearHostedDockResizeSessionIfMember(sourceData.Id);
             List<StickyNoteData> ordered =
                 BuildDockChainOrder(sourceData);
             List<StickyNoteData> snapshot =
@@ -1170,7 +1169,6 @@ namespace PennyPet
             DisplayTopologySnapshot topology = _workspace.CurrentTopologySnapshot();
             if (topology == null) return false;
             foreach (StickyNoteData member in ordered)
-                ClearHostedDockResizeSessionIfMember(member.Id);
             if (MigrateDockRestorePreferredIfNeeded(ordered, topology)) _workspace.Notes.SaveAsync();
             DockRestoreOperation operation = DockRestoreOperation.TryCreate(ordered,
                 focus == null ? null : focus.Id, focusEditor, persistVisibility,
