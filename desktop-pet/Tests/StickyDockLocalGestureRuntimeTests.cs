@@ -203,6 +203,44 @@ namespace PennyPet.Tests
                 completion.BaselineVersions["A"]);
             Assert.AreEqual(202,
                 completion.BaselineVersions["X"]);
+
+            runtime.ApplyProvisional(completion);
+            Assert.AreNotEqual(0, runtime.TryBegin(
+                StickyDockLocalGestureKind.HeaderDrag, "A"),
+                "A second gesture may begin before the first merge ACK.");
+            Assert.AreEqual("X",
+                runtime.SplitGuideParentNoteId,
+                "The second gesture must see the provisional merge relation.");
+            runtime.Cancel();
+        }
+
+        [TestMethod]
+        public void DockCommitVersion_IgnoresContentButTracksGeometry()
+        {
+            StickyNoteData note = new StickyNoteData
+            {
+                Id = "A",
+                DockGroupId = "g",
+                DockGroupOrder = 1,
+                X = 10,
+                Y = 20,
+                Width = 300,
+                Height = 400,
+                Text = "before"
+            };
+            long baseline =
+                StickyDockController.ComputeDockCommitVersion(
+                    note);
+            note.Text = "after";
+            note.ModifiedUtcTicks++;
+            Assert.AreEqual(baseline,
+                StickyDockController.ComputeDockCommitVersion(
+                    note));
+
+            note.X++;
+            Assert.AreNotEqual(baseline,
+                StickyDockController.ComputeDockCommitVersion(
+                    note));
         }
 
         [TestMethod]

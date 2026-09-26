@@ -1074,5 +1074,48 @@ namespace PennyPet.Tests
                 "All three R13 geometry paths must be available locally.");
         }
 
+
+        [TestMethod]
+        public void R23_DockLiveEventsStopAtStickyStaAndOnlyCompletionCrosses()
+        {
+            string host = ReadSource("StickyUiHost.cs");
+            string local = Between(host,
+                "private bool TryHandleLocalDockEvent(",
+                "private StickyDockGestureCommit CaptureLocalDockCommit(");
+            string session = Between(host,
+                "private void SessionEventRaised(",
+                "private StickyUiCommandResult CloseAllSessions()");
+            string workspace =
+                SourceGuardText.ReadStickyWorkflowSource();
+            string controller = SourceGuardText.ReadSource(
+                "Features/StickyNotes/StickyDockController.cs");
+
+            Assert.IsTrue(local.Contains(
+                    "StickyUiEventKind.HeaderDragMoved") &&
+                local.Contains(
+                    "StickyUiEventKind.DockHorizontalResizing") &&
+                local.Contains(
+                    "StickyUiEventKind.DockDividerResizing"));
+            Assert.IsFalse(local.Contains("PostEvent(") ||
+                local.Contains("SaveAsync("),
+                "MouseMove/WM_SIZING must remain entirely on Sticky STA.");
+            Assert.IsTrue(session.IndexOf(
+                    "TryHandleLocalDockEvent(session, value)",
+                    StringComparison.Ordinal) <
+                session.IndexOf("PostEvent(value)",
+                    StringComparison.Ordinal),
+                "Local Dock input must be consumed before generic Pet dispatch.");
+            Assert.IsTrue(host.Contains(
+                    "StickyUiEvent.DockCommitRequested(") &&
+                workspace.Contains(
+                    "StickyUiEventKind.DockGestureCommitRequested") &&
+                workspace.Contains(
+                    "Dock.CommitLocalDockGesture("));
+            Assert.IsTrue(controller.Contains(
+                    "TryApplyLocalDockGestureCommit(") &&
+                controller.Contains(
+                    "StickyUiCommand.AcknowledgeDockCommit(ack)"));
+        }
+
     }
 }

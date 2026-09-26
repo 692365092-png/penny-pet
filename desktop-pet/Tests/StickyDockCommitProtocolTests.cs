@@ -73,6 +73,38 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void ActiveB_CanCompleteAfterAckAAndRebasesItsVersions()
+        {
+            StickyDockCommitQueue queue =
+                new StickyDockCommitQueue();
+            StickyDockGestureCommit a = Commit(
+                20, 0, StickyDockCommitIntent.MergeAfter);
+            Assert.IsTrue(queue.TryAdd(a));
+            Assert.AreSame(a, queue.PeekReady());
+
+            StickyDockSceneProjection committedScene =
+                new StickyDockSceneProjection(
+                    new[]
+                    {
+                        new StickyDockSceneMember(
+                            "A", "g", 0, true, 77)
+                    }, 3);
+            Assert.IsTrue(queue.Acknowledge(
+                new StickyDockCommitAck(
+                    20, true, committedScene)).Matched);
+
+            StickyDockGestureCommit b = Commit(
+                21, 20, StickyDockCommitIntent.Detach);
+            Assert.IsTrue(queue.TryAdd(b),
+                "B may have started locally while A was awaiting ACK.");
+            StickyDockGestureCommit ready =
+                queue.PeekReady();
+            Assert.IsNotNull(ready);
+            Assert.AreEqual(77,
+                ready.BaselineVersions["A"]);
+        }
+
+        [TestMethod]
         public void PendingResultsAreBoundedInsteadOfSilentlyDropped()
         {
             StickyDockCommitQueue queue =
