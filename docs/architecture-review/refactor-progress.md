@@ -213,3 +213,15 @@ Pet publishes one immutable `StickySideTabsProjection` containing hidden-note sn
 Dock controller no longer constructs feedback forms. It computes semantic target/seam data and routes it to the Sticky host, which owns the corresponding HWND lifetime. Modal layering crosses the boundary only as the current modal HWND, not as a foreign Form object. Existing note-open/delete/reorder actions cross back to the Pet owner context as semantic callbacks.
 
 Structural guards assert that Pet-side workspace no longer owns SideTab HWNDs, Dock controller no longer owns `DockPulseIndicatorForm`, and Sticky host owns creation, overlap and modal layering. Windows CI #118 on `5bdb8a1` passed the full pipeline: build, discoverable tests, modular native self-tests, single-file EXE smoke, managed Dock baseline, render-cost observation and release artifacts.
+
+## R22 — local Dock gesture execution prepared on Sticky STA
+
+R22 now has a detached `StickyDockSceneProjection` plus `StickyDockLocalGestureRuntime`. The scene carries only visible Dock membership/order and a revision; every live rectangle is captured from Sticky-owned window sessions at gesture start. The runtime has no repository, save, synchronization-context or mailbox channel, so its live path cannot call back into Pet.
+
+All three R13 geometry paths execute locally. Header drag rebuilds the whole group from the gesture's logical baseline and the source HWND's current target/DPI, so a cross-DPI move reprojects from logical dimensions instead of accumulating rounded previous frames. Horizontal resize consumes the native proposed left/width; divider resize consumes the native proposed source height. In both resize paths Windows remains authoritative for the source HWND while the runtime emits followers only.
+
+`StickyUiHost` now owns the candidate same-STA follower executor. It resolves the source's current surface/DPI, prepares follower DPI transitions, suppresses follower geometry echoes, applies one deferred native batch and restores the transition scope. The local preview driver uses the existing 20-physical-pixel snap rule and Sticky-owned Dock feedback chrome. Pet publishes DockScene only when Dock resize roles/model structure are refreshed; no content snapshot is part of the live path.
+
+This checkpoint intentionally does **not** select the local driver from `SessionEventRaised`. The roadmap requires R22–R24 to remain one migration batch, and specifically forbids switching the formal runtime before R23 supplies the one-shot final commit/ack handoff. Thus the old live transport remains the selected production path at the R22 checkpoint; R23 will remove it when completion can be committed atomically rather than leaving a window/model half-migration.
+
+Windows CI #124 on `bce306d` passed build, all 670 discoverable tests, modular native self-tests, single-file EXE smoke, managed Dock baseline, render-cost observation and release artifacts.
