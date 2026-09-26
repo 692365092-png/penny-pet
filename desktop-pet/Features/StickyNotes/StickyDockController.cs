@@ -1066,35 +1066,9 @@ namespace PennyPet
                         members.Add(new StickyDockSceneMember(
                             note.Id, note.DockGroupId,
                             note.DockGroupOrder, note.Visible,
-                            ComputeDockCommitVersion(note)));
+                            StickyDockCommitVersion.Compute(note)));
             return new StickyDockSceneProjection(
                 members, ++_dockSceneRevision);
-        }
-
-        // Deliberately excludes title/body/reminders/appearance. A content
-        // edit must not invalidate an otherwise valid geometry commit.
-        internal static long ComputeDockCommitVersion(
-            StickyNoteData note)
-        {
-            if (note == null) return Int64.MinValue;
-            unchecked
-            {
-                ulong hash = 1469598103934665603UL;
-                Action<long> mix = delegate(long value)
-                {
-                    hash ^= (ulong)value;
-                    hash *= 1099511628211UL;
-                };
-                string group = note.DockGroupId ?? String.Empty;
-                foreach (char value in group) mix(value);
-                mix(note.DockGroupOrder);
-                mix(note.Visible ? 1 : 0);
-                mix(note.X);
-                mix(note.Y);
-                mix(note.Width);
-                mix(note.Height);
-                return (long)hash;
-            }
         }
 
         private void ApplyDockResizeRole(StickyNoteData note, bool grouped,
@@ -1952,7 +1926,7 @@ namespace PennyPet
                 StickyNoteData note =
                     _workspace.Notes.Find(baseline.Key);
                 if (note == null ||
-                    ComputeDockCommitVersion(note) !=
+                    StickyDockCommitVersion.Compute(note) !=
                         baseline.Value)
                 {
                     TraceDockCommitRejected(

@@ -229,17 +229,17 @@ namespace PennyPet.Tests
                 Text = "before"
             };
             long baseline =
-                StickyDockController.ComputeDockCommitVersion(
+                StickyDockCommitVersion.Compute(
                     note);
             note.Text = "after";
             note.ModifiedUtcTicks++;
             Assert.AreEqual(baseline,
-                StickyDockController.ComputeDockCommitVersion(
+                StickyDockCommitVersion.Compute(
                     note));
 
             note.X++;
             Assert.AreNotEqual(baseline,
-                StickyDockController.ComputeDockCommitVersion(
+                StickyDockCommitVersion.Compute(
                     note));
         }
 
