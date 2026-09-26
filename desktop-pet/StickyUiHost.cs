@@ -1423,6 +1423,12 @@ namespace PennyPet
                     return null;
                 members.Add(captured);
             }
+            Dictionary<string, long> versions =
+                new Dictionary<string, long>(
+                    StringComparer.OrdinalIgnoreCase);
+            foreach (KeyValuePair<string, long> pair in
+                completion.BaselineVersions)
+                versions[pair.Key] = pair.Value;
             return new StickyDockGestureCommit(
                 completion.GestureId,
                 dependsOnGestureId,
@@ -1430,9 +1436,7 @@ namespace PennyPet
                 completion.SourceNoteId,
                 completion.TargetNoteId,
                 completion.TopologyGeneration,
-                new Dictionary<string, long>(
-                    completion.BaselineVersions,
-                    StringComparer.OrdinalIgnoreCase),
+                versions,
                 members);
         }
 
