@@ -475,9 +475,7 @@ namespace PennyPet
             DisplayTopologySnapshot snapshot)
         {
             if (snapshot == null || IsDisposed) return;
-            Dock.InvalidateDockPlansForTopologyChange(snapshot);
             Dock.RestartHostedDockRestores(snapshot);
-            Dock.ResumeDockDragAfterTopologyChange(snapshot);
             WindowFacts petFacts = CapturePetWindowFacts(snapshot);
             foreach (StickyNoteData note in Notes.GetAll())
             {
@@ -817,8 +815,6 @@ namespace PennyPet
         internal void HostedStickyFaulted(Exception error)
         {
             Dock.CancelHostedDockRestores();
-            Dock.ClearHostedDockResizeSession();
-            Dock.ResetDockDragState();
             if (error != null)
                 ApplicationDiagnostics.ReportNonFatal(
                     "hosted-sticky-faulted", error);
@@ -834,23 +830,6 @@ namespace PennyPet
             if (value == null || IsDisposed ||
                 !Hosted.ContainsNote(value.NoteId)) return;
             TraceHostedWindowFacts(value);
-            if (value.IsDockInput)
-            {
-                if (value.BeginsDockInput)
-                {
-                    if (value.Snapshot == null || !String.Equals(value.NoteId,
-                        value.Snapshot.NoteId, StringComparison.OrdinalIgnoreCase) ||
-                        !Hosted.CanApplySequence(value.NoteId, value.Sequence)) return;
-                    // Input ownership is independent of topology. Retire the old
-                    // gesture even if this start's geometry needs a later rebase.
-                    Dock.BeginDockInput(value.Input);
-                    if (!Dock.Gestures.Matches(value.Input)) return;
-                    StickyNoteData source = Notes.Find(value.NoteId);
-                    // Released mutations may have hidden or deleted the source.
-                    if (source == null || !source.Visible || !Hosted.ContainsNote(value.NoteId)) return;
-                }
-                else if (!Dock.Gestures.Matches(value.Input)) return;
-            }
             if (value.Kind == StickyUiEventKind.TypingActivity)
             {
                 if (!_surface.IsExiting) TypingActivity?.Invoke();
@@ -884,55 +863,9 @@ namespace PennyPet
                     value.DockCommit);
                 return;
             }
-            if (value.Kind == StickyUiEventKind.HeaderDragStarted ||
-                value.Kind == StickyUiEventKind.HeaderDragMoved ||
-                value.Kind == StickyUiEventKind.HeaderDragCompleted)
-            {
-                bool geometryCurrent = IsCurrentHostedGeometryEvent(value);
-                if (!ApplyHostedStickyEvent(value, false) || !geometryCurrent)
-                    return;
-                StickyNoteData canonical = Notes.Find(value.NoteId);
-                if (canonical == null) return;
-                DockWindowFacts facts = DockWindowFacts.FromWindowFacts(
-                    value.Facts, canonical.Visible, canonical.AlwaysOnTop);
-                if (facts == null) return;
-                if (value.Kind == StickyUiEventKind.HeaderDragStarted)
-                    Dock.BeginStickyDockDrag(facts, value.Facts, value.Topology);
-                else if (value.Kind == StickyUiEventKind.HeaderDragMoved)
-                {
-                    Dock.MoveStickyDockDrag(facts, value.Facts, value.Topology);
-                }
-                else
-                {
-                    Dock.CompleteStickyDockDrag(facts, value);
-                }
-                return;
-            }
             if (value.Kind == StickyUiEventKind.BoundsChanged)
             {
                 ApplyHostedStickyEvent(value, false);
-                return;
-            }
-            if (value.Kind == StickyUiEventKind.DockDividerResizeStarted ||
-                value.Kind == StickyUiEventKind.DockHorizontalResizeStarted)
-            {
-                if (IsCurrentHostedGeometryEvent(value) && ApplyHostedStickyEvent(value, false))
-                    Dock.BeginHostedStickyDockResize(value, value.Kind == StickyUiEventKind.DockHorizontalResizeStarted
-                        ? DockResizeKind.Horizontal : DockResizeKind.Divider);
-                return;
-            }
-            if (value.Kind == StickyUiEventKind.DockDividerResizing ||
-                value.Kind == StickyUiEventKind.DockHorizontalResizing)
-            {
-                if (IsCurrentHostedGeometryEvent(value) &&
-                    Hosted.CanApplySequence(value.NoteId, value.Sequence))
-                    Dock.ResizeHostedStickyDock(value);
-                return;
-            }
-            if (value.Kind == StickyUiEventKind.DockDividerResizeCompleted ||
-                value.Kind == StickyUiEventKind.DockHorizontalResizeCompleted)
-            {
-                Dock.CompleteHostedStickyDockResize(value);
                 return;
             }
             if (value.Kind == StickyUiEventKind.CloseRequested)
@@ -998,8 +931,6 @@ namespace PennyPet
                 Hosted.RemoveNote(value.NoteId);
                 Placement.Remove(value.NoteId);
                 WindowRemoved?.Invoke(value.NoteId, false);
-                Dock.ClearHostedDockResizeSessionIfMember(value.NoteId);
-                Dock.CancelDockFinalizationIfMember(value.NoteId);
                 return;
             }
             if (value.Kind == StickyUiEventKind.CancelReminderRequested)
@@ -1119,9 +1050,7 @@ namespace PennyPet
             Context.Post(delegate
             {
                 _pendingStandaloneTopologyNotes.Remove(noteId);
-                if (IsDisposed || String.Equals(noteId,
-                    Dock.Interaction.SourceNoteId, StringComparison.OrdinalIgnoreCase))
-                    return;
+                if (IsDisposed) return;
                 StickyNoteData note = Notes.Find(noteId);
                 DisplayTopologySnapshot snapshot = CurrentTopologySnapshot();
                 if (note == null || snapshot == null || !IsHostedSticky(note))
@@ -1173,35 +1102,32 @@ namespace PennyPet
             return sequence > appliedSequence;
         }
 
-        private void HandleHostedStickyFailure(IEnumerable<string> noteIds,
+        private void HandleHostedStickyFailure(
+            IEnumerable<string> noteIds,
             string context, StickyUiCommandResult result)
         {
             ReportHostedStickyCommandFailure(context, result);
-            DockMutationQueue failedFinal = Dock.Interaction.Mutations;
-            bool cancelHeaderFinal = false;
             if (noteIds != null)
             {
                 foreach (string noteId in noteIds)
                 {
                     if (String.IsNullOrEmpty(noteId)) continue;
-                    StickyNoteData note = Notes.Find(noteId);
-                    if (failedFinal != null && failedFinal.Contains(
-                        noteId, note == null ? null : note.DockGroupId)) cancelHeaderFinal = true;
                     Dock.CancelHostedDockRestores(noteId);
                     Hosted.RemoveNote(noteId);
                     Placement.InvalidateEffective(noteId);
                     WindowRemoved?.Invoke(noteId, true);
+                    StickyNoteData note = Notes.Find(noteId);
                     if (note != null) note.Visible = false;
-                    PostHostedStickyCommand(StickyUiCommand.Close(noteId),
+                    PostHostedStickyCommand(
+                        StickyUiCommand.Close(noteId),
                         delegate(StickyUiCommandResult closeResult) { });
-                    Dock.ClearHostedDockResizeSessionIfMember(noteId);
                 }
             }
-            if (cancelHeaderFinal && ReferenceEquals(Dock.Interaction.Mutations, failedFinal)) Dock.ResetDockDragState();
             Notes.SaveAsync();
             RefreshNoteTabs();
             RefreshMenuText();
-            ShowBubble("便利贴窗口暂时无法显示，内容已保留在侧边页签中。");
+            ShowBubble(
+                "便利贴窗口暂时无法显示，内容已保留在侧边页签中。");
         }
 
         internal static void ReportHostedStickyCommandFailure(string context,
@@ -1215,14 +1141,23 @@ namespace PennyPet
 
         internal bool BeginHostedStickyExitIfNeeded()
         {
-            if (Dock.DeferDockMutation(null, () => ExitReady?.Invoke())) return true;
-            Dock.CancelHostedDockRestores();
             if (Hosted.NoteCount == 0 ||
                 Hosted.ExitPrepared)
                 return false;
-            Dock.ClearHostedDockResizeSession();
-            Hosted.RequestExit();
-            TryCloseAllHostedStickies();
+            List<string> affected = new List<string>();
+            foreach (StickyNoteData note in Notes.GetAll())
+                if (note != null && note.Visible)
+                    affected.Add(note.Id);
+            PrepareDockStructure(affected,
+                "sticky-exit-structure",
+                delegate
+                {
+                    if (IsDisposed || Hosted.ExitPrepared)
+                        return;
+                    Dock.CancelHostedDockRestores();
+                    Hosted.RequestExit();
+                    TryCloseAllHostedStickies();
+                });
             return true;
         }
 
@@ -1278,27 +1213,36 @@ namespace PennyPet
             Action<StickyUiCommandResult> completed)
         {
             if (completed == null) return;
-            if (Dock.DeferDockMutation(null, () => CloseHostedStickyRuntimeForReload(completed))) return;
-            Dock.CancelHostedDockRestores();
-            Dock.ClearHostedDockResizeSession();
             if (Hosted.NoteCount == 0)
             {
                 completed(StickyUiCommandResult.Handled(
                     new StickyUiFinalSnapshot[0]));
                 return;
             }
-            PostHostedStickyCommand(StickyUiCommand.CloseAll(),
-                delegate(StickyUiCommandResult result)
+            List<string> affected = new List<string>();
+            foreach (StickyNoteData note in Notes.GetAll())
+                if (note != null && note.Visible)
+                    affected.Add(note.Id);
+            PrepareDockStructure(affected,
+                "sticky-reload-structure",
+                delegate
                 {
-                    if (result == null ||
-                        result.Status != StickyUiCommandStatus.Handled)
-                    {
-                        completed(result);
-                        return;
-                    }
-                    ApplyClosedHostedStickySnapshots(result);
-                    Dock.ClearHostedDockResizeSession();
-                    completed(result);
+                    Dock.CancelHostedDockRestores();
+                    PostHostedStickyCommand(
+                        StickyUiCommand.CloseAll(),
+                        delegate(StickyUiCommandResult result)
+                        {
+                            if (result == null ||
+                                result.Status !=
+                                    StickyUiCommandStatus.Handled)
+                            {
+                                completed(result);
+                                return;
+                            }
+                            ApplyClosedHostedStickySnapshots(
+                                result);
+                            completed(result);
+                        });
                 });
         }
 
@@ -1348,7 +1292,6 @@ namespace PennyPet
             bool persistVisibility)
         {
             if (note == null) return;
-            if (Dock.DeferDockMutation(note.Id, () => ShowHostedSticky(Notes.Find(note.Id), focusEditor, persistVisibility))) return;
             List<StickyNoteData> storedDockOrder =
                 Dock.BuildDockChainOrderIncludingHidden(note);
             bool anyHiddenDockMember = storedDockOrder.Exists(

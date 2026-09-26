@@ -18,12 +18,8 @@
     <Compile Include="Features\KeyboardOverlay\KeyboardPrivacyWorker.cs" />
     <Compile Include="Features\Display\PetDisplayRuntime.cs" />
     <Compile Include="Features\Display\IPetDisplayWindow.cs" />
-    <Compile Include="Features\StickyNotes\DockFrameMailbox.cs" />
     <Compile Include="Features\StickyNotes\DockPlacementPlanner.cs" />
-    <Compile Include="Features\StickyNotes\DockInteractionState.cs" />
-    <Compile Include="Features\StickyNotes\DockMutationQueue.cs" />
-    <Compile Include="Features\StickyNotes\DockResizeSession.cs" />
-    <Compile Include="Features\StickyNotes\DockGestureOwner.cs" />
+    <Compile Include="Features\StickyNotes\DockInput.cs" />
     <Compile Include="Features\StickyNotes\StickyDockLocalGestureRuntime.cs" />
     <Compile Include="Features\StickyNotes\StickyDockCommitProtocol.cs" />
     <Compile Include="Features\StickyNotes\StickyDockCommitVersion.cs" />

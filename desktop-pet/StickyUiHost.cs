@@ -21,7 +21,6 @@ namespace PennyPet
             new Dictionary<string, StickyWindowSession>(
                 StringComparer.OrdinalIgnoreCase);
         private DisplayTopologySnapshot _currentTopology;
-        private long _currentDockInteractionEpoch;
         // Sticky-STA only. Advance before posting input to Pet, including when
         // Pet is still waiting for an older finalization acknowledgment.
         private DockInput _currentDockInput;
@@ -665,144 +664,9 @@ namespace PennyPet
         // Dedicated latest-wins entry for a live Dock drag. This is not a
         // generic scheduler: the Pet thread replaces the immutable plan in
         // the mailbox and only one deferred native batch runs at a time.
-        internal void PostLatestDockPlan(DockFrameMailbox<DockPlacementPlan> mailbox,
-            Action<StickyUiCommandResult> completed,
-            SynchronizationContext completionContext)
-        {
-            if (mailbox == null)
-                throw new ArgumentNullException(nameof(mailbox));
-            _threadHost.PostToDispatcher(() => ApplyLatestDockPlan(mailbox),
-                completed, completionContext);
-        }
-
-        internal void PostFinalDockPlan(DockFrameMailbox<DockPlacementPlan> mailbox,
-            DockPlacementPlan expected, Action<StickyUiCommandResult> completed,
-            SynchronizationContext completionContext)
-        {
-            if (mailbox == null)
-                throw new ArgumentNullException(nameof(mailbox));
-            _threadHost.PostToDispatcher(() => ApplyFinalDockPlan(mailbox, expected),
-                completed, completionContext);
-        }
-
         // Horizontal and divider gestures share one latest-frame/final transport.
-        internal void PostLatestResizeBatch(DockFrameMailbox<DockResizeBatch> mailbox,
-            Action<StickyUiCommandResult> completed,
-            SynchronizationContext completionContext)
-        {
-            if (mailbox == null)
-                throw new ArgumentNullException(nameof(mailbox));
-            _threadHost.PostToDispatcher(() => ApplyLatestResizeBatch(mailbox),
-                completed, completionContext);
-        }
-
-        internal void PostFinalResizeBatch(DockFrameMailbox<DockResizeBatch> mailbox,
-            DockResizeBatch expected,
-            Action<StickyUiCommandResult> completed,
-            SynchronizationContext completionContext)
-        {
-            if (mailbox == null)
-                throw new ArgumentNullException(nameof(mailbox));
-            _threadHost.PostToDispatcher(() => ApplyFinalResizeBatch(mailbox, expected),
-                completed, completionContext);
-        }
-
-        private StickyUiCommandResult ApplyLatestResizeBatch(
-            DockFrameMailbox<DockResizeBatch> mailbox)
-        {
-            DockResizeBatch batch = mailbox == null
-                ? null : mailbox.TakeLatest();
-            if (batch == null || batch.Targets.Count == 0)
-                return StickyUiCommandResult.Handled();
-            return ApplyResizeBatch(batch);
-        }
-
-        private StickyUiCommandResult ApplyFinalResizeBatch(
-            DockFrameMailbox<DockResizeBatch> mailbox, DockResizeBatch expected)
-        {
-            DockResizeBatch batch = mailbox == null
-                ? null : mailbox.TakeFinal(expected);
-            if (batch == null || batch.Targets.Count == 0)
-                return StickyUiCommandResult.NotHandled();
-            try
-            {
-                return ApplyResizeBatch(batch);
-            }
-            finally
-            {
-                mailbox.CompleteFinal(expected);
-            }
-        }
-
         // Move all followers without showing or activating them, then capture
         // each member once. WindowFacts remain the actual geometry authority.
-        private StickyUiCommandResult ApplyResizeBatch(
-            DockResizeBatch batch)
-        {
-            if (batch == null || batch.Targets.Count == 0)
-                return StickyUiCommandResult.NotHandled();
-            if (!ReferenceEquals(batch.Input, _currentDockInput))
-                return StickyUiCommandResult.NotHandled();
-            DisplayTopologySnapshot topology;
-            lock (_configurationGate) topology = _currentTopology;
-            if (topology == null ||
-                batch.TopologyGeneration != topology.Generation)
-            {
-                DisplayDiagnostics.Trace("DockResizeBatchStale",
-                    "batchGeneration=" + batch.TopologyGeneration +
-                    " currentGeneration=" +
-                    (topology == null ? -1 : topology.Generation));
-                return StickyUiCommandResult.NotHandled();
-            }
-            List<StickyWindowSession> sessions =
-                new List<StickyWindowSession>();
-            List<IntPtr> handles = new List<IntPtr>();
-            List<PhysicalRect> rects = new List<PhysicalRect>();
-            HashSet<string> ids = new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase);
-            foreach (DockWindowTarget target in batch.Targets)
-            {
-                if (target == null || !ids.Add(target.NoteId))
-                    return StickyUiCommandResult.NotHandled();
-                StickyWindowSession session;
-                if (!TryGetSession(target.NoteId, out session) ||
-                    session.PlacementHwnd == IntPtr.Zero)
-                    return StickyUiCommandResult.NotHandled();
-                sessions.Add(session);
-                handles.Add(session.PlacementHwnd);
-                rects.Add(target.PhysicalBounds);
-            }
-            foreach (StickyWindowSession session in sessions)
-                if (!session.AdoptTopology(topology))
-                    return StickyUiCommandResult.NotHandled();
-            foreach (StickyWindowSession session in sessions)
-                session.SetEventsSuppressed(true);
-            try
-            {
-                if (WindowsBatchWindowPlacementExecutor.Apply(handles, rects) != WindowsBatchPlacementStatus.Applied)
-                    return StickyUiCommandResult.NotHandled();
-                List<DockBatchMemberResult> members =
-                    new List<DockBatchMemberResult>();
-                for (int index = 0; index < batch.Targets.Count; index++)
-                {
-                    DockBatchMemberResult member =
-                        sessions[index].CaptureDockMember(topology);
-                    if (member == null || member.Facts == null)
-                        return StickyUiCommandResult.NotHandled();
-                    members.Add(member);
-                }
-                return StickyUiCommandResult.Handled(new DockBatchResult(
-                    0, batch.TopologyGeneration, String.Empty, 0,
-                    members, 0));
-            }
-            finally
-            {
-                foreach (StickyWindowSession session in sessions)
-                    session.SetEventsSuppressed(false);
-                ApplySideTabZOrder();
-            }
-        }
-
         // Host-owned current topology truth for the Dock stale gate and for
         // actual-facts capture. Pet publishes every settled snapshot here.
         internal void SetCurrentTopology(DisplayTopologySnapshot snapshot)
@@ -821,11 +685,6 @@ namespace PennyPet
                 }
                 return StickyUiCommandResult.Handled();
             }, null, null);
-        }
-
-        internal void SetCurrentDockInteractionEpoch(long epoch)
-        {
-            lock (_configurationGate) _currentDockInteractionEpoch = epoch;
         }
 
         private bool IsCurrentTopology(DisplayTopologySnapshot topology)
@@ -917,8 +776,6 @@ namespace PennyPet
                         return TryGetSession(command.NoteId, out session)
                             ? session.SetDockResizeRole(command.DockResizeRole)
                             : StickyUiCommandResult.NotHandled();
-                    case StickyUiCommandKind.RaiseDockGroupForDrag:
-                        return RaiseDockGroupForDrag(command);
                     case StickyUiCommandKind.SetBounds:
                         if (command.Input != null && !ReferenceEquals(command.Input, _currentDockInput))
                             return StickyUiCommandResult.NotHandled();
@@ -945,8 +802,6 @@ namespace PennyPet
                         return TryGetSession(command.NoteId, out session)
                             ? session.CaptureCurrentFacts(command.Topology)
                             : StickyUiCommandResult.NotHandled();
-                    case StickyUiCommandKind.CaptureDockFacts:
-                        return CaptureDockFactsForCommit(command);
                     case StickyUiCommandKind.AcknowledgeDockCommit:
                         return AcknowledgeLocalDockCommit(
                             command.DockCommitAck);
@@ -1179,106 +1034,6 @@ namespace PennyPet
         // current generation and epoch), then the tail-to-root non-source
         // members are raised and the source is raised last. No geometry,
         // persistence or focus effect may ride along.
-        private StickyUiCommandResult RaiseDockGroupForDrag(
-            StickyUiCommand command)
-        {
-            if (command == null ||
-                command.Topology == null ||
-                command.DockNoteIds == null ||
-                command.DockNoteIds.Length < 2 ||
-                String.IsNullOrWhiteSpace(command.NoteId) ||
-                command.InteractionEpoch <= 0)
-                return StickyUiCommandResult.NotHandled();
-
-            DisplayTopologySnapshot currentTopology;
-            long currentEpoch;
-            lock (_configurationGate)
-            {
-                currentTopology = _currentTopology;
-                currentEpoch = _currentDockInteractionEpoch;
-            }
-
-            if (currentTopology == null ||
-                command.Topology.Generation != currentTopology.Generation ||
-                command.InteractionEpoch != currentEpoch ||
-                !ReferenceEquals(command.Input, _currentDockInput))
-            {
-                DisplayDiagnostics.Trace("DockZOrderRaiseRejected",
-                    "reason=stale source=" + command.NoteId +
-                    " commandGeneration=" + command.Topology.Generation +
-                    " currentGeneration=" +
-                    (currentTopology == null ? -1 : currentTopology.Generation) +
-                    " commandEpoch=" + command.InteractionEpoch +
-                    " currentEpoch=" + currentEpoch);
-                return StickyUiCommandResult.NotHandled();
-            }
-
-            string[] raiseOrder;
-            if (!TryBuildDockDragRaiseOrder(command.DockNoteIds,
-                command.NoteId, out raiseOrder))
-            {
-                DisplayDiagnostics.Trace("DockZOrderRaiseRejected",
-                    "reason=invalid-order source=" + command.NoteId +
-                    " epoch=" + command.InteractionEpoch);
-                return StickyUiCommandResult.NotHandled();
-            }
-
-            Dictionary<string, StickyWindowSession> sessions =
-                new Dictionary<string, StickyWindowSession>(
-                    StringComparer.OrdinalIgnoreCase);
-            foreach (string noteId in command.DockNoteIds)
-            {
-                StickyWindowSession session;
-                if (!TryGetSession(noteId, out session) ||
-                    session.PlacementHwnd == IntPtr.Zero)
-                {
-                    DisplayDiagnostics.Trace("DockZOrderRaiseRejected",
-                        "reason=missing-session source=" + command.NoteId +
-                        " missing=" + noteId +
-                        " epoch=" + command.InteractionEpoch);
-                    return StickyUiCommandResult.NotHandled();
-                }
-                sessions[noteId] = session;
-            }
-
-            // Recheck the two stale tokens immediately before the effect.
-            lock (_configurationGate)
-            {
-                if (_currentTopology == null ||
-                    _currentTopology.Generation !=
-                        command.Topology.Generation ||
-                    _currentDockInteractionEpoch !=
-                        command.InteractionEpoch)
-                {
-                    DisplayDiagnostics.Trace("DockZOrderRaiseRejected",
-                        "reason=stale-before-effect source=" +
-                        command.NoteId +
-                        " epoch=" + command.InteractionEpoch);
-                    return StickyUiCommandResult.NotHandled();
-                }
-            }
-
-            foreach (string noteId in raiseOrder)
-            {
-                if (!sessions[noteId]
-                    .RaiseForDockDragWithoutActivation())
-                {
-                    DisplayDiagnostics.Trace("DockZOrderRaiseRejected",
-                        "reason=native-failure source=" + command.NoteId +
-                        " member=" + noteId +
-                        " epoch=" + command.InteractionEpoch);
-                    return StickyUiCommandResult.NotHandled();
-                }
-            }
-
-            DisplayDiagnostics.Trace("DockZOrderRaised",
-                "source=" + command.NoteId +
-                " members=" + command.DockNoteIds.Length +
-                " generation=" + command.Topology.Generation +
-                " epoch=" + command.InteractionEpoch);
-            return StickyUiCommandResult.Handled();
-        }
-
         // R22 local driver. These methods stay on Sticky STA and intentionally
         // are not selected by SessionEventRaised until R23 can atomically
         // commit the resulting gesture completion.
@@ -1753,204 +1508,6 @@ namespace PennyPet
         // follower in one deferred native batch, then publish final detached
         // snapshots. Geometry events stay suppressed so the drag never yields
         // a stale coordinate chase on the following members.
-        private StickyUiCommandResult ApplyLatestDockPlan(
-            DockFrameMailbox<DockPlacementPlan> mailbox)
-        {
-            DockPlacementPlan plan = mailbox == null
-                ? null : mailbox.TakeLatest();
-            if (plan == null || plan.WindowTargets.Count == 0)
-                return StickyUiCommandResult.Handled();
-            return ApplyDockPlan(plan);
-        }
-
-        private StickyUiCommandResult ApplyFinalDockPlan(
-            DockFrameMailbox<DockPlacementPlan> mailbox, DockPlacementPlan expected)
-        {
-            DockPlacementPlan plan = mailbox == null
-                ? null : mailbox.TakeFinal(expected);
-            if (plan == null || plan.WindowTargets.Count == 0)
-                return StickyUiCommandResult.NotHandled();
-            try
-            {
-                return ApplyDockPlan(plan);
-            }
-            finally
-            {
-                mailbox.CompleteFinal(expected);
-            }
-        }
-
-        private StickyUiCommandResult ApplyDockPlan(DockPlacementPlan plan)
-        {
-            // Stale gate against the host-owned current topology generation:
-            // a plan built for generation G is never applied after Pet has
-            // published G+1.
-            DisplayTopologySnapshot topology;
-            lock (_configurationGate) topology = _currentTopology;
-            if (topology == null ||
-                plan.TopologyGeneration != topology.Generation)
-            {
-                DisplayDiagnostics.Trace("DockPlanStale",
-                    "plan=" + plan.PlanSequence + " planGeneration=" +
-                    plan.TopologyGeneration + " currentGeneration=" +
-                    (topology == null ? -1 : topology.Generation));
-                return StickyUiCommandResult.NotHandled();
-            }
-            long currentEpoch;
-            lock (_configurationGate) currentEpoch = _currentDockInteractionEpoch;
-            // Topology-reprojection plans predate the interaction-epoch
-            // protocol and intentionally carry epoch zero.  Only a live
-            // gesture plan is constrained by the current gesture token.
-            if (plan.InteractionEpoch != 0 &&
-                !DockExecutionRules.CanExecute(plan, topology.Generation,
-                    currentEpoch, _currentDockInput))
-            {
-                DisplayDiagnostics.Trace("DockPlanStale", "plan=" +
-                    plan.PlanSequence + " epoch=" + plan.InteractionEpoch +
-                    " currentEpoch=" + currentEpoch);
-                return StickyUiCommandResult.NotHandled();
-            }
-            DisplaySurfaceSnapshot targetSurface =
-                topology.FindByRuntimeSurfaceId(plan.TargetSurfaceId);
-            if (targetSurface == null || plan.TargetDpi <= 0)
-                return StickyUiCommandResult.NotHandled();
-
-            List<StickyWindowSession> expectedSessions =
-                new List<StickyWindowSession>();
-            List<IntPtr> handles = new List<IntPtr>();
-            List<PhysicalRect> rects = new List<PhysicalRect>();
-            HashSet<string> expectedIds = new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase);
-            foreach (DockWindowTarget target in plan.WindowTargets)
-            {
-                if (target == null || !expectedIds.Add(target.NoteId))
-                    return StickyUiCommandResult.NotHandled();
-                StickyWindowSession session;
-                if (!TryGetSession(target.NoteId, out session))
-                {
-                    DisplayDiagnostics.Trace("DockBatchApplied",
-                        "missing session note=" + target.NoteId +
-                        " plan=" + plan.PlanSequence);
-                    return StickyUiCommandResult.NotHandled();
-                }
-                IntPtr handle = session.PlacementHwnd;
-                if (handle == IntPtr.Zero)
-                {
-                    DisplayDiagnostics.Trace("DockBatchApplied",
-                        "zero HWND note=" + target.NoteId +
-                        " plan=" + plan.PlanSequence);
-                    return StickyUiCommandResult.NotHandled();
-                }
-                expectedSessions.Add(session);
-                if (String.Equals(target.NoteId, plan.SourceNoteId,
-                    StringComparison.OrdinalIgnoreCase)) continue;
-                handles.Add(handle);
-                rects.Add(target.PhysicalBounds);
-            }
-            if (expectedSessions.Count != plan.WindowTargets.Count)
-                return StickyUiCommandResult.NotHandled();
-
-            foreach (StickyWindowSession session in expectedSessions)
-                if (!session.AdoptTopology(topology))
-                    return StickyUiCommandResult.NotHandled();
-
-            List<StickyWindowSession> transitionSessions =
-                new List<StickyWindowSession>();
-            List<StickyWindowSession.DockDpiTransition> transitions =
-                new List<StickyWindowSession.DockDpiTransition>();
-            bool placementApplied = false;
-            foreach (StickyWindowSession session in expectedSessions)
-                session.SetEventsSuppressed(true);
-            try
-            {
-                for (int index = 0;
-                    index < plan.WindowTargets.Count; index++)
-                {
-                    DockWindowTarget target = plan.WindowTargets[index];
-                    if (String.Equals(target.NoteId, plan.SourceNoteId,
-                        StringComparison.OrdinalIgnoreCase)) continue;
-                    StickyWindowSession.DockDpiTransition transition;
-                    StickyWindowSession session = expectedSessions[index];
-                    if (!session.TryPrepareDockTargetDpi(targetSurface,
-                        plan.TargetDpi, out transition))
-                    {
-                        DisplayDiagnostics.Trace("DockBatchApplied",
-                            "target DPI bootstrap failed note=" +
-                            target.NoteId + " plan=" + plan.PlanSequence);
-                        return StickyUiCommandResult.NotHandled();
-                    }
-                    transitionSessions.Add(session);
-                    transitions.Add(transition);
-                }
-                if (handles.Count > 0)
-                {
-                    WindowsBatchPlacementStatus status =
-                        WindowsBatchWindowPlacementExecutor.Apply(
-                            handles, rects);
-                    if (status != WindowsBatchPlacementStatus.Applied)
-                    {
-                        DisplayDiagnostics.Trace("DockBatchApplied",
-                            "batch failed status=" + status +
-                            " plan=" + plan.PlanSequence +
-                            " followers=" + handles.Count);
-                        DisplayTopologySnapshot current;
-                        lock (_configurationGate) current = _currentTopology;
-                        if (current != null &&
-                            current.Generation != plan.TopologyGeneration)
-                            return StickyUiCommandResult.NotHandled();
-                        // Bounded per-window fallback, once, no loop.
-                        int followerIndex = 0;
-                        foreach (DockWindowTarget target in plan.WindowTargets)
-                        {
-                            if (String.Equals(target.NoteId,
-                                plan.SourceNoteId,
-                                StringComparison.OrdinalIgnoreCase)) continue;
-                            StickyWindowSession session;
-                            if (!TryGetSession(target.NoteId, out session))
-                                return StickyUiCommandResult.NotHandled();
-                            PhysicalRect rect = rects[followerIndex++];
-                            session.SetBounds(new StickyUiBounds(
-                                rect.Left, rect.Top, rect.Width, rect.Height));
-                        }
-                    }
-                }
-                List<DockBatchMemberResult> members =
-                    new List<DockBatchMemberResult>();
-                foreach (StickyWindowSession session in expectedSessions)
-                {
-                    DockBatchMemberResult member =
-                        session.CaptureDockMember(topology);
-                    if (member == null || member.Facts == null ||
-                        member.Facts.Dpi != plan.TargetDpi ||
-                        !String.Equals(member.Facts.RuntimeGdiName,
-                            targetSurface.RuntimeGdiName,
-                            StringComparison.OrdinalIgnoreCase))
-                        return StickyUiCommandResult.NotHandled();
-                    members.Add(member);
-                }
-                DisplayTopologySnapshot finalTopology;
-                lock (_configurationGate) finalTopology = _currentTopology;
-                if (finalTopology == null ||
-                    finalTopology.Generation != plan.TopologyGeneration)
-                    return StickyUiCommandResult.NotHandled();
-                placementApplied = true;
-                return StickyUiCommandResult.Handled(new DockBatchResult(
-                    plan.PlanSequence, plan.TopologyGeneration,
-                    plan.TargetSurfaceId, plan.TargetDpi, members,
-                    plan.InteractionEpoch));
-            }
-            finally
-            {
-                for (int index = transitions.Count - 1;
-                    index >= 0; index--)
-                    transitionSessions[index].CompleteDockTargetDpi(
-                        transitions[index], placementApplied);
-                foreach (StickyWindowSession session in expectedSessions)
-                    session.SetEventsSuppressed(false);
-                ApplySideTabZOrder();
-            }
-        }
-
         // DRT-11 group topology transition. All members are hidden and
         // bootstrapped onto one surface before its real HWND DPI is known;
         // only then is one physical plan built and applied in one native
@@ -2099,64 +1656,6 @@ namespace PennyPet
         // One detached actual-facts capture for a dock-commit continuation.
         // Facts are captured with the host's current topology so the Pet can
         // only accept same-generation geometry.
-        private StickyUiCommandResult CaptureDockFactsForCommit(
-            StickyUiCommand command)
-        {
-            if (command == null || command.Topology == null ||
-                command.DockNoteIds == null || command.DockNoteIds.Length == 0 ||
-                command.InteractionEpoch <= 0)
-                return StickyUiCommandResult.NotHandled();
-            DisplayTopologySnapshot topology;
-            long currentEpoch;
-            lock (_configurationGate)
-            {
-                topology = _currentTopology;
-                currentEpoch = _currentDockInteractionEpoch;
-            }
-            if (topology == null || topology.Generation !=
-                command.Topology.Generation || currentEpoch !=
-                command.InteractionEpoch || !ReferenceEquals(command.Input, _currentDockInput))
-                return StickyUiCommandResult.NotHandled();
-            HashSet<string> expected = new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase);
-            List<DockBatchMemberResult> members =
-                new List<DockBatchMemberResult>();
-            foreach (string noteId in command.DockNoteIds)
-            {
-                if (String.IsNullOrWhiteSpace(noteId) || !expected.Add(noteId))
-                    return StickyUiCommandResult.NotHandled();
-                StickyWindowSession session;
-                if (!TryGetSession(noteId, out session))
-                    return StickyUiCommandResult.NotHandled();
-                DockBatchMemberResult member =
-                session.CaptureDockMember(topology);
-                if (member == null || member.Snapshot == null ||
-                    member.Facts == null || member.WindowSequence !=
-                    member.Facts.WindowSequence || member.Facts.TopologyGeneration !=
-                    command.Topology.Generation || !String.Equals(member.NoteId,
-                    noteId, StringComparison.OrdinalIgnoreCase) ||
-                    !String.Equals(member.Facts.WindowId, noteId,
-                    StringComparison.OrdinalIgnoreCase))
-                    return StickyUiCommandResult.NotHandled();
-                members.Add(member);
-            }
-            DisplayTopologySnapshot finalTopology;
-            long finalEpoch;
-            lock (_configurationGate)
-            {
-                finalTopology = _currentTopology;
-                finalEpoch = _currentDockInteractionEpoch;
-            }
-            if (finalTopology == null || finalTopology.Generation !=
-                command.Topology.Generation || finalEpoch !=
-                command.InteractionEpoch || members.Count !=
-                command.DockNoteIds.Length)
-                return StickyUiCommandResult.NotHandled();
-            return StickyUiCommandResult.Handled(new DockBatchResult(0,
-                command.Topology.Generation, String.Empty, 0, members,
-                command.InteractionEpoch));
-        }
-
         private void PostEvent(StickyUiEvent value)
         {
             if (value.BeginsDockInput) _currentDockInput = value.Input;
