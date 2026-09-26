@@ -1209,6 +1209,78 @@ namespace PennyPet
             return StickyUiCommandResult.Handled();
         }
 
+        // R22 local driver. These methods stay on Sticky STA and intentionally
+        // are not selected by SessionEventRaised until R23 can atomically
+        // commit the resulting gesture completion.
+        private long TryBeginLocalDockGesture(
+            StickyDockLocalGestureKind kind, string sourceNoteId)
+        {
+            PrepareLocalDockTopology();
+            long gestureId =
+                _localDockGestures.TryBegin(kind, sourceNoteId);
+            if (gestureId == 0) return 0;
+
+            if (kind == StickyDockLocalGestureKind.HeaderDrag)
+            {
+                string parent =
+                    _localDockGestures.SplitGuideParentNoteId;
+                WindowFacts parentFacts =
+                    CaptureLocalDockFacts(parent);
+                if (parentFacts != null)
+                    ShowSplitGuide(LocalDockSeam(
+                        parentFacts.PhysicalBounds));
+            }
+            return gestureId;
+        }
+
+        private bool MoveLocalDockHeader(WindowFacts sourceFacts)
+        {
+            if (!_localDockGestures.MoveHeader(sourceFacts))
+                return false;
+            string parent =
+                _localDockGestures.LastSnapTargetNoteId;
+            WindowFacts parentFacts =
+                CaptureLocalDockFacts(parent);
+            UpdateDockPreview(
+                String.IsNullOrEmpty(parent)
+                    ? String.Empty : parent,
+                String.Empty,
+                parentFacts == null
+                    ? Rectangle.Empty
+                    : LocalDockSeam(
+                        parentFacts.PhysicalBounds));
+            return true;
+        }
+
+        private bool ResizeLocalDockHorizontal(
+            int proposedLeft, int proposedWidth)
+        {
+            return _localDockGestures.ResizeHorizontal(
+                proposedLeft, proposedWidth);
+        }
+
+        private bool ResizeLocalDockDivider(
+            int proposedSourceHeight)
+        {
+            return _localDockGestures.ResizeDivider(
+                proposedSourceHeight);
+        }
+
+        private StickyDockLocalGestureCompletion
+            CompleteLocalDockGesture()
+        {
+            ClearDockPreviewOnThread();
+            ClearSplitGuideOnThread();
+            return _localDockGestures.Complete();
+        }
+
+        private static Rectangle LocalDockSeam(
+            PhysicalRect bounds)
+        {
+            return new Rectangle(bounds.Left,
+                bounds.Bottom - 3, bounds.Width, 6);
+        }
+
         private void SessionEventRaised(StickyWindowSession session,
             StickyUiEvent value)
         {

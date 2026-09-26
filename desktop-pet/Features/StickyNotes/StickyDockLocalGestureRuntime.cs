@@ -93,6 +93,14 @@ namespace PennyPet
                 ids.Add(member.NoteId);
             return ids.AsReadOnly();
         }
+
+        internal IReadOnlyList<string> VisibleNoteIds()
+        {
+            List<string> ids = new List<string>();
+            foreach (StickyDockSceneMember member in _members)
+                if (member.Visible) ids.Add(member.NoteId);
+            return ids.AsReadOnly();
+        }
     }
 
     // R22 candidate runtime. It is deliberately model/repository agnostic:
@@ -120,6 +128,19 @@ namespace PennyPet
         }
 
         internal bool IsActive { get { return _active != null; } }
+        internal string LastSnapTargetNoteId { get; private set; }
+        internal string SplitGuideParentNoteId
+        {
+            get
+            {
+                LocalGesture gesture = _active;
+                return gesture != null &&
+                    gesture.Kind == StickyDockLocalGestureKind.HeaderDrag &&
+                    gesture.SourceIndex > 0
+                    ? gesture.MemberIds[gesture.SourceIndex - 1]
+                    : String.Empty;
+            }
+        }
 
         internal void SetScene(StickyDockSceneProjection scene)
         {
@@ -165,6 +186,7 @@ namespace PennyPet
             _active = new LocalGesture(gestureId, kind,
                 sourceIndex, facts.ToArray(), _scene.Revision,
                 _topology.Generation);
+            LastSnapTargetNoteId = String.Empty;
             return gestureId;
         }
 
@@ -199,8 +221,37 @@ namespace PennyPet
             {
                 return false;
             }
-            return ApplyFollowers(plan.WindowTargets,
+            bool applied = ApplyFollowers(plan.WindowTargets,
                 gesture.SourceNoteId);
+            LastSnapTargetNoteId = applied
+                ? FindSnapTarget(sourceFacts, gesture)
+                : String.Empty;
+            return applied;
+        }
+
+        private string FindSnapTarget(WindowFacts sourceFacts,
+            LocalGesture gesture)
+        {
+            HashSet<string> active = new HashSet<string>(
+                gesture.MemberIds, StringComparer.OrdinalIgnoreCase);
+            List<DockWindowTarget> candidates =
+                new List<DockWindowTarget>();
+            foreach (string noteId in _scene.VisibleNoteIds())
+            {
+                if (active.Contains(noteId)) continue;
+                WindowFacts facts = _captureFacts(noteId);
+                if (facts == null ||
+                    facts.TopologyGeneration !=
+                        sourceFacts.TopologyGeneration ||
+                    !facts.PhysicalBounds.IsValid)
+                    continue;
+                candidates.Add(new DockWindowTarget(
+                    noteId, facts.PhysicalBounds));
+            }
+            return StickyDockOperations.FindSnapTarget(
+                new DockWindowTarget(sourceFacts.WindowId,
+                    sourceFacts.PhysicalBounds),
+                candidates, 20) ?? String.Empty;
         }
 
         internal bool ResizeHorizontal(int proposedLeft,
@@ -242,6 +293,7 @@ namespace PennyPet
         {
             LocalGesture gesture = _active;
             _active = null;
+            LastSnapTargetNoteId = String.Empty;
             if (gesture == null) return null;
             return new StickyDockLocalGestureCompletion(
                 gesture.GestureId, gesture.Kind,
@@ -252,6 +304,7 @@ namespace PennyPet
         internal void Cancel()
         {
             _active = null;
+            LastSnapTargetNoteId = String.Empty;
         }
 
         private bool ApplyFollowers(

@@ -119,6 +119,45 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void HeaderDrag_DetectsSnapCandidateLocallyAtLegacyThreshold()
+        {
+            DisplaySurfaceSnapshot surface = Surface(
+                "one", "\\\\.\\DISPLAY1", "mdp:one",
+                new PhysicalRect(0, 0, 1920, 1080));
+            DisplayTopologySnapshot topology =
+                new DisplayTopologySnapshot(7, new[] { surface });
+            Dictionary<string, WindowFacts> facts = GroupFacts(
+                surface, 7);
+            facts["X"] = Facts("X", surface, 96,
+                new PhysicalRect(100, 1080, 320, 300), 7);
+            StickyDockLocalGestureRuntime runtime = Runtime(
+                facts, (targets, source) => { });
+            runtime.SetTopology(topology);
+            runtime.SetScene(new StickyDockSceneProjection(
+                new[]
+                {
+                    new StickyDockSceneMember("A", "group", 0, true),
+                    new StickyDockSceneMember("B", "group", 1, true),
+                    new StickyDockSceneMember("C", "group", 2, true),
+                    new StickyDockSceneMember("X", "other", 0, true)
+                }, 12));
+
+            Assert.AreNotEqual(0, runtime.TryBegin(
+                StickyDockLocalGestureKind.HeaderDrag, "A"));
+            Assert.IsTrue(runtime.MoveHeader(Facts(
+                "A", surface, 96,
+                new PhysicalRect(100, 780, 320, 300), 7)));
+            Assert.AreEqual("X", runtime.LastSnapTargetNoteId);
+            Assert.AreEqual(String.Empty,
+                runtime.SplitGuideParentNoteId);
+
+            runtime.Cancel();
+            Assert.AreNotEqual(0, runtime.TryBegin(
+                StickyDockLocalGestureKind.HeaderDrag, "B"));
+            Assert.AreEqual("A", runtime.SplitGuideParentNoteId);
+        }
+
+        [TestMethod]
         public void Runtime_HasNoPetCallbackRepositoryOrSaveChannel()
         {
             DisplaySurfaceSnapshot surface = Surface(
