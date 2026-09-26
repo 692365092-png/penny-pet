@@ -19,8 +19,6 @@ namespace PennyPet
             SourceNoteId = sourceNoteId ?? String.Empty;
             TargetSurfaceId = targetSurfaceId ?? String.Empty;
             TargetDpi = targetDpi;
-            InteractionEpoch = interactionEpoch;
-            Input = input;
             _windowTargets = windowTargets == null
                 ? new DockWindowTarget[0]
                 : new List<DockWindowTarget>(windowTargets).ToArray();
@@ -32,8 +30,6 @@ namespace PennyPet
         internal string SourceNoteId { get; private set; }
         internal string TargetSurfaceId { get; private set; }
         internal int TargetDpi { get; private set; }
-        internal long InteractionEpoch { get; private set; }
-        internal DockInput Input { get; private set; }
         internal IReadOnlyList<DockWindowTarget> WindowTargets
             { get; private set; }
     }

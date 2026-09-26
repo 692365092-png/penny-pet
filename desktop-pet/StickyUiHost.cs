@@ -23,7 +23,6 @@ namespace PennyPet
         private DisplayTopologySnapshot _currentTopology;
         // Sticky-STA only. Advance before posting input to Pet, including when
         // Pet is still waiting for an older finalization acknowledgment.
-        private DockInput _currentDockInput;
         private System.Windows.Threading.DispatcherTimer _reminderClock;
         private StickyNoteTabsForm _leftNoteTabs;
         private StickyNoteTabsForm _rightNoteTabs;
@@ -780,8 +779,6 @@ namespace PennyPet
                             ? session.SetDockResizeRole(command.DockResizeRole)
                             : StickyUiCommandResult.NotHandled();
                     case StickyUiCommandKind.SetBounds:
-                        if (command.Input != null && !ReferenceEquals(command.Input, _currentDockInput))
-                            return StickyUiCommandResult.NotHandled();
                         if (command.Topology != null && !IsCurrentTopology(command.Topology))
                             return StickyUiCommandResult.NotHandled();
                         return TryGetSession(command.NoteId, out session)
@@ -1661,7 +1658,6 @@ namespace PennyPet
         // only accept same-generation geometry.
         private void PostEvent(StickyUiEvent value)
         {
-            if (value.BeginsDockInput) _currentDockInput = value.Input;
             Action<StickyUiEvent> handler;
             SynchronizationContext context;
             lock (_configurationGate)

@@ -41,8 +41,8 @@ namespace PennyPet
             StickyUiReprojectTarget reprojectTarget = null,
             string[] dockNoteIds = null,
             DockGroupReprojectPlan dockGroupReprojectPlan = null,
-            long interactionEpoch = 0, WindowPlacementPlan placement = null,
-            DockRestoreOperation dockRestore = null, DockInput input = null,
+            WindowPlacementPlan placement = null,
+            DockRestoreOperation dockRestore = null,
             StickyDockCommitAck dockCommitAck = null)
         {
             Kind = kind;
@@ -58,10 +58,8 @@ namespace PennyPet
                 ? null
                 : (string[])dockNoteIds.Clone();
             DockGroupReprojectPlan = dockGroupReprojectPlan;
-            InteractionEpoch = interactionEpoch;
             Placement = placement;
             DockRestore = dockRestore;
-            Input = input;
             DockCommitAck = dockCommitAck;
         }
 
@@ -148,11 +146,12 @@ namespace PennyPet
 
         internal static StickyUiCommand SetBounds(string noteId,
             StickyUiBounds bounds,
-            DisplayTopologySnapshot topology = null, DockInput input = null)
+            DisplayTopologySnapshot topology = null)
         {
             if (bounds == null) throw new ArgumentNullException(nameof(bounds));
-            return new StickyUiCommand(StickyUiCommandKind.SetBounds, noteId,
-                false, null, bounds, null, null, topology, input: input);
+            return new StickyUiCommand(
+                StickyUiCommandKind.SetBounds, noteId,
+                false, null, bounds, null, null, topology);
         }
 
         internal static StickyUiCommand Reproject(string noteId,
@@ -242,10 +241,8 @@ namespace PennyPet
         internal string[] DockNoteIds { get; private set; }
         internal DockGroupReprojectPlan DockGroupReprojectPlan
             { get; private set; }
-        internal long InteractionEpoch { get; private set; }
         internal WindowPlacementPlan Placement { get; private set; }
         internal DockRestoreOperation DockRestore { get; private set; }
-        internal DockInput Input { get; private set; }
         internal StickyDockCommitAck DockCommitAck
             { get; private set; }
 
@@ -748,20 +745,19 @@ namespace PennyPet
 
         internal DockBatchResult(long planSequence, long topologyGeneration,
             IEnumerable<DockBatchMemberResult> members)
-            : this(planSequence, topologyGeneration, String.Empty, 0, members, 0)
+            : this(planSequence, topologyGeneration,
+                String.Empty, 0, members)
         {
         }
 
         internal DockBatchResult(long planSequence, long topologyGeneration,
             string targetSurfaceId, int targetDpi,
-            IEnumerable<DockBatchMemberResult> members,
-            long interactionEpoch = 0)
+            IEnumerable<DockBatchMemberResult> members)
         {
             PlanSequence = planSequence;
             TopologyGeneration = topologyGeneration;
             TargetSurfaceId = targetSurfaceId ?? String.Empty;
             TargetDpi = targetDpi;
-            InteractionEpoch = interactionEpoch;
             _members = members == null
                 ? new DockBatchMemberResult[0]
                 : new List<DockBatchMemberResult>(members).ToArray();
@@ -772,7 +768,6 @@ namespace PennyPet
         internal long TopologyGeneration { get; private set; }
         internal string TargetSurfaceId { get; private set; }
         internal int TargetDpi { get; private set; }
-        internal long InteractionEpoch { get; private set; }
         internal IReadOnlyList<DockBatchMemberResult> Members
             { get; private set; }
     }

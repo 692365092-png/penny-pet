@@ -19,7 +19,6 @@
     <Compile Include="Features\Display\PetDisplayRuntime.cs" />
     <Compile Include="Features\Display\IPetDisplayWindow.cs" />
     <Compile Include="Features\StickyNotes\DockPlacementPlanner.cs" />
-    <Compile Include="Features\StickyNotes\DockInput.cs" />
     <Compile Include="Features\StickyNotes\StickyDockLocalGestureRuntime.cs" />
     <Compile Include="Features\StickyNotes\StickyDockCommitProtocol.cs" />
     <Compile Include="Features\StickyNotes\StickyDockCommitVersion.cs" />

@@ -15,7 +15,6 @@ namespace PennyPet
             _eventHandler;
         private StickyNoteUiSnapshot _lastSnapshot;
         private long _sequence;
-        private DockInput _dockInput;
         private bool _hideAfterImeComposition;
         private bool _applyingBounds;
         private bool _eventsSuppressed;
@@ -1058,8 +1057,6 @@ namespace PennyPet
         private void Raise(StickyUiEvent value)
         {
             if (_eventsSuppressed || _eventHandler == null) return;
-            if (value.BeginsDockInput) _dockInput = new DockInput();
-            if (value.IsDockInput) value.Input = _dockInput;
             _eventHandler(this, value);
         }
 
