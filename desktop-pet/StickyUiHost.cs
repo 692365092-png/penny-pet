@@ -41,6 +41,9 @@ namespace PennyPet
         private string _dockPreviewParentNoteId;
         private string _dockPreviewChildNoteId;
         private readonly StickyDockLocalGestureRuntime _localDockGestures;
+        private readonly StickyDockCommitQueue _dockCommitQueue;
+        private StickyDockSceneProjection _deferredDockScene;
+        private long _activeLocalDockDependency;
 
         private const uint SwpNoSize = 0x0001;
         private const uint SwpNoMove = 0x0002;
@@ -51,6 +54,7 @@ namespace PennyPet
         {
             _localDockGestures = new StickyDockLocalGestureRuntime(
                 CaptureLocalDockFacts, ApplyLocalDockFollowers);
+            _dockCommitQueue = new StickyDockCommitQueue();
         }
 
         internal void Start()
@@ -85,7 +89,11 @@ namespace PennyPet
             if (scene == null) return;
             _threadHost.PostToDispatcher(delegate
             {
-                _localDockGestures.SetScene(scene);
+                if (_localDockGestures.IsActive ||
+                    _dockCommitQueue.PendingCount > 0)
+                    _deferredDockScene = scene;
+                else
+                    _localDockGestures.SetScene(scene);
                 return StickyUiCommandResult.Handled();
             }, null, null);
         }
@@ -883,6 +891,9 @@ namespace PennyPet
                             : StickyUiCommandResult.NotHandled();
                     case StickyUiCommandKind.CaptureDockFacts:
                         return CaptureDockFactsForCommit(command);
+                    case StickyUiCommandKind.AcknowledgeDockCommit:
+                        return AcknowledgeLocalDockCommit(
+                            command.DockCommitAck);
                     case StickyUiCommandKind.UpdateReminders:
                         if (!TryGetSession(command.NoteId, out session))
                             return StickyUiCommandResult.NotHandled();
@@ -1281,10 +1292,232 @@ namespace PennyPet
                 bounds.Bottom - 3, bounds.Width, 6);
         }
 
+        private bool TryHandleLocalDockEvent(
+            StickyWindowSession session, StickyUiEvent value)
+        {
+            StickyDockLocalGestureKind kind;
+            bool start = false;
+            bool live = false;
+            bool complete = false;
+
+            switch (value.Kind)
+            {
+                case StickyUiEventKind.HeaderDragStarted:
+                    kind = StickyDockLocalGestureKind.HeaderDrag;
+                    start = true;
+                    break;
+                case StickyUiEventKind.HeaderDragMoved:
+                    kind = StickyDockLocalGestureKind.HeaderDrag;
+                    live = true;
+                    break;
+                case StickyUiEventKind.HeaderDragCompleted:
+                    kind = StickyDockLocalGestureKind.HeaderDrag;
+                    complete = true;
+                    break;
+                case StickyUiEventKind.DockHorizontalResizeStarted:
+                    kind = StickyDockLocalGestureKind.HorizontalResize;
+                    start = true;
+                    break;
+                case StickyUiEventKind.DockHorizontalResizing:
+                    kind = StickyDockLocalGestureKind.HorizontalResize;
+                    live = true;
+                    break;
+                case StickyUiEventKind.DockHorizontalResizeCompleted:
+                    kind = StickyDockLocalGestureKind.HorizontalResize;
+                    complete = true;
+                    break;
+                case StickyUiEventKind.DockDividerResizeStarted:
+                    kind = StickyDockLocalGestureKind.DividerResize;
+                    start = true;
+                    break;
+                case StickyUiEventKind.DockDividerResizing:
+                    kind = StickyDockLocalGestureKind.DividerResize;
+                    live = true;
+                    break;
+                case StickyUiEventKind.DockDividerResizeCompleted:
+                    kind = StickyDockLocalGestureKind.DividerResize;
+                    complete = true;
+                    break;
+                default:
+                    return false;
+            }
+
+            if (start)
+            {
+                // Fail closed: never fall back to the old per-frame Pet path.
+                if (!_dockCommitQueue.CanBeginGesture)
+                    return true;
+                _activeLocalDockDependency =
+                    _dockCommitQueue.LatestPendingGestureId;
+                if (TryBeginLocalDockGesture(
+                    kind, value.NoteId) == 0)
+                    _activeLocalDockDependency = 0;
+                return true;
+            }
+
+            if (live)
+            {
+                if (!_localDockGestures.IsActive)
+                    return true;
+                if (kind == StickyDockLocalGestureKind.HeaderDrag)
+                    MoveLocalDockHeader(value.Facts);
+                else if (kind ==
+                    StickyDockLocalGestureKind.HorizontalResize)
+                    ResizeLocalDockHorizontal(
+                        value.Left, value.Width);
+                else
+                    ResizeLocalDockDivider(value.Height);
+                return true;
+            }
+
+            if (complete)
+            {
+                if (!_localDockGestures.IsActive)
+                    return true;
+                if (kind == StickyDockLocalGestureKind.HeaderDrag &&
+                    value.Facts != null)
+                    MoveLocalDockHeader(value.Facts);
+                else if (kind ==
+                    StickyDockLocalGestureKind.DividerResize &&
+                    value.Height > 0)
+                    ResizeLocalDockDivider(value.Height);
+
+                StickyDockLocalGestureCompletion completion =
+                    CompleteLocalDockGesture();
+                if (completion == null)
+                    return true;
+                _localDockGestures.ApplyProvisional(completion);
+                StickyDockGestureCommit commit =
+                    CaptureLocalDockCommit(
+                        completion,
+                        _activeLocalDockDependency);
+                _activeLocalDockDependency = 0;
+                if (commit != null &&
+                    _dockCommitQueue.TryAdd(commit))
+                    PumpLocalDockCommits();
+                return true;
+            }
+            return true;
+        }
+
+        private StickyDockGestureCommit CaptureLocalDockCommit(
+            StickyDockLocalGestureCompletion completion,
+            long dependsOnGestureId)
+        {
+            if (completion == null) return null;
+            List<DockBatchMemberResult> members =
+                new List<DockBatchMemberResult>();
+            foreach (string noteId in
+                completion.AffectedMemberIds)
+            {
+                StickyWindowSession member;
+                if (!TryGetSession(noteId, out member))
+                    return null;
+                DockBatchMemberResult captured =
+                    member.CaptureDockCommitMember();
+                if (captured == null ||
+                    captured.Facts == null)
+                    return null;
+                members.Add(captured);
+            }
+            return new StickyDockGestureCommit(
+                completion.GestureId,
+                dependsOnGestureId,
+                completion.Intent,
+                completion.SourceNoteId,
+                completion.TargetNoteId,
+                completion.TopologyGeneration,
+                new Dictionary<string, long>(
+                    completion.BaselineVersions,
+                    StringComparer.OrdinalIgnoreCase),
+                members);
+        }
+
+        private void PumpLocalDockCommits()
+        {
+            StickyDockGestureCommit ready =
+                _dockCommitQueue.PeekReady();
+            if (ready == null) return;
+            long sequence = 0;
+            foreach (DockBatchMemberResult member in ready.Members)
+                if (String.Equals(member.NoteId,
+                    ready.SourceNoteId,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    sequence = member.WindowSequence;
+                    break;
+                }
+            PostEvent(StickyUiEvent.DockCommitRequested(
+                ready, sequence));
+        }
+
+        private StickyUiCommandResult AcknowledgeLocalDockCommit(
+            StickyDockCommitAck ack)
+        {
+            if (ack == null)
+                return StickyUiCommandResult.NotHandled();
+            StickyDockCommitResolution resolution =
+                _dockCommitQueue.Acknowledge(ack);
+            if (!resolution.Matched)
+                return StickyUiCommandResult.Handled();
+
+            if (!resolution.Accepted &&
+                _localDockGestures.IsActive &&
+                (_activeLocalDockDependency ==
+                    resolution.GestureId ||
+                 ContainsGestureId(
+                    resolution.CancelledDependents,
+                    _activeLocalDockDependency)))
+            {
+                _localDockGestures.Cancel();
+                _activeLocalDockDependency = 0;
+                ClearDockPreviewOnThread();
+                ClearSplitGuideOnThread();
+            }
+
+            if (ack.Scene != null)
+            {
+                if (_localDockGestures.IsActive ||
+                    _dockCommitQueue.PendingCount > 0)
+                    _deferredDockScene = ack.Scene;
+                else
+                {
+                    _localDockGestures.SetScene(ack.Scene);
+                    _deferredDockScene = null;
+                }
+            }
+
+            PumpLocalDockCommits();
+            if (!_localDockGestures.IsActive &&
+                _dockCommitQueue.PendingCount == 0 &&
+                _deferredDockScene != null)
+            {
+                _localDockGestures.SetScene(
+                    _deferredDockScene);
+                _deferredDockScene = null;
+            }
+            return StickyUiCommandResult.Handled();
+        }
+
+        private static bool ContainsGestureId(
+            IReadOnlyList<long> values, long gestureId)
+        {
+            if (values == null || gestureId <= 0)
+                return false;
+            foreach (long value in values)
+                if (value == gestureId) return true;
+            return false;
+        }
+
         private void SessionEventRaised(StickyWindowSession session,
             StickyUiEvent value)
         {
             if (session == null || value == null) return;
+            if (TryHandleLocalDockEvent(session, value))
+            {
+                ApplySideTabZOrder();
+                return;
+            }
             if (value.Kind == StickyUiEventKind.Closed)
             {
                 StickyWindowSession current;
