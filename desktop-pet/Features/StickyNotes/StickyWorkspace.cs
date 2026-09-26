@@ -841,6 +841,13 @@ namespace PennyPet
                 FirstRendered?.Invoke(value.NoteId);
                 return;
             }
+            if (value.Kind ==
+                StickyUiEventKind.DockGestureCommitRequested)
+            {
+                Dock.CommitLocalDockGesture(
+                    value.DockCommit);
+                return;
+            }
             if (value.Kind == StickyUiEventKind.HeaderDragStarted ||
                 value.Kind == StickyUiEventKind.HeaderDragMoved ||
                 value.Kind == StickyUiEventKind.HeaderDragCompleted)

@@ -63,6 +63,8 @@ namespace PennyPet
         internal DockInteractionSession Interaction { get { return Gestures.Drag; } }
         private long _lastAppliedDockPlanSequence = -1;
         private long _dockSceneRevision;
+        private readonly HashSet<long> _acceptedLocalDockGestures =
+            new HashSet<long>();
         private readonly HashSet<string> _pendingDockTopologyGroups =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         internal void ApplyDockComponentTopMost(StickyNoteData seed,
@@ -1049,6 +1051,13 @@ namespace PennyPet
         private void PublishDockScene(
             IList<StickyNoteData> notes)
         {
+            _workspace.Host.SetDockScene(
+                BuildDockScene(notes));
+        }
+
+        private StickyDockSceneProjection BuildDockScene(
+            IList<StickyNoteData> notes)
+        {
             List<StickyDockSceneMember> members =
                 new List<StickyDockSceneMember>();
             if (notes != null)
@@ -1056,10 +1065,36 @@ namespace PennyPet
                     if (note != null)
                         members.Add(new StickyDockSceneMember(
                             note.Id, note.DockGroupId,
-                            note.DockGroupOrder, note.Visible));
-            _workspace.Host.SetDockScene(
-                new StickyDockSceneProjection(
-                    members, ++_dockSceneRevision));
+                            note.DockGroupOrder, note.Visible,
+                            ComputeDockCommitVersion(note)));
+            return new StickyDockSceneProjection(
+                members, ++_dockSceneRevision);
+        }
+
+        // Deliberately excludes title/body/reminders/appearance. A content
+        // edit must not invalidate an otherwise valid geometry commit.
+        internal static long ComputeDockCommitVersion(
+            StickyNoteData note)
+        {
+            if (note == null) return Int64.MinValue;
+            unchecked
+            {
+                ulong hash = 1469598103934665603UL;
+                Action<long> mix = delegate(long value)
+                {
+                    hash ^= (ulong)value;
+                    hash *= 1099511628211UL;
+                };
+                string group = note.DockGroupId ?? String.Empty;
+                foreach (char value in group) mix(value);
+                mix(note.DockGroupOrder);
+                mix(note.Visible ? 1 : 0);
+                mix(note.X);
+                mix(note.Y);
+                mix(note.Width);
+                mix(note.Height);
+                return (long)hash;
+            }
         }
 
         private void ApplyDockResizeRole(StickyNoteData note, bool grouped,
@@ -1835,6 +1870,222 @@ namespace PennyPet
             }
             internal StickyFactsReceiver.Update Update { get; private set; }
             internal WindowPlacementPreference Preference { get; private set; }
+        }
+
+        internal void CommitLocalDockGesture(
+            StickyDockGestureCommit commit)
+        {
+            if (commit == null) return;
+
+            bool accepted;
+            if (_acceptedLocalDockGestures.Contains(
+                commit.GestureId))
+                accepted = true;
+            else
+            {
+                accepted =
+                    TryApplyLocalDockGestureCommit(commit);
+                if (accepted)
+                    _acceptedLocalDockGestures.Add(
+                        commit.GestureId);
+            }
+
+            StickyDockSceneProjection scene =
+                BuildDockScene(new List<StickyNoteData>(
+                    _workspace.Notes.InStorageOrder));
+            StickyDockCommitAck ack =
+                new StickyDockCommitAck(
+                    commit.GestureId, accepted, scene);
+            _workspace.PostHostedStickyCommand(
+                StickyUiCommand.AcknowledgeDockCommit(ack),
+                delegate(StickyUiCommandResult result)
+                {
+                    if (result == null ||
+                        result.Status !=
+                            StickyUiCommandStatus.Handled)
+                        StickyWorkspace
+                            .ReportHostedStickyCommandFailure(
+                                "sticky-dock-commit-ack",
+                                result);
+                });
+        }
+
+        private bool TryApplyLocalDockGestureCommit(
+            StickyDockGestureCommit commit)
+        {
+            DisplayTopologySnapshot topology =
+                _workspace.CurrentTopologySnapshot();
+            if (topology == null ||
+                topology.Generation !=
+                    commit.TopologyGeneration)
+            {
+                TraceDockCommitRejected(
+                    "local commit topology changed");
+                return false;
+            }
+
+            foreach (KeyValuePair<string, long> baseline
+                in commit.BaselineVersions)
+            {
+                StickyNoteData note =
+                    _workspace.Notes.Find(baseline.Key);
+                if (note == null ||
+                    ComputeDockCommitVersion(note) !=
+                        baseline.Value)
+                {
+                    TraceDockCommitRejected(
+                        "local commit model version changed");
+                    return false;
+                }
+            }
+
+            HashSet<string> expected =
+                new HashSet<string>(
+                    commit.BaselineVersions.Keys,
+                    StringComparer.OrdinalIgnoreCase);
+            HashSet<string> actual =
+                new HashSet<string>(
+                    StringComparer.OrdinalIgnoreCase);
+            List<DockCommitCandidate> candidates =
+                new List<DockCommitCandidate>();
+            foreach (DockBatchMemberResult member
+                in commit.Members)
+            {
+                StickyFactsReceiver.Update update;
+                WindowPlacementPreference preference;
+                if (member == null ||
+                    member.Snapshot == null ||
+                    member.Facts == null ||
+                    !expected.Contains(member.NoteId) ||
+                    !actual.Add(member.NoteId) ||
+                    member.Facts.TopologyGeneration !=
+                        topology.Generation ||
+                    !_workspace.Facts.TryPrepare(
+                        member, topology, out update) ||
+                    update.Canonical == null ||
+                    !StickyPlacementRules
+                        .TryBuildPreferredPlacement(
+                            member.Facts, topology,
+                            update.Canonical
+                                .PreferredPlacement
+                                ?.PreferredTargetKey,
+                            out preference))
+                {
+                    TraceDockCommitRejected(
+                        "local commit facts rejected");
+                    return false;
+                }
+                candidates.Add(
+                    new DockCommitCandidate(
+                        update, preference));
+            }
+            if (actual.Count == 0 ||
+                !actual.Contains(commit.SourceNoteId))
+            {
+                TraceDockCommitRejected(
+                    "local commit source missing");
+                return false;
+            }
+
+            StickyNoteData source =
+                _workspace.Notes.Find(
+                    commit.SourceNoteId);
+            if (source == null || !source.Visible)
+                return false;
+
+            DockMergePlan merge = null;
+            if (commit.Intent ==
+                StickyDockCommitIntent.MergeAfter)
+            {
+                StickyNoteData target =
+                    _workspace.Notes.Find(
+                        commit.TargetNoteId);
+                if (target == null || !target.Visible ||
+                    String.Equals(target.Id, source.Id,
+                        StringComparison.OrdinalIgnoreCase))
+                    return false;
+                merge = StickyDockOperations
+                    .PrepareMergeAfterParent(
+                        BuildDockChainOrderIncludingHidden(
+                            target),
+                        target,
+                        BuildDockChainOrderIncludingHidden(
+                            source));
+                List<StickyNoteData> resolved;
+                if (merge == null ||
+                    !merge.TryResolve(
+                        _workspace.Notes.InStorageOrder,
+                        out resolved))
+                    return false;
+            }
+            else if (commit.Intent ==
+                StickyDockCommitIntent.Detach)
+            {
+                List<StickyNoteData> group =
+                    BuildDockChainOrderIncludingHidden(
+                        source);
+                int sourceIndex = group.FindIndex(
+                    note => note != null &&
+                        String.Equals(note.Id, source.Id,
+                            StringComparison
+                                .OrdinalIgnoreCase));
+                if (sourceIndex <= 0)
+                    return false;
+            }
+
+            // Every fallible preflight is complete. Relation and geometry now
+            // commit in one Pet turn; disk persistence is queued afterwards.
+            if (merge != null &&
+                !merge.TryCommit(
+                    _workspace.Notes.InStorageOrder))
+                return false;
+            if (commit.Intent ==
+                StickyDockCommitIntent.Detach)
+                StickyDockOperations.ExtractSingleDockMember(
+                    BuildDockChainOrderIncludingHidden(
+                        source), source);
+
+            foreach (DockCommitCandidate candidate
+                in candidates)
+            {
+                candidate.Update.Commit();
+                StickyPlacementRules.TryCommitPreferred(
+                    candidate.Update.Canonical,
+                    candidate.Preference,
+                    commit.Intent ==
+                            StickyDockCommitIntent
+                                .HorizontalResize ||
+                        commit.Intent ==
+                            StickyDockCommitIntent
+                                .DividerResize
+                        ? PlacementReason.UserResizeCommit
+                        : PlacementReason.DockCommit);
+                _workspace.Placement
+                    .MarkUserPlacementCommit(
+                        candidate.Update.Member.NoteId);
+            }
+
+            if (merge != null)
+            {
+                List<StickyNoteData> group =
+                    BuildDockChainOrderIncludingHidden(
+                        source);
+                if (group.Count > 0)
+                {
+                    bool topMost =
+                        group[0].AlwaysOnTop;
+                    foreach (StickyNoteData member
+                        in group)
+                        member.AlwaysOnTop = topMost;
+                    ApplyDockComponentTopMost(
+                        source, topMost, null);
+                }
+            }
+
+            _workspace.Notes.SaveAsync();
+            _workspace.RefreshMenuText();
+            RefreshDockResizeRoles();
+            return true;
         }
 
         // User mutations wait for the final commit that owns their captured
