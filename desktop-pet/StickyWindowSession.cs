@@ -933,9 +933,9 @@ namespace PennyPet
                     StickyUiEventKind.DockDividerResizeCompleted))
                 height = facts == null
                     ? 0 : facts.PhysicalBounds.Height;
-            Raise(new StickyUiEvent(
-                kind, _noteId, null, false, _sequence,
-                null, left, width, height, facts, _topology));
+            Raise(StickyUiEvent.DockGeometry(
+                kind, _noteId, _sequence,
+                left, width, height, facts, _topology));
         }
 
         private void CancelReminderRequested(object sender, EventArgs e)

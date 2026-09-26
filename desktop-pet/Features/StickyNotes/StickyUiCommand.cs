@@ -695,6 +695,29 @@ namespace PennyPet
                 reminder);
         }
 
+        internal static StickyUiEvent DockGeometry(
+            StickyUiEventKind kind, string noteId,
+            long sequence, int left, int width, int height,
+            WindowFacts facts,
+            DisplayTopologySnapshot topology)
+        {
+            bool valid =
+                kind == StickyUiEventKind.HeaderDragStarted ||
+                kind == StickyUiEventKind.HeaderDragMoved ||
+                kind == StickyUiEventKind.HeaderDragCompleted ||
+                kind == StickyUiEventKind.DockHorizontalResizeStarted ||
+                kind == StickyUiEventKind.DockHorizontalResizing ||
+                kind == StickyUiEventKind.DockHorizontalResizeCompleted ||
+                kind == StickyUiEventKind.DockDividerResizeStarted ||
+                kind == StickyUiEventKind.DockDividerResizing ||
+                kind == StickyUiEventKind.DockDividerResizeCompleted;
+            if (!valid)
+                throw new ArgumentOutOfRangeException(nameof(kind));
+            return new StickyUiEvent(
+                kind, noteId, null, false, sequence,
+                null, left, width, height, facts, topology);
+        }
+
         internal static StickyUiEvent HorizontalResize(
             StickyNoteUiSnapshot snapshot, long sequence, int left, int width,
             WindowFacts facts = null, DisplayTopologySnapshot topology = null)
