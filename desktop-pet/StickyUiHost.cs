@@ -676,6 +676,9 @@ namespace PennyPet
             _threadHost.PostToDispatcher(delegate
             {
                 _pendingLocalDockRollback = null;
+                foreach (StickyWindowSession session
+                    in _sessions.Values)
+                    session.AdoptTopology(snapshot);
                 if (!_localDockGestures.TryRebaseTopology(snapshot))
                 {
                     _localDockGestures.Cancel();
