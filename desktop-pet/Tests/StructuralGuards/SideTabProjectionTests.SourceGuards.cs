@@ -16,9 +16,25 @@ namespace PennyPet.Tests
             string position = StickySessionTopologyContractTests.SliceMethod(
                 coordinator, "internal void PositionNoteTabs()");
             Assert.IsTrue(position.Contains("TryGetPetDerivedDisplayContext("));
-            Assert.IsTrue(position.Contains("ApplyPhysicalMetrics(metrics)"));
+            Assert.IsTrue(position.Contains(
+                "Host.UpdateSideTabs(new StickySideTabsProjection("));
             Assert.IsFalse(position.Contains("Location ="));
             Assert.IsFalse(position.Contains("Screen."));
+
+            string host = StickySessionTopologyContractTests.ReadSource(
+                "StickyUiHost.cs");
+            string apply = StickySessionTopologyContractTests.SliceMethod(
+                host, "private void ApplySideTabsProjection(");
+            Assert.IsTrue(apply.Contains(
+                "_leftNoteTabs.ApplyPhysicalMetrics(metrics)") &&
+                apply.Contains("_rightNoteTabs.ApplyPhysicalMetrics(metrics)") &&
+                apply.Contains("ShowNear("));
+            Assert.IsFalse(apply.Contains("Screen."));
+            Assert.IsTrue(host.Contains(
+                "value.Kind == StickyUiEventKind.HeaderDragMoved") &&
+                host.Contains("ApplySideTabZOrder();"),
+                "Sticky STA must update tab overlap directly from live Sticky events.");
+
             string tabs = StickySessionTopologyContractTests.ReadSource(
                 "Features/StickyNotes/StickyNoteTabs.cs");
             Assert.IsTrue(tabs.Contains("AutoScaleMode = AutoScaleMode.None"));

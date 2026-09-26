@@ -10,8 +10,8 @@ namespace PennyPet
     {
         internal const string WindowsKeyboardFirstUseNotice =
             "按键显示会使用 Windows 全局键盘活动监听，在桌宠旁显示按键名称。\n\n" +
-            "Penny 不会保存或上传按键内容，并会尽力识别密码框和敏感输入。" +
-            "但第三方、自绘、跨权限或远程窗口可能无法被完全识别。\n\n" +
+            "Penny 不会保存或上传按键内容。只有通过输入目标和密码检查的按键才会显示。" +
+            "浏览器、自绘、跨权限或远程窗口无法可靠识别时，不显示按键。\n\n" +
             "由于此功能会使用 Windows 全局键盘监听，部分杀毒软件或安全软件" +
             "可能会将它误报为风险行为或进行拦截。\n\n" +
             "处理密码、验证码、支付或其他高敏感信息时，请先关闭按键显示。" +
@@ -50,7 +50,9 @@ namespace PennyPet
             _setReminderItem.Enabled = items.Count < ReminderSchedule.MaximumItems;
             _setReminderItem.Text = "添加提醒…（" + items.Count + "/" +
                 ReminderSchedule.MaximumItems + "）";
-            _manageNotesItem.Text = "便利贴管理…（" + _notes.Count + "张）";
+            _manageNotesItem.Text = _notes == null
+                ? "便利贴管理…（正在恢复）"
+                : "便利贴管理…（" + _notes.Count + "张）";
             _silentItem.Checked = _settings.SilentMode;
             _scaleItem.Text = "调整大小…（桌宠 " + _scalePercent + "% / 按键" +
                 KeyTextSizeName(_settings.KeyOverlayScalePercent) + "）";
@@ -91,6 +93,7 @@ namespace PennyPet
             {
                 DialogResult result = _windowLayers.ShowModal(this, dialog);
                 if (!dialog.ApplyIfAccepted(_settings, result)) return;
+                _conversation.InvalidatePending();
                 WeatherLocation selected = dialog.SelectedWeatherLocation;
                 string nextLocationKey = selected == null
                     ? String.Empty : selected.StableKey;
@@ -153,6 +156,7 @@ namespace PennyPet
                 {
                     _keyboardItem.Checked = false;
                     _settings.ShowKeyOverlay = false;
+                    _keyboardPrivacy.SetEnabled(false);
                     _settings.SaveAsync();
                     RefreshKeyboardMenuText();
                     return;
@@ -176,6 +180,7 @@ namespace PennyPet
                 _keyboard.Dispose();
             _keyboardItem.Checked = desired;
             _settings.ShowKeyOverlay = desired;
+            _keyboardPrivacy.SetEnabled(desired);
             _settings.SaveAsync();
             if (!_settings.ShowKeyOverlay) _keyOverlay.HideImmediately();
             RefreshKeyboardMenuText();
@@ -184,6 +189,7 @@ namespace PennyPet
         private void SilentItemClick(object sender, EventArgs e)
         {
             _settings.SilentMode = _silentItem.Checked;
+            _conversation.InvalidatePending();
             _settings.SaveAsync();
             if (_settings.SilentMode) HideHoverBubble();
         }
@@ -201,7 +207,7 @@ namespace PennyPet
             if (!_settings.ShowKeyOverlay)
                 _keyboardItem.Text = "按键显示：已关闭";
             else if (_keyboard.IsRunning)
-                _keyboardItem.Text = "按键显示：已开启（密码框自动隐藏）";
+                _keyboardItem.Text = "按键显示：已开启（不确定时隐藏）";
             else
                 _keyboardItem.Text = "按键显示：当前不可用";
         }
@@ -226,36 +232,52 @@ namespace PennyPet
         internal void BeginExitSequence()
         {
             if (_exiting) return;
-            if (_stickyWorkspace.BeginHostedStickyExitIfNeeded()) return;
+            if (_stickyWorkspace != null &&
+                _stickyWorkspace.BeginHostedStickyExitIfNeeded()) return;
             CaptureLocationForSave();
-            if (!FlushPersistenceBeforeExit())
+
+            if (_notes != null)
             {
-                _stickyWorkspace.CancelPreparedStickyExit();
-                return;
+                if (!FlushPersistenceBeforeExit())
+                {
+                    if (_stickyWorkspace != null)
+                        _stickyWorkspace.CancelPreparedStickyExit();
+                    return;
+                }
             }
+            else
+            {
+                PersistenceResult pending = _settings.WaitForPendingSaves();
+                PersistenceResult result = pending.Error is TimeoutException
+                    ? pending : _settings.Save();
+                if (!result.Succeeded)
+                {
+                    MessageBox.Show(this,
+                        "设置尚未写入磁盘。\n\n" + result.ErrorMessage,
+                        "Penny pet - 有未保存内容",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+            }
+
             _exiting = true;
-            _reminderTimer.Stop();
-            _persistenceRetryTimer.Stop();
-            _dragging = false;
+            _keyboardPrivacy.SetEnabled(false);
+            if (_reminderRuntime != null) _reminderRuntime.Stop();
+            _conversation.Stop();
+            if (_persistence != null) _persistence.Dispose();
+            _interaction.BeginExit(DateTime.UtcNow);
             Capture = false;
-            _typingSession = false;
-            _animation.CancelInteractionAnimation();
             _keyOverlay.HideImmediately();
-            _stableMouseInside = false;
             if (_menu.Visible) _menu.Close();
             CloseCurrentBubbleWithoutRestoringHover();
-            _row = WavingRow;
-            _frame = 0;
-            _nextFrameUtc = DateTime.UtcNow.AddMilliseconds(
-                RuntimeFrameDuration(_row, _frame));
-            RenderCurrentFrame();
             if (!_settings.SilentMode)
                 ShowBubble("再见啦，照顾好自己！");
         }
 
         private bool HasFocusedOwnNoteTextInput()
         {
-            return _stickyWorkspace.Hosted.HasInputFocus;
+            return _stickyWorkspace != null &&
+                _stickyWorkspace.Hosted.HasInputFocus;
         }
 
         internal static string FormatRemaining(TimeSpan value)

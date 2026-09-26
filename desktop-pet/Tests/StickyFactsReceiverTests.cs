@@ -9,7 +9,7 @@ namespace PennyPet.Tests
     {
         private sealed class Scene
         {
-            internal readonly StickyNoteRepository Notes = new StickyNoteRepository("unused", _ => PersistenceResult.Success());
+            internal readonly StickyFeature Notes = new StickyFeature("unused", _ => PersistenceResult.Success());
             internal readonly StickyHostedRuntime Hosted = new StickyHostedRuntime();
             internal readonly StickyPlacementRuntime Placement = new StickyPlacementRuntime();
             internal readonly StickyFactsReceiver Receiver;
@@ -21,7 +21,7 @@ namespace PennyPet.Tests
                 Note.PreferredPlacement = new WindowPlacementPreference("mdp:missing",
                     new LogicalRect { X = 700, Y = 0, Width = 320, Height = 240 });
                 Hosted.AddNote(Note.Id);
-                Receiver = new StickyFactsReceiver(Notes, Hosted, Placement);
+                Receiver = new StickyFactsReceiver(Notes.Model, Hosted, Placement);
             }
             internal DockBatchMemberResult Member(string snapshotId = "note", long sequence = 10, bool created = false)
             {

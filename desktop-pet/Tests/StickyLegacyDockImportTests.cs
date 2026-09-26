@@ -72,8 +72,8 @@ namespace PennyPet.Tests
                 File.WriteAllLines(path, new[] { Line("child", "root"), Line("child", "other"),
                     Line("root", ""), Line("other", "") });
                 var repository = legacyDirectory
-                    ? StickyNoteRepository.LoadFromFileWithLegacyCandidates(Path.Combine(directory, "current.dat"), new[] { path })
-                    : StickyNoteRepository.LoadFromFile(path);
+                    ? StickyFeature.LoadFromFileWithLegacyCandidates(Path.Combine(directory, "current.dat"), new[] { path })
+                    : StickyFeature.LoadFromFile(path);
                 Assert.IsTrue(repository.LoadSucceeded);
                 var group = StickyDockGroups.GetOrderedGroup(repository.GetAll(), repository.Find("child"));
                 CollectionAssert.AreEqual(new[] { "root", "child" }, group.Select(n => n.Id).ToArray());
@@ -91,7 +91,7 @@ namespace PennyPet.Tests
             {
                 string path = Path.Combine(directory, "notes.dat");
                 File.WriteAllLines(path, new[] { Line("child", "root"), "corrupt row", Line("root", "") });
-                var repository = StickyNoteRepository.LoadFromFile(path);
+                var repository = StickyFeature.LoadFromFile(path);
                 Assert.IsTrue(repository.LoadSucceeded);
                 Assert.IsTrue(repository.RecoveredFromPartialSalvage);
                 var group = StickyDockGroups.GetOrderedGroup(repository.GetAll(), repository.Find("root"));
@@ -100,7 +100,7 @@ namespace PennyPet.Tests
                 Assert.IsTrue(childLine.StartsWith("11|", StringComparison.Ordinal));
                 StickyNoteCodec.ParseLine(childLine, out string parent);
                 Assert.AreEqual("root", parent);
-                var restarted = StickyNoteRepository.LoadFromFile(path);
+                var restarted = StickyFeature.LoadFromFile(path);
                 Assert.AreEqual("root", restarted.Find("child").DockGroupId);
                 Assert.AreEqual(1, restarted.Find("child").DockGroupOrder);
             }

@@ -10,6 +10,50 @@ namespace PennyPet
     // coordination remain in their existing reminder modules.
     internal sealed partial class StickyNoteWindow
     {
+        private void EnsureReminderPanel()
+        {
+            if (_reminderPanel != null) return;
+            _reminderList = new WC.ListBox();
+            _reminderList.BorderThickness = new W.Thickness(0);
+            _reminderList.Background = System.Windows.Media.Brushes.Transparent;
+            _reminderList.Padding = new W.Thickness(6, 3, 6, 3);
+            _reminderList.FontFamily = new System.Windows.Media.FontFamily(
+                "Microsoft YaHei UI");
+            _reminderList.FontSize = PointSizeToDip(8.5F);
+            _reminderList.SelectionChanged += ReminderSelectionChanged;
+            _reminderList.PreviewMouseRightButtonDown +=
+                ReminderListPreviewMouseRightButtonDown;
+            _reminderList.MouseDoubleClick += delegate
+            {
+                ExecuteSelectedReminderModify();
+            };
+            _reminderPanel = new WC.Border();
+            _reminderPanel.Child = _reminderList;
+            _reminderPanel.Visibility = W.Visibility.Collapsed;
+            WC.Grid.SetRow(_reminderPanel, 2);
+            _layout.Children.Add(_reminderPanel);
+
+            _reminderPanel.Background = AlphaBrush(System.Windows.Forms.ControlPaint.Light(
+                System.Drawing.Color.FromArgb(Data.ColorArgb), 0.08F), Data.BackgroundOpacityPercent);
+            _reminderList.Foreground = OpaqueBrush(EffectiveTextColor());
+        }
+
+        internal bool HasReminderBanner
+        {
+            get { return _reminderList != null && _reminderList.Items.Count != 0; }
+        }
+
+        internal void RefreshReminderCountdown(DateTime nowUtc)
+        {
+            if (_reminderList == null) return;
+            foreach (WC.ListBoxItem row in _reminderList.Items)
+            {
+                string text = ReminderDisplayText((ReminderItem)row.Tag, nowUtc);
+                if (!String.Equals(row.Content as string, text,
+                    StringComparison.Ordinal)) row.Content = text;
+            }
+        }
+
         private void ReminderSelectionChanged(object sender,
             WC.SelectionChangedEventArgs e)
         {
@@ -54,6 +98,8 @@ namespace PennyPet
                     items.Add(reminder);
                 }
             }
+            if (items.Count == 0 && _reminderList == null) return;
+            EnsureReminderPanel();
             bool rebuild = _reminderList.Items.Count != items.Count;
             if (!rebuild)
             {
@@ -105,7 +151,7 @@ namespace PennyPet
         private void UpdateReminderRow(WC.ListBoxItem row,
             ReminderItem reminder)
         {
-            row.Content = ReminderDisplayText(reminder);
+            row.Content = ReminderDisplayText(reminder, DateTime.UtcNow);
             row.FontSize = PointSizeToDip(Math.Max(6F, Math.Min(72F,
                 reminder.FontSizeTwips / 20F)));
         }
@@ -113,7 +159,7 @@ namespace PennyPet
         internal void PreviewReminderFontSize(ReminderItem reminder,
             float points)
         {
-            if (reminder == null) return;
+            if (reminder == null || _reminderList == null) return;
             foreach (object value in _reminderList.Items)
             {
                 WC.ListBoxItem row = value as WC.ListBoxItem;
@@ -132,11 +178,11 @@ namespace PennyPet
                 ? W.Visibility.Collapsed : W.Visibility.Visible;
         }
 
-        private string ReminderDisplayText(ReminderItem reminder)
+        private string ReminderDisplayText(ReminderItem reminder, DateTime nowUtc)
         {
             if (reminder == null) return String.Empty;
             return "• " + ShortItemText.Normalize(reminder.Text) + "  ·  " +
-                FormatCountdown(reminder.DeadlineUtc - DateTime.UtcNow);
+                FormatCountdown(reminder.DeadlineUtc - nowUtc);
         }
 
         private void ExecuteSelectedReminderDelete()

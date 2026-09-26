@@ -15,10 +15,10 @@ namespace PennyPet
             _eventHandler;
         private StickyNoteUiSnapshot _lastSnapshot;
         private long _sequence;
-        private DockInput _dockInput;
         private bool _hideAfterImeComposition;
         private bool _applyingBounds;
         private bool _eventsSuppressed;
+        private bool _headerDragActive;
         // Runtime topology truth owned by Pet's DisplayTopologyRuntime and
         // passed across the typed boundary with every Create/Show command.
         // The sticky STA must never capture Windows topology itself.
@@ -44,6 +44,17 @@ namespace PennyPet
         }
 
         internal string NoteId { get { return _noteId; } }
+        internal event Action ReminderVisibilityChanged;
+        internal bool HasVisibleReminders
+        {
+            get { return IsAvailable && _window.Visible && _window.HasReminderBanner; }
+        }
+
+        internal void RefreshReminderCountdown(DateTime nowUtc)
+        {
+            _window.RefreshReminderCountdown(nowUtc);
+        }
+
         internal bool IsAvailable
         {
             get { return _window != null && !_window.IsDisposed; }
@@ -205,13 +216,12 @@ namespace PennyPet
             return CurrentResult();
         }
 
-        internal StickyUiCommandResult UpdateReminders(
+        internal void UpdateReminders(
             IEnumerable<ReminderItem> reminders)
         {
-            if (!IsAvailable) return StickyUiCommandResult.NotHandled();
+            if (!IsAvailable) return;
             _window.UpdateReminderBanner(reminders ??
                 new ReminderItem[0]);
-            return CurrentResult();
         }
 
         internal StickyUiCommandResult SetBounds(StickyUiBounds bounds,
@@ -676,8 +686,31 @@ namespace PennyPet
                 CaptureWindowFacts(_sequence), _topology);
         }
 
+        // One low-frequency capture at local Dock completion. Advancing the
+        // lease here gives Pet a fresh watermark for every affected HWND
+        // without emitting any live geometry event.
+        internal DockBatchMemberResult CaptureDockCommitMember()
+        {
+            if (!IsAvailable) return null;
+            _lastSnapshot = CaptureSnapshot();
+            _sequence++;
+            return new DockBatchMemberResult(
+                _noteId, _sequence,
+                CaptureWindowFacts(_sequence),
+                _lastSnapshot);
+        }
+
+        // SideTab overlap needs only local HWND facts. Do not capture note
+        // content on every live drag frame.
+        internal WindowFacts CaptureVisibleFactsForChrome()
+        {
+            if (!IsAvailable || !_window.IsVisible) return null;
+            return CaptureWindowFacts(_sequence);
+        }
+
         private void WireEvents()
         {
+            _window.IsVisibleChanged += WindowVisibilityChanged;
             _window.NoteChanged += NoteChanged;
             _window.TypingActivity += TypingActivity;
             _window.InputFocusChanged += InputFocusChanged;
@@ -709,6 +742,7 @@ namespace PennyPet
 
         private void UnwireEvents()
         {
+            _window.IsVisibleChanged -= WindowVisibilityChanged;
             _window.NoteChanged -= NoteChanged;
             _window.TypingActivity -= TypingActivity;
             _window.InputFocusChanged -= InputFocusChanged;
@@ -736,6 +770,13 @@ namespace PennyPet
             _window.NewTodoRequested -= NewTodoRequested;
             _window.NewScheduleRequested -= NewScheduleRequested;
             _window.FormClosed -= WindowClosed;
+        }
+
+        private void WindowVisibilityChanged(object sender,
+            System.Windows.DependencyPropertyChangedEventArgs e)
+        {
+            Action changed = ReminderVisibilityChanged;
+            if (changed != null) changed();
         }
 
         private void NoteChanged(object sender, EventArgs e)
@@ -777,14 +818,17 @@ namespace PennyPet
 
         private void BoundsChanged(object sender, EventArgs e)
         {
-            if (_applyingBounds) return;
-            if (_window.DockDividerResizeActive || _window.DockHorizontalResizeActive) return;
+            if (_applyingBounds || _headerDragActive) return;
+            if (_window.DockDividerResizeActive ||
+                _window.DockHorizontalResizeActive) return;
             EmitSnapshot(StickyUiEventKind.BoundsChanged);
         }
 
         private void HeaderDragStarted(object sender, EventArgs e)
         {
-            EmitSnapshot(StickyUiEventKind.HeaderDragStarted);
+            _headerDragActive = true;
+            EmitLocalDockGeometry(
+                StickyUiEventKind.HeaderDragStarted);
         }
 
         private void HeaderDragMoved(object sender, EventArgs e)
@@ -793,12 +837,18 @@ namespace PennyPet
             // WPF LocationChanged echo so canonical state only receives the
             // authoritative final snapshot from SetBounds.
             if (_applyingBounds) return;
-            EmitSnapshot(StickyUiEventKind.HeaderDragMoved);
+            EmitLocalDockGeometry(
+                StickyUiEventKind.HeaderDragMoved);
         }
 
         private void HeaderDragCompleted(object sender, EventArgs e)
         {
-            EmitSnapshot(StickyUiEventKind.HeaderDragCompleted);
+            try
+            {
+                EmitLocalDockGeometry(
+                    StickyUiEventKind.HeaderDragCompleted);
+            }
+            finally { _headerDragActive = false; }
         }
 
         private void UserResizeStarted(object sender, EventArgs e)
@@ -818,21 +868,24 @@ namespace PennyPet
         }
 
         private void DockHorizontalResizeStarted(object sender, EventArgs e)
-        { EmitSnapshot(StickyUiEventKind.DockHorizontalResizeStarted); }
+        {
+            EmitLocalDockGeometry(
+                StickyUiEventKind.DockHorizontalResizeStarted);
+        }
 
         private void DockHorizontalResizeCompleted(object sender, EventArgs e)
-        { EmitSnapshot(StickyUiEventKind.DockHorizontalResizeCompleted); }
+        {
+            EmitLocalDockGeometry(
+                StickyUiEventKind.DockHorizontalResizeCompleted);
+        }
 
         private void DockHorizontalResizing(object sender,
             DockHorizontalResizeEventArgs e)
         {
-            if (_eventsSuppressed || !IsAvailable) return;
-            StickyNoteUiSnapshot snapshot = CaptureSnapshot();
-            _lastSnapshot = snapshot;
-            _sequence++;
-            Raise(StickyUiEvent.HorizontalResize(snapshot, _sequence,
-                e == null ? 0 : e.Left, e == null ? 0 : e.Width,
-                CaptureWindowFacts(_sequence), _topology));
+            EmitLocalDockGeometry(
+                StickyUiEventKind.DockHorizontalResizing,
+                e == null ? 0 : e.Left,
+                e == null ? 0 : e.Width);
         }
 
         private void DockDividerResizeStarted(object sender,
@@ -858,18 +911,30 @@ namespace PennyPet
         private void EmitDockDividerResize(StickyUiEventKind kind,
             DockDividerResizeEventArgs e)
         {
+            int height = e == null ? 0 : e.Height;
+            EmitLocalDockGeometry(kind, 0, 0, height);
+        }
+
+        private void EmitLocalDockGeometry(
+            StickyUiEventKind kind, int left = 0,
+            int width = 0, int height = 0)
+        {
             if (_eventsSuppressed || !IsAvailable) return;
-            StickyNoteUiSnapshot snapshot = CaptureSnapshot();
-            _lastSnapshot = snapshot;
             _sequence++;
-            WindowFacts facts = CaptureWindowFacts(_sequence);
-            int height = e == null
-                ? (facts == null ? 0 : facts.PhysicalBounds.Height) : e.Height;
-            DisplayDiagnostics.Trace("DockDividerEvent",
-                "note=" + _noteId + " kind=" + kind +
-                " seq=" + _sequence + " height=" + height);
-            Raise(StickyUiEvent.DividerResize(kind, snapshot, _sequence,
-                height, facts, _topology));
+            WindowFacts facts =
+                CaptureWindowFacts(_sequence);
+            if (height <= 0 &&
+                (kind ==
+                    StickyUiEventKind.DockDividerResizeStarted ||
+                 kind ==
+                    StickyUiEventKind.DockDividerResizing ||
+                 kind ==
+                    StickyUiEventKind.DockDividerResizeCompleted))
+                height = facts == null
+                    ? 0 : facts.PhysicalBounds.Height;
+            Raise(StickyUiEvent.DockGeometry(
+                kind, _noteId, _sequence,
+                left, width, height, facts, _topology));
         }
 
         private void CancelReminderRequested(object sender, EventArgs e)
@@ -992,8 +1057,6 @@ namespace PennyPet
         private void Raise(StickyUiEvent value)
         {
             if (_eventsSuppressed || _eventHandler == null) return;
-            if (value.BeginsDockInput) _dockInput = new DockInput();
-            if (value.IsDockInput) value.Input = _dockInput;
             _eventHandler(this, value);
         }
 

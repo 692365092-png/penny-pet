@@ -15,8 +15,10 @@
   <ItemGroup>
     <Compile Include="LayeredSpriteRenderer.cs" />
     <Compile Include="Features\Art\AnimationClip.cs" />
+    <Compile Include="Features\Art\ArtClipAsset.cs" />
     <Compile Include="Features\Art\PetArtFrameRenderer.cs" />
     <Compile Include="PetArt.cs" />
+    <Compile Include="Tools\**\*.cs" />
     <Compile Include="PennyPet.ToolsProgram.cs" />
     <Compile Include="Infrastructure\CommandLineArguments.cs" />
     <Compile Include="Infrastructure\ArtCommandRouter.cs" />

@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Threading;
+using System.Windows.Forms;
 
 namespace PennyPet
 {
@@ -18,10 +21,41 @@ namespace PennyPet
             new Dictionary<string, StickyWindowSession>(
                 StringComparer.OrdinalIgnoreCase);
         private DisplayTopologySnapshot _currentTopology;
-        private long _currentDockInteractionEpoch;
         // Sticky-STA only. Advance before posting input to Pet, including when
         // Pet is still waiting for an older finalization acknowledgment.
-        private DockInput _currentDockInput;
+        private System.Windows.Threading.DispatcherTimer _reminderClock;
+        private StickyNoteTabsForm _leftNoteTabs;
+        private StickyNoteTabsForm _rightNoteTabs;
+        private StickySideTabsProjection _pendingSideTabsProjection;
+        private bool _sideTabsProjectionPosted;
+        private bool? _leftTabsCovered;
+        private bool? _rightTabsCovered;
+        private Action<string> _sideTabOpen;
+        private Action<string> _sideTabDelete;
+        private Action<string, int> _sideTabReorder;
+        private IntPtr _modalZOrderFloor;
+        private DockPulseIndicatorForm _dockPreviewIndicator;
+        private DockPulseIndicatorForm _splitGuideIndicator;
+        private string _dockPreviewParentNoteId;
+        private string _dockPreviewChildNoteId;
+        private readonly StickyDockLocalGestureRuntime _localDockGestures;
+        private readonly StickyDockCommitQueue _dockCommitQueue;
+        private StickyDockSceneProjection _deferredDockScene;
+        private long _activeLocalDockDependency;
+        private IReadOnlyList<DockWindowTarget>
+            _pendingLocalDockRollback;
+
+        private const uint SwpNoSize = 0x0001;
+        private const uint SwpNoMove = 0x0002;
+        private const uint SwpNoActivate = 0x0010;
+        private const uint SwpNoOwnerZOrder = 0x0200;
+
+        internal StickyUiHost()
+        {
+            _localDockGestures = new StickyDockLocalGestureRuntime(
+                CaptureLocalDockFacts, ApplyLocalDockFollowers);
+            _dockCommitQueue = new StickyDockCommitQueue();
+        }
 
         internal void Start()
         {
@@ -48,6 +82,528 @@ namespace PennyPet
             }
         }
 
+        // Low-frequency model projection. R22 prepares the local visual
+        // runtime here; R23 will switch gesture completion to commit/ack.
+        internal void SetDockScene(StickyDockSceneProjection scene)
+        {
+            if (scene == null) return;
+            _threadHost.PostToDispatcher(delegate
+            {
+                if (_localDockGestures.IsActive ||
+                    _dockCommitQueue.PendingCount > 0)
+                    _deferredDockScene = scene;
+                else
+                    _localDockGestures.SetScene(scene);
+                return StickyUiCommandResult.Handled();
+            }, null, null);
+        }
+
+        private WindowFacts CaptureLocalDockFacts(string noteId)
+        {
+            StickyWindowSession session;
+            return TryGetSession(noteId, out session)
+                ? session.CaptureVisibleFactsForChrome()
+                : null;
+        }
+
+        private void PrepareLocalDockTopology()
+        {
+            DisplayTopologySnapshot topology;
+            lock (_configurationGate) topology = _currentTopology;
+            _localDockGestures.SetTopology(topology);
+        }
+
+        // Same-STA executor for the R22 candidate path. The source HWND stays
+        // owned by the native moving/sizing loop; only followers are batched.
+        // No content snapshot or Pet callback is involved.
+        private bool ApplyLocalDockFollowers(
+            IReadOnlyList<DockWindowTarget> targets,
+            string sourceNoteId)
+        {
+            if (targets == null || targets.Count == 0) return true;
+
+            StickyWindowSession source;
+            if (!TryGetSession(sourceNoteId, out source)) return false;
+            WindowFacts sourceFacts =
+                source.CaptureVisibleFactsForChrome();
+            if (sourceFacts == null) return false;
+
+            DisplayTopologySnapshot topology;
+            lock (_configurationGate) topology = _currentTopology;
+            if (topology == null ||
+                topology.Generation != sourceFacts.TopologyGeneration)
+                return false;
+            DisplaySurfaceSnapshot surface =
+                topology.FindByRuntimeGdiName(
+                    sourceFacts.RuntimeGdiName) ??
+                topology.FindByTargetKey(sourceFacts.ActiveTargetKey);
+            if (surface == null || sourceFacts.Dpi <= 0) return false;
+
+            List<StickyWindowSession> sessions =
+                new List<StickyWindowSession>(targets.Count);
+            List<IntPtr> handles = new List<IntPtr>(targets.Count);
+            List<PhysicalRect> rects =
+                new List<PhysicalRect>(targets.Count);
+            foreach (DockWindowTarget target in targets)
+            {
+                StickyWindowSession session;
+                if (target == null ||
+                    !TryGetSession(target.NoteId, out session) ||
+                    session.PlacementHwnd == IntPtr.Zero)
+                    return false;
+                sessions.Add(session);
+                handles.Add(session.PlacementHwnd);
+                rects.Add(target.PhysicalBounds);
+            }
+
+            List<StickyWindowSession.DockDpiTransition> transitions =
+                new List<StickyWindowSession.DockDpiTransition>();
+            List<StickyWindowSession> transitionSessions =
+                new List<StickyWindowSession>();
+            bool placementAttempted = false;
+            try
+            {
+                foreach (StickyWindowSession session in sessions)
+                    session.SetEventsSuppressed(true);
+                foreach (StickyWindowSession session in sessions)
+                {
+                    StickyWindowSession.DockDpiTransition transition;
+                    if (!session.TryPrepareDockTargetDpi(
+                        surface, sourceFacts.Dpi, out transition))
+                        return false;
+                    transitionSessions.Add(session);
+                    transitions.Add(transition);
+                }
+
+                WindowsBatchPlacementStatus status =
+                    WindowsBatchWindowPlacementExecutor.Apply(
+                        handles, rects);
+                placementAttempted = true;
+                bool corrected = false;
+                if (status != WindowsBatchPlacementStatus.Applied)
+                {
+                    // EndDeferWindowPos is not transactional. One bounded
+                    // correction is allowed, then actual HWND facts decide.
+                    for (int index = 0; index < sessions.Count; index++)
+                        sessions[index].SetBounds(new StickyUiBounds(
+                            rects[index].Left, rects[index].Top,
+                            rects[index].Width, rects[index].Height),
+                            topology);
+                    corrected = true;
+                }
+
+                List<int> mismatches = LocalDockPlacementMismatches(
+                    sessions, rects, topology.Generation);
+                if (mismatches.Count > 0 && !corrected)
+                {
+                    foreach (int index in mismatches)
+                        sessions[index].SetBounds(new StickyUiBounds(
+                            rects[index].Left, rects[index].Top,
+                            rects[index].Width, rects[index].Height),
+                            topology);
+                    corrected = true;
+                }
+
+                return LocalDockPlacementMismatches(
+                    sessions, rects,
+                    topology.Generation).Count == 0;
+            }
+            finally
+            {
+                for (int index = transitions.Count - 1;
+                    index >= 0; index--)
+                    transitionSessions[index].CompleteDockTargetDpi(
+                        transitions[index], placementAttempted);
+                foreach (StickyWindowSession session in sessions)
+                    session.SetEventsSuppressed(false);
+                ApplySideTabZOrder();
+            }
+        }
+
+        private static List<int> LocalDockPlacementMismatches(
+            IList<StickyWindowSession> sessions,
+            IList<PhysicalRect> expected, long topologyGeneration)
+        {
+            List<int> result = new List<int>();
+            if (sessions == null || expected == null ||
+                sessions.Count != expected.Count)
+                return result;
+            for (int index = 0; index < sessions.Count; index++)
+            {
+                WindowFacts facts =
+                    sessions[index].CaptureVisibleFactsForChrome();
+                if (facts == null ||
+                    facts.TopologyGeneration != topologyGeneration ||
+                    !facts.PhysicalBounds.Equals(expected[index]))
+                    result.Add(index);
+            }
+            return result;
+        }
+
+        internal void ConfigureSideTabs(
+            Action<string> openNote,
+            Action<string> deleteNote,
+            Action<string, int> reorderNote)
+        {
+            lock (_configurationGate)
+            {
+                _sideTabOpen = openNote;
+                _sideTabDelete = deleteNote;
+                _sideTabReorder = reorderNote;
+            }
+        }
+
+        // Latest-wins Pet projection. A Pet drag may publish many positions,
+        // but the Sticky dispatcher never queues an unbounded trail of them.
+        internal void UpdateSideTabs(StickySideTabsProjection projection)
+        {
+            if (projection == null) return;
+            bool post = false;
+            lock (_configurationGate)
+            {
+                _pendingSideTabsProjection = projection;
+                if (!_sideTabsProjectionPosted)
+                {
+                    _sideTabsProjectionPosted = true;
+                    post = true;
+                }
+            }
+            if (post) PostSideTabsProjectionPump();
+        }
+
+        private void PostSideTabsProjectionPump()
+        {
+            _threadHost.PostToDispatcher(
+                ApplyLatestSideTabsProjection, null, null);
+        }
+
+        private StickyUiCommandResult ApplyLatestSideTabsProjection()
+        {
+            StickySideTabsProjection projection;
+            lock (_configurationGate)
+            {
+                projection = _pendingSideTabsProjection;
+                _pendingSideTabsProjection = null;
+            }
+
+            if (projection != null)
+                ApplySideTabsProjection(projection);
+
+            bool again;
+            lock (_configurationGate)
+            {
+                again = _pendingSideTabsProjection != null;
+                if (!again) _sideTabsProjectionPosted = false;
+            }
+            if (again) PostSideTabsProjectionPump();
+
+            return StickyUiCommandResult.Handled();
+        }
+
+        private void ApplySideTabsProjection(
+            StickySideTabsProjection projection)
+        {
+            EnsureSideTabs();
+            if (_leftNoteTabs == null || _rightNoteTabs == null)
+                return;
+
+            SideTabPhysicalMetrics metrics = projection.Metrics;
+            _leftNoteTabs.ApplyPhysicalMetrics(metrics);
+            _rightNoteTabs.ApplyPhysicalMetrics(metrics);
+
+            List<SideTabSnapshot> notes =
+                new List<SideTabSnapshot>(projection.Notes);
+            int total = notes.Count;
+            int overlap = SideTabLayoutPolicy.CalculatePhysicalOverlap(
+                projection.PetBounds.Width, metrics);
+            int desiredLeftCount =
+                SideTabLayoutPolicy.CalculateEdgeAwareLeftCount(
+                    total,
+                    new DockRect(projection.PetBounds.Left,
+                        projection.PetBounds.Top,
+                        projection.PetBounds.Width,
+                        projection.PetBounds.Height),
+                    new DockRect(projection.WorkArea.Left,
+                        projection.WorkArea.Top,
+                        projection.WorkArea.Width,
+                        projection.WorkArea.Height),
+                    metrics.Width, overlap, metrics.WindowMarginX);
+
+            _leftNoteTabs.SetNotes(
+                notes.GetRange(0, desiredLeftCount), 0);
+            _rightNoteTabs.SetNotes(
+                notes.GetRange(desiredLeftCount,
+                    total - desiredLeftCount),
+                desiredLeftCount);
+            _leftNoteTabs.ShowNear(
+                projection.PetBounds, projection.WorkArea);
+            _rightNoteTabs.ShowNear(
+                projection.PetBounds, projection.WorkArea);
+
+            DisplayDiagnostics.Trace("SideTabsLayout",
+                "topology=" + projection.TopologyGeneration +
+                " dpi=" + metrics.Dpi + " total=" + total +
+                " left=" + desiredLeftCount +
+                " owner=sticky-sta");
+
+            ApplySideTabZOrder();
+        }
+
+        private void EnsureSideTabs()
+        {
+            if (_leftNoteTabs != null && !_leftNoteTabs.IsDisposed &&
+                _rightNoteTabs != null && !_rightNoteTabs.IsDisposed)
+                return;
+
+            _leftNoteTabs = CreateSideTabs(StickyTabSide.Left);
+            _rightNoteTabs = CreateSideTabs(StickyTabSide.Right);
+        }
+
+        private StickyNoteTabsForm CreateSideTabs(StickyTabSide side)
+        {
+            return new StickyNoteTabsForm(
+                side,
+                id => PostSideTabOpen(id),
+                id => PostSideTabDelete(id),
+                (id, index) => PostSideTabReorder(id, index));
+        }
+
+        private void PostSideTabOpen(string noteId)
+        {
+            Action<string> handler;
+            lock (_configurationGate) handler = _sideTabOpen;
+            if (handler != null)
+                PostSemantic(delegate { handler(noteId); });
+        }
+
+        private void PostSideTabDelete(string noteId)
+        {
+            Action<string> handler;
+            lock (_configurationGate) handler = _sideTabDelete;
+            if (handler != null)
+                PostSemantic(delegate { handler(noteId); });
+        }
+
+        private void PostSideTabReorder(string noteId, int index)
+        {
+            Action<string, int> handler;
+            lock (_configurationGate) handler = _sideTabReorder;
+            if (handler != null)
+                PostSemantic(delegate { handler(noteId, index); });
+        }
+
+        private void PostSemantic(Action action)
+        {
+            if (action == null) return;
+            SynchronizationContext context;
+            lock (_configurationGate) context = _eventContext;
+            if (context != null)
+            {
+                context.Post(delegate { action(); }, null);
+                return;
+            }
+            ThreadPool.QueueUserWorkItem(delegate { action(); });
+        }
+
+        internal void SetModalZOrderFloor(IntPtr hwnd)
+        {
+            lock (_configurationGate) _modalZOrderFloor = hwnd;
+            PostChrome(ApplyModalFloorToChrome);
+        }
+
+        internal void ShowSplitGuide(Rectangle seam)
+        {
+            PostChrome(delegate
+            {
+                ClearSplitGuideOnThread();
+                if (seam.IsEmpty) return;
+                _splitGuideIndicator = new DockPulseIndicatorForm(
+                    Color.FromArgb(255, 151, 62), 0);
+                _splitGuideIndicator.ShowSeam(seam);
+                KeepTransientBelowModal(_splitGuideIndicator);
+            });
+        }
+
+        internal void UpdateSplitGuide(Rectangle seam)
+        {
+            if (seam.IsEmpty) return;
+            PostChrome(delegate
+            {
+                if (_splitGuideIndicator == null ||
+                    _splitGuideIndicator.IsDisposed) return;
+                _splitGuideIndicator.UpdateSeam(seam);
+                KeepTransientBelowModal(_splitGuideIndicator);
+            });
+        }
+
+        internal void ClearSplitGuide()
+        {
+            PostChrome(ClearSplitGuideOnThread);
+        }
+
+        internal void UpdateDockPreview(
+            string parentNoteId,
+            string childNoteId,
+            Rectangle seam)
+        {
+            PostChrome(delegate
+            {
+                string parent = parentNoteId ?? String.Empty;
+                string child = childNoteId ?? String.Empty;
+                bool same = String.Equals(parent,
+                        _dockPreviewParentNoteId ?? String.Empty,
+                        StringComparison.OrdinalIgnoreCase) &&
+                    String.Equals(child,
+                        _dockPreviewChildNoteId ?? String.Empty,
+                        StringComparison.OrdinalIgnoreCase);
+                if (same)
+                {
+                    if (_dockPreviewIndicator != null &&
+                        !_dockPreviewIndicator.IsDisposed &&
+                        !seam.IsEmpty)
+                        _dockPreviewIndicator.UpdateSeam(seam);
+                    return;
+                }
+
+                ClearDockPreviewOnThread();
+                if (String.IsNullOrEmpty(parent) || seam.IsEmpty)
+                    return;
+
+                _dockPreviewParentNoteId = parent;
+                _dockPreviewChildNoteId = child;
+                _dockPreviewIndicator = new DockPulseIndicatorForm(
+                    Color.FromArgb(32, 160, 255), 0);
+                _dockPreviewIndicator.ShowSeam(seam);
+                KeepTransientBelowModal(_dockPreviewIndicator);
+            });
+        }
+
+        internal void ClearDockPreview()
+        {
+            PostChrome(ClearDockPreviewOnThread);
+        }
+
+        internal void ShowTransientDockPulse(
+            Rectangle seam, Color color)
+        {
+            if (seam.IsEmpty) return;
+            PostChrome(delegate
+            {
+                DockPulseIndicatorForm indicator =
+                    new DockPulseIndicatorForm(color, 720);
+                indicator.ShowSeam(seam);
+                KeepTransientBelowModal(indicator);
+            });
+        }
+
+        private void PostChrome(Action action)
+        {
+            if (action == null) return;
+            _threadHost.PostToDispatcher(delegate
+            {
+                action();
+                return StickyUiCommandResult.Handled();
+            }, null, null);
+        }
+
+        private void ClearSplitGuideOnThread()
+        {
+            if (_splitGuideIndicator != null &&
+                !_splitGuideIndicator.IsDisposed)
+                _splitGuideIndicator.Close();
+            _splitGuideIndicator = null;
+        }
+
+        private void ClearDockPreviewOnThread()
+        {
+            if (_dockPreviewIndicator != null &&
+                !_dockPreviewIndicator.IsDisposed)
+                _dockPreviewIndicator.Close();
+            _dockPreviewIndicator = null;
+            _dockPreviewParentNoteId = null;
+            _dockPreviewChildNoteId = null;
+        }
+
+        private void ApplySideTabZOrder()
+        {
+            if (_leftNoteTabs == null || _rightNoteTabs == null ||
+                _leftNoteTabs.IsDisposed || _rightNoteTabs.IsDisposed)
+                return;
+
+            bool leftCovered = false;
+            bool rightCovered = false;
+            Rectangle leftBounds = _leftNoteTabs.Bounds;
+            Rectangle rightBounds = _rightNoteTabs.Bounds;
+
+            foreach (StickyWindowSession session in _sessions.Values)
+            {
+                WindowFacts facts =
+                    session.CaptureVisibleFactsForChrome();
+                if (facts == null) continue;
+
+                PhysicalRect actual = facts.PhysicalBounds;
+                Rectangle bounds = new Rectangle(
+                    actual.Left, actual.Top,
+                    actual.Width, actual.Height);
+                leftCovered |= _leftNoteTabs.Visible &&
+                    leftBounds.IntersectsWith(bounds);
+                rightCovered |= _rightNoteTabs.Visible &&
+                    rightBounds.IntersectsWith(bounds);
+                if (leftCovered && rightCovered) break;
+            }
+
+            ApplySideTabCoverage(
+                _leftNoteTabs, leftCovered, ref _leftTabsCovered,
+                "SideTabsLeft");
+            ApplySideTabCoverage(
+                _rightNoteTabs, rightCovered, ref _rightTabsCovered,
+                "SideTabsRight");
+            ApplyModalFloorToChrome();
+        }
+
+        private void ApplySideTabCoverage(
+            StickyNoteTabsForm tabs,
+            bool covered,
+            ref bool? previous,
+            string diagnosticName)
+        {
+            if (!previous.HasValue || previous.Value != covered)
+            {
+                previous = covered;
+                tabs.TopMost =
+                    StickyNoteWindowRules.ShouldKeepSideTabsTopMost(
+                        covered);
+                if (!covered && tabs.Visible)
+                    tabs.BringToFront();
+                ApplicationDiagnostics.WriteWindowLayerEvent(
+                    diagnosticName,
+                    covered ? "covered" : "clear");
+            }
+        }
+
+        private void ApplyModalFloorToChrome()
+        {
+            KeepTransientBelowModal(_leftNoteTabs);
+            KeepTransientBelowModal(_rightNoteTabs);
+            KeepTransientBelowModal(_dockPreviewIndicator);
+            KeepTransientBelowModal(_splitGuideIndicator);
+        }
+
+        private void KeepTransientBelowModal(Form transient)
+        {
+            IntPtr floor;
+            lock (_configurationGate) floor = _modalZOrderFloor;
+            if (floor == IntPtr.Zero || transient == null ||
+                transient.IsDisposed || !transient.Visible ||
+                !transient.IsHandleCreated)
+                return;
+
+            SetWindowPos(transient.Handle, floor,
+                0, 0, 0, 0,
+                SwpNoSize | SwpNoMove | SwpNoActivate |
+                SwpNoOwnerZOrder);
+        }
+
         internal void SetFaultHandler(Action<Exception> handler)
         {
             if (handler == null) return;
@@ -62,6 +618,31 @@ namespace PennyPet
                 }
                 ThreadPool.QueueUserWorkItem(delegate { handler(error); });
             };
+        }
+
+        internal void PostStartupRestore(StickyUiCommand command,
+            Action<StickyUiCommandResult> completed,
+            SynchronizationContext completionContext)
+        {
+            if (command == null) throw new ArgumentNullException(nameof(command));
+            Func<StickyUiCommand, StickyUiCommandResult> handler;
+            lock (_configurationGate) handler = _commandHandler;
+            _threadHost.PostStartupRestore(delegate
+            {
+                StickyUiCommandResult result;
+                try
+                {
+                    result = handler == null
+                        ? StickyUiCommandResult.NotHandled()
+                        : handler(command) ?? StickyUiCommandResult.NotHandled();
+                }
+                catch (Exception error)
+                {
+                    result = StickyUiCommandResult.Failed(error);
+                }
+                StickyUiThreadHost.PostCompletionForHost(
+                    completionContext, completed, result);
+            });
         }
 
         internal void PostCommand(StickyUiCommand command,
@@ -82,155 +663,30 @@ namespace PennyPet
         // Dedicated latest-wins entry for a live Dock drag. This is not a
         // generic scheduler: the Pet thread replaces the immutable plan in
         // the mailbox and only one deferred native batch runs at a time.
-        internal void PostLatestDockPlan(DockPlanMailbox mailbox,
-            Action<StickyUiCommandResult> completed,
-            SynchronizationContext completionContext)
-        {
-            if (mailbox == null)
-                throw new ArgumentNullException(nameof(mailbox));
-            _threadHost.PostDockPlan(mailbox, ApplyLatestDockPlan,
-                completed, completionContext);
-        }
-
-        internal void PostFinalDockPlan(DockPlanMailbox mailbox,
-            long planSequence, Action<StickyUiCommandResult> completed,
-            SynchronizationContext completionContext)
-        {
-            if (mailbox == null)
-                throw new ArgumentNullException(nameof(mailbox));
-            _threadHost.PostDockPlan(mailbox, delegate(DockPlanMailbox value)
-            {
-                return ApplyFinalDockPlan(value, planSequence);
-            }, completed, completionContext);
-        }
-
         // Horizontal and divider gestures share one latest-frame/final transport.
-        internal void PostLatestResizeBatch(DockResizeMailbox mailbox,
-            Action<StickyUiCommandResult> completed,
-            SynchronizationContext completionContext)
-        {
-            if (mailbox == null)
-                throw new ArgumentNullException(nameof(mailbox));
-            _threadHost.PostResizeBatch(mailbox,
-                ApplyLatestResizeBatch, completed, completionContext);
-        }
-
-        internal void PostFinalResizeBatch(DockResizeMailbox mailbox,
-            DockResizeBatch expected,
-            Action<StickyUiCommandResult> completed,
-            SynchronizationContext completionContext)
-        {
-            if (mailbox == null)
-                throw new ArgumentNullException(nameof(mailbox));
-            _threadHost.PostResizeBatch(mailbox,
-                value => ApplyFinalResizeBatch(value, expected), completed, completionContext);
-        }
-
-        private StickyUiCommandResult ApplyLatestResizeBatch(
-            DockResizeMailbox mailbox)
-        {
-            DockResizeBatch batch = mailbox == null
-                ? null : mailbox.TakeLatest();
-            if (batch == null || batch.Targets.Count == 0)
-                return StickyUiCommandResult.Handled();
-            return ApplyResizeBatch(batch);
-        }
-
-        private StickyUiCommandResult ApplyFinalResizeBatch(
-            DockResizeMailbox mailbox, DockResizeBatch expected)
-        {
-            DockResizeBatch batch = mailbox == null
-                ? null : mailbox.TakeFinal(expected);
-            if (batch == null || batch.Targets.Count == 0)
-                return StickyUiCommandResult.NotHandled();
-            try
-            {
-                return ApplyResizeBatch(batch);
-            }
-            finally
-            {
-                mailbox.CompleteFinal(expected);
-            }
-        }
-
         // Move all followers without showing or activating them, then capture
         // each member once. WindowFacts remain the actual geometry authority.
-        private StickyUiCommandResult ApplyResizeBatch(
-            DockResizeBatch batch)
-        {
-            if (batch == null || batch.Targets.Count == 0)
-                return StickyUiCommandResult.NotHandled();
-            if (!ReferenceEquals(batch.Input, _currentDockInput))
-                return StickyUiCommandResult.NotHandled();
-            DisplayTopologySnapshot topology;
-            lock (_configurationGate) topology = _currentTopology;
-            if (topology == null ||
-                batch.TopologyGeneration != topology.Generation)
-            {
-                DisplayDiagnostics.Trace("DockResizeBatchStale",
-                    "batchGeneration=" + batch.TopologyGeneration +
-                    " currentGeneration=" +
-                    (topology == null ? -1 : topology.Generation));
-                return StickyUiCommandResult.NotHandled();
-            }
-            List<StickyWindowSession> sessions =
-                new List<StickyWindowSession>();
-            List<IntPtr> handles = new List<IntPtr>();
-            List<PhysicalRect> rects = new List<PhysicalRect>();
-            HashSet<string> ids = new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase);
-            foreach (DockWindowTarget target in batch.Targets)
-            {
-                if (target == null || !ids.Add(target.NoteId))
-                    return StickyUiCommandResult.NotHandled();
-                StickyWindowSession session;
-                if (!TryGetSession(target.NoteId, out session) ||
-                    session.PlacementHwnd == IntPtr.Zero)
-                    return StickyUiCommandResult.NotHandled();
-                sessions.Add(session);
-                handles.Add(session.PlacementHwnd);
-                rects.Add(target.PhysicalBounds);
-            }
-            foreach (StickyWindowSession session in sessions)
-                if (!session.AdoptTopology(topology))
-                    return StickyUiCommandResult.NotHandled();
-            foreach (StickyWindowSession session in sessions)
-                session.SetEventsSuppressed(true);
-            try
-            {
-                if (WindowsBatchWindowPlacementExecutor.Apply(handles, rects) != WindowsBatchPlacementStatus.Applied)
-                    return StickyUiCommandResult.NotHandled();
-                List<DockBatchMemberResult> members =
-                    new List<DockBatchMemberResult>();
-                for (int index = 0; index < batch.Targets.Count; index++)
-                {
-                    DockBatchMemberResult member =
-                        sessions[index].CaptureDockMember(topology);
-                    if (member == null || member.Facts == null)
-                        return StickyUiCommandResult.NotHandled();
-                    members.Add(member);
-                }
-                return StickyUiCommandResult.Handled(new DockBatchResult(
-                    0, batch.TopologyGeneration, String.Empty, 0,
-                    members, 0));
-            }
-            finally
-            {
-                foreach (StickyWindowSession session in sessions)
-                    session.SetEventsSuppressed(false);
-            }
-        }
-
         // Host-owned current topology truth for the Dock stale gate and for
         // actual-facts capture. Pet publishes every settled snapshot here.
         internal void SetCurrentTopology(DisplayTopologySnapshot snapshot)
         {
             lock (_configurationGate) _currentTopology = snapshot;
-        }
-
-        internal void SetCurrentDockInteractionEpoch(long epoch)
-        {
-            lock (_configurationGate) _currentDockInteractionEpoch = epoch;
+            if (snapshot == null) return;
+            _threadHost.PostToDispatcher(delegate
+            {
+                _pendingLocalDockRollback = null;
+                foreach (StickyWindowSession session
+                    in _sessions.Values)
+                    session.AdoptTopology(snapshot);
+                if (!_localDockGestures.TryRebaseTopology(snapshot))
+                {
+                    _localDockGestures.Cancel();
+                    _activeLocalDockDependency = 0;
+                    ClearDockPreviewOnThread();
+                    ClearSplitGuideOnThread();
+                }
+                return StickyUiCommandResult.Handled();
+            }, null, null);
         }
 
         private bool IsCurrentTopology(DisplayTopologySnapshot topology)
@@ -322,11 +778,7 @@ namespace PennyPet
                         return TryGetSession(command.NoteId, out session)
                             ? session.SetDockResizeRole(command.DockResizeRole)
                             : StickyUiCommandResult.NotHandled();
-                    case StickyUiCommandKind.RaiseDockGroupForDrag:
-                        return RaiseDockGroupForDrag(command);
                     case StickyUiCommandKind.SetBounds:
-                        if (command.Input != null && !ReferenceEquals(command.Input, _currentDockInput))
-                            return StickyUiCommandResult.NotHandled();
                         if (command.Topology != null && !IsCurrentTopology(command.Topology))
                             return StickyUiCommandResult.NotHandled();
                         return TryGetSession(command.NoteId, out session)
@@ -350,12 +802,21 @@ namespace PennyPet
                         return TryGetSession(command.NoteId, out session)
                             ? session.CaptureCurrentFacts(command.Topology)
                             : StickyUiCommandResult.NotHandled();
-                    case StickyUiCommandKind.CaptureDockFacts:
-                        return CaptureDockFactsForCommit(command);
+                    case StickyUiCommandKind.AcknowledgeDockCommit:
+                        return AcknowledgeLocalDockCommit(
+                            command.DockCommitAck);
+                    case StickyUiCommandKind.PrepareDockStructure:
+                        return PrepareLocalDockStructure(
+                            command.DockNoteIds);
                     case StickyUiCommandKind.UpdateReminders:
-                        return TryGetSession(command.NoteId, out session)
-                            ? session.UpdateReminders(command.Reminders)
-                            : StickyUiCommandResult.NotHandled();
+                        if (!TryGetSession(command.NoteId, out session))
+                            return StickyUiCommandResult.NotHandled();
+                        session.UpdateReminders(command.Reminders);
+                        return StickyUiCommandResult.Handled();
+                    case StickyUiCommandKind.UpdateAllReminders:
+                        foreach (StickyWindowSession member in _sessions.Values)
+                            member.UpdateReminders(command.Reminders);
+                        return StickyUiCommandResult.Handled();
                     case StickyUiCommandKind.Close:
                         return TryGetSession(command.NoteId, out session)
                             ? session.Close()
@@ -372,9 +833,45 @@ namespace PennyPet
                 {
                     session.CloseAfterFailure();
                     _sessions.Remove(command.NoteId);
+                    RefreshReminderClock();
                 }
                 throw;
             }
+            finally
+            {
+                switch (command.Kind)
+                {
+                    case StickyUiCommandKind.Create:
+                    case StickyUiCommandKind.EnsureSession:
+                    case StickyUiCommandKind.UpdateReminders:
+                    case StickyUiCommandKind.UpdateAllReminders:
+                    case StickyUiCommandKind.CloseAll:
+                    case StickyUiCommandKind.RestoreDockGroup:
+                        RefreshReminderClock();
+                        break;
+                }
+            }
+        }
+
+        private void RefreshReminderClock()
+        {
+            bool active = false;
+            foreach (StickyWindowSession session in _sessions.Values)
+                if (session.HasVisibleReminders) { active = true; break; }
+            if (active && _reminderClock == null)
+            {
+                _reminderClock = new System.Windows.Threading.DispatcherTimer(
+                    System.Windows.Threading.DispatcherPriority.Background);
+                _reminderClock.Interval = TimeSpan.FromSeconds(1);
+                _reminderClock.Tick += delegate
+                {
+                    DateTime nowUtc = DateTime.UtcNow;
+                    foreach (StickyWindowSession session in _sessions.Values)
+                        if (session.HasVisibleReminders)
+                            session.RefreshReminderCountdown(nowUtc);
+                };
+            }
+            if (_reminderClock != null) _reminderClock.IsEnabled = active;
         }
 
         private StickyUiCommandResult CreateSession(StickyUiCommand command)
@@ -390,6 +887,7 @@ namespace PennyPet
             StickyWindowSession session = new StickyWindowSession(
                 command.Snapshot, SessionEventRaised, command.Placement);
             _sessions[command.NoteId] = session;
+            session.ReminderVisibilityChanged += RefreshReminderClock;
             if (command.Reminders != null)
                 session.UpdateReminders(command.Reminders);
             try
@@ -449,6 +947,7 @@ namespace PennyPet
                     SessionEventRaised);
 
             _sessions[command.NoteId] = session;
+            session.ReminderVisibilityChanged += RefreshReminderClock;
 
             try
             {
@@ -535,117 +1034,436 @@ namespace PennyPet
         // current generation and epoch), then the tail-to-root non-source
         // members are raised and the source is raised last. No geometry,
         // persistence or focus effect may ride along.
-        private StickyUiCommandResult RaiseDockGroupForDrag(
-            StickyUiCommand command)
+        // R22 local driver. These methods stay on Sticky STA and intentionally
+        // are not selected by SessionEventRaised until R23 can atomically
+        // commit the resulting gesture completion.
+        private long TryBeginLocalDockGesture(
+            StickyDockLocalGestureKind kind, string sourceNoteId)
         {
-            if (command == null ||
-                command.Topology == null ||
-                command.DockNoteIds == null ||
-                command.DockNoteIds.Length < 2 ||
-                String.IsNullOrWhiteSpace(command.NoteId) ||
-                command.InteractionEpoch <= 0)
-                return StickyUiCommandResult.NotHandled();
+            PrepareLocalDockTopology();
+            long gestureId =
+                _localDockGestures.TryBegin(kind, sourceNoteId);
+            if (gestureId == 0) return 0;
 
-            DisplayTopologySnapshot currentTopology;
-            long currentEpoch;
-            lock (_configurationGate)
+            if (kind == StickyDockLocalGestureKind.HeaderDrag)
             {
-                currentTopology = _currentTopology;
-                currentEpoch = _currentDockInteractionEpoch;
+                string parent =
+                    _localDockGestures.SplitGuideParentNoteId;
+                WindowFacts parentFacts =
+                    CaptureLocalDockFacts(parent);
+                if (parentFacts != null)
+                    ShowSplitGuide(LocalDockSeam(
+                        parentFacts.PhysicalBounds));
+            }
+            return gestureId;
+        }
+
+        private bool MoveLocalDockHeader(WindowFacts sourceFacts)
+        {
+            if (!_localDockGestures.MoveHeader(sourceFacts))
+                return false;
+            if (String.IsNullOrEmpty(
+                _localDockGestures.SplitGuideParentNoteId))
+                ClearSplitGuideOnThread();
+            string parent =
+                _localDockGestures.LastSnapTargetNoteId;
+            WindowFacts parentFacts =
+                CaptureLocalDockFacts(parent);
+            UpdateDockPreview(
+                String.IsNullOrEmpty(parent)
+                    ? String.Empty : parent,
+                String.Empty,
+                parentFacts == null
+                    ? Rectangle.Empty
+                    : LocalDockSeam(
+                        parentFacts.PhysicalBounds));
+            return true;
+        }
+
+        private bool ResizeLocalDockHorizontal(
+            int proposedLeft, int proposedWidth)
+        {
+            return _localDockGestures.ResizeHorizontal(
+                proposedLeft, proposedWidth);
+        }
+
+        private bool ResizeLocalDockDivider(
+            int proposedSourceHeight)
+        {
+            return _localDockGestures.ResizeDivider(
+                proposedSourceHeight);
+        }
+
+        private StickyDockLocalGestureCompletion
+            CompleteLocalDockGesture()
+        {
+            ClearDockPreviewOnThread();
+            ClearSplitGuideOnThread();
+            return _localDockGestures.Complete();
+        }
+
+        private static Rectangle LocalDockSeam(
+            PhysicalRect bounds)
+        {
+            return new Rectangle(bounds.Left,
+                bounds.Bottom - 3, bounds.Width, 6);
+        }
+
+        private bool TryHandleLocalDockEvent(
+            StickyWindowSession session, StickyUiEvent value)
+        {
+            StickyDockLocalGestureKind kind;
+            bool start = false;
+            bool live = false;
+            bool complete = false;
+
+            switch (value.Kind)
+            {
+                case StickyUiEventKind.HeaderDragStarted:
+                    kind = StickyDockLocalGestureKind.HeaderDrag;
+                    start = true;
+                    break;
+                case StickyUiEventKind.HeaderDragMoved:
+                    kind = StickyDockLocalGestureKind.HeaderDrag;
+                    live = true;
+                    break;
+                case StickyUiEventKind.HeaderDragCompleted:
+                    kind = StickyDockLocalGestureKind.HeaderDrag;
+                    complete = true;
+                    break;
+                case StickyUiEventKind.DockHorizontalResizeStarted:
+                    kind = StickyDockLocalGestureKind.HorizontalResize;
+                    start = true;
+                    break;
+                case StickyUiEventKind.DockHorizontalResizing:
+                    kind = StickyDockLocalGestureKind.HorizontalResize;
+                    live = true;
+                    break;
+                case StickyUiEventKind.DockHorizontalResizeCompleted:
+                    kind = StickyDockLocalGestureKind.HorizontalResize;
+                    complete = true;
+                    break;
+                case StickyUiEventKind.DockDividerResizeStarted:
+                    kind = StickyDockLocalGestureKind.DividerResize;
+                    start = true;
+                    break;
+                case StickyUiEventKind.DockDividerResizing:
+                    kind = StickyDockLocalGestureKind.DividerResize;
+                    live = true;
+                    break;
+                case StickyUiEventKind.DockDividerResizeCompleted:
+                    kind = StickyDockLocalGestureKind.DividerResize;
+                    complete = true;
+                    break;
+                default:
+                    return false;
             }
 
-            if (currentTopology == null ||
-                command.Topology.Generation != currentTopology.Generation ||
-                command.InteractionEpoch != currentEpoch ||
-                !ReferenceEquals(command.Input, _currentDockInput))
+            if (start)
             {
-                DisplayDiagnostics.Trace("DockZOrderRaiseRejected",
-                    "reason=stale source=" + command.NoteId +
-                    " commandGeneration=" + command.Topology.Generation +
-                    " currentGeneration=" +
-                    (currentTopology == null ? -1 : currentTopology.Generation) +
-                    " commandEpoch=" + command.InteractionEpoch +
-                    " currentEpoch=" + currentEpoch);
-                return StickyUiCommandResult.NotHandled();
+                // Fail closed: never fall back to the old per-frame Pet path.
+                if (_pendingLocalDockRollback != null)
+                {
+                    ApplyLocalDockCorrections(
+                        _pendingLocalDockRollback);
+                    _pendingLocalDockRollback = null;
+                }
+                if (!_dockCommitQueue.CanBeginGesture)
+                    return true;
+                _activeLocalDockDependency =
+                    _dockCommitQueue.LatestPendingGestureId;
+                if (TryBeginLocalDockGesture(
+                    kind, value.NoteId) == 0)
+                    _activeLocalDockDependency = 0;
+                return true;
             }
 
-            string[] raiseOrder;
-            if (!TryBuildDockDragRaiseOrder(command.DockNoteIds,
-                command.NoteId, out raiseOrder))
+            if (live)
             {
-                DisplayDiagnostics.Trace("DockZOrderRaiseRejected",
-                    "reason=invalid-order source=" + command.NoteId +
-                    " epoch=" + command.InteractionEpoch);
-                return StickyUiCommandResult.NotHandled();
+                if (!_localDockGestures.IsActive)
+                    return true;
+                bool applied =
+                    kind == StickyDockLocalGestureKind.HeaderDrag
+                        ? MoveLocalDockHeader(value.Facts)
+                    : kind ==
+                        StickyDockLocalGestureKind.HorizontalResize
+                        ? ResizeLocalDockHorizontal(
+                            value.Left, value.Width)
+                        : ResizeLocalDockDivider(value.Height);
+                if (!applied)
+                {
+                    _pendingLocalDockRollback =
+                        _localDockGestures.CancelAndRestore();
+                    _activeLocalDockDependency = 0;
+                    ClearDockPreviewOnThread();
+                    ClearSplitGuideOnThread();
+                }
+                return true;
             }
 
-            Dictionary<string, StickyWindowSession> sessions =
-                new Dictionary<string, StickyWindowSession>(
+            if (complete)
+            {
+                if (!_localDockGestures.IsActive)
+                {
+                    if (_pendingLocalDockRollback != null)
+                    {
+                        ApplyLocalDockCorrections(
+                            _pendingLocalDockRollback);
+                        _pendingLocalDockRollback = null;
+                    }
+                    return true;
+                }
+                if (kind == StickyDockLocalGestureKind.HeaderDrag &&
+                    value.Facts != null)
+                {
+                    MoveLocalDockHeader(value.Facts);
+                    IReadOnlyList<DockWindowTarget> snap =
+                        _localDockGestures
+                            .BuildHeaderSnapTargets();
+                    if (snap.Count > 0)
+                        ApplyLocalDockCorrections(snap);
+                }
+                else if (kind ==
+                    StickyDockLocalGestureKind.DividerResize &&
+                    value.Height > 0)
+                    ResizeLocalDockDivider(value.Height);
+
+                StickyDockLocalGestureCompletion completion =
+                    CompleteLocalDockGesture();
+                if (completion == null)
+                    return true;
+                _localDockGestures.ApplyProvisional(completion);
+                StickyDockGestureCommit commit =
+                    CaptureLocalDockCommit(
+                        completion,
+                        _activeLocalDockDependency);
+                _activeLocalDockDependency = 0;
+                if (commit != null &&
+                    _dockCommitQueue.TryAdd(commit))
+                    PumpLocalDockCommits();
+                return true;
+            }
+            return true;
+        }
+
+        private StickyDockGestureCommit CaptureLocalDockCommit(
+            StickyDockLocalGestureCompletion completion,
+            long dependsOnGestureId)
+        {
+            if (completion == null) return null;
+            List<DockBatchMemberResult> members =
+                new List<DockBatchMemberResult>();
+            foreach (string noteId in
+                completion.AffectedMemberIds)
+            {
+                StickyWindowSession member;
+                if (!TryGetSession(noteId, out member))
+                    return null;
+                DockBatchMemberResult captured =
+                    member.CaptureDockCommitMember();
+                if (captured == null ||
+                    captured.Facts == null)
+                    return null;
+                members.Add(captured);
+            }
+            Dictionary<string, long> versions =
+                new Dictionary<string, long>(
                     StringComparer.OrdinalIgnoreCase);
-            foreach (string noteId in command.DockNoteIds)
+            foreach (KeyValuePair<string, long> pair in
+                completion.BaselineVersions)
+                versions[pair.Key] = pair.Value;
+            return new StickyDockGestureCommit(
+                completion.GestureId,
+                dependsOnGestureId,
+                completion.Intent,
+                completion.SourceNoteId,
+                completion.TargetNoteId,
+                completion.TopologyGeneration,
+                versions,
+                members);
+        }
+
+        private void PumpLocalDockCommits()
+        {
+            StickyDockGestureCommit ready =
+                _dockCommitQueue.PeekReady();
+            if (ready == null) return;
+            long sequence = 0;
+            foreach (DockBatchMemberResult member in ready.Members)
+                if (String.Equals(member.NoteId,
+                    ready.SourceNoteId,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    sequence = member.WindowSequence;
+                    break;
+                }
+            PostEvent(StickyUiEvent.DockCommitRequested(
+                ready, sequence));
+        }
+
+        private StickyUiCommandResult PrepareLocalDockStructure(
+            IEnumerable<string> affectedNoteIds)
+        {
+            if (_pendingLocalDockRollback != null)
+            {
+                ApplyLocalDockCorrections(
+                    _pendingLocalDockRollback);
+                _pendingLocalDockRollback = null;
+            }
+            if (!_localDockGestures.AffectsStructure(
+                affectedNoteIds))
+                return StickyUiCommandResult.Handled();
+
+            IReadOnlyList<DockWindowTarget> restore =
+                _localDockGestures.CancelAndRestore();
+            _activeLocalDockDependency = 0;
+            ClearDockPreviewOnThread();
+            ClearSplitGuideOnThread();
+            if (restore.Count > 0)
+                ApplyLocalDockCorrections(restore);
+            return StickyUiCommandResult.Handled();
+        }
+
+        private StickyUiCommandResult AcknowledgeLocalDockCommit(
+            StickyDockCommitAck ack)
+        {
+            if (ack == null)
+                return StickyUiCommandResult.NotHandled();
+            StickyDockCommitResolution resolution =
+                _dockCommitQueue.Acknowledge(ack);
+            if (!resolution.Matched)
+                return StickyUiCommandResult.Handled();
+
+            if (!resolution.Accepted &&
+                ack.Corrections.Count > 0)
+                ApplyLocalDockCorrections(
+                    ack.Corrections);
+
+            if (!resolution.Accepted &&
+                _localDockGestures.IsActive &&
+                (_activeLocalDockDependency ==
+                    resolution.GestureId ||
+                 ContainsGestureId(
+                    resolution.CancelledDependents,
+                    _activeLocalDockDependency)))
+            {
+                _localDockGestures.Cancel();
+                _activeLocalDockDependency = 0;
+                ClearDockPreviewOnThread();
+                ClearSplitGuideOnThread();
+            }
+
+            if (ack.Scene != null)
+            {
+                if (_localDockGestures.IsActive ||
+                    _dockCommitQueue.PendingCount > 0)
+                    _deferredDockScene = ack.Scene;
+                else
+                {
+                    _localDockGestures.SetScene(ack.Scene);
+                    _deferredDockScene = null;
+                }
+            }
+
+            PumpLocalDockCommits();
+            if (!_localDockGestures.IsActive &&
+                _dockCommitQueue.PendingCount == 0 &&
+                _deferredDockScene != null)
+            {
+                _localDockGestures.SetScene(
+                    _deferredDockScene);
+                _deferredDockScene = null;
+            }
+            return StickyUiCommandResult.Handled();
+        }
+
+        private void ApplyLocalDockCorrections(
+            IReadOnlyList<DockWindowTarget> targets)
+        {
+            DisplayTopologySnapshot topology;
+            lock (_configurationGate)
+                topology = _currentTopology;
+            if (topology == null || targets == null)
+                return;
+
+            List<StickyWindowSession> sessions =
+                new List<StickyWindowSession>();
+            foreach (DockWindowTarget target in targets)
             {
                 StickyWindowSession session;
-                if (!TryGetSession(noteId, out session) ||
-                    session.PlacementHwnd == IntPtr.Zero)
-                {
-                    DisplayDiagnostics.Trace("DockZOrderRaiseRejected",
-                        "reason=missing-session source=" + command.NoteId +
-                        " missing=" + noteId +
-                        " epoch=" + command.InteractionEpoch);
-                    return StickyUiCommandResult.NotHandled();
-                }
-                sessions[noteId] = session;
+                if (target == null ||
+                    !TryGetSession(target.NoteId,
+                        out session))
+                    continue;
+                sessions.Add(session);
+                session.SetEventsSuppressed(true);
             }
-
-            // Recheck the two stale tokens immediately before the effect.
-            lock (_configurationGate)
+            try
             {
-                if (_currentTopology == null ||
-                    _currentTopology.Generation !=
-                        command.Topology.Generation ||
-                    _currentDockInteractionEpoch !=
-                        command.InteractionEpoch)
+                foreach (DockWindowTarget target in targets)
                 {
-                    DisplayDiagnostics.Trace("DockZOrderRaiseRejected",
-                        "reason=stale-before-effect source=" +
-                        command.NoteId +
-                        " epoch=" + command.InteractionEpoch);
-                    return StickyUiCommandResult.NotHandled();
+                    StickyWindowSession session;
+                    if (target == null ||
+                        !TryGetSession(target.NoteId,
+                            out session))
+                        continue;
+                    PhysicalRect rect =
+                        target.PhysicalBounds;
+                    session.SetBounds(
+                        new StickyUiBounds(
+                            rect.Left, rect.Top,
+                            rect.Width, rect.Height),
+                        topology);
                 }
             }
-
-            foreach (string noteId in raiseOrder)
+            finally
             {
-                if (!sessions[noteId]
-                    .RaiseForDockDragWithoutActivation())
-                {
-                    DisplayDiagnostics.Trace("DockZOrderRaiseRejected",
-                        "reason=native-failure source=" + command.NoteId +
-                        " member=" + noteId +
-                        " epoch=" + command.InteractionEpoch);
-                    return StickyUiCommandResult.NotHandled();
-                }
+                foreach (StickyWindowSession session
+                    in sessions)
+                    session.SetEventsSuppressed(false);
+                ApplySideTabZOrder();
             }
+        }
 
-            DisplayDiagnostics.Trace("DockZOrderRaised",
-                "source=" + command.NoteId +
-                " members=" + command.DockNoteIds.Length +
-                " generation=" + command.Topology.Generation +
-                " epoch=" + command.InteractionEpoch);
-            return StickyUiCommandResult.Handled();
+        private static bool ContainsGestureId(
+            IReadOnlyList<long> values, long gestureId)
+        {
+            if (values == null || gestureId <= 0)
+                return false;
+            foreach (long value in values)
+                if (value == gestureId) return true;
+            return false;
         }
 
         private void SessionEventRaised(StickyWindowSession session,
             StickyUiEvent value)
         {
             if (session == null || value == null) return;
+            if (TryHandleLocalDockEvent(session, value))
+            {
+                ApplySideTabZOrder();
+                return;
+            }
             if (value.Kind == StickyUiEventKind.Closed)
             {
                 StickyWindowSession current;
                 if (_sessions.TryGetValue(value.NoteId, out current) &&
                     Object.ReferenceEquals(current, session))
                     _sessions.Remove(value.NoteId);
+                RefreshReminderClock();
             }
+
+            if (value.Kind == StickyUiEventKind.BoundsChanged ||
+                value.Kind == StickyUiEventKind.HeaderDragStarted ||
+                value.Kind == StickyUiEventKind.HeaderDragMoved ||
+                value.Kind == StickyUiEventKind.HeaderDragCompleted ||
+                value.Kind == StickyUiEventKind.DockHorizontalResizing ||
+                value.Kind == StickyUiEventKind.DockDividerResizing ||
+                value.Kind == StickyUiEventKind.UserResizeCompleted ||
+                value.Kind == StickyUiEventKind.FirstRendered ||
+                value.Kind == StickyUiEventKind.Closed)
+                ApplySideTabZOrder();
+
             PostEvent(value);
         }
 
@@ -690,203 +1508,6 @@ namespace PennyPet
         // follower in one deferred native batch, then publish final detached
         // snapshots. Geometry events stay suppressed so the drag never yields
         // a stale coordinate chase on the following members.
-        private StickyUiCommandResult ApplyLatestDockPlan(
-            DockPlanMailbox mailbox)
-        {
-            DockPlacementPlan plan = mailbox == null
-                ? null : mailbox.TakeLatest();
-            if (plan == null || plan.WindowTargets.Count == 0)
-                return StickyUiCommandResult.Handled();
-            return ApplyDockPlan(plan);
-        }
-
-        private StickyUiCommandResult ApplyFinalDockPlan(
-            DockPlanMailbox mailbox, long planSequence)
-        {
-            DockPlacementPlan plan = mailbox == null
-                ? null : mailbox.TakeFinal(planSequence);
-            if (plan == null || plan.WindowTargets.Count == 0)
-                return StickyUiCommandResult.NotHandled();
-            try
-            {
-                return ApplyDockPlan(plan);
-            }
-            finally
-            {
-                mailbox.CompleteFinal(planSequence);
-            }
-        }
-
-        private StickyUiCommandResult ApplyDockPlan(DockPlacementPlan plan)
-        {
-            // Stale gate against the host-owned current topology generation:
-            // a plan built for generation G is never applied after Pet has
-            // published G+1.
-            DisplayTopologySnapshot topology;
-            lock (_configurationGate) topology = _currentTopology;
-            if (topology == null ||
-                plan.TopologyGeneration != topology.Generation)
-            {
-                DisplayDiagnostics.Trace("DockPlanStale",
-                    "plan=" + plan.PlanSequence + " planGeneration=" +
-                    plan.TopologyGeneration + " currentGeneration=" +
-                    (topology == null ? -1 : topology.Generation));
-                return StickyUiCommandResult.NotHandled();
-            }
-            long currentEpoch;
-            lock (_configurationGate) currentEpoch = _currentDockInteractionEpoch;
-            // Topology-reprojection plans predate the interaction-epoch
-            // protocol and intentionally carry epoch zero.  Only a live
-            // gesture plan is constrained by the current gesture token.
-            if (plan.InteractionEpoch != 0 &&
-                !DockExecutionRules.CanExecute(plan, topology.Generation,
-                    currentEpoch, _currentDockInput))
-            {
-                DisplayDiagnostics.Trace("DockPlanStale", "plan=" +
-                    plan.PlanSequence + " epoch=" + plan.InteractionEpoch +
-                    " currentEpoch=" + currentEpoch);
-                return StickyUiCommandResult.NotHandled();
-            }
-            DisplaySurfaceSnapshot targetSurface =
-                topology.FindByRuntimeSurfaceId(plan.TargetSurfaceId);
-            if (targetSurface == null || plan.TargetDpi <= 0)
-                return StickyUiCommandResult.NotHandled();
-
-            List<StickyWindowSession> expectedSessions =
-                new List<StickyWindowSession>();
-            List<IntPtr> handles = new List<IntPtr>();
-            List<PhysicalRect> rects = new List<PhysicalRect>();
-            HashSet<string> expectedIds = new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase);
-            foreach (DockWindowTarget target in plan.WindowTargets)
-            {
-                if (target == null || !expectedIds.Add(target.NoteId))
-                    return StickyUiCommandResult.NotHandled();
-                StickyWindowSession session;
-                if (!TryGetSession(target.NoteId, out session))
-                {
-                    DisplayDiagnostics.Trace("DockBatchApplied",
-                        "missing session note=" + target.NoteId +
-                        " plan=" + plan.PlanSequence);
-                    return StickyUiCommandResult.NotHandled();
-                }
-                IntPtr handle = session.PlacementHwnd;
-                if (handle == IntPtr.Zero)
-                {
-                    DisplayDiagnostics.Trace("DockBatchApplied",
-                        "zero HWND note=" + target.NoteId +
-                        " plan=" + plan.PlanSequence);
-                    return StickyUiCommandResult.NotHandled();
-                }
-                expectedSessions.Add(session);
-                if (String.Equals(target.NoteId, plan.SourceNoteId,
-                    StringComparison.OrdinalIgnoreCase)) continue;
-                handles.Add(handle);
-                rects.Add(target.PhysicalBounds);
-            }
-            if (expectedSessions.Count != plan.WindowTargets.Count)
-                return StickyUiCommandResult.NotHandled();
-
-            foreach (StickyWindowSession session in expectedSessions)
-                if (!session.AdoptTopology(topology))
-                    return StickyUiCommandResult.NotHandled();
-
-            List<StickyWindowSession> transitionSessions =
-                new List<StickyWindowSession>();
-            List<StickyWindowSession.DockDpiTransition> transitions =
-                new List<StickyWindowSession.DockDpiTransition>();
-            bool placementApplied = false;
-            foreach (StickyWindowSession session in expectedSessions)
-                session.SetEventsSuppressed(true);
-            try
-            {
-                for (int index = 0;
-                    index < plan.WindowTargets.Count; index++)
-                {
-                    DockWindowTarget target = plan.WindowTargets[index];
-                    if (String.Equals(target.NoteId, plan.SourceNoteId,
-                        StringComparison.OrdinalIgnoreCase)) continue;
-                    StickyWindowSession.DockDpiTransition transition;
-                    StickyWindowSession session = expectedSessions[index];
-                    if (!session.TryPrepareDockTargetDpi(targetSurface,
-                        plan.TargetDpi, out transition))
-                    {
-                        DisplayDiagnostics.Trace("DockBatchApplied",
-                            "target DPI bootstrap failed note=" +
-                            target.NoteId + " plan=" + plan.PlanSequence);
-                        return StickyUiCommandResult.NotHandled();
-                    }
-                    transitionSessions.Add(session);
-                    transitions.Add(transition);
-                }
-                if (handles.Count > 0)
-                {
-                    WindowsBatchPlacementStatus status =
-                        WindowsBatchWindowPlacementExecutor.Apply(
-                            handles, rects);
-                    if (status != WindowsBatchPlacementStatus.Applied)
-                    {
-                        DisplayDiagnostics.Trace("DockBatchApplied",
-                            "batch failed status=" + status +
-                            " plan=" + plan.PlanSequence +
-                            " followers=" + handles.Count);
-                        DisplayTopologySnapshot current;
-                        lock (_configurationGate) current = _currentTopology;
-                        if (current != null &&
-                            current.Generation != plan.TopologyGeneration)
-                            return StickyUiCommandResult.NotHandled();
-                        // Bounded per-window fallback, once, no loop.
-                        int followerIndex = 0;
-                        foreach (DockWindowTarget target in plan.WindowTargets)
-                        {
-                            if (String.Equals(target.NoteId,
-                                plan.SourceNoteId,
-                                StringComparison.OrdinalIgnoreCase)) continue;
-                            StickyWindowSession session;
-                            if (!TryGetSession(target.NoteId, out session))
-                                return StickyUiCommandResult.NotHandled();
-                            PhysicalRect rect = rects[followerIndex++];
-                            session.SetBounds(new StickyUiBounds(
-                                rect.Left, rect.Top, rect.Width, rect.Height));
-                        }
-                    }
-                }
-                List<DockBatchMemberResult> members =
-                    new List<DockBatchMemberResult>();
-                foreach (StickyWindowSession session in expectedSessions)
-                {
-                    DockBatchMemberResult member =
-                        session.CaptureDockMember(topology);
-                    if (member == null || member.Facts == null ||
-                        member.Facts.Dpi != plan.TargetDpi ||
-                        !String.Equals(member.Facts.RuntimeGdiName,
-                            targetSurface.RuntimeGdiName,
-                            StringComparison.OrdinalIgnoreCase))
-                        return StickyUiCommandResult.NotHandled();
-                    members.Add(member);
-                }
-                DisplayTopologySnapshot finalTopology;
-                lock (_configurationGate) finalTopology = _currentTopology;
-                if (finalTopology == null ||
-                    finalTopology.Generation != plan.TopologyGeneration)
-                    return StickyUiCommandResult.NotHandled();
-                placementApplied = true;
-                return StickyUiCommandResult.Handled(new DockBatchResult(
-                    plan.PlanSequence, plan.TopologyGeneration,
-                    plan.TargetSurfaceId, plan.TargetDpi, members,
-                    plan.InteractionEpoch));
-            }
-            finally
-            {
-                for (int index = transitions.Count - 1;
-                    index >= 0; index--)
-                    transitionSessions[index].CompleteDockTargetDpi(
-                        transitions[index], placementApplied);
-                foreach (StickyWindowSession session in expectedSessions)
-                    session.SetEventsSuppressed(false);
-            }
-        }
-
         // DRT-11 group topology transition. All members are hidden and
         // bootstrapped onto one surface before its real HWND DPI is known;
         // only then is one physical plan built and applied in one native
@@ -1035,67 +1656,8 @@ namespace PennyPet
         // One detached actual-facts capture for a dock-commit continuation.
         // Facts are captured with the host's current topology so the Pet can
         // only accept same-generation geometry.
-        private StickyUiCommandResult CaptureDockFactsForCommit(
-            StickyUiCommand command)
-        {
-            if (command == null || command.Topology == null ||
-                command.DockNoteIds == null || command.DockNoteIds.Length == 0 ||
-                command.InteractionEpoch <= 0)
-                return StickyUiCommandResult.NotHandled();
-            DisplayTopologySnapshot topology;
-            long currentEpoch;
-            lock (_configurationGate)
-            {
-                topology = _currentTopology;
-                currentEpoch = _currentDockInteractionEpoch;
-            }
-            if (topology == null || topology.Generation !=
-                command.Topology.Generation || currentEpoch !=
-                command.InteractionEpoch || !ReferenceEquals(command.Input, _currentDockInput))
-                return StickyUiCommandResult.NotHandled();
-            HashSet<string> expected = new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase);
-            List<DockBatchMemberResult> members =
-                new List<DockBatchMemberResult>();
-            foreach (string noteId in command.DockNoteIds)
-            {
-                if (String.IsNullOrWhiteSpace(noteId) || !expected.Add(noteId))
-                    return StickyUiCommandResult.NotHandled();
-                StickyWindowSession session;
-                if (!TryGetSession(noteId, out session))
-                    return StickyUiCommandResult.NotHandled();
-                DockBatchMemberResult member =
-                session.CaptureDockMember(topology);
-                if (member == null || member.Snapshot == null ||
-                    member.Facts == null || member.WindowSequence !=
-                    member.Facts.WindowSequence || member.Facts.TopologyGeneration !=
-                    command.Topology.Generation || !String.Equals(member.NoteId,
-                    noteId, StringComparison.OrdinalIgnoreCase) ||
-                    !String.Equals(member.Facts.WindowId, noteId,
-                    StringComparison.OrdinalIgnoreCase))
-                    return StickyUiCommandResult.NotHandled();
-                members.Add(member);
-            }
-            DisplayTopologySnapshot finalTopology;
-            long finalEpoch;
-            lock (_configurationGate)
-            {
-                finalTopology = _currentTopology;
-                finalEpoch = _currentDockInteractionEpoch;
-            }
-            if (finalTopology == null || finalTopology.Generation !=
-                command.Topology.Generation || finalEpoch !=
-                command.InteractionEpoch || members.Count !=
-                command.DockNoteIds.Length)
-                return StickyUiCommandResult.NotHandled();
-            return StickyUiCommandResult.Handled(new DockBatchResult(0,
-                command.Topology.Generation, String.Empty, 0, members,
-                command.InteractionEpoch));
-        }
-
         private void PostEvent(StickyUiEvent value)
         {
-            if (value.BeginsDockInput) _currentDockInput = value.Input;
             Action<StickyUiEvent> handler;
             SynchronizationContext context;
             lock (_configurationGate)
@@ -1124,11 +1686,33 @@ namespace PennyPet
 
         private void CloseSessionsForShutdown()
         {
+            if (_reminderClock != null) _reminderClock.Stop();
             foreach (StickyWindowSession session in
                 new List<StickyWindowSession>(_sessions.Values))
                 session.CloseForHostShutdown();
             _sessions.Clear();
+
+            ClearDockPreviewOnThread();
+            ClearSplitGuideOnThread();
+            if (_leftNoteTabs != null && !_leftNoteTabs.IsDisposed)
+                _leftNoteTabs.Close();
+            if (_rightNoteTabs != null && !_rightNoteTabs.IsDisposed)
+                _rightNoteTabs.Close();
+            _leftNoteTabs = null;
+            _rightNoteTabs = null;
+
+            if (_reminderClock != null) _reminderClock.Stop();
         }
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SetWindowPos(
+            IntPtr window,
+            IntPtr insertAfter,
+            int x,
+            int y,
+            int width,
+            int height,
+            uint flags);
 
         internal bool WaitForExit(int timeoutMilliseconds)
         {

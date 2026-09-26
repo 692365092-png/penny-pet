@@ -371,15 +371,6 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void PetStartupRules_ReleaseLoadingOnlyWhenReady()
-        {
-            Assert.IsFalse(PetStartupRules.CanReleaseStartupLoading(false, false));
-            Assert.IsFalse(PetStartupRules.CanReleaseStartupLoading(true, false));
-            Assert.IsFalse(PetStartupRules.CanReleaseStartupLoading(false, true));
-            Assert.IsTrue(PetStartupRules.CanReleaseStartupLoading(true, true));
-        }
-
-        [TestMethod]
         public void PetBirthdayRule_ResolvesExclusiveBirthdayKinds()
         {
             Assert.AreEqual(PetBirthdayKind.Penny,
@@ -891,13 +882,12 @@ namespace PennyPet.Tests
         {
             ReminderItem enabled = new ReminderItem(
                 DateTime.UtcNow.AddMinutes(2), "enabled", null, 10.5F, true);
-            Assert.IsTrue(PetReminderCoordinator.IsPreAlertWindow(
+            Assert.IsTrue(ReminderRules.IsPreAlertWindow(
                 TimeSpan.FromSeconds(20)));
-            Assert.IsFalse(PetReminderCoordinator.IsPreAlertWindow(
+            Assert.IsFalse(ReminderRules.IsPreAlertWindow(
                 TimeSpan.FromSeconds(21)));
-            Assert.IsTrue(PetReminderCoordinator.ShouldShowPreAlert(enabled,
+            Assert.IsTrue(ReminderRules.ShouldShowPreAlert(enabled,
                 TimeSpan.FromSeconds(5)));
-            Assert.IsFalse(PetReminderCoordinator.ShouldRunReminderClock(true));
         }
 
         [TestMethod]
@@ -1632,51 +1622,6 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void AnimationController_ResolvesStatePriorityWithoutAWindow()
-        {
-            PetAnimationController controller = new PetAnimationController();
-            Func<int, bool> allRowsLoaded = delegate { return true; };
-
-            Assert.AreEqual(PetAnimationController.WavingRow,
-                controller.ChooseRow(true, true, true, false, allRowsLoaded));
-            Assert.AreEqual(PetAnimationController.FailedRow,
-                controller.ChooseRow(false, true, true, false, allRowsLoaded));
-
-            controller.TypingSession = true;
-            controller.TypingRow = PetAnimationController.ThinkingRow;
-            Assert.AreEqual(PetAnimationController.ThinkingRow,
-                controller.ChooseRow(false, false, true, false, allRowsLoaded));
-
-            Assert.IsTrue(controller.TryStartOrdinaryPoke(
-                PetAnimationController.HoverRow));
-            Assert.IsFalse(controller.TryStartOrdinaryPoke(
-                PetAnimationController.WaitingRow));
-            Assert.AreEqual(PetAnimationController.HoverRow,
-                controller.ChooseRow(false, false, true, false, allRowsLoaded));
-            Assert.IsTrue(controller.TryStartEasterEgg(
-                PetAnimationController.FailedRow));
-            Assert.AreEqual(PetInteractionAnimationKind.EasterEgg,
-                controller.InteractionAnimationKind);
-            Assert.AreEqual(PetAnimationController.FailedRow,
-                controller.ChooseRow(false, false, true, false, allRowsLoaded));
-
-            controller.ReminderAttentionActive = true;
-            Assert.AreEqual(PetAnimationController.NotificationRow,
-                controller.ChooseRow(false, true, true, false, allRowsLoaded));
-            controller.CancelInteractionAnimation();
-            Assert.IsFalse(controller.TryStartOrdinaryPoke(
-                PetAnimationController.HoverRow));
-            controller.ReminderAttentionActive = false;
-            Assert.IsTrue(controller.TryStartOrdinaryPoke(
-                PetAnimationController.HoverRow));
-            controller.CompleteInteractionAnimation();
-            Assert.IsTrue(controller.TryStartOrdinaryPoke(
-                PetAnimationController.WaitingRow));
-            Assert.IsFalse(PetAnimationController.MovementStartsDrag(4, 4));
-            Assert.IsTrue(PetAnimationController.MovementStartsDrag(6, 0));
-        }
-
-        [TestMethod]
         public void PokeBurstTracker_TriggersOnlyAtFiftyUntilAPause()
         {
             DateTime start = new DateTime(2035, 1, 1, 0, 0, 0,
@@ -1696,25 +1641,6 @@ namespace PennyPet.Tests
             Assert.IsFalse(reset.RegisterPoke(start.AddMilliseconds(
                 (PetPokeBurstTracker.TargetCount - 2) * 100 +
                 PetPokeBurstTracker.MaxGapMilliseconds + 1)));
-        }
-
-        [TestMethod]
-        public void ArtPreloadReservations_RetryOnlyAfterBackoff()
-        {
-            ArtPreloadReservations reservations = new ArtPreloadReservations();
-            DateTime now = new DateTime(2030, 1, 1, 0, 0, 0,
-                DateTimeKind.Utc);
-
-            Assert.IsTrue(reservations.TryReserve(4, false, now));
-            Assert.IsFalse(reservations.TryReserve(4, false, now));
-            reservations.Complete(4, false, now);
-            Assert.IsFalse(reservations.TryReserve(4, false,
-                now.AddMilliseconds(999)));
-            Assert.IsTrue(reservations.TryReserve(4, false,
-                now.AddSeconds(1)));
-            reservations.Complete(4, true, now.AddSeconds(1));
-            Assert.IsFalse(reservations.TryReserve(4, true,
-                now.AddSeconds(2)));
         }
 
         [TestMethod]

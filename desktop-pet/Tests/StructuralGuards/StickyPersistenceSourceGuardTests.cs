@@ -79,9 +79,10 @@ namespace PennyPet.Tests
                 persistence.Contains("ImportPlansMatch") &&
                 persistence.Contains("CommitImportedMerge"),
                 "Import must read, plan, revalidate, then use the existing commit owner.");
-            Assert.IsTrue(coordinator.Contains("PrepareImport = _pet.PrepareStickyNotesImport") &&
-                coordinator.Contains("ConfirmImport = _pet.CommitStickyNotesImport") &&
-                coordinator.Contains("FullRestore = _pet.RestoreStickyNotesBackup") &&
+            string presentation = ReadSource("PetStickyPresentation.cs");
+            Assert.IsTrue(presentation.Contains("commands.PrepareImport = PrepareStickyNotesImport") &&
+                presentation.Contains("commands.ConfirmImport = CommitStickyNotesImport") &&
+                presentation.Contains("commands.FullRestore = RestoreStickyNotesBackup") &&
                 manager.Contains("高级：完整恢复…"),
                 "The manager must receive typed prepare/confirm commands from PetForm.");
         }
@@ -116,5 +117,57 @@ namespace PennyPet.Tests
                 coordinator.Contains("StickyPlacementMath.FromSpawn("),
                 "The cascade and beside-pet spawn paths must be retired.");
         }
+
+        [TestMethod]
+        public void R17_PersistenceRetryOwnership_IsOutsidePetForm()
+        {
+            string form = ReadSource("PetForm.cs");
+            string composition = ReadSource("PetRuntimeComposition.cs");
+            string coordinator = ReadSource(
+                "Features/StickyNotes/PetPersistenceCoordinator.cs");
+            string runtime = ReadSource(
+                "Infrastructure/Persistence/PetPersistenceRuntime.cs");
+
+            Assert.IsTrue(composition.Contains("new PetPersistenceRuntime(") &&
+                composition.Contains(
+                    "_persistence.Notice += PersistenceNoticeReceived"),
+                "Runtime composition should create one application persistence runtime after Sticky publication.");
+            Assert.IsFalse(form.Contains("_persistenceRetryTimer") ||
+                form.Contains("RetryUnsavedPersistence") ||
+                form.Contains("SaveFailed += PersistenceSaveFailed"),
+                "PetForm must not poll writer state or subscribe to raw save failures.");
+            Assert.IsTrue(coordinator.Contains("PersistenceNoticeReceived") &&
+                !coordinator.Contains("RetryUnsavedPersistence") &&
+                !coordinator.Contains("_lastPersistenceWarningUtc"),
+                "Pet presentation should consume only high-level persistence notices.");
+            Assert.IsTrue(runtime.Contains("HasPendingSaves") &&
+                runtime.Contains("RequestAutosave()") &&
+                runtime.Contains("_retryArmed") &&
+                runtime.Contains("PersistenceNoticeKind.Recovered"),
+                "The persistence runtime must own single retry scheduling and recovery state.");
+        }
+
+
+        [TestMethod]
+        public void R18_StartupRestoreBudget_IsOwnedByStickySta()
+        {
+            string startup = ReadSource("PetStartupCoordinator.cs");
+            string workspace = ReadSource(
+                "Features/StickyNotes/StickyWorkspace.cs");
+            string thread = ReadSource("StickyUiThreadHost.cs");
+
+            Assert.IsFalse(startup.Contains("Stopwatch") ||
+                startup.Contains("ElapsedMilliseconds < 6"),
+                "Pet STA must not budget work that executes on another STA.");
+            Assert.IsTrue(startup.Contains("QueueStartupStickyRestore(note)") &&
+                workspace.Contains("Host.PostStartupRestore(command"),
+                "Startup restore must use the dedicated budgeted Sticky transport.");
+            Assert.IsTrue(thread.Contains("StartupRestoreBudgetMilliseconds = 6") &&
+                thread.Contains("Stopwatch budget = Stopwatch.StartNew()") &&
+                thread.Contains("DispatcherPriority.Background") &&
+                thread.Contains("PumpStartupRestore"),
+                "The actual Sticky STA must own and yield the 6 ms restore budget.");
+        }
+
     }
 }

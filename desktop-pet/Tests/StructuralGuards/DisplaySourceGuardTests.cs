@@ -10,30 +10,44 @@ namespace PennyPet.Tests
         [TestMethod]
         public void SideTabs_KeepTopMostAndOnlyRebuildForSplitChanges()
         {
-            string source = SourceGuardText.ReadStickyWorkflowSource();
-            string zOrder = Between(source, "private void ApplyNoteTabZOrder",
-                "internal void PositionNoteTabs");
-            string position = Between(source, "internal void PositionNoteTabs",
+            string workspace = ReadSource(
+                "Features/StickyNotes/StickyWorkspace.cs");
+            string host = ReadSource("StickyUiHost.cs");
+            string zOrder = Between(host,
+                "private void ApplySideTabZOrder",
+                "private void ApplySideTabCoverage");
+            string position = Between(workspace,
+                "internal void PositionNoteTabs",
                 "internal void ShowStickyNotesManager");
+            string apply = Between(host,
+                "private void ApplySideTabsProjection",
+                "private void EnsureSideTabs");
             string tabs = ReadSource(
                 "Features/StickyNotes/StickyNoteTabs.cs");
             string form = ReadSource("PetForm.cs");
 
-            Assert.IsTrue(zOrder.Contains(".TopMost =") &&
-                zOrder.Contains("BringToFront()") &&
-                !zOrder.Contains("RaiseVisibleNotesAboveTabs") &&
-                !zOrder.Contains("_noteWindows") &&
-                !zOrder.Contains("_notes.GetAll"),
-                "Side-tab chrome must own its TopMost policy without legacy Window routing.");
+            Assert.IsTrue(zOrder.Contains(
+                    "CaptureVisibleFactsForChrome()") &&
+                !zOrder.Contains("CurrentResult()") &&
+                !zOrder.Contains("CaptureSnapshot()"),
+                "Live overlap must use only Sticky-local HWND facts.");
+            Assert.IsTrue(host.Contains("tabs.TopMost =") &&
+                host.Contains("tabs.BringToFront()") &&
+                !host.Contains("RaiseVisibleNotesAboveTabs") &&
+                !host.Contains("_noteWindows"),
+                "Sticky-owned SideTab chrome must preserve the TopMost policy without legacy Window routing.");
             Assert.IsTrue(tabs.Contains("ShowWithoutActivation") &&
                 tabs.Contains("WS_EX_NOACTIVATE"),
                 "Stable TopMost tabs must remain non-activating.");
-            Assert.IsTrue(position.Contains("CalculateEdgeAwareLeftCount") &&
-                position.Contains("_noteTabsSignature = String.Empty") &&
-                position.Contains("RefreshNoteTabs();") &&
-                position.Contains("ShowNear(petBounds, work)") &&
-                position.Contains("petFacts.PhysicalBounds"),
-                "Positioning must rebuild only an invalid split and otherwise reposition.");
+            Assert.IsTrue(position.Contains(
+                    "Host.UpdateSideTabs(new StickySideTabsProjection(") &&
+                !position.Contains("RefreshNoteTabs();") &&
+                !position.Contains("Notes.GetHiddenInTabOrder"),
+                "Pet movement may publish geometry but must not rebuild SideTab content.");
+            Assert.IsTrue(apply.Contains("CalculateEdgeAwareLeftCount") &&
+                apply.Contains("notes.GetRange") &&
+                apply.Contains("ShowNear("),
+                "Sticky STA must own split selection and physical SideTab placement.");
             Assert.IsTrue(form.Contains("WmSettingChange") &&
                 form.Contains("WmDisplayChange") &&
                 form.Contains("WmDeviceChange") &&
@@ -160,7 +174,7 @@ namespace PennyPet.Tests
                     "Dictionary<string, NotePlacementState> _states") &&
                 runtime.Contains("internal bool TryUpdateEffective("),
                 "Effective WindowFacts must live in runtime memory.");
-            Assert.IsFalse(runtime.Contains("StickyNoteRepository") ||
+            Assert.IsFalse(runtime.Contains("StickyFeature") ||
                 runtime.Contains("SaveAsync") ||
                 runtime.Contains("SetWindowPos") ||
                 runtime.Contains("WindowInteropHelper") ||
@@ -176,8 +190,8 @@ namespace PennyPet.Tests
             Assert.IsTrue(coordinator.Contains(
                     "DisplayTopologySnapshot topology = CurrentTopologySnapshot();") &&
                 coordinator.Contains("CapturePetWindowFacts(topology)") &&
-                ReadSource("PetDisplayRuntime.cs").Contains("Handle, PetWindowFactsId,") &&
-                ReadSource("PetDisplayRuntime.cs").Contains("generation, sequence, topology"),
+                ReadSource("PetDisplayRuntime.cs").Contains("Handle, \"pet\",") &&
+                ReadSource("PetDisplayRuntime.cs").Contains("topology.Generation, sequence, topology"),
                 "Pet facts must be captured against the same attempt topology.");
             string fallback = Between(coordinator,
                 "private void ApplyLegacySpawnFallback",

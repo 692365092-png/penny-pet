@@ -3,6 +3,17 @@ using System.Collections.Generic;
 
 namespace PennyPet
 {
+    internal sealed class DockPhysicalRecovery
+    {
+        internal DockPhysicalRecovery(string surfaceId, IList<DockWindowTarget> targets)
+        {
+            TargetSurfaceId = surfaceId;
+            Targets = new List<DockWindowTarget>(targets).AsReadOnly();
+        }
+        internal string TargetSurfaceId { get; private set; }
+        internal IReadOnlyList<DockWindowTarget> Targets { get; private set; }
+    }
+
     // Legacy fields are read when entering the window lifecycle, never as
     // live layout input. Selecting recovery does not commit user preference.
     internal static class StickyPlacementRecovery
@@ -10,8 +21,8 @@ namespace PennyPet
         // Compatibility conversion only: v7 physical sizes keep their units
         // and the existing root-width / independent-height clamps. Both old
         // and current formats use the same host transaction after selection.
-        internal static DockGroupReprojectPlan SelectDockPhysical(
-            IList<StickyNoteData> ordered, DisplayTopologySnapshot topology, long planSequence)
+        internal static DockPhysicalRecovery SelectDockPhysical(
+            IList<StickyNoteData> ordered, DisplayTopologySnapshot topology)
         {
             StickyNoteData root = ordered[0];
             int width = Math.Max(280, Math.Min(900, root.Width));
@@ -32,8 +43,7 @@ namespace PennyPet
                 targets.Add(new DockWindowTarget(ordered[index].Id,
                     new PhysicalRect(bounds.Left, bounds.Top, bounds.Width, bounds.Height)));
             }
-            return DockGroupReprojectPlan.RecoverPhysical(topology.Generation, planSequence,
-                target.RuntimeSurfaceId, targets);
+            return new DockPhysicalRecovery(target.RuntimeSurfaceId, targets);
         }
 
         internal static WindowPlacementPlan SelectForShow(StickyNoteData note,

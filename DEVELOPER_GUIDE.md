@@ -30,12 +30,10 @@ dotnet test '.\desktop-pet\PennyPet.Tests.csproj' --configuration Release
 ## 2. 程序入口
 
 - `desktop-pet/Program.cs`：兼容单 EXE 的命令路由与正常启动入口。
-- `desktop-pet/PennyApplicationHost.cs`：单实例、loading 和异常兜底。
+- `desktop-pet/PennyApplicationHost.cs`：单实例、Shell-first 后台 runtime 组装和异常兜底。
 - `desktop-pet/PetForm.cs`：Windows 桌宠窗口构造、关闭和位置生命周期。
-- `PetStartupCoordinator.cs`、`PetAnimationRuntime.cs`、`PetBubbleCoordinator.cs`、`PetMenuActions.cs`：`PetForm` 的职责 partial。
+- `PetStartupCoordinator.cs`、`PetRuntimeComposition.cs`、`PetAnimationRuntime.cs`、`PetBubbleCoordinator.cs`、`PetMenuActions.cs`：`PetForm` 的职责 partial；其中 runtime composition 只在 Pet STA 发布已准备好的 Sticky/持久化/提醒 runtime。
 - `desktop-pet/PetContextMenu.cs`：右键菜单构造与命令绑定。
-- `desktop-pet/StartupLoadingForm.cs`：直接读取 embedded bootstrap image，并按 Pet canvas、scale 和保存位置显示；不依赖 runtime art 或 Sticky。
-- `desktop-pet/StartupLoadingThreadHost.cs`：临时 WinForms STA、独立 loading message loop、异步置前/关闭和线程退出。
 
 这些 partial 文件是代码定位边界，仍共享同一个窗口状态。不要把它们包装成大量单实现接口或仅为缩短文件继续切碎。
 
@@ -58,8 +56,8 @@ dotnet test '.\desktop-pet\PennyPet.Tests.csproj' --configuration Release
 
 - `Core/StickyNotes/StickyNoteModels.cs`
   - 便利贴、三态 Todo、Schedule 和 Dock 持久化模型。
-  - `StickyDockGroups`：组顺序、父子关系、规范化和快照恢复。
-- `Core/StickyNotes/StickyNoteCodec.cs`：v1-v9 数据行编解码、内容限制和旧格式兼容。
+  - `StickyDockGroups`：当前组成员和顺序；`StickyDockFileRelations`：文件关系规范化与旧格式父子关系迁移。
+- `Core/StickyNotes/StickyNoteCodec.cs`：v1-v11 数据行编解码、内容限制和旧格式兼容。
 - `Core/StickyNotes/StickyImportBackupValidator.cs` / `StickyImportMergePlanner.cs`：完整校验、稳定 NoteId 合并、幂等 conflict copy 和 partial Dock 保守降级；都是无文件副作用的纯规则。
 - `Core/StickyNotes/StickyDockOperations.cs`：组插入、抽离、隐藏槽位、快照、统一置顶数据和长按拆分判定。
 - `Core/StickyNotes/SideTabSnapshot.cs`：Side Tabs 直接消费的 detached 轻量显示投影；不是 canonical 或 persistence owner。
@@ -74,7 +72,7 @@ dotnet test '.\desktop-pet\PennyPet.Tests.csproj' --configuration Release
 - `Features/StickyNotes/StickyTodoCoordinator.cs` / `StickyScheduleCoordinator.cs`：待办和日程 UI。
 - `Features/StickyNotes/StickyReminderCoordinator.cs` / `StickyAppearanceCoordinator.cs`：提醒条和外观 UI。
 - `Features/StickyNotes/StickyNativeWindowBehavior.cs`：Win32 消息、拖拽、resize 和最大化拦截。
-- `Features/StickyNotes/PetStickyDockCoordinator.cs`：Windows 屏幕/DPI facts、canonical Dock 协调、原生几何转换和 typed hosted effects。
+- `Features/StickyNotes/StickyDockController.cs`：Windows 屏幕/DPI facts、canonical Dock 协调、原生几何转换和 typed hosted effects。
 - `Features/StickyNotes/StickyNoteTabs.cs`：侧边页签和隐藏/恢复 UI。
 
 `StickyDockGeometry` 持有平台无关几何，Windows Coordinator 负责把 `Point`、`Size`、`Rectangle` 转成 `DockPoint`、`DockSize`、`DockRect`，调用 Core 后再移动或缩放窗口。`DockCoordinateSafetyLimit = 30000` 是 Win32 限制，由 Windows 层传入，不能下沉成跨平台业务常量。
@@ -87,7 +85,7 @@ Dock 修改必须同时检查：组关系、组内顺序、持久化快照、统
 - Ordinary、Todo、Schedule 是同一 Sticky window system 的 content modes；Dock 不得按 `IsTodoList` 或 `IsSchedule` 拆 group、重排或选择不同规则。
 - `StickyUiHost` 是唯一 production executor。新建、startup restore、persisted mixed Dock、SideTab 展开和窗口 effects 都使用 `StickyUiCommand`；禁止重新引入 Pet-owned `Dictionary<string, StickyNoteWindow>` 或 silent legacy fallback。
 - “展开全部并平铺到此屏幕”会展开全部 note、清除 canonical Dock relation，再通过 hosted effect path 平铺；不要把它退化成只移动可见窗口。
-- `StickyNoteCodec` 的 v1-v9 compatibility readers 是用户数据兼容层，不属于已删除的 legacy runtime executor，必须保留。
+- `StickyNoteCodec` 的 v1-v11 compatibility readers 是用户数据兼容层，不属于已删除的 legacy runtime executor，必须保留。
 - Side Tabs 保持 no-activate chrome；左右 strip 按几何 overlap 独立决定 TopMost，被可见 Sticky 覆盖时该 strip 临时降层。monitor、working area 或 Pet scale 改变时会重新验证 desired left/right split；split 不变只 reposition，改变才 rebuild controls。
 - Side Tabs 直接消费 `SideTabSnapshot`；业务 note identity 使用稳定 `NoteId`，拖拽 source identity 才使用平台 UI object reference。OLE nested-loop、透明 canvas、BringToFront timing 等 workaround 是 Windows-only，不应复制成 macOS UI 框架。
 - Manager 排序与搜索只改变表格视图。Import & Merge 必须先完整 read/parse/validate/plan，在同一个 Manager 预览；取消或关闭不得修改 repository，确认时重新规划后才允许原子 commit。Preview 是 Form 生命周期内的有界运行状态，不写磁盘、不留历史。
@@ -109,11 +107,12 @@ Dock 修改必须同时检查：组关系、组内顺序、持久化快照、统
 - `Core/Settings/PetSettingsData.cs` / `PetSettingsCodec.cs`：平台中性设置、`StartAtLogin` 语义和旧 INI 兼容。
 - `PetSettings.cs`：Windows 数据目录、备份、原子保存、dirty 和失败通知。
 - `StartupRegistration.cs`：Windows Registry 开机启动。
-- `PetStartupCoordinator.cs`：Windows Timer、窗口创建、首帧等待、注册表和事件协调。
-- `StartupLoadingForm.cs`：bootstrap-only embedded visual；不读取 `PetArtPackage`、repository 或 Sticky runtime。
-- `StartupLoadingThreadHost.cs`：短生命周期 loading STA。主线程确认 loading 已呈现后继续同步构造 `PetForm`；`StartupReady` 时异步关闭 loading，fatal/exit path 也会收拢并等待临时线程退出。
+- `PennyApplicationHost.cs`：Pet 首帧可交互后才在 thread pool 准备 Sticky 文件，并把 publication marshal 回 Pet STA。
+- `PetRuntimeComposition.cs`：创建 StickyFeature、持久化 runtime、StickyWorkspace 与 ReminderRuntime；关闭中的 shell 拒绝晚到 publication。
+- `PetStartupCoordinator.cs`：Windows Timer、键盘/Registry 延后阶段、等待 Sticky runtime、启动恢复和 `StartupBackgroundReady`。
+- `StartupRegistration.cs`：Windows Registry 开机启动。
 
-现有 `_startupUiReady + _startupArtReady`、`_startupDisplaySuppressed` 和 warm-row preload 语义保持在 Windows 启动流程。当前 Core 只有 `PetStartupRules` 的 readiness 纯门禁，不得将其描述为完整跨平台 startup framework。
+`ShellReady` 与后台恢复完成是两个边界：Pet 可交互不等待全部便利贴首帧；Sticky 窗口创建继续由 Sticky STA 的时间预算控制。旧 `StartupLoadingForm` / `StartupLoadingThreadHost` / embedded loading artwork 已删除，不得重新用第三个 UI 线程掩盖同步重构造。
 
 ### Daily Briefing 内容与句末
 

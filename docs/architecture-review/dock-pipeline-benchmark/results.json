@@ -1,0 +1,239 @@
+{
+  "baseline": "b0efb1375e3ab545197ec709c1057cd8fe4c2836",
+  "runtime": ".NET 8.0.31",
+  "os": "Ubuntu 24.04.3 LTS",
+  "iterations": 10000,
+  "warmups": 2,
+  "samples": 5,
+  "results": [
+    {
+      "name": "capture-before-10",
+      "medianMilliseconds": 26.7659,
+      "medianAllocatedBytes": 19360000,
+      "milliseconds": [
+        27.7365,
+        28.6011,
+        26.12,
+        26.7659,
+        26.6481
+      ],
+      "allocatedBytes": [
+        19360000,
+        19360000,
+        19360000,
+        19360000,
+        19360000
+      ]
+    },
+    {
+      "name": "capture-after-10",
+      "medianMilliseconds": 21.7684,
+      "medianAllocatedBytes": 15120000,
+      "milliseconds": [
+        20.7621,
+        22.0383,
+        21.9984,
+        21.7684,
+        18.4622
+      ],
+      "allocatedBytes": [
+        15120000,
+        15120000,
+        15120000,
+        15120000,
+        15120000
+      ]
+    },
+    {
+      "name": "group-before-10",
+      "medianMilliseconds": 13.6448,
+      "medianAllocatedBytes": 5040000,
+      "milliseconds": [
+        13.0107,
+        12.6431,
+        13.8167,
+        13.6448,
+        13.97
+      ],
+      "allocatedBytes": [
+        5040000,
+        5040000,
+        5040000,
+        5040000,
+        5040000
+      ]
+    },
+    {
+      "name": "group-after-10",
+      "medianMilliseconds": 10.3407,
+      "medianAllocatedBytes": 3680000,
+      "milliseconds": [
+        10.3407,
+        8.8082,
+        8.4151,
+        13.1016,
+        13.1744
+      ],
+      "allocatedBytes": [
+        3680000,
+        3680000,
+        3680000,
+        3680000,
+        3680000
+      ]
+    },
+    {
+      "name": "capture-before-50",
+      "medianMilliseconds": 88.7995,
+      "medianAllocatedBytes": 86240000,
+      "milliseconds": [
+        90.2428,
+        114.7236,
+        83.3968,
+        84.0638,
+        88.7995
+      ],
+      "allocatedBytes": [
+        86240000,
+        86240000,
+        86240000,
+        86240000,
+        86240000
+      ]
+    },
+    {
+      "name": "capture-after-50",
+      "medianMilliseconds": 26.0545,
+      "medianAllocatedBytes": 70640000,
+      "milliseconds": [
+        28.3961,
+        24.572,
+        33.8126,
+        25.9349,
+        26.0545
+      ],
+      "allocatedBytes": [
+        70640000,
+        70640000,
+        70640000,
+        70640000,
+        70640000
+      ]
+    },
+    {
+      "name": "group-before-50",
+      "medianMilliseconds": 15.6875,
+      "medianAllocatedBytes": 8240000,
+      "milliseconds": [
+        15.6875,
+        15.3897,
+        15.8056,
+        19.5023,
+        15.4661
+      ],
+      "allocatedBytes": [
+        8240000,
+        8240000,
+        8240000,
+        8240000,
+        8240000
+      ]
+    },
+    {
+      "name": "group-after-50",
+      "medianMilliseconds": 5.6498,
+      "medianAllocatedBytes": 3680000,
+      "milliseconds": [
+        5.6498,
+        5.3793,
+        5.093,
+        8.1533,
+        9.1438
+      ],
+      "allocatedBytes": [
+        3680000,
+        3680000,
+        3680000,
+        3680000,
+        3680000
+      ]
+    },
+    {
+      "name": "capture-before-100",
+      "medianMilliseconds": 300.4302,
+      "medianAllocatedBytes": 180400000,
+      "milliseconds": [
+        325.4264,
+        300.4302,
+        287.4591,
+        300.2789,
+        312.3794
+      ],
+      "allocatedBytes": [
+        180400000,
+        180400000,
+        180400000,
+        180400000,
+        180400000
+      ]
+    },
+    {
+      "name": "capture-after-100",
+      "medianMilliseconds": 50.4278,
+      "medianAllocatedBytes": 150320000,
+      "milliseconds": [
+        46.2656,
+        50.4278,
+        48.1158,
+        52.7112,
+        50.501
+      ],
+      "allocatedBytes": [
+        150320000,
+        150320000,
+        150320000,
+        150320000,
+        150320000
+      ]
+    },
+    {
+      "name": "group-before-100",
+      "medianMilliseconds": 33.4872,
+      "medianAllocatedBytes": 12240000,
+      "milliseconds": [
+        32.0117,
+        33.4872,
+        35.9477,
+        33.2349,
+        33.4889
+      ],
+      "allocatedBytes": [
+        12240000,
+        12240000,
+        12240000,
+        12240000,
+        12240000
+      ]
+    },
+    {
+      "name": "group-after-100",
+      "medianMilliseconds": 10.7296,
+      "medianAllocatedBytes": 3680000,
+      "milliseconds": [
+        11.4448,
+        10.2521,
+        10.4922,
+        10.7296,
+        12.6787
+      ],
+      "allocatedBytes": [
+        3680000,
+        3680000,
+        3680000,
+        3680000,
+        3680000
+      ]
+    }
+  ],
+  "scope": "Managed hot-path microbenchmark; excludes dispatcher latency, native placement and rendering. Not an FPS measurement."
+}

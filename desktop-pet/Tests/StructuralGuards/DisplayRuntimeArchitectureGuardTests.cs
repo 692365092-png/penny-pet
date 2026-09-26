@@ -10,7 +10,8 @@ namespace PennyPet.Tests
         [TestMethod]
         public void PetDisplayRuntime_DoesNotUseLegacyScreenAuthority()
         {
-            string source = ReadSource("PetDisplayRuntime.cs");
+            string source = ReadSource("PetDisplayRuntime.cs") +
+                ReadSource("Features/Display/PetDisplayRuntime.cs");
             AssertNotContains(source, "Screen.PrimaryScreen");
             AssertNotContains(source, "Screen.AllScreens");
             AssertNotContains(source, "GetDpiForMonitor(");
@@ -53,7 +54,7 @@ namespace PennyPet.Tests
         public void DockExecutionRules_KeepGenerationAndEpochGate()
         {
             string method = SliceMethod(
-                ReadSource("Core/Display/DockInteractionState.cs"),
+                ReadSource("Features/StickyNotes/DockInteractionState.cs"),
                 "internal static bool CanExecute(");
 
             StringAssert.Contains(method,
@@ -68,6 +69,7 @@ namespace PennyPet.Tests
             string[] files =
             {
                 "PetDisplayRuntime.cs",
+                "Features/Display/PetDisplayRuntime.cs",
                 "Features/StickyNotes/StickyDockController.cs",
                 "Features/StickyNotes/StickyWorkspace.cs",
                 "StickyUiHost.cs",
@@ -80,6 +82,17 @@ namespace PennyPet.Tests
                 AssertNotContains(source, ".Wait(");
                 AssertNotContains(source, "GetAwaiter().GetResult(");
             }
+        }
+
+        [TestMethod]
+        public void PetDisplayState_IsIndependentOfNativeWindowAndTopologyProvider()
+        {
+            string source = ReadSource("Features/Display/PetDisplayRuntime.cs");
+            AssertNotContains(source, "partial class PetForm");
+            AssertNotContains(source, "System.Windows");
+            AssertNotContains(source, "NativeDisplayConfig");
+            AssertNotContains(source, "WindowsDisplayTopologyProvider");
+            AssertNotContains(ReadSource("PetForm.cs"), "_petTemporaryRehome");
         }
 
         private static void AssertNotContains(string source, string value)

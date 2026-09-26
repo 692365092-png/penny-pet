@@ -8,19 +8,6 @@ namespace PennyPet.Tests
     public sealed partial class InputAnimationBoundaryTests
     {
         [TestMethod]
-        public void AnimationTick_DoesNotPauseForOwnNoteFocus()
-        {
-            string source = ReadSource("PetAnimationRuntime.cs");
-            string tick = Between(source, "private void AnimationTick",
-                "private int RuntimeFrameCount");
-
-            Assert.IsFalse(tick.Contains("HasFocusedOwnNoteTextInput()"),
-                "Animation must not pause merely because a note editor has focus.");
-            Assert.IsFalse(tick.Contains("ShouldPauseOwnNoteAnimation"),
-                "Animation must not pause for own-note IME composition.");
-        }
-
-        [TestMethod]
         public void AnimationRendering_DoesNotChangeWindowFocusOrActivation()
         {
             string runtime = ReadSource("PetAnimationRuntime.cs");
@@ -50,7 +37,7 @@ namespace PennyPet.Tests
         public void StickyPersistence_BarriersAreBoundedAndExitResolvesBothFailures()
         {
             string repository = ReadSource(
-                "Features/StickyNotes/StickyNoteRepository.cs");
+                "Features/StickyNotes/StickyFeature.cs");
             string writer = ReadSource("Infrastructure/Persistence/PersistenceWriter.cs");
             string wait = RawSource.SliceMethod(writer,
                 "internal PersistenceResult Flush(TimeSpan timeout)");
@@ -111,19 +98,19 @@ namespace PennyPet.Tests
             string form = ReadSource("PetForm.cs");
             string animation = ReadSource("PetAnimationRuntime.cs");
             string coordinator = ReadSource("PetSmallTalkCoordinator.cs");
-            string poke = Between(animation,
-                "private async void HandlePetPoked",
-                "internal void StartOrdinaryPokeAnimation");
+            string runtime = ReadSource("Features/Conversation/ConversationRuntime.cs");
+            string poke = ReadSource("Features/Interaction/InteractionRuntime.Conversation.cs");
 
             Assert.IsTrue(form.Contains(
-                    "private readonly PetSmallTalkCoordinator") &&
-                poke.Contains("StartOrdinaryPokeAnimation(nowUtc)") &&
+                    "private readonly ConversationRuntime") &&
+                poke.Contains("PickRandomManualAnimationRow(_random, Row)") &&
                 poke.Contains("IsOpeningEligible") &&
-                poke.Contains("StartNotificationPokeAnimation(nowUtc)") &&
+                poke.Contains("StartPoke(NotificationRow,") &&
                 poke.Contains(".HandlePetPokedAsync") &&
-                poke.Contains("if (dailyHandled)") &&
-                poke.Contains("_daypartCheckInCoordinator.HandlePetPoked") &&
-                poke.Contains("_smallTalkCoordinator.HandlePetPoked(nowUtc)") &&
+                runtime.Contains("_daily.HandlePetPokedAsync(now)") &&
+                runtime.Contains("_daypart.HandlePetPoked(now)") &&
+                runtime.Contains("_smallTalk.HandlePetPoked(now.UtcDateTime)") &&
+                !poke.Contains("PersistDailyLedger") &&
                 !poke.Contains(".Wait(") && !poke.Contains(".Result"),
                 "PetForm must preserve Easter, Daily, Daypart, SmallTalk, animation order.");
             Assert.IsFalse(form.Contains("SmallTalkPhrases") ||
@@ -281,10 +268,8 @@ namespace PennyPet.Tests
                 client.Contains("wind_gusts_10m") &&
                 !client.Contains("apikey"),
                 "Forecast request must keep the reviewed eight-variable shape.");
-            string poke = Between(animation,
-                "private async void HandlePetPoked",
-                "internal void StartOrdinaryPokeAnimation");
-            Assert.IsTrue(poke.IndexOf("StartNotificationPokeAnimation(nowUtc)",
+            string poke = ReadSource("Features/Interaction/InteractionRuntime.Conversation.cs");
+            Assert.IsTrue(poke.IndexOf("StartPoke(NotificationRow,",
                     StringComparison.Ordinal) <
                 poke.IndexOf(".HandlePetPokedAsync", StringComparison.Ordinal) &&
                 coordinator.Contains("await _weatherForecast") &&
@@ -304,7 +289,7 @@ namespace PennyPet.Tests
                 coordinator.Contains(
                     "DailyContentPreferencesSnapshot preferences = _preferences();") &&
                 !coordinator.Contains("private readonly Func<ZodiacSign>") &&
-                animation.Contains("private async Task HandlePetPokedAsync()") &&
+                animation.Contains("await _interaction.PokeAsync(") &&
                 animation.Contains(
                     "ApplicationDiagnostics.ReportNonFatal(\"pet-poke\", error)"),
                 "One immutable preference snapshot must span each async attempt and the UI boundary must observe failures.");
@@ -337,6 +322,7 @@ namespace PennyPet.Tests
             string settings = ReadSource("DailyContentSettingsForm.cs");
             string reminders = ReadSource("PetReminderWindowsCoordinator.cs");
             string sticky = SourceGuardText.ReadStickyWorkflowSource();
+            string stickyHost = ReadSource("StickyUiHost.cs");
             string bubble = ReadSource("PetBubbleCoordinator.cs");
             string keyboard = ReadSource(
                 "Features/KeyboardOverlay/PetKeyboardOverlayCoordinator.cs");
@@ -359,23 +345,30 @@ namespace PennyPet.Tests
                     "_windowLayers.ShowModal(this, dialog)") &&
                 reminders.Contains(
                     "_windowLayers.ShowModal(this, dialog)") &&
-                sticky.Contains(
-                    "_windowLayers.ShowModal(_pet, manager)") &&
+                ReadSource("PetStickyPresentation.cs").Contains(
+                    "_windowLayers.ShowModal(this, manager)") &&
                 !menu.Contains("ShowOwnedModalDialog") &&
                 !menu.Contains("_ownedModalUi"),
                 "Pet-owned Form dialogs, including nested weather settings, must use the shared layer boundary.");
             Assert.IsTrue(keyboard.Contains("_windowLayers.HasActiveModal") &&
                 keyboard.Contains("HasFocusedOwnNoteTextInput() ||") &&
-                keyboard.Contains("ShowKeyRepeatCount(this, displayText") &&
+                keyboard.Contains("ShowKeyRepeatCount(this, input.DisplayText") &&
                 keyboard.Contains("_keyOverlay.UpdatePosition(this)") &&
                 keyboard.Contains(
                     "_windowLayers.KeepTransientBelowModal(_keyOverlay)") &&
-                keyboard.Contains("_stickyWorkspace.ApplyWindowLayer()") && sticky.Contains(
-                    "_windowLayers.KeepTransientBelowModal(_leftNoteTabs)") &&
+                keyboard.Contains("_stickyWorkspace.ApplyWindowLayer()") &&
+                sticky.Contains("Host.SetModalZOrderFloor(") &&
+                ReadSource("PetStickyPresentation.cs").Contains(
+                    "_windowLayers.ModalZOrderFloorHandle") &&
+                stickyHost.Contains(
+                    "KeepTransientBelowModal(_leftNoteTabs)") &&
+                stickyHost.Contains(
+                    "KeepTransientBelowModal(_rightNoteTabs)") &&
+                stickyHost.Contains("SetWindowPos(transient.Handle, floor") &&
                 bubble.Contains("ApplyWindowLayer()") &&
                 bubble.Contains(
                     "_windowLayers.KeepTransientBelowModal(_bubble)") &&
-                keyboard.Contains("SensitiveInputDetector.IsSensitiveFocus") &&
+                ReadSource("PetForm.cs").Contains("SensitiveInputDetector.IsSensitiveFocus") &&
                 !keyboard.Contains("ModalAvoidanceBounds") &&
                 !overlay.Contains("avoidBounds"),
                 "Pet chrome must stay below modal windows without moving keyboard hints away from the Pet.");
@@ -394,17 +387,17 @@ namespace PennyPet.Tests
                 "private void PetMouseMove");
             string bubble = ReadSource("PetBubbleCoordinator.cs");
             string form = ReadSource("PetForm.cs");
-            string hover = ReadSource("PetHoverRuntime.cs");
+            string hover = ReadSource("Features/Interaction/InteractionRuntime.cs");
 
-            Assert.IsTrue(mouseDown.Contains(
-                    "_hoverSuppressedUntilStableLeave = true") &&
+            Assert.IsTrue(mouseDown.Contains("_interaction.BeginPointer(") &&
+                hover.Contains("HoverSuppressed = true") &&
                 mouseDown.Contains("HideHoverBubble()"),
                 "Mouse-down must end the ambient Hover session.");
             Assert.IsFalse(mouseDown.Contains(
                 "CloseCurrentBubbleWithoutRestoringHover"),
                 "Mouse-down must not close foreground user messages.");
             Assert.IsTrue(hover.Contains(
-                    "_hoverSuppressedUntilStableLeave = false") &&
+                    "HoverSuppressed = false") &&
                 hover.Contains("CommitStableLeave") &&
                 bubble.Contains(
                     "PetHoverStabilityRules.ShouldSuppressHover"),
@@ -449,7 +442,10 @@ namespace PennyPet.Tests
             Assert.IsTrue(exit.IndexOf("CaptureLocationForSave()", StringComparison.Ordinal) <
                 exit.IndexOf("FlushPersistenceBeforeExit()", StringComparison.Ordinal));
             Assert.IsTrue(exit.Contains("CancelPreparedStickyExit()"));
-            Assert.IsTrue(exit.Contains("_persistenceRetryTimer.Stop()"));
+            Assert.IsTrue(exit.Contains("_persistence.Dispose()"),
+                "A committed exit must stop the single persistence runtime before animation.");
+            Assert.IsFalse(exit.Contains("_persistenceRetryTimer"),
+                "Exit must not retain the retired Pet-owned retry timer.");
             string cancel = RawSource.SliceMethod(SourceGuardText.ReadStickyWorkflowSource(),
                 "internal void CancelPreparedStickyExit()");
             Assert.IsTrue(cancel.Contains("Hosted.CancelExit()") && cancel.Contains("ReloadAllHostedStickyRuntime()"));

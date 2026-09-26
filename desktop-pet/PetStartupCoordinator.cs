@@ -10,6 +10,7 @@ namespace PennyPet
         {
             StartInputs,
             ApplyStartupPreferences,
+            WaitForStickyRuntime,
             RestoreNotes
         }
 
@@ -18,7 +19,10 @@ namespace PennyPet
             if (_startupWorkTimer != null) return;
             _startupWorkPhase = StartupWorkPhase.StartInputs;
             _startupWorkTimer = new System.Windows.Forms.Timer();
-            _startupWorkTimer.Interval = 90;
+            // Run often enough to keep the shell responsive, but restore as
+            // many notes as fit in one small UI budget instead of imposing a
+            // fixed 90 ms delay per note.
+            _startupWorkTimer.Interval = 16;
             _startupWorkTimer.Tick += DeferredStartupTick;
             _startupWorkTimer.Start();
         }
@@ -62,13 +66,28 @@ namespace PennyPet
                             new InvalidOperationException(startupError));
                     }
                     _settings.SaveAsync();
-                    ReminderTick(null, EventArgs.Empty);
-                    _startupVisibleNotes = BuildStartupRestoreQueue();
                 }
                 catch (Exception error)
                 {
                     ApplicationDiagnostics.ReportNonFatal(
                         "deferred-secondary-startup", error);
+                }
+                _startupWorkPhase = StartupWorkPhase.WaitForStickyRuntime;
+                return;
+            }
+            if (_startupWorkPhase == StartupWorkPhase.WaitForStickyRuntime)
+            {
+                if (_notes == null || _stickyWorkspace == null ||
+                    _reminderRuntime == null) return;
+                try
+                {
+                    _reminderRuntime.Tick(DateTime.UtcNow);
+                    _startupVisibleNotes = BuildStartupRestoreQueue();
+                }
+                catch (Exception error)
+                {
+                    ApplicationDiagnostics.ReportNonFatal(
+                        "deferred-sticky-startup", error);
                     _startupVisibleNotes = new Queue<StickyNoteData>();
                 }
                 _startupWorkPhase = StartupWorkPhase.RestoreNotes;
@@ -77,10 +96,12 @@ namespace PennyPet
             if (_startupVisibleNotes != null &&
                 _startupVisibleNotes.Count > 0)
             {
+                // Pet STA only feeds immutable restore work. The Sticky STA owns
+                // the real 6 ms construction budget.
                 StickyNoteData note = _startupVisibleNotes.Dequeue();
                 try
                 {
-                    _stickyWorkspace.ShowHostedSticky(note, false, false);
+                    _stickyWorkspace.QueueStartupStickyRestore(note);
                 }
                 catch (Exception error)
                 {
@@ -105,20 +126,20 @@ namespace PennyPet
                 ApplicationDiagnostics.ReportNonFatal(
                     "deferred-startup-finalize", error);
             }
-            _startupUiReady = true;
-            TryRaiseStartupReady();
+            EventHandler backgroundReady = StartupBackgroundReady;
+            if (backgroundReady != null)
+                backgroundReady(this, EventArgs.Empty);
             StopDeferredStartupWork();
         }
 
-        private void TryRaiseStartupReady()
+        private void TryRaiseShellReady()
         {
-            if (_startupReadyRaised || !PetStartupRules.CanReleaseStartupLoading(
-                _startupUiReady, _startupArtReady) ||
+            if (_shellReadyRaised || !_startupArtReady ||
                 IsDisposed || _exiting) return;
             _startupDisplaySuppressed = false;
-            _startupReadyRaised = true;
+            _shellReadyRaised = true;
             RenderCurrentFrame();
-            EventHandler ready = StartupReady;
+            EventHandler ready = ShellReady;
             if (ready != null) ready(this, EventArgs.Empty);
         }
 

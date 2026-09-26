@@ -15,7 +15,9 @@ namespace PennyPet.Tests
                 "if (value.Kind == StickyUiEventKind.TypingActivity)",
                 "if (value.Kind == StickyUiEventKind.InputFocusChanged)");
 
-            Assert.IsTrue(handler.Contains("TriggerTypingAnimation();"),
+            Assert.IsTrue(handler.Contains("TypingActivity?.Invoke()") &&
+                ReadSource("PetStickyPresentation.cs").Contains(
+                    "workspace.TypingActivity += TriggerTypingAnimation;"),
                 "Own-note typing should restore the typing animation.");
             Assert.IsFalse(handler.Contains("_typingSession = false"),
                 "Own-note typing must not clear the animation session.");
@@ -105,7 +107,7 @@ namespace PennyPet.Tests
                     "Hosted.SetInputFocus(value.NoteId, value.Flag)"),
                 "Sticky STA must asynchronously report a plain focus flag.");
             Assert.IsTrue(overlay.Contains(
-                    "ShouldSuppressOwnApplicationInput(focusSnapshot)") &&
+                    "ShouldSuppressOwnApplicationInput(input.FocusSnapshot)") &&
                 overlay.Contains("HasFocusedOwnNoteTextInput() ||") &&
                 overlay.Contains("_windowLayers.HasActiveModal") &&
                 overlay.Contains("focusSnapshot.ProcessId ==") &&
@@ -149,7 +151,7 @@ namespace PennyPet.Tests
                 runtime.Contains("ExitPrepared"),
                 "Runtime must own hosted membership, sequence, input and exit state.");
             Assert.IsFalse(runtime.Contains("StickyNoteWindow") ||
-                runtime.Contains("StickyNoteRepository"),
+                runtime.Contains("StickyFeature"),
                 "Hosted runtime must not own WPF windows or persistence.");
         }
 
@@ -168,7 +170,8 @@ namespace PennyPet.Tests
                 "StickyUiEventKind.FirstRendered"),
                 "StickyUiHost must emit FirstRendered.");
             Assert.IsTrue(coordinator.Contains(
-                "MarkFirstRendered(value.NoteId)"),
+                "FirstRendered?.Invoke(value.NoteId)") &&
+                ReadSource("PetStickyPresentation.cs").Contains("workspace.FirstRendered += MarkFirstRendered"),
                 "Pet coordinator must mark hosted first render.");
         }
 

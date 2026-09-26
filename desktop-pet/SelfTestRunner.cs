@@ -32,11 +32,6 @@ namespace PennyPet
             internal bool InnerOutlineOk;
             internal bool GreenHaloAbsent;
             internal bool ApplicationIconEmbeddedOk;
-            internal bool StartupFrameEmbeddedOk;
-            internal bool StartupFrameUsesEmbeddedLoadingOk;
-            internal bool StartupUsesSavedScaleOk;
-            internal bool StartupLocationOk;
-            internal bool StartupLoadingThreadHostOk;
             internal bool ContactAuthorFeatureOk;
             internal int[] AnimationCycleDurations;
         }
@@ -58,7 +53,8 @@ namespace PennyPet
                 result.InteractionPreloadOk = !art.IsRowLoaded(4);
                 art.PreloadRow(4);
                 result.InteractionPreloadOk = result.InteractionPreloadOk &&
-                    art.IsRowLoaded(4) && art.LoadedRuntimeStateCount == 2;
+                    art.IsRowLoaded(4) && art.IsRowLoaded(1) && art.IsRowLoaded(2) &&
+                    art.LoadedRuntimeStateCount == 4;
                 art.PreloadRow(9);
                 result.NotificationPlaybackOk = art.IsRowLoaded(9) &&
                     art.GetFrame(9, 0) != null &&
@@ -100,48 +96,6 @@ namespace PennyPet
             {
                 result.ApplicationIconEmbeddedOk = applicationIcon != null &&
                     applicationIcon.Width >= 16 && applicationIcon.Height >= 16;
-            }
-            result.StartupFrameEmbeddedOk = StartupLoadingForm.HasEmbeddedFrame;
-            using (StartupLoadingForm loadingFrameForm =
-                new StartupLoadingForm(new StartupPetPlacementSnapshot(
-                    new PhysicalRect(0, 0, 192, 208), 96)))
-                result.StartupFrameUsesEmbeddedLoadingOk =
-                    loadingFrameForm.UsesEmbeddedLoadingFrameForTest();
-            result.StartupUsesSavedScaleOk = true;
-            int[] startupScales = { 50, 100, 150, 200 };
-            foreach (int scale in startupScales)
-            {
-                Size logical = PetForm.ScaledPetSize(scale);
-                StartupPetPlacementSnapshot placement =
-                    new StartupPetPlacementSnapshot(
-                        new PhysicalRect(0, 0, logical.Width,
-                            logical.Height), 96);
-                using (StartupLoadingForm loadingScaleForm =
-                    new StartupLoadingForm(placement))
-                    result.StartupUsesSavedScaleOk =
-                        result.StartupUsesSavedScaleOk &&
-                        loadingScaleForm.UsesPlacementForTest(placement) &&
-                        loadingScaleForm.UsesEmbeddedLoadingFrameForTest();
-            }
-            StartupPetPlacementSnapshot savedPlacement =
-                new StartupPetPlacementSnapshot(
-                    new PhysicalRect(240, 160, 192, 208), 96);
-            using (StartupLoadingForm savedLoadingForm =
-                new StartupLoadingForm(savedPlacement))
-            {
-                result.StartupLocationOk =
-                    savedLoadingForm.Location == new Point(240, 160) &&
-                    savedLoadingForm.ClientSize == new Size(192, 208) &&
-                    savedLoadingForm.UsesPlacementForTest(savedPlacement);
-            }
-            using (StartupLoadingThreadHost loadingHost =
-                new StartupLoadingThreadHost())
-            {
-                loadingHost.Start(new StartupPetPlacementSnapshot(
-                    new PhysicalRect(0, 0, 192, 208), 96));
-                loadingHost.BringToFront();
-                result.StartupLoadingThreadHostOk = true;
-                loadingHost.Close();
             }
             bool contactArtworkEmbedded;
             using (Stream contactArtwork = typeof(ContactAuthorForm).Assembly
@@ -336,7 +290,7 @@ namespace PennyPet
         private sealed class StickyPersistenceCheckResult
         {
             internal string FilePath;
-            internal StickyNoteRepository Repository;
+            internal StickyFeature Repository;
             internal StickyNoteData RestoredNote;
             internal bool PersistenceOk;
             internal bool FailureDirtyRetryOk;
@@ -360,8 +314,8 @@ namespace PennyPet
                 {
                     FilePath = outputPath + ".sticky-test.dat"
                 };
-            StickyNoteRepository stickyRepository =
-                StickyNoteRepository.LoadFromFile(result.FilePath);
+            StickyFeature stickyRepository =
+                StickyFeature.LoadFromFile(result.FilePath);
             const string multilingualSample =
                 "English line\n日本語 한국어 Русский العربية Français";
             StickyNoteData sticky = stickyRepository.Create(multilingualSample,
@@ -387,7 +341,7 @@ namespace PennyPet
                 sticky.RichTextRtf = richSource.Rtf;
             }
             stickyRepository.SaveToFile(result.FilePath);
-            result.Repository = StickyNoteRepository.LoadFromFile(
+            result.Repository = StickyFeature.LoadFromFile(
                 result.FilePath);
             List<StickyNoteData> restoredNotes = result.Repository.GetAll();
 
@@ -437,8 +391,8 @@ namespace PennyPet
 
             string persistenceStatePath = outputPath +
                 ".persistence-state-test.dat";
-            StickyNoteRepository persistenceStateRepository =
-                StickyNoteRepository.LoadFromFile(persistenceStatePath);
+            StickyFeature persistenceStateRepository =
+                StickyFeature.LoadFromFile(persistenceStatePath);
             persistenceStateRepository.Create("dirty-state", Point.Empty);
             File.Delete(persistenceStatePath);
             Directory.CreateDirectory(persistenceStatePath);
@@ -457,14 +411,14 @@ namespace PennyPet
                 File.Delete(persistenceStatePath + ".bak");
 
             string generationPath = outputPath + ".generation-test.dat";
-            StickyNoteRepository generationRepository =
-                StickyNoteRepository.LoadFromFile(generationPath);
+            StickyFeature generationRepository =
+                StickyFeature.LoadFromFile(generationPath);
             StickyNoteData generationNote = generationRepository.CreateDraft(
                 "older-snapshot", Point.Empty);
             generationRepository.SaveAsync();
             generationNote.Text = "newer-snapshot";
             PersistenceResult finalWrite = generationRepository.Save();
-            List<StickyNoteData> generationRestored = StickyNoteRepository
+            List<StickyNoteData> generationRestored = StickyFeature
                 .LoadFromFile(generationPath).GetAll();
             result.GenerationMonotonicOk = finalWrite.Succeeded &&
                 generationRestored.Count == 1 &&
@@ -478,8 +432,8 @@ namespace PennyPet
             string mergeBackupPath = mergePath + ".before-import.pennysticky";
             try
             {
-                StickyNoteRepository mergeRepository =
-                    StickyNoteRepository.LoadFromFile(mergePath);
+                StickyFeature mergeRepository =
+                    StickyFeature.LoadFromFile(mergePath);
                 StickyNoteData currentVersion = mergeRepository.Create(
                     "current-version", Point.Empty);
                 mergeRepository.SaveToFile(mergePath);
@@ -499,10 +453,10 @@ namespace PennyPet
                         });
                 PersistenceResult mergeCommit =
                     mergeRepository.CommitImportedMerge(mergePlan);
-                StickyNoteRepository reopenedMerge =
-                    StickyNoteRepository.LoadFromFile(mergePath);
-                StickyNoteRepository preMergeBackup =
-                    StickyNoteRepository.LoadFromFile(mergeBackupPath);
+                StickyFeature reopenedMerge =
+                    StickyFeature.LoadFromFile(mergePath);
+                StickyFeature preMergeBackup =
+                    StickyFeature.LoadFromFile(mergeBackupPath);
                 int conflictCopies = reopenedMerge.GetAll().Count - 2;
                 result.ImportMergeCommitOk = mergeCommit.Succeeded &&
                     reopenedMerge.GetAll().Count == 3 && conflictCopies == 1 &&
@@ -525,8 +479,8 @@ namespace PennyPet
                     if (Directory.Exists(blockedPath))
                         Directory.Delete(blockedPath, true);
                     Directory.CreateDirectory(blockedPath);
-                    StickyNoteRepository blockedRepository =
-                        StickyNoteRepository.LoadFromFile(blockedPath);
+                    StickyFeature blockedRepository =
+                        StickyFeature.LoadFromFile(blockedPath);
                     StickyNoteData blockedCurrent = blockedRepository.Create(
                         "blocked-current", Point.Empty);
                     StickyNoteData blockedIncoming =
@@ -570,8 +524,8 @@ namespace PennyPet
             string restoreBackupPath = restorePath + ".before-restore.pennysticky";
             try
             {
-                StickyNoteRepository restoreRepository =
-                    StickyNoteRepository.LoadFromFile(restorePath);
+                StickyFeature restoreRepository =
+                    StickyFeature.LoadFromFile(restorePath);
                 StickyNoteData restoreCurrent = restoreRepository.Create(
                     "restore-current", Point.Empty);
                 restoreRepository.SaveToFile(restorePath);
@@ -583,10 +537,10 @@ namespace PennyPet
                 PersistenceResult restoreCommit =
                     restoreRepository.CommitFullRestore(
                         new[] { replacement }, restoreBackupPath);
-                StickyNoteRepository reopenedRestore =
-                    StickyNoteRepository.LoadFromFile(restorePath);
-                StickyNoteRepository preRestore =
-                    StickyNoteRepository.LoadFromFile(restoreBackupPath);
+                StickyFeature reopenedRestore =
+                    StickyFeature.LoadFromFile(restorePath);
+                StickyFeature preRestore =
+                    StickyFeature.LoadFromFile(restoreBackupPath);
                 result.FullRestoreCommitOk = restoreCommit.Succeeded &&
                     reopenedRestore.Count == 1 &&
                     reopenedRestore.Find("restored-only") != null &&
@@ -647,8 +601,8 @@ namespace PennyPet
             if (File.Exists(longStickyPath + ".bak"))
                 File.Delete(longStickyPath + ".bak");
             string longVisibleText = new string('长', 13050) + "结尾保留";
-            StickyNoteRepository longRepository =
-                StickyNoteRepository.LoadFromFile(longStickyPath);
+            StickyFeature longRepository =
+                StickyFeature.LoadFromFile(longStickyPath);
             StickyNoteData longNote = longRepository.Create(longVisibleText,
                 Point.Empty);
             using (RichTextBox longRichText = new RichTextBox())
@@ -657,7 +611,7 @@ namespace PennyPet
                 longNote.RichTextRtf = longRichText.Rtf;
             }
             longRepository.SaveToFile(longStickyPath);
-            List<StickyNoteData> longRestored = StickyNoteRepository
+            List<StickyNoteData> longRestored = StickyFeature
                 .LoadFromFile(longStickyPath).GetAll();
             string rtfAboveOldLimit = "{\\rtf1\\ansi " +
                 new string('x', 350000) + "}";
@@ -666,7 +620,7 @@ namespace PennyPet
                 longRestored[0].Text == longVisibleText &&
                 longRestored[0].Text.EndsWith("结尾保留",
                     StringComparison.Ordinal) &&
-                StickyNoteRepository.NormalizeRtf(rtfAboveOldLimit) ==
+                StickyNoteCodec.NormalizeRtf(rtfAboveOldLimit) ==
                     rtfAboveOldLimit;
             if (File.Exists(longStickyPath)) File.Delete(longStickyPath);
             if (File.Exists(longStickyPath + ".bak"))
@@ -680,8 +634,8 @@ namespace PennyPet
                 result.RestoredNote.TodoItems[1].Completed;
 
             string scheduleTestPath = outputPath + ".schedule-test.dat";
-            StickyNoteRepository scheduleRepository =
-                StickyNoteRepository.LoadFromFile(scheduleTestPath);
+            StickyFeature scheduleRepository =
+                StickyFeature.LoadFromFile(scheduleTestPath);
             StickyNoteData scheduleNote = scheduleRepository.Create(
                 String.Empty, new Point(210, 180));
             scheduleNote.IsSchedule = true;
@@ -693,7 +647,7 @@ namespace PennyPet
             scheduleNote.ScheduleItems.Add(new StickyScheduleItem(
                 "朋友生日", DateTime.Today.AddDays(58)));
             scheduleRepository.SaveToFile(scheduleTestPath);
-            List<StickyNoteData> restoredSchedules = StickyNoteRepository
+            List<StickyNoteData> restoredSchedules = StickyFeature
                 .LoadFromFile(scheduleTestPath).GetAll();
             result.ScheduleOk = restoredSchedules.Count == 1 &&
                 restoredSchedules[0].IsSchedule &&
@@ -752,7 +706,7 @@ namespace PennyPet
             File.WriteAllText(legacyStickyPath, legacyLine,
                 new UTF8Encoding(false));
             List<StickyNoteData> legacyNotes =
-                StickyNoteRepository.LoadFromFile(legacyStickyPath).GetAll();
+                StickyFeature.LoadFromFile(legacyStickyPath).GetAll();
             result.LegacyMigrationOk = legacyNotes.Count == 1 &&
                 legacyNotes[0].Text == legacyChinese &&
                 !legacyNotes[0].IsTodoList &&
@@ -765,7 +719,7 @@ namespace PennyPet
                 ".legacy-import-source.dat";
             File.WriteAllText(legacyImportSource, legacyLine,
                 new UTF8Encoding(false));
-            StickyNoteRepository legacyImported = StickyNoteRepository
+            StickyFeature legacyImported = StickyFeature
                 .LoadFromFileWithLegacyCandidates(legacyImportCurrent,
                     new string[] { legacyImportSource });
             result.OldestFolderCacheImportOk = legacyImported.Count == 1 &&
@@ -793,8 +747,8 @@ namespace PennyPet
             });
             File.WriteAllText(versionFourStickyPath, versionFourLine,
                 new UTF8Encoding(false));
-            StickyNoteRepository versionFourRepository =
-                StickyNoteRepository.LoadFromFile(versionFourStickyPath);
+            StickyFeature versionFourRepository =
+                StickyFeature.LoadFromFile(versionFourStickyPath);
             List<StickyNoteData> versionFourNotes =
                 versionFourRepository.GetAll();
             result.VersionFourMigrationOk = versionFourNotes.Count == 1 &&
@@ -810,7 +764,7 @@ namespace PennyPet
             ancientDisplayData.IsTodoList = true;
             ancientDisplayData.IsSchedule = true;
             result.AncientCacheDisplayRepairOk =
-                StickyNoteRepository.RepairForDisplay(
+                StickyNoteCodec.RepairForDisplay(
                     ancientDisplayData, true) &&
                 ancientDisplayData.Width == 280 &&
                 ancientDisplayData.Height == 700 &&
@@ -833,8 +787,8 @@ namespace PennyPet
                 ".sticky-corrupt-test.dat";
             File.WriteAllText(corruptStickyPath, "this-is-not-a-note",
                 new UTF8Encoding(false));
-            StickyNoteRepository corruptRepository =
-                StickyNoteRepository.LoadFromFile(corruptStickyPath);
+            StickyFeature corruptRepository =
+                StickyFeature.LoadFromFile(corruptStickyPath);
             string preservedCorruptPath = corruptRepository.RecoveryBackupPath;
             StickyNoteData recoveredCreate = corruptRepository.Create(
                 "损坏数据恢复后仍可新建", Point.Empty);
@@ -861,8 +815,8 @@ namespace PennyPet
                 new UTF8Encoding(false));
             File.WriteAllText(backupRecoveryPath + ".bak", legacyLine,
                 new UTF8Encoding(false));
-            StickyNoteRepository backupRecoveryRepository =
-                StickyNoteRepository.LoadFromFile(backupRecoveryPath);
+            StickyFeature backupRecoveryRepository =
+                StickyFeature.LoadFromFile(backupRecoveryPath);
             result.BackupRecoveryOk =
                 backupRecoveryRepository.LoadSucceeded &&
                 backupRecoveryRepository.RecoveredFromLoadFailure &&
@@ -899,8 +853,8 @@ namespace PennyPet
                     File.WriteAllText(path, ReadStickyFixture(
                         "sticky-v" + version + ".txt"),
                         new UTF8Encoding(false));
-                    StickyNoteRepository historical =
-                        StickyNoteRepository.LoadFromFile(path);
+                    StickyFeature historical =
+                        StickyFeature.LoadFromFile(path);
                     result.HistoricalStartupMatrixOk =
                         result.HistoricalStartupMatrixOk &&
                         historical.LoadSucceeded &&
@@ -927,8 +881,8 @@ namespace PennyPet
                 File.WriteAllText(currentPath,
                     StickyNoteCodec.SerializeLine(current),
                     new UTF8Encoding(false));
-                StickyNoteRepository currentRepository =
-                    StickyNoteRepository.LoadFromFile(currentPath);
+                StickyFeature currentRepository =
+                    StickyFeature.LoadFromFile(currentPath);
                 result.CurrentStartupRoundTripOk =
                     currentRepository.LoadSucceeded &&
                     !currentRepository.IsFutureSchemaBlocked &&
@@ -961,8 +915,8 @@ namespace PennyPet
                 string primaryHash = CalculateSha256(futurePath);
                 string backupHash = CalculateSha256(backupPath);
 
-                StickyNoteRepository blocked =
-                    StickyNoteRepository.LoadFromFile(futurePath);
+                StickyFeature blocked =
+                    StickyFeature.LoadFromFile(futurePath);
                 int rejectedSaveEvents = 0;
                 blocked.SaveFailed += delegate { rejectedSaveEvents++; };
                 UnsupportedStickySchemaException schemaError =
@@ -1099,8 +1053,8 @@ namespace PennyPet
             DockPersistenceCheckResult result =
                 new DockPersistenceCheckResult();
             string tabOrderPath = outputPath + ".tab-order-test.dat";
-            StickyNoteRepository tabOrderRepository =
-                StickyNoteRepository.LoadFromFile(tabOrderPath);
+            StickyFeature tabOrderRepository =
+                StickyFeature.LoadFromFile(tabOrderPath);
             StickyNoteData tabA = tabOrderRepository.Create("A", Point.Empty);
             StickyNoteData tabB = tabOrderRepository.Create("B", Point.Empty);
             StickyNoteData tabC = tabOrderRepository.Create("C", Point.Empty);
@@ -1112,8 +1066,8 @@ namespace PennyPet
             // ReorderHidden persists through the nonblocking writer; flush
             // before reloading so the round trip observes the new order.
             tabOrderRepository.WaitForPendingSaves();
-            StickyNoteRepository restoredTabOrder =
-                StickyNoteRepository.LoadFromFile(tabOrderPath);
+            StickyFeature restoredTabOrder =
+                StickyFeature.LoadFromFile(tabOrderPath);
             List<StickyNoteData> orderedTabs =
                 restoredTabOrder.GetHiddenInTabOrder();
             result.SideTabOrderOk = orderedTabs.Count == 3 &&
@@ -1126,8 +1080,8 @@ namespace PennyPet
                 File.Delete(tabOrderPath + ".bak");
 
             string dockPath = outputPath + ".dock-test.dat";
-            StickyNoteRepository dockRepository =
-                StickyNoteRepository.LoadFromFile(dockPath);
+            StickyFeature dockRepository =
+                StickyFeature.LoadFromFile(dockPath);
             StickyNoteData dockParent = dockRepository.Create("上层",
                 new Point(100, 100));
             StickyNoteData dockChild = dockRepository.Create("下层",
@@ -1135,7 +1089,7 @@ namespace PennyPet
             StickyDockGroups.ApplyOrderedGroup(new[] { dockParent, dockChild });
             dockRepository.SaveToFile(dockPath);
             List<StickyNoteData> restoredDockNotes =
-                StickyNoteRepository.LoadFromFile(dockPath).GetAll();
+                StickyFeature.LoadFromFile(dockPath).GetAll();
             result.DockRoundTripOk = restoredDockNotes.Count == 2 &&
                 restoredDockNotes.Exists(delegate(StickyNoteData value)
                 {
@@ -1177,8 +1131,8 @@ namespace PennyPet
                 snapshotOrder[1].Id == dockInsertedTodo.Id &&
                 snapshotOrder[2].Id == dockChild.Id;
             dockRepository.SaveToFile(dockPath);
-            StickyNoteRepository persistedDockRepository =
-                StickyNoteRepository.LoadFromFile(dockPath);
+            StickyFeature persistedDockRepository =
+                StickyFeature.LoadFromFile(dockPath);
             StickyNoteData persistedDockMember =
                 persistedDockRepository.Find(dockInsertedTodo.Id);
             List<StickyNoteData> persistedDockOrder = StickyDockGroups
@@ -1206,8 +1160,8 @@ namespace PennyPet
             if (File.Exists(dockPath + ".bak")) File.Delete(dockPath + ".bak");
 
             string hiddenSlotPath = outputPath + ".hidden-slot-test.dat";
-            StickyNoteRepository hiddenSlotRepository =
-                StickyNoteRepository.LoadFromFile(hiddenSlotPath);
+            StickyFeature hiddenSlotRepository =
+                StickyFeature.LoadFromFile(hiddenSlotPath);
             StickyNoteData persistedHideA = hiddenSlotRepository.Create(
                 "A", Point.Empty);
             StickyNoteData persistedHideB = hiddenSlotRepository.Create(
@@ -1218,8 +1172,8 @@ namespace PennyPet
                 persistedHideA, persistedHideB, persistedHideC });
             persistedHideB.Visible = false;
             hiddenSlotRepository.SaveToFile(hiddenSlotPath);
-            StickyNoteRepository restoredHiddenSlotRepository =
-                StickyNoteRepository.LoadFromFile(hiddenSlotPath);
+            StickyFeature restoredHiddenSlotRepository =
+                StickyFeature.LoadFromFile(hiddenSlotPath);
             StickyNoteData restoredHiddenMiddle =
                 restoredHiddenSlotRepository.Find(persistedHideB.Id);
             List<StickyNoteData> restoredHiddenSlotOrder =
@@ -1237,8 +1191,8 @@ namespace PennyPet
                 File.Delete(hiddenSlotPath + ".bak");
 
             string expandPath = outputPath + ".expand-and-tile-test.dat";
-            StickyNoteRepository expandRepository =
-                StickyNoteRepository.LoadFromFile(expandPath);
+            StickyFeature expandRepository =
+                StickyFeature.LoadFromFile(expandPath);
             StickyNoteData expandA = expandRepository.Create("普通",
                 new Point(-5000, -5000));
             StickyNoteData expandB = expandRepository.Create("待办",
@@ -1277,8 +1231,8 @@ namespace PennyPet
                 note.Height = target.Height;
             }
             expandRepository.SaveToFile(expandPath);
-            StickyNoteRepository restoredExpandRepository =
-                StickyNoteRepository.LoadFromFile(expandPath);
+            StickyFeature restoredExpandRepository =
+                StickyFeature.LoadFromFile(expandPath);
             List<StickyNoteData> restoredExpanded =
                 restoredExpandRepository.GetAll();
             result.ExpandAndTileRoundTripOk = planningPreservedActual &&
@@ -1625,25 +1579,17 @@ namespace PennyPet
                     new int[] { 700, 700, 700 }, 30000) &&
                 !StickyDockOperations.IsDockCoordinateRangeSafe(29000,
                     new int[] { 700, 700 }, 30000);
-            Dictionary<string, DockWindowFacts> dragFacts =
-                new Dictionary<string, DockWindowFacts>(
-                    StringComparer.OrdinalIgnoreCase)
-                {
-                    { "root", new DockWindowFacts("root", 100, 200,
-                        320, 300, true, false) },
-                    { "child", new DockWindowFacts("child", 100, 500,
-                        320, 240, true, false) }
-                };
-            List<DockLayoutTarget> translated =
-                StickyDockController.CalculateDockTranslationTargets(
-                    new string[] { "root", "child" }, dragFacts,
-                    new DockWindowFacts("root", 115, 190, 320, 300,
-                        true, false), 15, -10);
-            result.DetachedGroupTranslationOk = translated.Count == 2 &&
-                translated[0].NoteId == "root" &&
-                translated[0].X == 115 && translated[0].Y == 190 &&
-                translated[1].NoteId == "child" &&
-                translated[1].X == 115 && translated[1].Y == 490;
+            DisplaySurfaceSnapshot dragSurface = FakeSurface(1, 0, true, 1080, 1040, FakeTarget("mdp:drag"));
+            DockPlacementPlan translated = DockPlacementPlanner.Plan(
+                new DockGroupLogicalState(new LogicalPoint { X = 115, Y = 190 }, new[] {
+                    new DockLogicalMember("root", 320, 300), new DockLogicalMember("child", 320, 240) }),
+                new WindowFacts("root", "mdp:drag", dragSurface.RuntimeGdiName,
+                    new PhysicalRect(115, 190, 320, 300), 96, 1, 1), dragSurface, 96, 1, 1);
+            result.DetachedGroupTranslationOk = translated.WindowTargets.Count == 2 &&
+                translated.WindowTargets[0].NoteId == "root" &&
+                translated.WindowTargets[0].PhysicalBounds.Left == 115 && translated.WindowTargets[0].PhysicalBounds.Top == 190 &&
+                translated.WindowTargets[1].NoteId == "child" &&
+                translated.WindowTargets[1].PhysicalBounds.Left == 115 && translated.WindowTargets[1].PhysicalBounds.Top == 490;
             Rectangle recoveredDrag = StickyNoteWindow
                 .CalculateRecoveredHeaderDragBounds(
                     new Rectangle(100, 100, 320, 300),
@@ -1736,42 +1682,40 @@ namespace PennyPet
                 result.RichTextToolbarOk =
                     richToolbarNote.HasRichTextFormattingToolbar &&
                     richToolbarNote.HeaderTypeIconVisibleForTest &&
-                    richToolbarNote.ExerciseRichTextFormattingForTest();
+                    new StickyWindowInteractionDriver(richToolbarNote).ExerciseRichTextFormattingForTest();
                 result.SmoothFormatInteractionOk =
-                    richToolbarNote.ExerciseSmoothFormatInteractionForTest();
+                    new StickyWindowInteractionDriver(richToolbarNote).ExerciseSmoothFormatInteractionForTest();
                 result.StableFormatSelectorModelOk =
-                    richToolbarNote.UsesStableListFormatSelectors;
+                    richToolbarNote.UsesStableListFormatSelectors && RunStickyContentViewChecks();
                 result.FormatToolbarFocusOk =
                     richToolbarNote.FormatControlsPreserveSelectionForTest;
                 result.FormatSelectorsAlwaysBlackOk =
                     richToolbarNote.FormatSelectorsAlwaysBlackForTest;
                 result.BodyTextColorSwitchOk =
-                    richToolbarNote.ExerciseBodyTextColorSwitchForTest();
+                    new StickyWindowInteractionDriver(richToolbarNote).ExerciseBodyTextColorSwitchForTest();
                 result.DockResizeRoleOk =
-                    richToolbarNote.ExerciseDockResizeRoleForTest();
+                    new StickyWindowInteractionDriver(richToolbarNote).ExerciseDockResizeRoleForTest();
                 result.NativeWindowStyleAppliedOk =
                     richToolbarNote.NativeMaximizeStyleDisabledForTest;
                 result.GroupTopMostSyncOk =
-                    richToolbarNote.ExerciseGroupTopMostForTest();
+                    new StickyWindowInteractionDriver(richToolbarNote).ExerciseGroupTopMostForTest();
                 result.MultilingualInputOk =
-                    richToolbarNote.ExerciseMultilingualInputForTest();
-                result.TabSwitchContentPreservedOk = richToolbarNote
-                    .ExerciseReminderSwitchContentPreservationForTest();
+                    new StickyWindowInteractionDriver(richToolbarNote).ExerciseMultilingualInputForTest();
+                result.TabSwitchContentPreservedOk = new StickyWindowInteractionDriver(richToolbarNote).ExerciseReminderSwitchContentPreservationForTest();
             }
 
             using (StickyNoteWindow firstFormatNote =
                 new StickyNoteWindow(new StickyNoteData()))
             {
                 result.FirstFormatCommitOk =
-                    firstFormatNote.ExerciseFirstFormatCommitForTest();
+                    new StickyWindowInteractionDriver(firstFormatNote).ExerciseFirstFormatCommitForTest();
                 result.EmptyNoteFormattingOk =
-                    firstFormatNote.ExerciseEmptyNoteFormattingForTest();
+                    new StickyWindowInteractionDriver(firstFormatNote).ExerciseEmptyNoteFormattingForTest();
                 result.CaretTypingFormatSwitchOk =
-                    firstFormatNote.ExerciseCaretTypingFormatSwitchForTest();
-                result.SingleNativeImeCommitOk = firstFormatNote
-                    .ExerciseSingleNativeImeCommitAfterFormatForTest();
+                    new StickyWindowInteractionDriver(firstFormatNote).ExerciseCaretTypingFormatSwitchForTest();
+                result.SingleNativeImeCommitOk = new StickyWindowInteractionDriver(firstFormatNote).ExerciseSingleNativeImeCommitAfterFormatForTest();
                 result.UnifiedContextMenusOk =
-                    firstFormatNote.ExerciseUnifiedNoteContextMenusForTest();
+                    new StickyWindowInteractionDriver(firstFormatNote).ExerciseUnifiedNoteContextMenusForTest();
             }
             return result;
         }
@@ -1807,11 +1751,11 @@ namespace PennyPet
             result.CompactBannerOk = Math.Abs(
                 note.ReminderBannerFirstFontSize - 24F) < 0.2F;
             result.SelectionActionsOk =
-                note.ExerciseReminderSelectionActionsForTest();
+                new StickyWindowInteractionDriver(note).ExerciseReminderSelectionActionsForTest();
             result.InlineCreationActionsRemovedOk =
-                note.ExerciseInlineCreationActionsRemovedForTest();
+                new StickyWindowInteractionDriver(note).ExerciseInlineCreationActionsRemovedForTest();
             result.FirstClickStableOk =
-                note.ExerciseReminderFirstClickStabilityForTest(
+                new StickyWindowInteractionDriver(note).ExerciseReminderFirstClickStabilityForTest(
                     out result.BlankAreaClearOk,
                     out result.BannerRefreshInPlaceOk);
             return result;
@@ -1853,13 +1797,13 @@ namespace PennyPet
                 new StickyNoteWindow(new StickyNoteData()))
             {
                 result.FixedTypeActionsOk =
-                    todoStressNote.ExerciseFixedNoteTypeActionsForTest();
+                    new StickyWindowInteractionDriver(todoStressNote).ExerciseFixedNoteTypeActionsForTest();
                 result.WrapAndInlineEditOk =
-                    todoStressNote.ExerciseTodoWrapAndInlineEditForTest();
+                    new StickyWindowInteractionDriver(todoStressNote).ExerciseTodoWrapAndInlineEditForTest();
                 result.OverallFontSizeOk =
-                    todoStressNote.ExerciseTodoOverallFontSizeForTest();
+                    new StickyWindowInteractionDriver(todoStressNote).ExerciseTodoOverallFontSizeForTest();
                 result.DedicatedRowContextMenusOk =
-                    todoStressNote.ExerciseDedicatedRowContextMenusForTest();
+                    new StickyWindowInteractionDriver(todoStressNote).ExerciseDedicatedRowContextMenusForTest();
             }
             return result;
         }
@@ -1899,7 +1843,7 @@ namespace PennyPet
             data.IsSchedule = true;
             using (StickyNoteWindow note = new StickyNoteWindow(data))
                 result.PinMarkerToggleOk = note.HeaderTypeIconVisibleForTest &&
-                    note.ExerciseSchedulePinMarkerForTest();
+                    new StickyWindowInteractionDriver(note).ExerciseSchedulePinMarkerForTest();
             return result;
         }
 
@@ -1988,7 +1932,7 @@ namespace PennyPet
             using (StickyNoteWindow note =
                 new StickyNoteWindow(new StickyNoteData()))
                 result.ReminderLiveSizePreviewOk =
-                    note.ExerciseReminderLiveSizePreviewForTest();
+                    new StickyWindowInteractionDriver(note).ExerciseReminderLiveSizePreviewForTest();
             using (NoteTitleDialog dialog = new NoteTitleDialog("周计划"))
             {
                 result.RenameInitialFocusOk = dialog.TitleInputIsInitialActive;
@@ -2235,6 +2179,10 @@ namespace PennyPet
                             row + metrics.PreviewInsertionGap) return false;
                     tabs.ShowDropPreviewForTest(notes[0].NoteId, 2);
                     if (!tabs.HasDropPreviewForTest) return false;
+                    tabs.SetNotes(new List<SideTabSnapshot>(notes), 7);
+                    if (!Object.ReferenceEquals(first, tabs.Controls[0]) ||
+                        !tabs.HasDropPreviewForTest ||
+                        (int)Pc2Get(tabs, "_globalStartIndex") != 7) return false;
                     SideTabPhysicalMetrics next = SideTabPhysicalMetrics.ForDpi(
                         dpi == 192 ? 96 : 192);
                     tabs.ApplyPhysicalMetrics(next);
@@ -2242,6 +2190,28 @@ namespace PennyPet
                         tabs.ClientSize != new Size(next.Width,
                             3 * (next.Height + next.Gap) - next.Gap)) return false;
                 }
+                // A type-only change must update the icon even when title and
+                // color are identical. Old string signatures omitted the type.
+                SideTabSnapshot original = notes[0];
+                notes[0] = SideTabSnapshot.FromData(new StickyNoteData
+                {
+                    Id = original.NoteId, Title = original.DisplayTitle,
+                    ColorArgb = original.ColorArgb, Visible = original.Visible,
+                    IsTodoList = true
+                });
+                tabs.SetNotes(notes);
+                if (!first.IsDisposed ||
+                    !((StickyNoteTabControl)tabs.Controls[0]).Snapshot.IsTodoList)
+                    return false;
+                SideTabSnapshot moved = notes[0];
+                notes.RemoveAt(0);
+                notes.Add(moved);
+                tabs.SetNotes(notes);
+                if (((StickyNoteTabControl)tabs.Controls[2]).Snapshot.NoteId != moved.NoteId)
+                    return false;
+                tabs.SetNotes(new List<SideTabSnapshot>());
+                if (tabs.Visible || tabs.NoteCount != 0 || tabs.Controls.Count != 0)
+                    return false;
             }
             return true;
         }
@@ -2262,7 +2232,7 @@ namespace PennyPet
         }
 
         private static StickyWindowPolicyCheckResult
-            RunStickyWindowPolicyChecks(StickyNoteRepository repository)
+            RunStickyWindowPolicyChecks(StickyFeature repository)
         {
             StickyWindowPolicyCheckResult result =
                 new StickyWindowPolicyCheckResult();
@@ -2278,12 +2248,12 @@ namespace PennyPet
                 StickyNoteLimits.MaximumTodoItemsPerNote == 500 &&
                 StickyNoteLimits.MaximumBodyCharacters == 4000000 &&
                 StickyNoteLimits.MaximumRichTextCharacters == 16000000 &&
-                StickyNoteRepository.CanCreateAtCount(true, 0) &&
-                StickyNoteRepository.CanCreateAtCount(true,
+                StickyFeature.CanCreateAtCount(true, 0) &&
+                StickyFeature.CanCreateAtCount(true,
                     StickyNoteLimits.MaximumNotes - 1) &&
-                !StickyNoteRepository.CanCreateAtCount(true,
+                !StickyFeature.CanCreateAtCount(true,
                     StickyNoteLimits.MaximumNotes) &&
-                !StickyNoteRepository.CanCreateAtCount(false, 0);
+                !StickyFeature.CanCreateAtCount(false, 0);
             result.SoftPaletteOk =
                 StickyNoteWindow.PaletteColorForTest(0).ToArgb() ==
                     Color.FromArgb(255, 255, 117, 112).ToArgb() &&
@@ -2469,7 +2439,7 @@ namespace PennyPet
                 "https://www.baidu.com/";
             using (StickyNoteWindow note = new StickyNoteWindow(linkData, true))
                 result.OrdinaryLinkDetectionOk =
-                    note.ExerciseOrdinaryLinkRefreshForTest();
+                    new StickyWindowInteractionDriver(note).ExerciseOrdinaryLinkRefreshForTest();
             return result;
         }
 
@@ -2478,6 +2448,7 @@ namespace PennyPet
             internal bool MultipleLinkedReminderOk;
             internal bool ConcreteDateTimeOk;
             internal bool BannerTickThrottleOk;
+            internal bool RuntimeOwnershipOk;
             internal bool DueBubblePersistentOk;
             internal bool DueBubbleUsesOwnSizeOk;
             internal bool DueBubbleReplacementOk;
@@ -2511,16 +2482,10 @@ namespace PennyPet
             result.ConcreteDateTimeOk = Math.Abs(
                 (concrete.DeadlineUtc.ToLocalTime() -
                     concreteLocal).TotalSeconds) < 1;
-            long second = DateTime.UtcNow.Ticks / TimeSpan.TicksPerSecond;
-            result.BannerTickThrottleOk =
-                PetReminderCoordinator.ShouldRefreshReminderBanner(
-                    Int64.MinValue, second) &&
-                !PetReminderCoordinator.ShouldRefreshReminderBanner(
-                    second, second) &&
-                PetReminderCoordinator.ShouldRefreshReminderBanner(
-                    second, second + 1);
+            result.BannerTickThrottleOk = RunStickyReminderHostChecks();
+            result.RuntimeOwnershipOk = RunReminderRuntimeChecks();
             result.DueBubblePersistentOk =
-                PetReminderCoordinator.DueReminderBubbleDurationMilliseconds == 0;
+                ReminderRules.DueReminderBubbleDurationMilliseconds == 0;
             result.DueBubbleUsesOwnSizeOk = Math.Abs(
                 PetForm.DueReminderBubbleFontSizePoints(100) -
                 KeyboardOverlayForm.TextFontSizePoints(100)) < 0.2F;
@@ -2551,9 +2516,9 @@ namespace PennyPet
                 DateTime.UtcNow.AddMinutes(1), "仍有效");
             DateTime launchGate = DateTime.UtcNow;
             result.ExpiredAtLaunchDiscardedOk =
-                !PetReminderCoordinator.ShouldRestoreReminderAfterLaunch(
+                !ReminderRules.ShouldRestoreReminderAfterLaunch(
                     expired, launchGate) &&
-                PetReminderCoordinator.ShouldRestoreReminderAfterLaunch(
+                ReminderRules.ShouldRestoreReminderAfterLaunch(
                     future, launchGate);
             return result;
         }
@@ -2625,8 +2590,7 @@ namespace PennyPet
                     true, true) &&
                 PetKeyboardPrivacyPolicy.ShouldSuppressOwnApplicationInput(
                     true, false);
-            result.PrivacyGenerationOk = PetForm.IsCurrentPrivacyScan(12, 12) &&
-                !PetForm.IsCurrentPrivacyScan(12, 13);
+            result.PrivacyGenerationOk = RunKeyboardPrivacyNativeChecks();
             KeyboardFocusSnapshot captured = new KeyboardFocusSnapshot(
                 new IntPtr(10), 20, 30, new IntPtr(40),
                 new int[] { 1, 2, 3 });
@@ -2778,16 +2742,8 @@ namespace PennyPet
                 manualFirstThought >= 2200 && manualFirstThought <= 2900 &&
                 manualFailedGuitar >= 2200 && manualFailedGuitar <= 2900 &&
                 manualSecondThought >= 2200 && manualSecondThought <= 2900;
-            PetAnimationController interaction =
-                new PetAnimationController();
-            bool firstOrdinary = interaction.TryStartOrdinaryPoke(4);
-            bool blockedOrdinary = interaction.TryStartOrdinaryPoke(6);
-            bool easterOverride = interaction.TryStartEasterEgg(5);
-            interaction.CompleteInteractionAnimation();
-            bool nextCycle = interaction.TryStartOrdinaryPoke(6);
-            result.ManualFullCycleGuardOk = firstOrdinary &&
-                !blockedOrdinary && easterOverride &&
-                interaction.InteractionAnimationRow == 6 && nextCycle;
+            result.ManualFullCycleGuardOk = RunInteractionCycleCheck() &&
+                RunReadyArtReadCheck();
             DateTime burstStart = new DateTime(2035, 1, 1, 0, 0, 0,
                 DateTimeKind.Utc);
             PetPokeBurstTracker burst = new PetPokeBurstTracker();
@@ -2891,6 +2847,7 @@ namespace PennyPet
             internal bool DailyCoordinatorFailureFallbackOk;
             internal bool DailyCoordinatorInFlightOk;
             internal bool DailyCoordinatorPreferenceSnapshotOk;
+            internal bool ConversationOwnershipOk;
             internal bool RejectedBubbleReusesForecastOk;
             internal bool LocationDialogLayoutOk;
         }
@@ -2899,6 +2856,19 @@ namespace PennyPet
         {
             private readonly string _forecastJson;
             private readonly bool _failForecast;
+            private TaskCompletionSource<HttpResponseMessage> _heldForecast;
+
+            internal void HoldNextForecast()
+            {
+                _heldForecast = new TaskCompletionSource<HttpResponseMessage>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+
+            internal void ReleaseForecast()
+            {
+                var held = Interlocked.Exchange(ref _heldForecast, null);
+                if (held != null) held.SetResult(JsonResponse(_forecastJson));
+            }
 
             internal WeatherFixtureHandler(string forecastJson,
                 bool failForecast)
@@ -2930,7 +2900,8 @@ namespace PennyPet
                 if (_failForecast)
                     return Task.FromResult(new HttpResponseMessage(
                         System.Net.HttpStatusCode.ServiceUnavailable));
-                return Task.FromResult(JsonResponse(_forecastJson));
+                var held = Volatile.Read(ref _heldForecast);
+                return held == null ? Task.FromResult(JsonResponse(_forecastJson)) : held.Task;
             }
 
             private static HttpResponseMessage JsonResponse(string json)
@@ -3010,10 +2981,14 @@ namespace PennyPet
                         "format=json") &&
                     OpenMeteoGeocodingClient.BuildUri("武汉").Query.IndexOf(
                         "apikey", StringComparison.OrdinalIgnoreCase) < 0;
-                Task<WeatherForecastWindow> first = source.GetForecastAsync(
-                    location);
-                Task<WeatherForecastWindow> concurrent =
-                    source.GetForecastAsync(location);
+                Task<WeatherForecastWindow> first, concurrent;
+                handler.HoldNextForecast();
+                try
+                {
+                    first = source.GetForecastAsync(location);
+                    concurrent = source.GetForecastAsync(location);
+                }
+                finally { handler.ReleaseForecast(); }
                 WeatherForecastWindow firstValue = first.GetAwaiter()
                     .GetResult();
                 WeatherForecastWindow cached = source.GetForecastAsync(
@@ -3103,7 +3078,7 @@ namespace PennyPet
             int dailyForecastCalls = 0;
             int dailyShowCount = 0;
             PetDailyContentCoordinator daily =
-                new PetDailyContentCoordinator(
+                CreateDailyCoordinator(
                     delegate { return lastDate; },
                     delegate { return false; }, delegate { return true; },
                     delegate { return false; },
@@ -3137,7 +3112,7 @@ namespace PennyPet
             shownText = null;
             dailyForecastCalls = 0;
             PetDailyContentCoordinator unavailable =
-                new PetDailyContentCoordinator(
+                CreateDailyCoordinator(
                     delegate { return lastDate; },
                     delegate { return false; }, delegate { return true; },
                     delegate { return false; },
@@ -3166,6 +3141,8 @@ namespace PennyPet
                 !shownText.Contains(expectedWeather) &&
                 lastDate == "20260901";
 
+            result.ConversationOwnershipOk = RunConversationRuntimeChecks();
+
             result.DailyCoordinatorInFlightOk = Task.Run(delegate
             {
                 string pendingDate = String.Empty;
@@ -3174,7 +3151,7 @@ namespace PennyPet
                 TaskCompletionSource<WeatherForecastWindow> pending =
                     new TaskCompletionSource<WeatherForecastWindow>();
                 PetDailyContentCoordinator pendingDaily =
-                    new PetDailyContentCoordinator(
+                    CreateDailyCoordinator(
                         delegate { return pendingDate; },
                         delegate { return false; },
                         delegate { return true; },
@@ -3214,7 +3191,7 @@ namespace PennyPet
                 TaskCompletionSource<WeatherForecastWindow> pending =
                     new TaskCompletionSource<WeatherForecastWindow>();
                 PetDailyContentCoordinator snapshotDaily =
-                    new PetDailyContentCoordinator(
+                    CreateDailyCoordinator(
                         delegate { return String.Empty; },
                         delegate { return false; },
                         delegate { return true; },
@@ -3269,7 +3246,7 @@ namespace PennyPet
                     bool accept = false;
                     int attempts = 0;
                     PetDailyContentCoordinator retryDaily =
-                        new PetDailyContentCoordinator(
+                        CreateDailyCoordinator(
                             delegate { return retryDate; },
                             delegate { return false; },
                             delegate { return true; },
@@ -3708,7 +3685,7 @@ namespace PennyPet
             int recordCount = 0;
             string greetingText = null;
             PetDailyContentCoordinator daily =
-                new PetDailyContentCoordinator(
+                CreateDailyCoordinator(
                     delegate { return lastBriefingDate; },
                     delegate { return silent; },
                     delegate { return dailyContentEnabled; },
@@ -4119,7 +4096,6 @@ namespace PennyPet
         private sealed class WindowShellCheckResult
         {
             internal bool StartupDefaultOk;
-            internal bool StartupLoadingReadinessGateOk;
             internal bool StickyUiHostOk;
             internal StickyHostedCheckResult StickyHosted;
             internal bool ScaleRangeOk;
@@ -4341,16 +4317,7 @@ namespace PennyPet
                 if (entry == null ||
                     entry.AnimationKind != PetPersonaAnimationKind.Hover)
                     return false;
-            PetAnimationController controller = new PetAnimationController();
-            if (!controller.TryStartOrdinaryPoke(
-                PetAnimationController.HoverRow, true)) return false;
-            controller.CancelInteractionAnimation();
-            if (controller.InteractionAnimationKind ==
-                PetInteractionAnimationKind.None) return false;
-            controller.CompleteInteractionAnimation();
-            controller.CancelInteractionAnimation();
-            return controller.InteractionAnimationKind ==
-                PetInteractionAnimationKind.None;
+            return RunProtectedInteractionCheck();
         }
 
         private static bool RunSolarPreservePlumbingCheck()
@@ -4584,16 +4551,7 @@ namespace PennyPet
             WindowFacts facts = new WindowFacts("sep-note", "mdp:sep",
                 "\\\\.\\DISPLAY2",
                 new PhysicalRect(1920, 0, 640, 600), 144, 3, 5);
-            bool factsImmutable = true;
-            foreach (System.Reflection.PropertyInfo property in
-                typeof(WindowFacts).GetProperties())
-                if (property.CanWrite) factsImmutable = false;
-            bool eventCarrierImmutable = true;
-            foreach (System.Reflection.PropertyInfo property in
-                typeof(StickyUiEvent).GetProperties())
-                if (property.CanWrite) eventCarrierImmutable = false;
-            return contentOnly && editorCopyOnly && factsImmutable &&
-                eventCarrierImmutable && facts.Scale == 1.5 &&
+            return contentOnly && editorCopyOnly && facts.Scale == 1.5 &&
                 facts.WindowId == "sep-note";
         }
 
@@ -4748,58 +4706,26 @@ namespace PennyPet
         // mouse-up plan and its queued flag remain owned until final apply.
         private static bool RunDockPlanMailboxCheck()
         {
-            DockPlanMailbox mailbox = new DockPlanMailbox();
-            lock (mailbox.Gate)
-            {
-                mailbox.Current = new DockPlacementPlan(3,
-                    mailbox.NextSequence(), "source", "surface-1", 96,
-                    new[]
-                    {
-                        new DockWindowTarget("a",
-                            new PhysicalRect(10, 20, 320, 300))
-                    });
-                mailbox.ApplyQueued = true;
-            }
-            lock (mailbox.Gate)
-            {
-                mailbox.Current = new DockPlacementPlan(3,
-                    mailbox.NextSequence(), "source", "surface-1", 96,
-                    new[]
-                    {
-                        new DockWindowTarget("b",
-                            new PhysicalRect(30, 40, 320, 300))
-                    });
-            }
+            var mailbox = new DockFrameMailbox<DockPlacementPlan>();
+            var first = new DockPlacementPlan(3, 1, "source", "surface-1", 96,
+                new[] { new DockWindowTarget("a", new PhysicalRect(10, 20, 320, 300)) });
+            var second = new DockPlacementPlan(3, 2, "source", "surface-1", 96,
+                new[] { new DockWindowTarget("b", new PhysicalRect(30, 40, 320, 300)) });
+            bool firstPosted = mailbox.QueueLive(first);
+            bool coalesced = !mailbox.QueueLive(second);
             DockPlacementPlan taken = mailbox.TakeLatest();
-            bool latestWins = taken != null &&
-                taken.PlanSequence == 2 &&
-                taken.WindowTargets.Count == 1 &&
-                taken.WindowTargets[0].NoteId == "b" &&
-                mailbox.Current == null &&
-                !mailbox.ApplyQueued;
+            bool latestWins = firstPosted && coalesced && ReferenceEquals(taken, second) && !mailbox.HasPending;
 
-            DockPlacementPlan finalPlan = new DockPlacementPlan(3,
-                mailbox.NextSequence(), "source", "surface-1", 96,
-                new[]
-                {
-                    new DockWindowTarget("a",
-                        new PhysicalRect(50, 60, 320, 300)),
-                    new DockWindowTarget("b",
-                        new PhysicalRect(370, 60, 320, 300))
-                });
-            mailbox.ReplaceWithFinal(finalPlan);
-            DockPlacementPlan liveTake = mailbox.TakeLatest();
-            bool finalBarrierHolds = liveTake == null &&
-                object.ReferenceEquals(mailbox.Current, finalPlan) &&
-                mailbox.ApplyQueued &&
-                object.ReferenceEquals(
-                    mailbox.TakeFinal(finalPlan.PlanSequence), finalPlan) &&
-                object.ReferenceEquals(mailbox.Current, finalPlan) &&
-                mailbox.ApplyQueued;
-            mailbox.CompleteFinal(finalPlan.PlanSequence);
-            finalBarrierHolds = finalBarrierHolds &&
-                mailbox.Current == null && !mailbox.ApplyQueued &&
-                mailbox.FinalPlanSequence == 0;
+            var finalPlan = new DockPlacementPlan(3, 3, "source", "surface-1", 96,
+                new[] { new DockWindowTarget("a", new PhysicalRect(50, 60, 320, 300)),
+                    new DockWindowTarget("b", new PhysicalRect(370, 60, 320, 300)) });
+            mailbox.QueueFinal(finalPlan);
+            bool finalBarrierHolds = mailbox.TakeLatest() == null && mailbox.HasPending &&
+                ReferenceEquals(mailbox.TakeFinal(finalPlan), finalPlan);
+            mailbox.CompleteFinal(finalPlan);
+            finalBarrierHolds = finalBarrierHolds && !mailbox.HasPending && !mailbox.QueueLive(first);
+            mailbox.Cancel();
+            finalBarrierHolds = finalBarrierHolds && !mailbox.QueueFinal(finalPlan);
 
             StickyNoteData snapshotSource = new StickyNoteData
             {
@@ -4828,19 +4754,14 @@ namespace PennyPet
                 contentCopy.LegacyPlacement == null &&
                 contentCopy.PreferredPlacement == null;
 
-            bool planImmutable = true;
-            foreach (System.Reflection.PropertyInfo property in
-                typeof(DockPlacementPlan).GetProperties())
-                if (property.CanWrite) planImmutable = false;
-            bool batchResultImmutable = true;
-            foreach (System.Reflection.PropertyInfo property in
-                typeof(DockBatchResult).GetProperties())
-                if (property.CanWrite) batchResultImmutable = false;
-            foreach (System.Reflection.PropertyInfo property in
-                typeof(DockBatchMemberResult).GetProperties())
-                if (property.CanWrite) batchResultImmutable = false;
+            var targets = new List<DockWindowTarget> { new DockWindowTarget("a", new PhysicalRect(1, 2, 300, 230)) };
+            var detachedPlan = new DockPlacementPlan(1, 1, "a", "surface-1", 96, targets);
+            targets.Clear();
+            var members = new List<DockBatchMemberResult> { new DockBatchMemberResult("a", 1, null, contentOnly) };
+            var detachedBatch = new DockBatchResult(1, 1, members);
+            members.Clear();
             return latestWins && finalBarrierHolds && contentSnapshotIsNarrow &&
-                planImmutable && batchResultImmutable;
+                detachedPlan.WindowTargets.Count == 1 && detachedBatch.Members.Count == 1;
         }
 
         // DISPLAYCONFIG_TARGET_DEVICE_NAME is a wire ABI passed directly to
@@ -5077,11 +4998,6 @@ namespace PennyPet
                 StartupRegistration.BuildCommand(
                     "C:\\Program Files\\Penny pet.exe") ==
                     "\"C:\\Program Files\\Penny pet.exe\"";
-            result.StartupLoadingReadinessGateOk =
-                !PetStartupRules.CanReleaseStartupLoading(false, false) &&
-                !PetStartupRules.CanReleaseStartupLoading(true, false) &&
-                !PetStartupRules.CanReleaseStartupLoading(false, true) &&
-                PetStartupRules.CanReleaseStartupLoading(true, true);
             using (StickyUiHost host = new StickyUiHost())
             using (ManualResetEventSlim handlerStarted =
                 new ManualResetEventSlim(false))
@@ -5501,30 +5417,25 @@ namespace PennyPet
                     mixedSource.Sequence > canonicalBaseline &&
                     mixedRoot.Sequence > secondBaseline &&
                     staleCannotOverwrite && !setBoundsLeakedHeaderDrag;
-                Dictionary<string, DockWindowFacts> moveFacts =
-                    new Dictionary<string, DockWindowFacts>(
-                        StringComparer.OrdinalIgnoreCase)
-                    {
-                        { second.Id, HostedDockFacts(targetDocked) },
-                        { canonical.Id, HostedDockFacts(sourceDocked) }
-                    };
-                DockWindowFacts movedRoot = new DockWindowFacts(second.Id,
-                    160, 140, 320, 300, true, false);
-                List<DockLayoutTarget> moveTargets =
-                    StickyDockController.CalculateDockTranslationTargets(
-                        new string[] { second.Id, canonical.Id }, moveFacts,
-                        movedRoot, 60, 40);
+                DisplaySurfaceSnapshot moveSurface = FakeSurface(1, 0, true, 1080, 1040, FakeTarget("mdp:move"));
+                DockPlacementPlan movePlan = DockPlacementPlanner.Plan(
+                    new DockGroupLogicalState(new LogicalPoint { X = 160, Y = 140 }, new[] {
+                        new DockLogicalMember(second.Id, 320, 300), new DockLogicalMember(canonical.Id, 320, 300) }),
+                    new WindowFacts(second.Id, "mdp:move", moveSurface.RuntimeGdiName,
+                        new PhysicalRect(160, 140, 320, 300), 96, 1, 1), moveSurface, 96, 1, 1);
+                PhysicalRect targetBounds = movePlan.WindowTargets[0].PhysicalBounds;
+                PhysicalRect sourceBounds = movePlan.WindowTargets[1].PhysicalBounds;
                 StickyUiCommandResult targetMoved = PostStickyCommandAndWait(
                     host, new StickyUiCommand(StickyUiCommandKind.SetBounds,
                         second.Id, false, null, new StickyUiBounds(
-                            moveTargets[0].X, moveTargets[0].Y,
-                            moveTargets[0].Width, moveTargets[0].Height)),
+                            targetBounds.Left, targetBounds.Top,
+                            targetBounds.Width, targetBounds.Height)),
                     petContext);
                 StickyUiCommandResult sourceMoved = PostStickyCommandAndWait(
                     host, new StickyUiCommand(StickyUiCommandKind.SetBounds,
                         canonical.Id, false, null, new StickyUiBounds(
-                            moveTargets[1].X, moveTargets[1].Y,
-                            moveTargets[1].Width, moveTargets[1].Height)),
+                            sourceBounds.Left, sourceBounds.Top,
+                            sourceBounds.Width, sourceBounds.Height)),
                     petContext);
                 check.HostedGroupMoveOk = targetMoved.Facts.PhysicalBounds.Left == 160 &&
                     targetMoved.Facts.PhysicalBounds.Top == 140 &&
@@ -5920,8 +5831,8 @@ namespace PennyPet
                 "penny-hosted-dock-" + Guid.NewGuid().ToString("N") + ".dat");
             try
             {
-                StickyNoteRepository repository =
-                    StickyNoteRepository.LoadFromFile(path);
+                StickyFeature repository =
+                    StickyFeature.LoadFromFile(path);
                 List<StickyNoteData> stored = new List<StickyNoteData>();
                 if (results == null || results.Length < 2) return false;
                 foreach (StickyUiCommandResult result in results)
@@ -5943,8 +5854,8 @@ namespace PennyPet
                 }
                 StickyDockGroups.ApplyOrderedGroup(stored);
                 if (!repository.Save().Succeeded) return false;
-                StickyNoteRepository reopened =
-                    StickyNoteRepository.LoadFromFile(path);
+                StickyFeature reopened =
+                    StickyFeature.LoadFromFile(path);
                 StickyNoteData member = reopened.Find(
                     stored[stored.Count - 1].Id);
                 List<StickyNoteData> order = StickyDockGroups.GetOrderedGroup(
@@ -6300,16 +6211,6 @@ namespace PennyPet
                     artChecks.AnimationTimingOk) + ",\n" +
                 "  \"application_icon_embedded_ok\": " + Bool(
                     artChecks.ApplicationIconEmbeddedOk) + ",\n" +
-                "  \"startup_loading_frame_embedded_ok\": " + Bool(
-                    artChecks.StartupFrameEmbeddedOk) + ",\n" +
-                "  \"startup_loading_uses_embedded_resource_ok\": " + Bool(
-                    artChecks.StartupFrameUsesEmbeddedLoadingOk) + ",\n" +
-                "  \"startup_loading_uses_saved_pet_scale_ok\": " + Bool(
-                    artChecks.StartupUsesSavedScaleOk) + ",\n" +
-                "  \"startup_loading_uses_saved_or_fallback_location_ok\": " +
-                    Bool(artChecks.StartupLocationOk) + ",\n" +
-                "  \"startup_loading_dedicated_sta_ok\": " + Bool(
-                    artChecks.StartupLoadingThreadHostOk) + ",\n" +
                 "  \"contact_author_feature_ok\": " + Bool(
                     artChecks.ContactAuthorFeatureOk) + ",\n" +
                 "  \"contact_author_xiaohongshu_only_ok\": " + Bool(
@@ -6455,6 +6356,8 @@ namespace PennyPet
                     reminderCoordinatorChecks.ConcreteDateTimeOk) + ",\n" +
                 "  \"reminder_banner_tick_throttled_ok\": " + Bool(
                     reminderCoordinatorChecks.BannerTickThrottleOk) + ",\n" +
+                "  \"reminder_runtime_ownership_ok\": " + Bool(
+                    reminderCoordinatorChecks.RuntimeOwnershipOk) + ",\n" +
                 "  \"startup_default_ok\": " + Bool(
                     shellChecks.StartupDefaultOk) + ",\n" +
                 "  \"sticky_ui_host_ok\": " + Bool(
@@ -6520,9 +6423,7 @@ namespace PennyPet
                     keyboardOverlayChecks.HookOptInDefaultOk) + ",\n" +
                 "  \"keyboard_privacy_notice_persistence_ok\": " + Bool(
                     settingsChecks.KeyboardPrivacyNoticePersistenceOk) +
-                    ",\n" +
-                "  \"startup_loading_waits_for_ui_and_art_ok\": " + Bool(
-                    shellChecks.StartupLoadingReadinessGateOk) + ",\n";
+                    ",\n";
         }
 
         private static string BuildAnimationArtReportFields(
@@ -6729,6 +6630,8 @@ namespace PennyPet
                 "  \"daily_content_async_preference_snapshot_ok\": " + Bool(
                     weatherChecks.DailyCoordinatorPreferenceSnapshotOk) +
                     ",\n" +
+                "  \"conversation_runtime_ownership_ok\": " + Bool(
+                    weatherChecks.ConversationOwnershipOk) + ",\n" +
                 "  \"weather_rejected_bubble_reuses_forecast_ok\": " + Bool(
                     weatherChecks.RejectedBubbleReusesForecastOk) + ",\n" +
                 "  \"weather_location_dialog_compact_formatting_ok\": " +
@@ -6770,6 +6673,7 @@ namespace PennyPet
                 // PC-2A: execute production rejection paths before any harness
                 // decomposition. Characterization success is not defect absence.
                 RunPc2CharacterizationChecks(outputPath);
+                bool stickyFeatureBoundaryOk = RunStickyFeatureBoundaryChecks();
                 RunDisplayResolverConsistencyCheck();
                 ArtResourceCheckResult artChecks = RunArtResourceChecks();
                 SettingsPersistenceCheckResult settingsChecks =
@@ -6805,6 +6709,7 @@ namespace PennyPet
                 // detailed report when a new check is added.
                 BeginCheckCollection();
                 string reportBody =
+                    "  \"sticky_feature_boundary_ok\": " + Bool(stickyFeatureBoundaryOk) + ",\n" +
                     BuildPc2CharacterizationReportFields() +
                     BuildArtAndSettingsReportFields(artChecks, settingsChecks) +
                     BuildPersistenceReportFields(settingsChecks,

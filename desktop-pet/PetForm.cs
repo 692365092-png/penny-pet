@@ -23,20 +23,11 @@ namespace PennyPet
         private const int NotificationRow = PetAnimationController.NotificationRow;
 
         private readonly System.Windows.Forms.Timer _animationTimer;
-        private readonly System.Windows.Forms.Timer _reminderTimer;
-        private readonly System.Windows.Forms.Timer _persistenceRetryTimer;
-        private readonly PetReminderCoordinator _reminderCoordinator =
-            new PetReminderCoordinator();
+        private PetPersistenceRuntime _persistence;
+        private ReminderRuntime _reminderRuntime;
         private readonly PetBubbleCoordinator _bubbleCoordinator;
-        private readonly PetDailyContentCoordinator _dailyContentCoordinator;
+        private readonly ConversationRuntime _conversation;
         private readonly PetWeatherSource _weatherSource;
-        private readonly PetSmallTalkCoordinator _smallTalkCoordinator;
-        private readonly PetDaypartCheckInCoordinator _daypartCheckInCoordinator;
-        private readonly PetPokeBurstTracker _pokeBurstTracker =
-            new PetPokeBurstTracker();
-        private long _lastReminderBannerSecond
-            { get { return _reminderCoordinator.LastBannerSecond; }
-                set { _reminderCoordinator.LastBannerSecond = value; } }
         private readonly PetContextMenu _petContextMenu;
         internal ContextMenuStrip _menu { get { return _petContextMenu.Menu; } }
         private ToolStripMenuItem _statusItem
@@ -63,14 +54,10 @@ namespace PennyPet
         private readonly KeyboardOverlayForm _keyOverlay;
         internal readonly PetWindowLayerCoordinator _windowLayers =
             new PetWindowLayerCoordinator();
-        private readonly StickyNoteRepository _notes;
-        private readonly StickyWorkspace _stickyWorkspace;
-        private readonly Random _random = new Random();
+        private StickyFeature _notes;
+        private StickyWorkspace _stickyWorkspace;
         private readonly object _keyboardQueueGate = new object();
-        private readonly ArtPreloadReservations _artPreloads =
-            new ArtPreloadReservations();
-        private readonly PetAnimationController _animation =
-            new PetAnimationController();
+        private readonly InteractionRuntime _interaction;
         internal readonly HashSet<string> _expectedFirstRenderNoteIds =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         internal readonly HashSet<string> _renderedFirstRenderNoteIds =
@@ -82,55 +69,25 @@ namespace PennyPet
         private Size _renderedTargetSize;
         private ContactAuthorForm _contactAuthorForm;
         private DisplayTopologyRuntime _displayTopologyRuntime;
-        private ReminderItem _preAlertItem
-            { get { return _reminderCoordinator.PreAlertItem; }
-                set { _reminderCoordinator.PreAlertItem = value; } }
-        private int _row
-            { get { return _animation.Row; } set { _animation.Row = value; } }
-        private int _frame
-            { get { return _animation.Frame; } set { _animation.Frame = value; } }
-        private bool _dragging;
-        private bool _dragMoved;
-        private Point _dragMouseOrigin;
-        private Point _dragWindowOrigin;
-        private bool _typingSession { get { return _animation.TypingSession; }
-            set { _animation.TypingSession = value; } }
-        private int _typingRow { get { return _animation.TypingRow; }
-            set { _animation.TypingRow = value; } }
-        private int _idleRow { get { return _animation.IdleRowState; }
-            set { _animation.IdleRowState = value; } }
-        private DateTime _typingUntilUtc { get { return _animation.TypingUntilUtc; }
-            set { _animation.TypingUntilUtc = value; } }
-        private bool _reminderAttentionActive
-            { get { return _animation.ReminderAttentionActive; }
-                set { _animation.ReminderAttentionActive = value; } }
-        private DateTime _nextFrameUtc { get { return _animation.NextFrameUtc; }
-            set { _animation.NextFrameUtc = value; } }
+        private PetDisplayRuntime _petDisplay;
         internal bool _exiting;
         private int _scalePercent = 100;
         private KeyboardInputEventArgs _latestKeyboardEvent;
-        private int _pendingKeyboardOccurrences;
         private bool _keyboardUiDispatchQueued;
-        private bool _privacyScanRunning;
-        private string _pendingOverlayText = String.Empty;
-        private int _pendingOverlayOccurrences;
-        private int _pendingOverlayVirtualKeyCode;
-        private KeyboardFocusSnapshot _pendingOverlayFocusSnapshot;
-        private long _pendingOverlayGeneration;
+        private readonly KeyboardPrivacyWorker _keyboardPrivacy;
         private System.Windows.Forms.Timer _startupWorkTimer;
         private StartupWorkPhase _startupWorkPhase;
         private Queue<StickyNoteData> _startupVisibleNotes;
-        private bool _startupUiReady;
         private bool _startupArtReady;
-        private bool _startupReadyRaised;
-        // The loading window is the only startup visual.  Keep the layered pet
-        // window alive for initialization, but do not publish one of its frames
-        // until both the restored notes and animation rows are ready.  Showing
-        // both layered bitmaps at the saved pet location caused the startup
-        // artwork and the normal pet to overlap.
+        private bool _shellReadyRaised;
+        // The loading window is the only startup visual. Keep the layered pet
+        // window alive for initialization, but do not publish one of its
+        // frames until the restored notes and the first idle frame are ready.
+        // Optional interaction rows continue warming after startup.
         private bool _startupDisplaySuppressed = true;
 
-        internal event EventHandler StartupReady;
+        internal event EventHandler ShellReady;
+        internal event EventHandler StartupBackgroundReady;
 
         public PetForm() : this(null)
         {
@@ -147,84 +104,25 @@ namespace PennyPet
             DoubleBuffered = true;
             AutoScaleMode = AutoScaleMode.None;
             _bubbleCoordinator = new PetBubbleCoordinator(this,
-                delegate { return _dragging; },
+                delegate { return _interaction != null && _interaction.PointerDown; },
                 delegate { return _exiting; }, BubbleMessageClosed,
                 RestoreAmbientBubble, null, _windowLayers);
 
             _settings = preloadedSettings ?? PetSettings.Load();
+            _petDisplay = new PetDisplayRuntime(this, _settings,
+                CurrentTopologySnapshot, DisplayDiagnostics.Trace);
             _weatherSource = new PetWeatherSource();
-            InitializeDailyLedger();
-            _smallTalkCoordinator = new PetSmallTalkCoordinator(
-                delegate { return _settings.SilentMode; },
-                delegate(string text)
-                {
-                    return _bubbleCoordinator.Show(
-                        PetBubbleRequest.SmallTalk(text,
-                            KeyboardOverlayForm.TextFontFamilyName,
-                            KeyboardOverlayForm.TextFontSizePoints(
-                                _settings.KeyOverlayScalePercent)));
-                },
-                LedgerSnapshot);
-            _daypartCheckInCoordinator = new PetDaypartCheckInCoordinator(
-                LedgerSnapshot,
-                delegate { return _settings.SilentMode; },
-                delegate(string text)
-                {
-                    return _bubbleCoordinator.Show(
-                        PetBubbleRequest.DailyGreeting(text,
-                            KeyboardOverlayForm.TextFontFamilyName,
-                            KeyboardOverlayForm.TextFontSizePoints(
-                                _settings.KeyOverlayScalePercent)));
-                });
-            _dailyContentCoordinator = new PetDailyContentCoordinator(
-                delegate { return _settings.LastDailyBriefingDate; },
-                delegate { return _settings.SilentMode; },
-                delegate { return _settings.DailyContentEnabled; },
-                delegate { return _settings.SolarTermEnabled; },
-                delegate { return _settings.AlmanacEnabled; },
-                delegate { return _settings.WeatherEnabled; },
-                delegate
-                {
-                    WeatherLocation location;
-                    WeatherLocation.TryCreate(
-                        _settings.WeatherLocationName,
-                        _settings.WeatherLocationAdmin1,
-                        _settings.WeatherLocationCountry,
-                        _settings.WeatherLatitude,
-                        _settings.WeatherLongitude,
-                        _settings.WeatherTimezone, out location);
-                    return location;
-                },
-                delegate(WeatherLocation location)
-                {
-                    return _weatherSource.GetForecastAsync(location);
-                },
-                delegate { return _settings.ZodiacSign; },
-                delegate { return _settings.UserBirthdayMonth; },
-                delegate { return _settings.UserBirthdayDay; },
-                delegate(string text)
-                {
-                    if (_exiting || IsDisposed || Disposing) return false;
-                    return _bubbleCoordinator.Show(
-                        PetBubbleRequest.DailyGreeting(text,
-                            KeyboardOverlayForm.TextFontFamilyName,
-                            KeyboardOverlayForm.TextFontSizePoints(
-                                _settings.KeyOverlayScalePercent)));
-                },
-                delegate(string date)
-                {
-                    _settings.LastDailyBriefingDate = date;
-                    _settings.SaveAsync();
-                });
-            _settings.SaveFailed += PersistenceSaveFailed;
-            if (PetKeyboardPrivacyPolicy.ShouldDisableUnacknowledgedLegacyOptIn(
-                _settings.ShowKeyOverlay,
-                _settings.KeyboardPrivacyNoticeAccepted))
+            _conversation = new ConversationRuntime(_settings,
+                _weatherSource.GetForecastAsync, ShowConversationMessage);
+            bool persistKeyboardPrivacyReset =
+                PetKeyboardPrivacyPolicy.ShouldDisableUnacknowledgedLegacyOptIn(
+                    _settings.ShowKeyOverlay,
+                    _settings.KeyboardPrivacyNoticeAccepted);
+            if (persistKeyboardPrivacyReset)
             {
                 // Older versions could enable the hook without the explicit
                 // first-use notice. Require a fresh opt-in after this upgrade.
                 _settings.ShowKeyOverlay = false;
-                _settings.SaveAsync();
             }
             _art = PetArtPackage.Load(CellWidth, CellHeight);
             Text = _art.DisplayName;
@@ -232,20 +130,17 @@ namespace PennyPet
             ClientSize = ScaledPetSize(_scalePercent);
             // Always show the compact ordinary idle clip first. The less common
             // long animations are decoded only when they are actually selected.
-            _idleRow = IdleRow;
-            _row = _idleRow;
+            // Resolve only the mandatory startup clip before any preload worker.
+            _art.PreloadRow(IdleRow);
+            _interaction = new InteractionRuntime(this, DateTime.UtcNow);
+            _interaction.FrameChanged += RenderCurrentFrame;
+            _interaction.HoverChanged += InteractionHoverChanged;
             BuildRenderedFrameCache();
 
             _reminders = new ReminderSchedule();
-            RestoreReminders();
-            _notes = StickyNoteRepository.Load();
-            if (_notes.IsFutureSchemaBlocked)
-                throw _notes.FutureSchemaError;
-            _notes.SaveFailed += PersistenceSaveFailed;
-            _stickyWorkspace = new StickyWorkspace(this, _notes,
-                SynchronizationContext.Current as WindowsFormsSynchronizationContext
-                ?? new WindowsFormsSynchronizationContext());
-            ReconcileNoteReminders();
+            // Sticky disk parsing is prepared by PennyApplicationHost only
+            // after this shell has rendered and become interactive.
+            if (persistKeyboardPrivacyReset) _settings.SaveAsync();
             if (!_settings.StartupPreferenceInitialized)
             {
                 // Startup is an explicit opt-in. First launch records the safe
@@ -271,39 +166,58 @@ namespace PennyPet
             {
                 if (!_exiting &&
                     !PetHoverStabilityRules.ShouldSuppressHover(
-                        _stableMouseInside, _menu.Visible, _dragging,
+                        _interaction.StableMouseInside, _menu.Visible, _interaction.PointerDown,
                         _settings.SilentMode,
-                        _hoverSuppressedUntilStableLeave))
+                        _interaction.HoverSuppressed))
                     ShowOrUpdateHoverBubble();
             };
-            menuCommands.ShowReminder = ShowReminderDialog;
+            menuCommands.ShowReminder = delegate
+            {
+                RunWhenReminderRuntimeReady(ShowReminderDialog);
+            };
             menuCommands.CreateNote = delegate
             {
-                _stickyWorkspace.QueueStickyWindowAction(delegate
+                RunWhenStickyRuntimeReady(delegate(StickyWorkspace workspace)
                 {
-                    _stickyWorkspace.CreateStickyNote(String.Empty);
-                }, "sticky-note-menu-create");
+                    workspace.QueueStickyWindowAction(delegate
+                    {
+                        workspace.CreateStickyNote(String.Empty);
+                    }, "sticky-note-menu-create");
+                });
             };
             menuCommands.CreateTodo = delegate
             {
-                _stickyWorkspace.QueueStickyWindowAction(delegate
+                RunWhenStickyRuntimeReady(delegate(StickyWorkspace workspace)
                 {
-                    _stickyWorkspace.CreateTodoStickyNote();
-                }, "sticky-todo-menu-create");
+                    workspace.QueueStickyWindowAction(
+                        workspace.CreateTodoStickyNote,
+                        "sticky-todo-menu-create");
+                });
             };
             menuCommands.CreateSchedule = delegate
             {
-                _stickyWorkspace.QueueStickyWindowAction(delegate
+                RunWhenStickyRuntimeReady(delegate(StickyWorkspace workspace)
                 {
-                    _stickyWorkspace.CreateScheduleStickyNote();
-                }, "sticky-schedule-menu-create");
+                    workspace.QueueStickyWindowAction(
+                        workspace.CreateScheduleStickyNote,
+                        "sticky-schedule-menu-create");
+                });
             };
-            menuCommands.ManageNotes = _stickyWorkspace.ShowStickyNotesManager;
+            menuCommands.ManageNotes = delegate
+            {
+                RunWhenStickyRuntimeReady(delegate(StickyWorkspace workspace)
+                {
+                    workspace.ShowStickyNotesManager();
+                });
+            };
             menuCommands.TileAllNotes = delegate
             {
-                _stickyWorkspace.QueueStickyWindowAction(
-                    _stickyWorkspace.Dock.ExpandAndTileAllStickyNotesToPetScreen,
-                    "sticky-menu-expand-and-tile");
+                RunWhenStickyRuntimeReady(delegate(StickyWorkspace workspace)
+                {
+                    workspace.QueueStickyWindowAction(
+                        workspace.Dock.ExpandAndTileAllStickyNotesToPetScreen,
+                        "sticky-menu-expand-and-tile");
+                });
             };
             menuCommands.ShowDailyContentSettings =
                 ShowDailyContentSettingsDialog;
@@ -334,59 +248,54 @@ namespace PennyPet
             _animationTimer = new System.Windows.Forms.Timer();
             _animationTimer.Interval = 15;
             _animationTimer.Tick += AnimationTick;
-            _nextFrameUtc = DateTime.UtcNow.AddMilliseconds(
-                RuntimeFrameDuration(_row, 0));
             _animationTimer.Start();
-            _reminderTimer = new System.Windows.Forms.Timer();
-            _reminderTimer.Interval = 500;
-            _reminderTimer.Tick += ReminderTick;
-            _reminderTimer.Start();
-            _persistenceRetryTimer = new System.Windows.Forms.Timer();
-            _persistenceRetryTimer.Interval = 5000;
-            _persistenceRetryTimer.Tick += RetryUnsavedPersistence;
-            if (_notes.HasUnsavedChanges || _settings.HasUnsavedChanges)
-                _persistenceRetryTimer.Start();
-
             MouseDown += PetMouseDown;
             MouseMove += PetMouseMove;
             MouseUp += PetMouseUp;
+            MouseCaptureChanged += PetMouseCaptureChanged;
             MouseEnter += delegate { OnRawMouseEnter(); };
             MouseLeave += delegate { OnRawMouseLeave(); };
             LocationChanged += delegate
             {
                 if (_petDpiDragHandoffActive) return;
-                _stickyWorkspace.PositionNoteTabs();
+                if (_stickyWorkspace != null)
+                    _stickyWorkspace.PositionNoteTabs();
                 RepositionCurrentBubble();
             };
             SizeChanged += delegate
             {
                 if (_petDpiDragHandoffActive) return;
-                _stickyWorkspace.PositionNoteTabs();
+                if (_stickyWorkspace != null)
+                    _stickyWorkspace.PositionNoteTabs();
             };
 
             _keyOverlay = new KeyboardOverlayForm(_settings.KeyOverlayScalePercent);
             _windowLayers.LayerChanged += PetWindowLayerChanged;
             _keyboard = new GlobalKeyboardActivity();
             _keyboard.Activity += KeyboardActivity;
+            _keyboard.FocusChanged += KeyboardFocusChanged;
+            _keyboardPrivacy = new KeyboardPrivacyWorker(
+                snapshot => !SensitiveInputDetector.IsSensitiveFocus(snapshot),
+                snapshot => snapshot.StillMatchesCurrentTarget(),
+                action => BeginInvoke((MethodInvoker)(() => action())),
+                PublishCheckedKeyboardInput);
+            _keyboardPrivacy.SetEnabled(_settings.ShowKeyOverlay);
             RefreshKeyboardMenuText();
             _displayTopologyRuntime = new DisplayTopologyRuntime(
                 delegate { return new WindowsDisplayTopologyProvider().Capture(); });
             _displayTopologyRuntime.TopologyChanged +=
                 DisplayTopologyChanged;
             _displayTopologyRuntime.CaptureInitial();
-            _stickyWorkspace.Start();
 
             Shown += delegate
             {
-                InitializePetDisplayPlacement();
-                _stickyWorkspace.RefreshNoteTabs();
+                _petDisplay.Initialize();
 
-                RenderCurrentFrame();
+                // Shell readiness is intentionally independent of Sticky disk
+                // parsing and first-render acknowledgements.
+                _startupArtReady = _art.IsRowLoaded(IdleRow);
+                TryRaiseShellReady();
                 QueueStartupInteractionPreload();
-
-                if (_reminders.Count > 0)
-                    QueueArtPreload(NotificationRow);
-
                 BeginDeferredStartupWork();
             };
         }
@@ -403,13 +312,13 @@ namespace PennyPet
 
         protected override void OnDpiChanged(DpiChangedEventArgs e)
         {
-            if (e == null || IsDisposed || Disposing)
+            if (e == null || IsDisposed || Disposing || _petDisplay == null)
             {
                 base.OnDpiChanged(e);
                 return;
             }
 
-            bool activeDrag = _dragging && IsHandleCreated &&
+            bool activeDrag = _interaction != null && _interaction.PointerDown && IsHandleCreated &&
                 Handle != IntPtr.Zero;
 
             DisplayTopologySnapshot topology = CurrentTopologySnapshot();
@@ -463,18 +372,7 @@ namespace PennyPet
                             oldTopLeft, oldCursor, newCursor,
                             oldDpi, actualDpi);
 
-                    bool previousProgrammatic =
-                        _petProgrammaticPlacement;
-                    _petProgrammaticPlacement = true;
-                    try
-                    {
-                        TrySetPetTopLeft(rebased.X, rebased.Y);
-                    }
-                    finally
-                    {
-                        _petProgrammaticPlacement =
-                            previousProgrammatic;
-                    }
+                    _petDisplay.MoveForDpiHandoff(rebased.X, rebased.Y);
 
                     WindowFacts afterRebase =
                         CapturePetWindowFacts(topology);
@@ -483,9 +381,8 @@ namespace PennyPet
                             afterRebase.PhysicalBounds.Top)
                         : new Point(rebased.X, rebased.Y);
 
-                    _dragMouseOrigin = new Point(
-                        newCursor.X, newCursor.Y);
-                    _dragWindowOrigin = actualTopLeft;
+                    _interaction.RebasePointer(new Point(
+                        newCursor.X, newCursor.Y), actualTopLeft);
 
                     DisplayDiagnostics.Trace("PetDragDpiHandoff",
                         "oldDpi=" + oldDpi +
@@ -510,7 +407,6 @@ namespace PennyPet
                     " topology=" +
                     (topology == null ? -1 : topology.Generation) +
                     " drag=" + (activeDrag ? "1" : "0"));
-                if (facts != null) _petEffectiveFacts = facts;
             }
             finally
             {
@@ -518,7 +414,8 @@ namespace PennyPet
                     _petDpiDragHandoffActive = false;
             }
 
-            _stickyWorkspace.PositionNoteTabs();
+            if (_stickyWorkspace != null)
+                _stickyWorkspace.PositionNoteTabs();
             RepositionCurrentBubble();
         }
 
@@ -588,14 +485,18 @@ namespace PennyPet
                 StringComparison.Ordinal))
                 DisplayDiagnostics.Trace("TopologyChanged",
                     details.ToString());
-            _stickyWorkspace.Host.SetCurrentTopology(snapshot);
+            if (_stickyWorkspace != null)
+                _stickyWorkspace.Host.SetCurrentTopology(snapshot);
 
-            // Pet is upstream of SideTabs and is also fallback context for Sticky.
-            ReconcilePetDisplayPlacement(snapshot, reason);
+            // Pet is upstream of SideTabs and remains independently live while
+            // Sticky runtime is still preparing.
+            _petDisplay.Reconcile(snapshot, reason);
 
-            _stickyWorkspace.HandleStickyTopologyChanged(snapshot);
-
-            _stickyWorkspace.PositionNoteTabs();
+            if (_stickyWorkspace != null)
+            {
+                _stickyWorkspace.HandleStickyTopologyChanged(snapshot);
+                _stickyWorkspace.PositionNoteTabs();
+            }
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
@@ -608,7 +509,7 @@ namespace PennyPet
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
-            _stickyWorkspace.Dispose();
+            if (_stickyWorkspace != null) _stickyWorkspace.Dispose();
             if (_displayTopologyRuntime != null)
             {
                 _displayTopologyRuntime.TopologyChanged -=
@@ -616,12 +517,18 @@ namespace PennyPet
                 _displayTopologyRuntime.Dispose();
                 _displayTopologyRuntime = null;
             }
-            _notes.SaveFailed -= PersistenceSaveFailed;
-            _settings.SaveFailed -= PersistenceSaveFailed;
+            if (_persistence != null)
+            {
+                _persistence.Notice -= PersistenceNoticeReceived;
+                _persistence.Dispose();
+            }
+            _keyboardPrivacy.Dispose();
+            _keyboard.FocusChanged -= KeyboardFocusChanged;
+            _keyboard.Activity -= KeyboardActivity;
             _keyboard.Dispose();
             _windowLayers.LayerChanged -= PetWindowLayerChanged;
             _keyOverlay.Dispose();
-            DisposeHoverRuntime();
+            _interaction.Stop();
             _bubbleCoordinator.Dispose();
             _weatherSource.Dispose();
             if (_contactAuthorForm != null && !_contactAuthorForm.IsDisposed)
@@ -631,8 +538,8 @@ namespace PennyPet
             if (_appIcon != null) _appIcon.Dispose();
             _menu.Dispose();
             _animationTimer.Dispose();
-            _reminderTimer.Dispose();
-            _persistenceRetryTimer.Dispose();
+            if (_reminderRuntime != null) _reminderRuntime.Dispose();
+            _conversation.Stop();
             StopDeferredStartupWork();
             DisposeRenderedFrameCache();
             _art.Dispose();
@@ -684,17 +591,18 @@ namespace PennyPet
 
         private bool IsVisible(Point location)
         {
-            return IsPetVisibleInTopology(location, ClientSize, CurrentTopologySnapshot());
+            return _petDisplay.IsVisible(new PhysicalRect(location.X, location.Y,
+                ClientSize.Width, ClientSize.Height), CurrentTopologySnapshot());
         }
 
         private void EnsureVisible()
         {
-            EnsurePetVisibleOnCurrentTopology();
+            _petDisplay.EnsureVisible();
         }
 
         private void KeepFullyVisible()
         {
-            KeepPetFullyVisibleOnCurrentSurface();
+            _petDisplay.KeepFullyVisible();
         }
 
         private void SaveLocation()
@@ -705,13 +613,7 @@ namespace PennyPet
 
         private void CaptureLocationForSave()
         {
-            // Compatibility-only physical fallback.
-            // Durable PetPreferred* is committed only from actual facts at an
-            // explicit user placement or one-time initial migration/default.
-            _settings.HasLocation = true;
-            _settings.X = Left;
-            _settings.Y = Top;
-            _settings.ScalePercent = _scalePercent;
+            _petDisplay.CaptureForSave();
         }
 
     }

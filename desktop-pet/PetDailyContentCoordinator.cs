@@ -9,58 +9,28 @@ namespace PennyPet
         private readonly Func<DailyContentPreferencesSnapshot> _preferences;
         private readonly Func<WeatherLocation,
             Task<WeatherForecastWindow>> _weatherForecast;
-        private readonly Func<string, bool> _showDailyGreeting;
-        private readonly Action<string> _recordBriefingDate;
-        private readonly object _attemptGate = new object();
+        private readonly Func<DailyContentPreferencesSnapshot, DateTimeOffset, string, bool> _showDailyGreeting;
+        private readonly Action<DateTimeOffset> _recordBriefingDate;
+        private int _generation;
         private bool _attemptInFlight;
 
-        internal PetDailyContentCoordinator(Func<string> lastBriefingDate,
-            Func<bool> silentMode, Func<bool> dailyContentEnabled,
-            Func<bool> solarTermEnabled, Func<bool> almanacEnabled,
-            Func<bool> weatherEnabled,
-            Func<WeatherLocation> weatherLocation,
-            Func<WeatherLocation, Task<WeatherForecastWindow>>
-                weatherForecast,
-            Func<ZodiacSign> zodiacSign,
-            Func<int> userBirthdayMonth,
-            Func<int> userBirthdayDay,
-            Func<string, bool> showDailyGreeting,
-            Action<string> recordBriefingDate)
+        internal PetDailyContentCoordinator(Func<DailyContentPreferencesSnapshot> preferences,
+            Func<WeatherLocation, Task<WeatherForecastWindow>> weatherForecast,
+            Func<DailyContentPreferencesSnapshot, DateTimeOffset, string, bool> showDailyGreeting,
+            Action<DateTimeOffset> recordBriefingDate)
         {
-            if (lastBriefingDate == null)
-                throw new ArgumentNullException("lastBriefingDate");
-            if (silentMode == null)
-                throw new ArgumentNullException("silentMode");
-            if (dailyContentEnabled == null)
-                throw new ArgumentNullException("dailyContentEnabled");
-            if (solarTermEnabled == null)
-                throw new ArgumentNullException("solarTermEnabled");
-            if (almanacEnabled == null)
-                throw new ArgumentNullException("almanacEnabled");
-            if (weatherEnabled == null)
-                throw new ArgumentNullException("weatherEnabled");
-            if (weatherLocation == null)
-                throw new ArgumentNullException("weatherLocation");
-            if (zodiacSign == null)
-                throw new ArgumentNullException("zodiacSign");
-            if (userBirthdayMonth == null)
-                throw new ArgumentNullException("userBirthdayMonth");
-            if (userBirthdayDay == null)
-                throw new ArgumentNullException("userBirthdayDay");
-            _preferences = delegate
-            {
-                return new DailyContentPreferencesSnapshot(silentMode(),
-                    dailyContentEnabled(), solarTermEnabled(),
-                    almanacEnabled(), weatherEnabled(), weatherLocation(),
-                    zodiacSign(), userBirthdayMonth(), userBirthdayDay(),
-                    lastBriefingDate());
-            };
-            _weatherForecast = weatherForecast ??
-                throw new ArgumentNullException("weatherForecast");
-            _showDailyGreeting = showDailyGreeting ??
-                throw new ArgumentNullException("showDailyGreeting");
-            _recordBriefingDate = recordBriefingDate ??
-                throw new ArgumentNullException("recordBriefingDate");
+            _preferences = preferences;
+            _weatherForecast = weatherForecast;
+            _showDailyGreeting = showDailyGreeting;
+            _recordBriefingDate = recordBriefingDate;
+        }
+
+        // Called on the owning UI context. Old completions cannot clear or
+        // publish a newer attempt after settings changes or foreground takeover.
+        internal void Invalidate()
+        {
+            ++_generation;
+            _attemptInFlight = false;
         }
 
         // true means this poke was handled/claimed by DailyContent,
@@ -73,11 +43,9 @@ namespace PennyPet
                 PetMessagePolicy.ShouldSuppress(PetMessageKind.DailyGreeting,
                 preferences.SilentMode) || !DailyContentRules.ShouldShow(
                     preferences.LastBriefingDate, localNow)) return false;
-            lock (_attemptGate)
-            {
-                if (_attemptInFlight) return true;
-                _attemptInFlight = true;
-            }
+            if (_attemptInFlight) return true;
+            _attemptInFlight = true;
+            int generation = ++_generation;
             try
             {
                 DayPart dayPart = DailyContentRules.ResolveDayPart(localNow);
@@ -98,8 +66,14 @@ namespace PennyPet
                     ? preferences.WeatherLocation : null;
                 if (location != null)
                 {
-                    WeatherForecastWindow forecast = await _weatherForecast(
-                        location);
+                    WeatherForecastWindow forecast = null;
+                    try { forecast = await _weatherForecast(location); }
+                    catch (Exception error)
+                    {
+                        if (generation == _generation)
+                            ApplicationDiagnostics.ReportNonFatal("daily-weather", error);
+                    }
+                    if (generation != _generation) return true;
                     WeatherMeaning? meaning = WeatherMeaningRules.Select(
                         forecast);
                     if (meaning.HasValue)
@@ -122,13 +96,14 @@ namespace PennyPet
                     birthdayLine, birthdayKind);
                 string text = DailyBriefingComposer.Compose(dayPart,
                     localNow.Date, content);
-                if (!_showDailyGreeting(text)) return false;
-                _recordBriefingDate(DailyContentRules.DateKey(localNow));
+                if (generation != _generation) return true;
+                if (!_showDailyGreeting(preferences, localNow, text)) return false;
+                _recordBriefingDate(localNow);
                 return true;
             }
             finally
             {
-                lock (_attemptGate) _attemptInFlight = false;
+                if (generation == _generation) _attemptInFlight = false;
             }
         }
 

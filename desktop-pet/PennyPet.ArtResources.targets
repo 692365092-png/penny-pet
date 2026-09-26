@@ -11,8 +11,6 @@
       LogicalName="PennyPet.Art.ReleasePack" />
     <EmbeddedResource Include="$(PennyStartupCache)"
       LogicalName="PennyPet.Art.StartupCache" />
-    <EmbeddedResource Include="..\art\loading.png"
-      LogicalName="PennyPet.Startup.Loading" />
     <EmbeddedResource Include="..\art\未标题-1.png"
       LogicalName="PennyPet.ContactAuthor.Image" />
     <EmbeddedResource Include="..\art\svg.png"

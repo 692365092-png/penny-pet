@@ -19,7 +19,7 @@ namespace PennyPet
         private sealed class Pc2Scene : IDisposable
         {
             internal readonly PetForm Pet;
-            internal readonly StickyNoteRepository Repository;
+            internal readonly StickyFeature Repository;
             internal readonly StickyWorkspace Workspace;
             internal StickyHostedRuntime Hosted { get { return Workspace.Hosted; } }
             internal StickyPlacementRuntime Placement { get { return Workspace.Placement; } }
@@ -42,7 +42,7 @@ namespace PennyPet
                 string directory = Path.Combine(root, name);
                 Directory.CreateDirectory(directory);
                 PathName = Path.Combine(directory, "sticky-notes.dat");
-                Repository = new StickyNoteRepository(PathName);
+                Repository = new StickyFeature(PathName);
                 Pet = (PetForm)System.Runtime.Serialization.FormatterServices
                     .GetUninitializedObject(typeof(PetForm));
                 GC.SuppressFinalize(Pet); // no native Pet resource was created
@@ -64,18 +64,25 @@ namespace PennyPet
                 bubble = new PetBubbleCoordinator(Pet, () => true, () => false,
                     null, null);
                 Pc2Set(Pet, "_notes", Repository);
+                Pc2Set(Pet, "_interaction", new InteractionRuntime(
+                    new InteractionTestArt(), DateTime.UtcNow));
 
                 Pc2Set(Pet, "_displayTopologyRuntime", Display);
 
                 Pc2Set(Pet, "_settings", new PetSettings());
+                Pc2Set(Pet, "_petDisplay", new PetDisplayRuntime(Pet,
+                    (PetSettings)Pc2Get(Pet, "_settings"), () => Display.Current));
                 Pc2Set(Pet, "_reminders", new ReminderSchedule());
                 Pc2Set(Pet, "_petContextMenu", menu);
                 Pc2Set(Pet, "_bubbleCoordinator", bubble);
 
                 Pc2Set(Pet, "_expectedFirstRenderNoteIds", new HashSet<string>());
                 Pc2Set(Pet, "_renderedFirstRenderNoteIds", new HashSet<string>());
-                Workspace = new StickyWorkspace(Pet, Repository, Context);
+                Workspace = Pet.AttachStickyWorkspace(Context);
                 Pc2Set(Pet, "_stickyWorkspace", Workspace);
+                Pc2Set(Pet, "_reminderRuntime", new ReminderRuntime(
+                    (ReminderSchedule)Pc2Get(Pet, "_reminders"),
+                    (PetSettings)Pc2Get(Pet, "_settings"), Repository, Pet));
                 for (int i = 0; i < 3; i++)
                 {
                     StickyNoteData note = Repository.CreateDraft("before-" + i,
@@ -104,7 +111,7 @@ namespace PennyPet
             internal DisplayTopologySnapshot Topology { get { return Display.Current; } }
             internal DisplaySurfaceSnapshot Surface { get { return Topology.PrimaryOrFirst(); } }
             internal string[] Ids { get { return Notes.ConvertAll(n => n.Id).ToArray(); } }
-            internal long Saves { get { return (long)Pc2Get(Pc2Get(Repository, "_writer"), "_requestedRevision"); } }
+            internal long Saves { get { return (long)Pc2Get(Pc2Get(Pc2Get(Repository, "_store"), "_writer"), "_requestedRevision"); } }
             internal long Sequence(int i)
             { return ((Dictionary<string, long>)Pc2Get(Hosted, "_appliedSequences"))[Notes[i].Id]; }
             internal WindowFacts Facts(int i, long sequence, int x)
@@ -149,6 +156,7 @@ namespace PennyPet
                     System.Threading.Thread thread = (System.Threading.Thread)Pc2Get(threadHost, "_thread");
                     Context.PumpUntil(() => thread == null || !thread.IsAlive);
                 }
+                ((ReminderRuntime)Pc2Get(Pet, "_reminderRuntime")).Dispose();
                 Display.Dispose(); bubble.Dispose(); menu.Dispose();
             }
         }
@@ -455,7 +463,7 @@ namespace PennyPet
                     note.X == moved.Facts.PhysicalBounds.Left &&
                     note.Y == moved.Facts.PhysicalBounds.Top &&
                     s.Sequence(0) == moved.Sequence && s.Saves == saves + 1 &&
-                    StickyNoteRepository.LoadFromFile(s.PathName).Find(note.Id).X == note.X,
+                    StickyFeature.LoadFromFile(s.PathName).Find(note.Id).X == note.X,
                     "recreated HWND: canonical and Effective both equal new actual facts and save once");
                 evidence.Add("A2 real EnsureSession/CloseAll/recreation/Reproject: old HWND sequence=" + old.Sequence +
                     "; recreated lease=" + ensured.Sequence + "; new HWND sequence=" + moved.Sequence +
@@ -649,10 +657,10 @@ namespace PennyPet
                             }
                             if (caseCount == 0)
                                 appearanceCloseStressOk &=
-                                    note.ExerciseAppearanceCloseStressForTest(20);
+                                    new StickyWindowInteractionDriver(note).ExerciseAppearanceCloseStressForTest(20);
                             editorInteractionOk &= todoMode
-                                ? note.ExerciseTodoWrapAndInlineEditForTest()
-                                : note.ExerciseSmoothFormatInteractionForTest();
+                                ? new StickyWindowInteractionDriver(note).ExerciseTodoWrapAndInlineEditForTest()
+                                : new StickyWindowInteractionDriver(note).ExerciseSmoothFormatInteractionForTest();
                             interactionCount += 5;
                             note.HideNote();
                             closeOk &= !note.Visible;
@@ -723,7 +731,7 @@ namespace PennyPet
                         visible = note.Visible;
                         handleCreated = note.Handle != IntPtr.Zero &&
                             note.LegacyInputProxyHandleForTest == IntPtr.Zero;
-                        editorOk = note.ExerciseSmoothFormatInteractionForTest();
+                        editorOk = new StickyWindowInteractionDriver(note).ExerciseSmoothFormatInteractionForTest();
                         Point moved = new Point(note.Left + 17, note.Top + 13);
                         note.Location = moved;
                         dragPositionOk = note.Location == moved;
@@ -1113,7 +1121,7 @@ namespace PennyPet
                 note.Location = new Point(stage.Left + 28, stage.Top + 95);
                 note.TopMost = true;
                 note.Show();
-                note.OpenAppearanceDialogForTest();
+                new StickyWindowInteractionDriver(note).OpenAppearanceDialogForTest();
                 Application.DoEvents();
                 System.Threading.Thread.Sleep(650);
                 Application.DoEvents();

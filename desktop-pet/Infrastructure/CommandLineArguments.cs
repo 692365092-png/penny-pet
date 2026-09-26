@@ -4,20 +4,11 @@ using System.Text;
 
 namespace PennyPet
 {
-    // Shared parsing and failure semantics for the desktop executable and the
-    // dedicated tools/self-test hosts. Every file-producing command now exits
+    // Shared parsing and failure semantics for the tools/self-test hosts.
+    // Every file-producing command exits
     // non-zero and leaves a sibling error file when execution fails.
     internal static class CommandLineArguments
     {
-        internal static bool HasFlag(string[] args, string expected)
-        {
-            if (args == null) return false;
-            foreach (string argument in args)
-                if (String.Equals(argument, expected,
-                    StringComparison.OrdinalIgnoreCase)) return true;
-            return false;
-        }
-
         internal static bool TryGetPath(string[] args, string prefix,
             out string path)
         {

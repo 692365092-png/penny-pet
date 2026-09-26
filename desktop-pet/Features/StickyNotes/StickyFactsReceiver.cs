@@ -7,11 +7,11 @@ namespace PennyPet
     // committing any. Prepared updates never cross an await or invoke window code.
     internal sealed class StickyFactsReceiver
     {
-        private readonly StickyNoteRepository _notes;
+        private readonly StickyModel _notes;
         private readonly StickyHostedRuntime _hosted;
         private readonly StickyPlacementRuntime _placement;
 
-        internal StickyFactsReceiver(StickyNoteRepository notes,
+        internal StickyFactsReceiver(StickyModel notes,
             StickyHostedRuntime hosted, StickyPlacementRuntime placement)
         {
             _notes = notes;

@@ -5,7 +5,6 @@
     <PennySource Condition="'$(PennySource)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../..'))</PennySource>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="$(PennySource)/desktop-pet/Features/StickyNotes/DockWindowFacts.cs" />
     <Compile Include="$(PennySource)/desktop-pet/Features/StickyNotes/StickyHostedRuntime.cs" />
     <Compile Include="$(PennySource)/desktop-pet/Features/StickyNotes/StickyPlacementRuntime.cs" />
     <Compile Include="$(PennySource)/desktop-pet/Features/StickyNotes/StickyUiCommand.cs" />

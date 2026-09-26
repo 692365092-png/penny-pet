@@ -16,16 +16,17 @@ namespace PennyPet
         FocusPrimaryInput,
         SetTopMost,
         SetDockResizeRole,
-        RaiseDockGroupForDrag,
         SetBounds,
         Reproject,
         ReprojectDockGroup,
         RestoreDockGroup,
         CaptureWindowFacts,
-        CaptureDockFacts,
+        AcknowledgeDockCommit,
+        PrepareDockStructure,
         Close,
         CloseAll,
-        UpdateReminders
+        UpdateReminders,
+        UpdateAllReminders
     }
 
     internal sealed class StickyUiCommand
@@ -40,8 +41,9 @@ namespace PennyPet
             StickyUiReprojectTarget reprojectTarget = null,
             string[] dockNoteIds = null,
             DockGroupReprojectPlan dockGroupReprojectPlan = null,
-            long interactionEpoch = 0, WindowPlacementPlan placement = null,
-            DockRestoreOperation dockRestore = null, DockInput input = null)
+            WindowPlacementPlan placement = null,
+            DockRestoreOperation dockRestore = null,
+            StickyDockCommitAck dockCommitAck = null)
         {
             Kind = kind;
             NoteId = noteId ?? String.Empty;
@@ -56,10 +58,9 @@ namespace PennyPet
                 ? null
                 : (string[])dockNoteIds.Clone();
             DockGroupReprojectPlan = dockGroupReprojectPlan;
-            InteractionEpoch = interactionEpoch;
             Placement = placement;
             DockRestore = dockRestore;
-            Input = input;
+            DockCommitAck = dockCommitAck;
         }
 
         internal static StickyUiCommand Create(StickyNoteUiSnapshot snapshot,
@@ -102,6 +103,13 @@ namespace PennyPet
                 noteId, false, null, null, null, reminders);
         }
 
+        internal static StickyUiCommand UpdateAllReminders(
+            IEnumerable<ReminderItem> reminders)
+        {
+            return new StickyUiCommand(StickyUiCommandKind.UpdateAllReminders,
+                String.Empty, false, reminders: reminders);
+        }
+
         internal static StickyUiCommand Show(string noteId, bool focusEditor,
             DisplayTopologySnapshot topology = null, WindowPlacementPlan placement = null)
         {
@@ -136,79 +144,14 @@ namespace PennyPet
                 noteId, false, null, null, role);
         }
 
-        internal static StickyUiCommand RaiseDockGroupForDrag(
-            IEnumerable<string> orderedNoteIds,
-            string sourceNoteId,
-            DisplayTopologySnapshot topology,
-            long interactionEpoch, DockInput input = null)
-        {
-            if (String.IsNullOrWhiteSpace(sourceNoteId))
-                throw new ArgumentException(
-                    "A source note id is required.",
-                    nameof(sourceNoteId));
-
-            if (topology == null)
-                throw new ArgumentNullException(nameof(topology));
-
-            if (interactionEpoch <= 0)
-                throw new ArgumentOutOfRangeException(
-                    nameof(interactionEpoch));
-
-            List<string> ids = new List<string>();
-            HashSet<string> seen = new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase);
-            bool sourceFound = false;
-
-            if (orderedNoteIds != null)
-            {
-                foreach (string noteId in orderedNoteIds)
-                {
-                    if (String.IsNullOrWhiteSpace(noteId) ||
-                        !seen.Add(noteId))
-                        throw new ArgumentException(
-                            "Dock Z-order ids must be unique and non-empty.",
-                            nameof(orderedNoteIds));
-
-                    if (String.Equals(noteId, sourceNoteId,
-                        StringComparison.OrdinalIgnoreCase))
-                        sourceFound = true;
-
-                    ids.Add(noteId);
-                }
-            }
-
-            if (ids.Count < 2)
-                throw new ArgumentException(
-                    "A Dock Z-order command requires at least two members.",
-                    nameof(orderedNoteIds));
-
-            if (!sourceFound)
-                throw new ArgumentException(
-                    "The source note must belong to the Dock group.",
-                    nameof(sourceNoteId));
-
-            return new StickyUiCommand(
-                StickyUiCommandKind.RaiseDockGroupForDrag,
-                sourceNoteId,
-                false,
-                null,
-                null,
-                null,
-                null,
-                topology,
-                null,
-                ids.ToArray(),
-                null,
-                interactionEpoch, input: input);
-        }
-
         internal static StickyUiCommand SetBounds(string noteId,
             StickyUiBounds bounds,
-            DisplayTopologySnapshot topology = null, DockInput input = null)
+            DisplayTopologySnapshot topology = null)
         {
             if (bounds == null) throw new ArgumentNullException(nameof(bounds));
-            return new StickyUiCommand(StickyUiCommandKind.SetBounds, noteId,
-                false, null, bounds, null, null, topology, input: input);
+            return new StickyUiCommand(
+                StickyUiCommandKind.SetBounds, noteId,
+                false, null, bounds, null, null, topology);
         }
 
         internal static StickyUiCommand Reproject(string noteId,
@@ -220,19 +163,28 @@ namespace PennyPet
                 false, null, null, null, null, topology, target);
         }
 
-        internal static StickyUiCommand CaptureDockFacts(
-            IEnumerable<string> noteIds, DisplayTopologySnapshot topology,
-            long interactionEpoch, DockInput input = null)
+        internal static StickyUiCommand AcknowledgeDockCommit(
+            StickyDockCommitAck ack)
+        {
+            if (ack == null)
+                throw new ArgumentNullException(nameof(ack));
+            return new StickyUiCommand(
+                StickyUiCommandKind.AcknowledgeDockCommit,
+                String.Empty, false, dockCommitAck: ack);
+        }
+
+        internal static StickyUiCommand PrepareDockStructure(
+            IEnumerable<string> affectedNoteIds)
         {
             List<string> ids = new List<string>();
-            if (noteIds != null)
-                foreach (string noteId in noteIds)
-                    if (!String.IsNullOrEmpty(noteId)) ids.Add(noteId);
+            if (affectedNoteIds != null)
+                foreach (string id in affectedNoteIds)
+                    if (!String.IsNullOrWhiteSpace(id))
+                        ids.Add(id.Trim());
             return new StickyUiCommand(
-                StickyUiCommandKind.CaptureDockFacts,
-                ids.Count > 0 ? ids[0] : String.Empty, false,
-                null, null, null, null, topology, null, ids.ToArray(), null,
-                interactionEpoch, input: input);
+                StickyUiCommandKind.PrepareDockStructure,
+                String.Empty, false,
+                dockNoteIds: ids.ToArray());
         }
 
         internal static StickyUiCommand CaptureWindowFacts(string noteId,
@@ -289,10 +241,10 @@ namespace PennyPet
         internal string[] DockNoteIds { get; private set; }
         internal DockGroupReprojectPlan DockGroupReprojectPlan
             { get; private set; }
-        internal long InteractionEpoch { get; private set; }
         internal WindowPlacementPlan Placement { get; private set; }
         internal DockRestoreOperation DockRestore { get; private set; }
-        internal DockInput Input { get; private set; }
+        internal StickyDockCommitAck DockCommitAck
+            { get; private set; }
 
         private static ReminderItem[] CopyReminders(
             IEnumerable<ReminderItem> reminders)
@@ -582,6 +534,7 @@ namespace PennyPet
         DockDividerResizeStarted,
         DockDividerResizing,
         DockDividerResizeCompleted,
+        DockGestureCommitRequested,
         CancelReminderRequested,
         ModifyReminderRequested,
         DeleteReminderRequested,
@@ -595,23 +548,13 @@ namespace PennyPet
 
     internal sealed class StickyUiEvent
     {
-        // Stamped once by the emitting session, before crossing to the Pet thread.
-        internal DockInput Input { get; set; }
-        internal bool BeginsDockInput { get { return Kind == StickyUiEventKind.HeaderDragStarted ||
-            Kind == StickyUiEventKind.DockHorizontalResizeStarted ||
-            Kind == StickyUiEventKind.DockDividerResizeStarted || Kind == StickyUiEventKind.UserResizeStarted; } }
-        internal bool IsDockInput { get { return BeginsDockInput ||
-            Kind == StickyUiEventKind.HeaderDragMoved || Kind == StickyUiEventKind.HeaderDragCompleted ||
-            Kind == StickyUiEventKind.DockHorizontalResizing || Kind == StickyUiEventKind.DockHorizontalResizeCompleted ||
-            Kind == StickyUiEventKind.DockDividerResizing || Kind == StickyUiEventKind.DockDividerResizeCompleted ||
-            Kind == StickyUiEventKind.UserResizeCompleted; } }
-
         // Kept internal for focused self-tests; sessions use payload factories.
         internal StickyUiEvent(StickyUiEventKind kind, string noteId,
             StickyNoteUiSnapshot snapshot, bool flag, long sequence,
             ReminderItem reminder = null, int left = 0, int width = 0,
             int height = 0, WindowFacts facts = null,
-            DisplayTopologySnapshot topology = null)
+            DisplayTopologySnapshot topology = null,
+            StickyDockGestureCommit dockCommit = null)
         {
             Kind = kind;
             NoteId = noteId ?? String.Empty;
@@ -624,6 +567,7 @@ namespace PennyPet
             Height = height;
             Facts = facts;
             Topology = topology;
+            DockCommit = dockCommit;
         }
 
         internal static StickyUiEvent Signal(StickyUiEventKind kind,
@@ -651,11 +595,45 @@ namespace PennyPet
                 snapshot.Visible, sequence, null, 0, 0, 0, facts, topology);
         }
 
+        internal static StickyUiEvent DockCommitRequested(
+            StickyDockGestureCommit commit, long sequence)
+        {
+            if (commit == null)
+                throw new ArgumentNullException(nameof(commit));
+            return new StickyUiEvent(
+                StickyUiEventKind.DockGestureCommitRequested,
+                commit.SourceNoteId, null, false, sequence,
+                dockCommit: commit);
+        }
+
         internal static StickyUiEvent ReminderRequest(StickyUiEventKind kind,
             string noteId, ReminderItem reminder, long sequence)
         {
             return new StickyUiEvent(kind, noteId, null, false, sequence,
                 reminder);
+        }
+
+        internal static StickyUiEvent DockGeometry(
+            StickyUiEventKind kind, string noteId,
+            long sequence, int left, int width, int height,
+            WindowFacts facts,
+            DisplayTopologySnapshot topology)
+        {
+            bool valid =
+                kind == StickyUiEventKind.HeaderDragStarted ||
+                kind == StickyUiEventKind.HeaderDragMoved ||
+                kind == StickyUiEventKind.HeaderDragCompleted ||
+                kind == StickyUiEventKind.DockHorizontalResizeStarted ||
+                kind == StickyUiEventKind.DockHorizontalResizing ||
+                kind == StickyUiEventKind.DockHorizontalResizeCompleted ||
+                kind == StickyUiEventKind.DockDividerResizeStarted ||
+                kind == StickyUiEventKind.DockDividerResizing ||
+                kind == StickyUiEventKind.DockDividerResizeCompleted;
+            if (!valid)
+                throw new ArgumentOutOfRangeException(nameof(kind));
+            return new StickyUiEvent(
+                kind, noteId, null, false, sequence,
+                null, left, width, height, facts, topology);
         }
 
         internal static StickyUiEvent HorizontalResize(
@@ -694,6 +672,8 @@ namespace PennyPet
         internal int Height { get; private set; }
         internal WindowFacts Facts { get; private set; }
         internal DisplayTopologySnapshot Topology { get; private set; }
+        internal StickyDockGestureCommit DockCommit
+            { get; private set; }
     }
 
     internal enum StickyUiCommandStatus
@@ -754,20 +734,19 @@ namespace PennyPet
 
         internal DockBatchResult(long planSequence, long topologyGeneration,
             IEnumerable<DockBatchMemberResult> members)
-            : this(planSequence, topologyGeneration, String.Empty, 0, members, 0)
+            : this(planSequence, topologyGeneration,
+                String.Empty, 0, members)
         {
         }
 
         internal DockBatchResult(long planSequence, long topologyGeneration,
             string targetSurfaceId, int targetDpi,
-            IEnumerable<DockBatchMemberResult> members,
-            long interactionEpoch = 0)
+            IEnumerable<DockBatchMemberResult> members)
         {
             PlanSequence = planSequence;
             TopologyGeneration = topologyGeneration;
             TargetSurfaceId = targetSurfaceId ?? String.Empty;
             TargetDpi = targetDpi;
-            InteractionEpoch = interactionEpoch;
             _members = members == null
                 ? new DockBatchMemberResult[0]
                 : new List<DockBatchMemberResult>(members).ToArray();
@@ -778,7 +757,6 @@ namespace PennyPet
         internal long TopologyGeneration { get; private set; }
         internal string TargetSurfaceId { get; private set; }
         internal int TargetDpi { get; private set; }
-        internal long InteractionEpoch { get; private set; }
         internal IReadOnlyList<DockBatchMemberResult> Members
             { get; private set; }
     }
