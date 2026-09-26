@@ -1895,7 +1895,9 @@ namespace PennyPet
                     _workspace.Notes.InStorageOrder));
             StickyDockCommitAck ack =
                 new StickyDockCommitAck(
-                    commit.GestureId, accepted, scene);
+                    commit.GestureId, accepted, scene,
+                    accepted ? null :
+                        BuildLocalDockCorrections(commit));
             _workspace.PostHostedStickyCommand(
                 StickyUiCommand.AcknowledgeDockCommit(ack),
                 delegate(StickyUiCommandResult result)
@@ -1908,6 +1910,26 @@ namespace PennyPet
                                 "sticky-dock-commit-ack",
                                 result);
                 });
+        }
+
+        private IReadOnlyList<DockWindowTarget>
+            BuildLocalDockCorrections(
+                StickyDockGestureCommit commit)
+        {
+            List<DockWindowTarget> targets =
+                new List<DockWindowTarget>();
+            if (commit == null) return targets.AsReadOnly();
+            foreach (string noteId in
+                commit.BaselineVersions.Keys)
+            {
+                WindowFacts facts =
+                    _workspace.Placement.GetEffective(noteId);
+                if (facts != null &&
+                    facts.PhysicalBounds.IsValid)
+                    targets.Add(new DockWindowTarget(
+                        noteId, facts.PhysicalBounds));
+            }
+            return targets.AsReadOnly();
         }
 
         private bool TryApplyLocalDockGestureCommit(

@@ -84,19 +84,30 @@ namespace PennyPet
 
     internal sealed class StickyDockCommitAck
     {
+        private readonly DockWindowTarget[] _corrections;
+
         internal StickyDockCommitAck(long gestureId, bool accepted,
-            StickyDockSceneProjection scene = null)
+            StickyDockSceneProjection scene = null,
+            IEnumerable<DockWindowTarget> corrections = null)
         {
             if (gestureId <= 0)
                 throw new ArgumentOutOfRangeException(nameof(gestureId));
             GestureId = gestureId;
             Accepted = accepted;
             Scene = scene;
+            _corrections = corrections == null
+                ? new DockWindowTarget[0]
+                : new List<DockWindowTarget>(
+                    corrections).ToArray();
+            Corrections = Array.AsReadOnly(
+                _corrections);
         }
 
         internal long GestureId { get; private set; }
         internal bool Accepted { get; private set; }
         internal StickyDockSceneProjection Scene { get; private set; }
+        internal IReadOnlyList<DockWindowTarget> Corrections
+            { get; private set; }
     }
 
     // Sticky-side handoff state. Active native gestures live elsewhere; this

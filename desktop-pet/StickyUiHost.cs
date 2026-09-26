@@ -1469,6 +1469,11 @@ namespace PennyPet
                 return StickyUiCommandResult.Handled();
 
             if (!resolution.Accepted &&
+                ack.Corrections.Count > 0)
+                ApplyLocalDockCorrections(
+                    ack.Corrections);
+
+            if (!resolution.Accepted &&
                 _localDockGestures.IsActive &&
                 (_activeLocalDockDependency ==
                     resolution.GestureId ||
@@ -1504,6 +1509,54 @@ namespace PennyPet
                 _deferredDockScene = null;
             }
             return StickyUiCommandResult.Handled();
+        }
+
+        private void ApplyLocalDockCorrections(
+            IReadOnlyList<DockWindowTarget> targets)
+        {
+            DisplayTopologySnapshot topology;
+            lock (_configurationGate)
+                topology = _currentTopology;
+            if (topology == null || targets == null)
+                return;
+
+            List<StickyWindowSession> sessions =
+                new List<StickyWindowSession>();
+            foreach (DockWindowTarget target in targets)
+            {
+                StickyWindowSession session;
+                if (target == null ||
+                    !TryGetSession(target.NoteId,
+                        out session))
+                    continue;
+                sessions.Add(session);
+                session.SetEventsSuppressed(true);
+            }
+            try
+            {
+                foreach (DockWindowTarget target in targets)
+                {
+                    StickyWindowSession session;
+                    if (target == null ||
+                        !TryGetSession(target.NoteId,
+                            out session))
+                        continue;
+                    PhysicalRect rect =
+                        target.PhysicalBounds;
+                    session.SetBounds(
+                        new StickyUiBounds(
+                            rect.Left, rect.Top,
+                            rect.Width, rect.Height),
+                        topology);
+                }
+            }
+            finally
+            {
+                foreach (StickyWindowSession session
+                    in sessions)
+                    session.SetEventsSuppressed(false);
+                ApplySideTabZOrder();
+            }
         }
 
         private static bool ContainsGestureId(
