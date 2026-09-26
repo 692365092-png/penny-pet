@@ -1248,6 +1248,9 @@ namespace PennyPet
         {
             if (!_localDockGestures.MoveHeader(sourceFacts))
                 return false;
+            if (String.IsNullOrEmpty(
+                _localDockGestures.SplitGuideParentNoteId))
+                ClearSplitGuideOnThread();
             string parent =
                 _localDockGestures.LastSnapTargetNoteId;
             WindowFacts parentFacts =

@@ -303,9 +303,14 @@ namespace PennyPet
                 !gesture.MatchesSource(sourceFacts, _topology))
                 return false;
 
+            bool wasDetached = gesture.Detached;
             gesture.EvaluateSplit(sourceFacts, DateTime.UtcNow);
             if (gesture.Detached)
             {
+                if (!wasDetached)
+                    ApplyFollowers(
+                        gesture.BaselineTargets(),
+                        gesture.SourceNoteId);
                 LastSnapTargetNoteId =
                     FindSnapTarget(sourceFacts, gesture);
                 return true;
@@ -555,6 +560,18 @@ namespace PennyPet
                     topology.Generation == TopologyGeneration &&
                     String.Equals(facts.WindowId, SourceNoteId,
                         StringComparison.OrdinalIgnoreCase);
+            }
+
+            internal IReadOnlyList<DockWindowTarget> BaselineTargets()
+            {
+                List<DockWindowTarget> targets =
+                    new List<DockWindowTarget>(
+                        Baseline.Length);
+                foreach (WindowFacts facts in Baseline)
+                    targets.Add(new DockWindowTarget(
+                        facts.WindowId,
+                        facts.PhysicalBounds));
+                return targets.AsReadOnly();
             }
 
             internal IReadOnlyList<DockWindowTarget> TargetsFromLayout(
