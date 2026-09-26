@@ -825,7 +825,8 @@ namespace PennyPet
 
         private void HeaderDragStarted(object sender, EventArgs e)
         {
-            EmitSnapshot(StickyUiEventKind.HeaderDragStarted);
+            EmitLocalDockGeometry(
+                StickyUiEventKind.HeaderDragStarted);
         }
 
         private void HeaderDragMoved(object sender, EventArgs e)
@@ -834,12 +835,14 @@ namespace PennyPet
             // WPF LocationChanged echo so canonical state only receives the
             // authoritative final snapshot from SetBounds.
             if (_applyingBounds) return;
-            EmitSnapshot(StickyUiEventKind.HeaderDragMoved);
+            EmitLocalDockGeometry(
+                StickyUiEventKind.HeaderDragMoved);
         }
 
         private void HeaderDragCompleted(object sender, EventArgs e)
         {
-            EmitSnapshot(StickyUiEventKind.HeaderDragCompleted);
+            EmitLocalDockGeometry(
+                StickyUiEventKind.HeaderDragCompleted);
         }
 
         private void UserResizeStarted(object sender, EventArgs e)
@@ -859,21 +862,24 @@ namespace PennyPet
         }
 
         private void DockHorizontalResizeStarted(object sender, EventArgs e)
-        { EmitSnapshot(StickyUiEventKind.DockHorizontalResizeStarted); }
+        {
+            EmitLocalDockGeometry(
+                StickyUiEventKind.DockHorizontalResizeStarted);
+        }
 
         private void DockHorizontalResizeCompleted(object sender, EventArgs e)
-        { EmitSnapshot(StickyUiEventKind.DockHorizontalResizeCompleted); }
+        {
+            EmitLocalDockGeometry(
+                StickyUiEventKind.DockHorizontalResizeCompleted);
+        }
 
         private void DockHorizontalResizing(object sender,
             DockHorizontalResizeEventArgs e)
         {
-            if (_eventsSuppressed || !IsAvailable) return;
-            StickyNoteUiSnapshot snapshot = CaptureSnapshot();
-            _lastSnapshot = snapshot;
-            _sequence++;
-            Raise(StickyUiEvent.HorizontalResize(snapshot, _sequence,
-                e == null ? 0 : e.Left, e == null ? 0 : e.Width,
-                CaptureWindowFacts(_sequence), _topology));
+            EmitLocalDockGeometry(
+                StickyUiEventKind.DockHorizontalResizing,
+                e == null ? 0 : e.Left,
+                e == null ? 0 : e.Width);
         }
 
         private void DockDividerResizeStarted(object sender,
@@ -899,18 +905,30 @@ namespace PennyPet
         private void EmitDockDividerResize(StickyUiEventKind kind,
             DockDividerResizeEventArgs e)
         {
+            int height = e == null ? 0 : e.Height;
+            EmitLocalDockGeometry(kind, 0, 0, height);
+        }
+
+        private void EmitLocalDockGeometry(
+            StickyUiEventKind kind, int left = 0,
+            int width = 0, int height = 0)
+        {
             if (_eventsSuppressed || !IsAvailable) return;
-            StickyNoteUiSnapshot snapshot = CaptureSnapshot();
-            _lastSnapshot = snapshot;
             _sequence++;
-            WindowFacts facts = CaptureWindowFacts(_sequence);
-            int height = e == null
-                ? (facts == null ? 0 : facts.PhysicalBounds.Height) : e.Height;
-            DisplayDiagnostics.Trace("DockDividerEvent",
-                "note=" + _noteId + " kind=" + kind +
-                " seq=" + _sequence + " height=" + height);
-            Raise(StickyUiEvent.DividerResize(kind, snapshot, _sequence,
-                height, facts, _topology));
+            WindowFacts facts =
+                CaptureWindowFacts(_sequence);
+            if (height <= 0 &&
+                (kind ==
+                    StickyUiEventKind.DockDividerResizeStarted ||
+                 kind ==
+                    StickyUiEventKind.DockDividerResizing ||
+                 kind ==
+                    StickyUiEventKind.DockDividerResizeCompleted))
+                height = facts == null
+                    ? 0 : facts.PhysicalBounds.Height;
+            Raise(new StickyUiEvent(
+                kind, _noteId, null, false, _sequence,
+                null, left, width, height, facts, _topology));
         }
 
         private void CancelReminderRequested(object sender, EventArgs e)
