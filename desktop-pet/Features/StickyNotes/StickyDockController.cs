@@ -26,6 +26,27 @@ namespace PennyPet
         internal void HideStickyNote(StickyNoteData note)
         {
             if (note == null) return;
+            string noteId = note.Id;
+            List<StickyNoteData> component =
+                BuildDockChainOrderIncludingHidden(note);
+            List<string> affected = new List<string>();
+            foreach (StickyNoteData member in component)
+                if (member != null) affected.Add(member.Id);
+            if (affected.Count == 0) affected.Add(noteId);
+            _workspace.PrepareDockStructure(affected,
+                "sticky-hide-structure",
+                delegate
+                {
+                    StickyNoteData current =
+                        _workspace.Notes.Find(noteId);
+                    if (current != null)
+                        HideStickyNotePrepared(current);
+                });
+        }
+
+        private void HideStickyNotePrepared(StickyNoteData note)
+        {
+            if (note == null) return;
             if (_workspace.PostHostedStickyHide(note)) return;
             List<StickyNoteData> snapshot =
                 BuildDockChainOrderIncludingHidden(note);
@@ -63,10 +84,21 @@ namespace PennyPet
         internal DockInteractionSession Interaction { get { return Gestures.Drag; } }
         private long _lastAppliedDockPlanSequence = -1;
         private long _dockSceneRevision;
+        private long _nextDockOperationSequence;
         private readonly HashSet<long> _acceptedLocalDockGestures =
             new HashSet<long>();
         private readonly HashSet<string> _pendingDockTopologyGroups =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private long NextDockOperationSequence()
+        {
+            _nextDockOperationSequence =
+                _nextDockOperationSequence == Int64.MaxValue
+                    ? 1 : _nextDockOperationSequence + 1;
+            return _nextDockOperationSequence <= 0
+                ? _nextDockOperationSequence = 1
+                : _nextDockOperationSequence;
+        }
+
         internal void ApplyDockComponentTopMost(StickyNoteData seed,
             bool alwaysOnTop, string alreadyAppliedNoteId)
         {
@@ -96,8 +128,29 @@ namespace PennyPet
             DockWindowFacts sourceFacts)
         {
             if (sourceData == null || sourceFacts == null) return;
-            if (DeferDockMutation(sourceData.Id,
-                () => CloseStickyDockNote(_workspace.Notes.Find(sourceData.Id), GetHostedDockFacts(_workspace.Notes.Find(sourceData.Id)) ?? sourceFacts))) return;
+            string noteId = sourceData.Id;
+            List<StickyNoteData> component =
+                BuildDockChainOrderIncludingHidden(sourceData);
+            List<string> affected = new List<string>();
+            foreach (StickyNoteData member in component)
+                if (member != null) affected.Add(member.Id);
+            _workspace.PrepareDockStructure(affected,
+                "sticky-close-structure",
+                delegate
+                {
+                    StickyNoteData current =
+                        _workspace.Notes.Find(noteId);
+                    if (current == null) return;
+                    CloseStickyDockNotePrepared(current,
+                        GetHostedDockFacts(current) ?? sourceFacts);
+                });
+        }
+
+        private void CloseStickyDockNotePrepared(
+            StickyNoteData sourceData,
+            DockWindowFacts sourceFacts)
+        {
+            if (sourceData == null || sourceFacts == null) return;
             CancelHostedDockRestores(sourceData.Id);
             ClearHostedDockResizeSessionIfMember(sourceData.Id);
             List<StickyNoteData> ordered =
@@ -1467,7 +1520,7 @@ namespace PennyPet
                     String.IsNullOrEmpty(note.DockGroupId) ||
                     !visited.Add(note.DockGroupId) ||
                     _pendingDockTopologyGroups.Contains(note.DockGroupId) ||
-                    _dockRestores.ContainsGroup(note.DockGroupId) || FindDockMutationOwner(note.Id) != null)
+                    _dockRestores.ContainsGroup(note.DockGroupId))
                     continue;
                 List<StickyNoteData> group =
                     BuildDockChainOrderIncludingHidden(note);
@@ -1562,7 +1615,7 @@ namespace PennyPet
             StickyNoteData root = group[0];
             if (root == null || String.IsNullOrWhiteSpace(root.DockGroupId)) return;
             string groupId = root.DockGroupId;
-            if (_dockRestores.ContainsGroup(groupId) || FindDockMutationOwner(root.Id) != null) return;
+            if (_dockRestores.ContainsGroup(groupId)) return;
             DockGroupLogicalState logicalState;
             if (!TryBuildDockTopologyLogicalState(group, reason, out logicalState,
                 _workspace.Placement))
@@ -1574,7 +1627,7 @@ namespace PennyPet
             }
             bool centerInWorkArea = reason == DockTopologyReprojectReason.TemporaryRehome;
             DockGroupReprojectPlan plan = new DockGroupReprojectPlan(
-                snapshot.Generation, Gestures.NextPlanSequence(),
+                snapshot.Generation, NextDockOperationSequence(),
                 targetSurface.RuntimeSurfaceId, logicalState, centerInWorkArea);
             List<string> expectedIds = new List<string>();
             foreach (DockLogicalMember member in logicalState.Members)
@@ -1590,7 +1643,7 @@ namespace PennyPet
                 {
                     try
                     {
-                        if (_dockRestores.ContainsGroup(groupId) || FindDockMutationOwner(root.Id) != null ||
+                        if (_dockRestores.ContainsGroup(groupId) ||
                             !TryApplyDockTopologyResult(result, snapshot,
                             targetSurface, expectedIds, plan.PlanSequence))
                         {
@@ -2244,9 +2297,29 @@ namespace PennyPet
             if (ordered == null || ordered.Count < 2) return false;
             string rootId = ordered[0].Id;
             string focusId = focus == null ? null : focus.Id;
-            if (DeferDockMutation(rootId, () => TryRestoreHostedDockComponent(
-                BuildDockChainOrderIncludingHidden(_workspace.Notes.Find(rootId)), _workspace.Notes.Find(focusId),
-                focusEditor, persistVisibility))) return true;
+            List<string> affected = new List<string>();
+            foreach (StickyNoteData member in ordered)
+                if (member != null) affected.Add(member.Id);
+            _workspace.PrepareDockStructure(affected,
+                "sticky-restore-structure",
+                delegate
+                {
+                    StickyNoteData root =
+                        _workspace.Notes.Find(rootId);
+                    if (root == null) return;
+                    TryRestoreHostedDockComponentPrepared(
+                        BuildDockChainOrderIncludingHidden(root),
+                        _workspace.Notes.Find(focusId),
+                        focusEditor, persistVisibility);
+                });
+            return true;
+        }
+
+        private bool TryRestoreHostedDockComponentPrepared(
+            List<StickyNoteData> ordered, StickyNoteData focus,
+            bool focusEditor, bool persistVisibility)
+        {
+            if (ordered == null || ordered.Count < 2) return false;
             if (_dockRestores.ContainsGroup(ordered[0].DockGroupId)) return true;
             DisplayTopologySnapshot topology = _workspace.CurrentTopologySnapshot();
             if (topology == null) return false;
@@ -2255,7 +2328,7 @@ namespace PennyPet
             if (MigrateDockRestorePreferredIfNeeded(ordered, topology)) _workspace.Notes.SaveAsync();
             DockRestoreOperation operation = DockRestoreOperation.TryCreate(ordered,
                 focus == null ? null : focus.Id, focusEditor, persistVisibility,
-                topology, _workspace.CapturePetWindowFacts(topology), Gestures.NextPlanSequence());
+                topology, _workspace.CapturePetWindowFacts(topology), NextDockOperationSequence());
             if (!_dockRestores.TryBegin(operation)) return false;
             try
             {

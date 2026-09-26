@@ -134,11 +134,24 @@ namespace PennyPet
                 if (completed != null) completed(false);
                 return;
             }
-            if (Dock.DeferDockMutation(note.Id, () => DeleteStickyNote(Notes.Find(note.Id), completed))) return;
-            Dock.CancelHostedDockRestores(note.Id);
-            // A cancelled restore may have prepared a real HWND before its
-            // lease was registered here. Let the STA acknowledge closure.
-            BeginHostedStickyDelete(note, completed);
+            string noteId = note.Id;
+            PrepareDockStructure(new[] { noteId },
+                "sticky-delete-structure",
+                delegate
+                {
+                    StickyNoteData current = Notes.Find(noteId);
+                    if (current == null)
+                    {
+                        if (completed != null)
+                            completed(false);
+                        return;
+                    }
+                    Dock.CancelHostedDockRestores(noteId);
+                    // A cancelled restore may have prepared a real HWND before
+                    // its lease was registered here. Let the STA acknowledge
+                    // closure after the Dock gesture has been retired locally.
+                    BeginHostedStickyDelete(current, completed);
+                });
         }
 
         private void BeginHostedStickyDelete(StickyNoteData note)
@@ -778,6 +791,29 @@ namespace PennyPet
             Host.PostCommand(command, completed, Context);
         }
 
+        internal void PrepareDockStructure(
+            IEnumerable<string> affectedNoteIds,
+            string context, Action continuation)
+        {
+            if (continuation == null || IsDisposed) return;
+            PostHostedStickyCommand(
+                StickyUiCommand.PrepareDockStructure(
+                    affectedNoteIds),
+                delegate(StickyUiCommandResult result)
+                {
+                    if (IsDisposed) return;
+                    if (result != null &&
+                        result.Status ==
+                            StickyUiCommandStatus.Handled)
+                    {
+                        continuation();
+                        return;
+                    }
+                    ReportHostedStickyCommandFailure(
+                        context, result);
+                });
+        }
+
         internal void HostedStickyFaulted(Exception error)
         {
             Dock.CancelHostedDockRestores();
@@ -1367,7 +1403,18 @@ namespace PennyPet
 
         private void CollapseAllStickyNotes()
         {
-            if (Dock.DeferDockMutation(null, CollapseAllStickyNotes)) return;
+            List<string> affected = new List<string>();
+            foreach (StickyNoteData note in Notes.GetAll())
+                if (note != null && note.Visible)
+                    affected.Add(note.Id);
+            if (affected.Count == 0) return;
+            PrepareDockStructure(affected,
+                "sticky-collapse-all-structure",
+                CollapseAllStickyNotesPrepared);
+        }
+
+        private void CollapseAllStickyNotesPrepared()
+        {
             Dock.CancelHostedDockRestores();
             HashSet<string> handled = new HashSet<string>(
                 StringComparer.OrdinalIgnoreCase);
