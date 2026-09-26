@@ -373,6 +373,81 @@ namespace PennyPet
                 candidates, 20) ?? String.Empty;
         }
 
+        internal IReadOnlyList<DockWindowTarget>
+            BuildHeaderSnapTargets()
+        {
+            LocalGesture gesture = _active;
+            if (gesture == null ||
+                gesture.Kind !=
+                    StickyDockLocalGestureKind.HeaderDrag ||
+                String.IsNullOrEmpty(
+                    LastSnapTargetNoteId))
+                return Array.AsReadOnly(
+                    new DockWindowTarget[0]);
+
+            WindowFacts target =
+                _captureFacts(LastSnapTargetNoteId);
+            WindowFacts source =
+                _captureFacts(gesture.SourceNoteId);
+            if (target == null || source == null ||
+                target.TopologyGeneration !=
+                    source.TopologyGeneration)
+                return Array.AsReadOnly(
+                    new DockWindowTarget[0]);
+
+            PhysicalRect targetRect =
+                target.PhysicalBounds;
+            PhysicalRect sourceRect =
+                source.PhysicalBounds;
+            long leftDx =
+                (long)targetRect.Left -
+                sourceRect.Left;
+            long rightDx =
+                (long)targetRect.Right -
+                sourceRect.Right;
+            long centerDx =
+                ((long)targetRect.Left +
+                    targetRect.Right -
+                    sourceRect.Left -
+                    sourceRect.Right) / 2;
+            long dx = Math.Abs(leftDx) <=
+                    Math.Abs(rightDx)
+                ? leftDx : rightDx;
+            if (Math.Abs(centerDx) < Math.Abs(dx))
+                dx = centerDx;
+            long dy =
+                (long)targetRect.Bottom -
+                sourceRect.Top;
+
+            List<DockWindowTarget> targets =
+                new List<DockWindowTarget>();
+            foreach (string noteId in
+                gesture.ActiveMemberIds)
+            {
+                WindowFacts facts =
+                    _captureFacts(noteId);
+                if (facts == null ||
+                    !facts.PhysicalBounds.IsValid)
+                    return Array.AsReadOnly(
+                        new DockWindowTarget[0]);
+                PhysicalRect rect =
+                    facts.PhysicalBounds;
+                long left = (long)rect.Left + dx;
+                long top = (long)rect.Top + dy;
+                if (left < Int32.MinValue ||
+                    left > Int32.MaxValue ||
+                    top < Int32.MinValue ||
+                    top > Int32.MaxValue)
+                    return Array.AsReadOnly(
+                        new DockWindowTarget[0]);
+                targets.Add(new DockWindowTarget(
+                    noteId, new PhysicalRect(
+                        (int)left, (int)top,
+                        rect.Width, rect.Height)));
+            }
+            return targets.AsReadOnly();
+        }
+
         internal bool ResizeHorizontal(int proposedLeft,
             int proposedWidth)
         {

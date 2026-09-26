@@ -1379,7 +1379,14 @@ namespace PennyPet
                     return true;
                 if (kind == StickyDockLocalGestureKind.HeaderDrag &&
                     value.Facts != null)
+                {
                     MoveLocalDockHeader(value.Facts);
+                    IReadOnlyList<DockWindowTarget> snap =
+                        _localDockGestures
+                            .BuildHeaderSnapTargets();
+                    if (snap.Count > 0)
+                        ApplyLocalDockCorrections(snap);
+                }
                 else if (kind ==
                     StickyDockLocalGestureKind.DividerResize &&
                     value.Height > 0)
