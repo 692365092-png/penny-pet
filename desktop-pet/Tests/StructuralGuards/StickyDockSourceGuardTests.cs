@@ -1115,6 +1115,22 @@ namespace PennyPet.Tests
                     "TryApplyLocalDockGestureCommit(") &&
                 controller.Contains(
                     "StickyUiCommand.AcknowledgeDockCommit(ack)"));
+
+            string stickySession =
+                ReadSource("StickyWindowSession.cs");
+            string localGeometry = Between(stickySession,
+                "private void EmitLocalDockGeometry(",
+                "private void CancelReminderRequested(");
+            string boundsChanged = Between(stickySession,
+                "private void BoundsChanged(",
+                "private void HeaderDragStarted(");
+            Assert.IsFalse(localGeometry.Contains(
+                    "CaptureSnapshot(") ||
+                localGeometry.Contains("EmitSnapshot("),
+                "Live Dock input must not capture note content.");
+            Assert.IsTrue(boundsChanged.Contains(
+                    "_headerDragActive"),
+                "LocationChanged must not leak a parallel Pet live stream during header drag.");
         }
 
     }
