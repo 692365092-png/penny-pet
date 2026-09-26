@@ -12,10 +12,10 @@ namespace PennyPet.Tests
         {
             DisplaySurfaceSnapshot left = Surface(
                 "left", "\\\\.\\DISPLAY1", "mdp:left",
-                new PhysicalRect(0, 0, 1920, 1080));
+                new PhysicalRect(0, 0, 1920, 1080), true);
             DisplaySurfaceSnapshot right = Surface(
                 "right", "\\\\.\\DISPLAY2", "mdp:right",
-                new PhysicalRect(1920, 0, 2560, 1440));
+                new PhysicalRect(1920, 0, 2560, 1440), false);
             DisplayTopologySnapshot topology =
                 new DisplayTopologySnapshot(9,
                     new[] { left, right });
@@ -199,10 +199,10 @@ namespace PennyPet.Tests
 
         private static DisplaySurfaceSnapshot Surface(
             string id, string gdi, string targetKey,
-            PhysicalRect bounds)
+            PhysicalRect bounds, bool primary = true)
         {
             return new DisplaySurfaceSnapshot(id, gdi,
-                bounds, bounds, true, 0,
+                bounds, bounds, primary, 0,
                 new[]
                 {
                     new DisplayTargetIdentity(targetKey, true,
