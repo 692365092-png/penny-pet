@@ -160,6 +160,52 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void HeaderDrag_StandaloneCanBecomeMergeCommit()
+        {
+            DisplaySurfaceSnapshot surface = Surface(
+                "one", "\\\\.\\DISPLAY1", "mdp:one",
+                new PhysicalRect(0, 0, 1920, 1080));
+            Dictionary<string, WindowFacts> facts =
+                new Dictionary<string, WindowFacts>(
+                    StringComparer.OrdinalIgnoreCase)
+                {
+                    ["A"] = Facts("A", surface, 96,
+                        new PhysicalRect(100, 500, 320, 300), 13),
+                    ["X"] = Facts("X", surface, 96,
+                        new PhysicalRect(100, 200, 320, 300), 13)
+                };
+            StickyDockLocalGestureRuntime runtime = Runtime(
+                facts, (targets, source) => { });
+            runtime.SetTopology(new DisplayTopologySnapshot(
+                13, new[] { surface }));
+            runtime.SetScene(new StickyDockSceneProjection(
+                new[]
+                {
+                    new StickyDockSceneMember(
+                        "A", String.Empty, -1, true, 101),
+                    new StickyDockSceneMember(
+                        "X", "target", 0, true, 202)
+                }, 14));
+
+            Assert.AreNotEqual(0, runtime.TryBegin(
+                StickyDockLocalGestureKind.HeaderDrag, "A"));
+            Assert.IsTrue(runtime.MoveHeader(facts["A"]));
+            StickyDockLocalGestureCompletion completion =
+                runtime.Complete();
+
+            Assert.AreEqual(
+                StickyDockCommitIntent.MergeAfter,
+                completion.Intent);
+            Assert.AreEqual("X", completion.TargetNoteId);
+            Assert.AreEqual(2,
+                completion.BaselineVersions.Count);
+            Assert.AreEqual(101,
+                completion.BaselineVersions["A"]);
+            Assert.AreEqual(202,
+                completion.BaselineVersions["X"]);
+        }
+
+        [TestMethod]
         public void Runtime_HasNoPetCallbackRepositoryOrSaveChannel()
         {
             DisplaySurfaceSnapshot surface = Surface(

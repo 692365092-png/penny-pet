@@ -16,7 +16,7 @@ namespace PennyPet
     internal sealed class StickyDockSceneMember
     {
         internal StickyDockSceneMember(string noteId, string groupId,
-            int groupOrder, bool visible)
+            int groupOrder, bool visible, long dockVersion = 0)
         {
             if (String.IsNullOrWhiteSpace(noteId))
                 throw new ArgumentException("A note id is required.",
@@ -25,12 +25,14 @@ namespace PennyPet
             GroupId = (groupId ?? String.Empty).Trim();
             GroupOrder = groupOrder;
             Visible = visible;
+            DockVersion = dockVersion;
         }
 
         internal string NoteId { get; private set; }
         internal string GroupId { get; private set; }
         internal int GroupOrder { get; private set; }
         internal bool Visible { get; private set; }
+        internal long DockVersion { get; private set; }
     }
 
     internal sealed class StickyDockSceneProjection
@@ -101,6 +103,28 @@ namespace PennyPet
                 if (member.Visible) ids.Add(member.NoteId);
             return ids.AsReadOnly();
         }
+
+        internal long VersionOf(string noteId)
+        {
+            StickyDockSceneMember member;
+            return !String.IsNullOrWhiteSpace(noteId) &&
+                _byId.TryGetValue(noteId, out member)
+                ? member.DockVersion : Int64.MinValue;
+        }
+
+        internal IReadOnlyList<string> AffectedIds(
+            string sourceNoteId, string targetNoteId)
+        {
+            List<string> ids = new List<string>();
+            HashSet<string> seen = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+            foreach (string id in VisibleGroup(sourceNoteId))
+                if (seen.Add(id)) ids.Add(id);
+            if (!String.IsNullOrWhiteSpace(targetNoteId))
+                foreach (string id in VisibleGroup(targetNoteId))
+                    if (seen.Add(id)) ids.Add(id);
+            return ids.AsReadOnly();
+        }
     }
 
     // R22 candidate runtime. It is deliberately model/repository agnostic:
@@ -136,7 +160,7 @@ namespace PennyPet
                 LocalGesture gesture = _active;
                 return gesture != null &&
                     gesture.Kind == StickyDockLocalGestureKind.HeaderDrag &&
-                    gesture.SourceIndex > 0
+                    gesture.SplitEligible
                     ? gesture.MemberIds[gesture.SourceIndex - 1]
                     : String.Empty;
             }
@@ -159,7 +183,10 @@ namespace PennyPet
                 return 0;
             IReadOnlyList<string> ids =
                 _scene.VisibleGroup(sourceNoteId);
-            if (ids.Count < 2) return 0;
+            if (ids.Count == 0 ||
+                (kind != StickyDockLocalGestureKind.HeaderDrag &&
+                    ids.Count < 2))
+                return 0;
 
             List<WindowFacts> facts = new List<WindowFacts>(ids.Count);
             int sourceIndex = -1;
@@ -198,6 +225,14 @@ namespace PennyPet
                 !gesture.MatchesSource(sourceFacts, _topology))
                 return false;
 
+            gesture.EvaluateSplit(sourceFacts, DateTime.UtcNow);
+            if (gesture.Detached)
+            {
+                LastSnapTargetNoteId =
+                    FindSnapTarget(sourceFacts, gesture);
+                return true;
+            }
+
             DockGroupLogicalState group;
             if (!StickyPlacementRules.TryBuildLiveDockState(
                 gesture.Baseline, sourceFacts, _topology, out group))
@@ -233,7 +268,8 @@ namespace PennyPet
             LocalGesture gesture)
         {
             HashSet<string> active = new HashSet<string>(
-                gesture.MemberIds, StringComparer.OrdinalIgnoreCase);
+                gesture.ActiveMemberIds,
+                StringComparer.OrdinalIgnoreCase);
             List<DockWindowTarget> candidates =
                 new List<DockWindowTarget>();
             foreach (string noteId in _scene.VisibleNoteIds())
@@ -293,12 +329,44 @@ namespace PennyPet
         {
             LocalGesture gesture = _active;
             _active = null;
+            if (gesture == null)
+            {
+                LastSnapTargetNoteId = String.Empty;
+                return null;
+            }
+
+            string target = gesture.Kind ==
+                    StickyDockLocalGestureKind.HeaderDrag
+                ? LastSnapTargetNoteId : String.Empty;
+            StickyDockCommitIntent intent =
+                gesture.Kind ==
+                    StickyDockLocalGestureKind.HorizontalResize
+                    ? StickyDockCommitIntent.HorizontalResize
+                : gesture.Kind ==
+                    StickyDockLocalGestureKind.DividerResize
+                    ? StickyDockCommitIntent.DividerResize
+                : gesture.Detached
+                    ? StickyDockCommitIntent.Detach
+                : !String.IsNullOrEmpty(target)
+                    ? StickyDockCommitIntent.MergeAfter
+                    : StickyDockCommitIntent.Move;
+
+            IReadOnlyList<string> affected =
+                _scene.AffectedIds(
+                    gesture.SourceNoteId, target);
+            Dictionary<string, long> versions =
+                new Dictionary<string, long>(
+                    StringComparer.OrdinalIgnoreCase);
+            foreach (string id in affected)
+                versions[id] = _scene.VersionOf(id);
+
             LastSnapTargetNoteId = String.Empty;
-            if (gesture == null) return null;
             return new StickyDockLocalGestureCompletion(
                 gesture.GestureId, gesture.Kind,
-                gesture.SourceNoteId, gesture.SceneRevision,
-                gesture.TopologyGeneration, gesture.MemberIds);
+                intent, gesture.SourceNoteId, target,
+                gesture.SceneRevision,
+                gesture.TopologyGeneration,
+                gesture.MemberIds, affected, versions);
         }
 
         internal void Cancel()
@@ -348,6 +416,10 @@ namespace PennyPet
                     ids[index] = facts.WindowId;
                 }
                 MemberIds = Array.AsReadOnly(ids);
+                StartedUtc = DateTime.UtcNow;
+                SplitEligible = kind ==
+                    StickyDockLocalGestureKind.HeaderDrag &&
+                    sourceIndex > 0;
             }
 
             internal long GestureId { get; private set; }
@@ -359,6 +431,43 @@ namespace PennyPet
             internal long SceneRevision { get; private set; }
             internal long TopologyGeneration { get; private set; }
             internal IReadOnlyList<string> MemberIds { get; private set; }
+            internal DateTime StartedUtc { get; private set; }
+            internal bool SplitEligible { get; private set; }
+            internal bool Detached { get; private set; }
+            internal IReadOnlyList<string> ActiveMemberIds
+            {
+                get
+                {
+                    return Detached
+                        ? Array.AsReadOnly(new[] { SourceNoteId })
+                        : MemberIds;
+                }
+            }
+
+            internal void EvaluateSplit(WindowFacts facts,
+                DateTime nowUtc)
+            {
+                if (!SplitEligible || Detached ||
+                    facts == null) return;
+                PhysicalRect start =
+                    Baseline[SourceIndex].PhysicalBounds;
+                PhysicalRect current = facts.PhysicalBounds;
+                double held =
+                    (nowUtc - StartedUtc).TotalMilliseconds;
+                if (StickyDockOperations.CancelsDockSplitHold(
+                    held, current.Left - start.Left,
+                    current.Top - start.Top))
+                {
+                    SplitEligible = false;
+                    return;
+                }
+                if (held >=
+                    StickyDockOperations.SplitHoldMilliseconds)
+                {
+                    Detached = true;
+                    SplitEligible = false;
+                }
+            }
 
             internal bool MatchesSource(WindowFacts facts,
                 DisplayTopologySnapshot topology)
@@ -395,24 +504,46 @@ namespace PennyPet
     internal sealed class StickyDockLocalGestureCompletion
     {
         internal StickyDockLocalGestureCompletion(long gestureId,
-            StickyDockLocalGestureKind kind, string sourceNoteId,
+            StickyDockLocalGestureKind kind,
+            StickyDockCommitIntent intent,
+            string sourceNoteId, string targetNoteId,
             long sceneRevision, long topologyGeneration,
-            IReadOnlyList<string> memberIds)
+            IReadOnlyList<string> memberIds,
+            IReadOnlyList<string> affectedMemberIds,
+            IDictionary<string, long> baselineVersions)
         {
             GestureId = gestureId;
             Kind = kind;
+            Intent = intent;
             SourceNoteId = sourceNoteId ?? String.Empty;
+            TargetNoteId = targetNoteId ?? String.Empty;
             SceneRevision = sceneRevision;
             TopologyGeneration = topologyGeneration;
             MemberIds = memberIds ??
                 Array.AsReadOnly(new string[0]);
+            AffectedMemberIds = affectedMemberIds ??
+                Array.AsReadOnly(new string[0]);
+            BaselineVersions =
+                new ReadOnlyDictionary<string, long>(
+                    baselineVersions == null
+                        ? new Dictionary<string, long>(
+                            StringComparer.OrdinalIgnoreCase)
+                        : new Dictionary<string, long>(
+                            baselineVersions,
+                            StringComparer.OrdinalIgnoreCase));
         }
 
         internal long GestureId { get; private set; }
         internal StickyDockLocalGestureKind Kind { get; private set; }
+        internal StickyDockCommitIntent Intent { get; private set; }
         internal string SourceNoteId { get; private set; }
+        internal string TargetNoteId { get; private set; }
         internal long SceneRevision { get; private set; }
         internal long TopologyGeneration { get; private set; }
         internal IReadOnlyList<string> MemberIds { get; private set; }
+        internal IReadOnlyList<string> AffectedMemberIds
+            { get; private set; }
+        internal IReadOnlyDictionary<string, long> BaselineVersions
+            { get; private set; }
     }
 }
