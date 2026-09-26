@@ -19,6 +19,7 @@ namespace PennyPet
         private bool _hideAfterImeComposition;
         private bool _applyingBounds;
         private bool _eventsSuppressed;
+        private bool _headerDragActive;
         // Runtime topology truth owned by Pet's DisplayTopologyRuntime and
         // passed across the typed boundary with every Create/Show command.
         // The sticky STA must never capture Windows topology itself.
@@ -818,13 +819,15 @@ namespace PennyPet
 
         private void BoundsChanged(object sender, EventArgs e)
         {
-            if (_applyingBounds) return;
-            if (_window.DockDividerResizeActive || _window.DockHorizontalResizeActive) return;
+            if (_applyingBounds || _headerDragActive) return;
+            if (_window.DockDividerResizeActive ||
+                _window.DockHorizontalResizeActive) return;
             EmitSnapshot(StickyUiEventKind.BoundsChanged);
         }
 
         private void HeaderDragStarted(object sender, EventArgs e)
         {
+            _headerDragActive = true;
             EmitLocalDockGeometry(
                 StickyUiEventKind.HeaderDragStarted);
         }
@@ -841,8 +844,12 @@ namespace PennyPet
 
         private void HeaderDragCompleted(object sender, EventArgs e)
         {
-            EmitLocalDockGeometry(
-                StickyUiEventKind.HeaderDragCompleted);
+            try
+            {
+                EmitLocalDockGeometry(
+                    StickyUiEventKind.HeaderDragCompleted);
+            }
+            finally { _headerDragActive = false; }
         }
 
         private void UserResizeStarted(object sender, EventArgs e)
