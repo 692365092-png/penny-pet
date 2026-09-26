@@ -66,10 +66,6 @@ namespace PennyPet
             _workspace.RefreshNoteTabs();
         }
 
-        // Keep every member inside a coordinate range that Win32 mouse
-        // messages can address reliably. This is a Windows platform limit, not
-        // a Penny business rule, so Core receives it as a parameter.
-        private const int DockCoordinateSafetyLimit = 30000;
         private bool _synchronizingDockLayout;
         private long _dockSceneRevision;
         private long _nextDockOperationSequence;
@@ -272,12 +268,6 @@ namespace PennyPet
             return StickyDockGroups.GetOrderedGroup(_workspace.Notes.InStorageOrder, seed);
         }
 
-        private string FindVisibleDockParentId(StickyNoteData seed)
-        {
-            StickyNoteData parent = StickyDockGroups.GetVisibleNeighbor(_workspace.Notes.InStorageOrder, seed, -1);
-            return parent == null ? String.Empty : parent.Id;
-        }
-
         internal void LayoutDockChain(List<StickyNoteData> ordered,
             IDictionary<string, DockWindowFacts> factsById,
             int left, int top, int width,
@@ -385,45 +375,6 @@ namespace PennyPet
                 result.Add(new Rectangle(item.Left, item.Top,
                     item.Width, item.Height));
             return result;
-        }
-
-        private bool CanSafelyCombineDockComponents(DockTarget target,
-            StickyNoteData sourceSeed,
-            IDictionary<string, DockWindowFacts> factsById)
-        {
-            if (target == null || String.IsNullOrEmpty(target.ParentNoteId) ||
-                sourceSeed == null)
-                return false;
-            StickyNoteData parent = _workspace.Notes.Find(target.ParentNoteId);
-            if (parent == null) return false;
-            List<StickyNoteData> targetOrder = BuildDockChainOrder(
-                parent);
-            if (targetOrder.Count == 0) return false;
-            List<int> heights = new List<int>();
-            HashSet<string> seen = new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase);
-            foreach (StickyNoteData note in targetOrder)
-            {
-                if (note != null && note.Visible && seen.Add(note.Id))
-                {
-                    DockWindowFacts facts;
-                    if (factsById == null || !factsById.TryGetValue(note.Id, out facts)) return false;
-                    heights.Add(facts.Height);
-                }
-            }
-            foreach (StickyNoteData note in BuildDockChainOrder(sourceSeed))
-            {
-                if (note != null && note.Visible && seen.Add(note.Id))
-                {
-                    DockWindowFacts facts;
-                    if (factsById == null || !factsById.TryGetValue(note.Id, out facts)) return false;
-                    heights.Add(facts.Height);
-                }
-            }
-            DockWindowFacts rootFacts;
-            return factsById != null && factsById.TryGetValue(targetOrder[0].Id, out rootFacts) &&
-                StickyDockOperations.IsDockCoordinateRangeSafe(rootFacts.Y,
-                    heights, DockCoordinateSafetyLimit);
         }
 
         private void NormalizeDockComponent(StickyNoteData seed)
