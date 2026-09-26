@@ -24,6 +24,7 @@
     <Compile Include="Features\StickyNotes\DockMutationQueue.cs" />
     <Compile Include="Features\StickyNotes\DockResizeSession.cs" />
     <Compile Include="Features\StickyNotes\DockGestureOwner.cs" />
+    <Compile Include="Features\StickyNotes\StickyDockLocalGestureRuntime.cs" />
     <Compile Include="Features\StickyNotes\DockRestoreOperation.cs" />
     <Compile Include="Features\StickyNotes\StickyHostedRuntime.cs" />
     <Compile Include="Features\StickyNotes\StickyPlacementRuntime.cs" />
