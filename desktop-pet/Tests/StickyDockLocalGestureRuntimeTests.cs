@@ -128,8 +128,10 @@ namespace PennyPet.Tests
                 new DisplayTopologySnapshot(7, new[] { surface });
             Dictionary<string, WindowFacts> facts = GroupFacts(
                 surface, 7);
+            // Legacy snap rule attaches the moving TOP to the
+            // candidate BOTTOM (within 20 physical px).
             facts["X"] = Facts("X", surface, 96,
-                new PhysicalRect(100, 1080, 320, 300), 7);
+                new PhysicalRect(100, 480, 320, 300), 7);
             StickyDockLocalGestureRuntime runtime = Runtime(
                 facts, (targets, source) => { });
             runtime.SetTopology(topology);
