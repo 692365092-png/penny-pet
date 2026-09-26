@@ -244,6 +244,138 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
+        public void StructuralChange_CancelsOnlyAffectedGestureAndRestoresBaseline()
+        {
+            DisplaySurfaceSnapshot surface = Surface(
+                "one", "\\\\.\\DISPLAY1", "mdp:one",
+                new PhysicalRect(0, 0, 1920, 1080));
+            Dictionary<string, WindowFacts> facts =
+                new Dictionary<string, WindowFacts>(
+                    StringComparer.OrdinalIgnoreCase)
+                {
+                    ["A"] = Facts("A", surface, 96,
+                        new PhysicalRect(100, 100, 320, 300), 31),
+                    ["B"] = Facts("B", surface, 96,
+                        new PhysicalRect(100, 400, 320, 300), 31)
+                };
+            List<DockWindowTarget> applied =
+                new List<DockWindowTarget>();
+            StickyDockLocalGestureRuntime runtime =
+                Runtime(facts, (targets, source) =>
+                {
+                    applied.Clear();
+                    applied.AddRange(targets);
+                });
+            runtime.SetTopology(new DisplayTopologySnapshot(
+                31, new[] { surface }));
+            runtime.SetScene(new StickyDockSceneProjection(
+                new[]
+                {
+                    new StickyDockSceneMember("A", "g", 0, true, 1),
+                    new StickyDockSceneMember("B", "g", 1, true, 2)
+                }, 8));
+
+            Assert.AreNotEqual(0, runtime.TryBegin(
+                StickyDockLocalGestureKind.HeaderDrag, "A"));
+            Assert.IsFalse(runtime.AffectsStructure(
+                new[] { "other" }));
+            Assert.IsTrue(runtime.AffectsStructure(
+                new[] { "B" }));
+
+            IReadOnlyList<DockWindowTarget> restore =
+                runtime.CancelAndRestore();
+            Assert.IsFalse(runtime.IsActive);
+            Assert.AreEqual(2, restore.Count);
+            Assert.AreEqual(new PhysicalRect(
+                100, 100, 320, 300),
+                restore[0].PhysicalBounds);
+            Assert.AreEqual(new PhysicalRect(
+                100, 400, 320, 300),
+                restore[1].PhysicalBounds);
+        }
+
+        [TestMethod]
+        public void TopologyChange_RebasesFromNewGenerationFacts()
+        {
+            DisplaySurfaceSnapshot first = Surface(
+                "one", "\\\\.\\DISPLAY1", "mdp:one",
+                new PhysicalRect(0, 0, 1920, 1080));
+            DisplaySurfaceSnapshot second = Surface(
+                "two", "\\\\.\\DISPLAY2", "mdp:two",
+                new PhysicalRect(1920, 0, 1920, 1080));
+            Dictionary<string, WindowFacts> facts =
+                new Dictionary<string, WindowFacts>(
+                    StringComparer.OrdinalIgnoreCase)
+                {
+                    ["A"] = Facts("A", first, 96,
+                        new PhysicalRect(100, 100, 320, 300), 41),
+                    ["B"] = Facts("B", first, 96,
+                        new PhysicalRect(100, 400, 320, 300), 41)
+                };
+            StickyDockLocalGestureRuntime runtime =
+                Runtime(facts, (targets, source) => { });
+            runtime.SetTopology(new DisplayTopologySnapshot(
+                41, new[] { first, second }));
+            runtime.SetScene(new StickyDockSceneProjection(
+                new[]
+                {
+                    new StickyDockSceneMember("A", "g", 0, true, 1),
+                    new StickyDockSceneMember("B", "g", 1, true, 2)
+                }, 9));
+            Assert.AreNotEqual(0, runtime.TryBegin(
+                StickyDockLocalGestureKind.HeaderDrag, "A"));
+
+            facts["A"] = Facts("A", second, 120,
+                new PhysicalRect(2100, 120, 400, 375), 42);
+            facts["B"] = Facts("B", second, 120,
+                new PhysicalRect(2100, 495, 400, 375), 42);
+            Assert.IsTrue(runtime.TryRebaseTopology(
+                new DisplayTopologySnapshot(
+                    42, new[] { first, second })));
+            Assert.IsTrue(runtime.MoveHeader(facts["A"]));
+            StickyDockLocalGestureCompletion completion =
+                runtime.Complete();
+            Assert.AreEqual(42,
+                completion.TopologyGeneration);
+        }
+
+        [TestMethod]
+        public void TopologyChange_MissingSourceFailsClosed()
+        {
+            DisplaySurfaceSnapshot surface = Surface(
+                "one", "\\\\.\\DISPLAY1", "mdp:one",
+                new PhysicalRect(0, 0, 1920, 1080));
+            Dictionary<string, WindowFacts> facts =
+                new Dictionary<string, WindowFacts>(
+                    StringComparer.OrdinalIgnoreCase)
+                {
+                    ["A"] = Facts("A", surface, 96,
+                        new PhysicalRect(100, 100, 320, 300), 51),
+                    ["B"] = Facts("B", surface, 96,
+                        new PhysicalRect(100, 400, 320, 300), 51)
+                };
+            StickyDockLocalGestureRuntime runtime =
+                Runtime(facts, (targets, source) => { });
+            runtime.SetTopology(new DisplayTopologySnapshot(
+                51, new[] { surface }));
+            runtime.SetScene(new StickyDockSceneProjection(
+                new[]
+                {
+                    new StickyDockSceneMember("A", "g", 0, true, 1),
+                    new StickyDockSceneMember("B", "g", 1, true, 2)
+                }, 10));
+            Assert.AreNotEqual(0, runtime.TryBegin(
+                StickyDockLocalGestureKind.HeaderDrag, "A"));
+            facts.Remove("A");
+
+            Assert.IsFalse(runtime.TryRebaseTopology(
+                new DisplayTopologySnapshot(
+                    52, new[] { surface })));
+            runtime.Cancel();
+            Assert.IsFalse(runtime.IsActive);
+        }
+
+        [TestMethod]
         public void Runtime_HasNoPetCallbackRepositoryOrSaveChannel()
         {
             DisplaySurfaceSnapshot surface = Surface(

@@ -765,6 +765,18 @@ namespace PennyPet
         internal void SetCurrentTopology(DisplayTopologySnapshot snapshot)
         {
             lock (_configurationGate) _currentTopology = snapshot;
+            if (snapshot == null) return;
+            _threadHost.PostToDispatcher(delegate
+            {
+                if (!_localDockGestures.TryRebaseTopology(snapshot))
+                {
+                    _localDockGestures.Cancel();
+                    _activeLocalDockDependency = 0;
+                    ClearDockPreviewOnThread();
+                    ClearSplitGuideOnThread();
+                }
+                return StickyUiCommandResult.Handled();
+            }, null, null);
         }
 
         internal void SetCurrentDockInteractionEpoch(long epoch)
@@ -894,6 +906,9 @@ namespace PennyPet
                     case StickyUiCommandKind.AcknowledgeDockCommit:
                         return AcknowledgeLocalDockCommit(
                             command.DockCommitAck);
+                    case StickyUiCommandKind.PrepareDockStructure:
+                        return PrepareLocalDockStructure(
+                            command.DockNoteIds);
                     case StickyUiCommandKind.UpdateReminders:
                         if (!TryGetSession(command.NoteId, out session))
                             return StickyUiCommandResult.NotHandled();
@@ -1463,6 +1478,23 @@ namespace PennyPet
                 }
             PostEvent(StickyUiEvent.DockCommitRequested(
                 ready, sequence));
+        }
+
+        private StickyUiCommandResult PrepareLocalDockStructure(
+            IEnumerable<string> affectedNoteIds)
+        {
+            if (!_localDockGestures.AffectsStructure(
+                affectedNoteIds))
+                return StickyUiCommandResult.Handled();
+
+            IReadOnlyList<DockWindowTarget> restore =
+                _localDockGestures.CancelAndRestore();
+            _activeLocalDockDependency = 0;
+            ClearDockPreviewOnThread();
+            ClearSplitGuideOnThread();
+            if (restore.Count > 0)
+                ApplyLocalDockCorrections(restore);
+            return StickyUiCommandResult.Handled();
         }
 
         private StickyUiCommandResult AcknowledgeLocalDockCommit(

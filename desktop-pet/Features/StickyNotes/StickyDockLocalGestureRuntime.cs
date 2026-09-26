@@ -254,6 +254,91 @@ namespace PennyPet
             _topology = topology;
         }
 
+        internal bool AffectsStructure(IEnumerable<string> noteIds)
+        {
+            LocalGesture gesture = _active;
+            if (gesture == null) return false;
+            if (noteIds == null) return true;
+
+            HashSet<string> affected = new HashSet<string>(
+                noteIds, StringComparer.OrdinalIgnoreCase);
+            if (affected.Count == 0) return true;
+            foreach (string id in gesture.MemberIds)
+                if (affected.Contains(id)) return true;
+
+            if (!String.IsNullOrEmpty(LastSnapTargetNoteId) &&
+                _scene != null)
+                foreach (string id in
+                    _scene.VisibleGroup(LastSnapTargetNoteId))
+                    if (affected.Contains(id)) return true;
+            return false;
+        }
+
+        internal IReadOnlyList<DockWindowTarget>
+            CancelAndRestore()
+        {
+            LocalGesture gesture = _active;
+            _active = null;
+            LastSnapTargetNoteId = String.Empty;
+            return gesture == null
+                ? Array.AsReadOnly(new DockWindowTarget[0])
+                : gesture.BaselineTargets();
+        }
+
+        // A display generation change does not make the pointer gesture a
+        // Pet-side operation again. Re-capture the current component on the
+        // new topology and continue locally when every HWND is still valid.
+        // If the source/session/relation disappeared, the caller ends the
+        // gesture and lets the low-frequency topology reconcile rebuild it.
+        internal bool TryRebaseTopology(
+            DisplayTopologySnapshot topology)
+        {
+            if (topology == null) return false;
+            LocalGesture previous = _active;
+            _topology = topology;
+            if (previous == null) return true;
+            if (previous.Detached || _scene == null)
+                return false;
+
+            IReadOnlyList<string> ids =
+                _scene.VisibleGroup(previous.SourceNoteId);
+            if (ids.Count == 0 ||
+                (previous.Kind !=
+                    StickyDockLocalGestureKind.HeaderDrag &&
+                 ids.Count < 2))
+                return false;
+
+            List<WindowFacts> facts =
+                new List<WindowFacts>(ids.Count);
+            int sourceIndex = -1;
+            for (int index = 0; index < ids.Count; index++)
+            {
+                WindowFacts current = _captureFacts(ids[index]);
+                if (current == null ||
+                    current.TopologyGeneration !=
+                        topology.Generation ||
+                    !current.PhysicalBounds.IsValid)
+                    return false;
+                if (String.Equals(current.WindowId,
+                    previous.SourceNoteId,
+                    StringComparison.OrdinalIgnoreCase))
+                    sourceIndex = index;
+                facts.Add(current);
+            }
+            if (sourceIndex < 0 ||
+                (previous.Kind ==
+                    StickyDockLocalGestureKind.DividerResize &&
+                 sourceIndex == facts.Count - 1))
+                return false;
+
+            _active = new LocalGesture(
+                previous.GestureId, previous.Kind,
+                sourceIndex, facts.ToArray(),
+                _scene.Revision, topology.Generation);
+            LastSnapTargetNoteId = String.Empty;
+            return true;
+        }
+
         internal long TryBegin(StickyDockLocalGestureKind kind,
             string sourceNoteId)
         {

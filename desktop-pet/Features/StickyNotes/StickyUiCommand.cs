@@ -24,6 +24,7 @@ namespace PennyPet
         CaptureWindowFacts,
         CaptureDockFacts,
         AcknowledgeDockCommit,
+        PrepareDockStructure,
         Close,
         CloseAll,
         UpdateReminders,
@@ -254,6 +255,20 @@ namespace PennyPet
             return new StickyUiCommand(
                 StickyUiCommandKind.AcknowledgeDockCommit,
                 String.Empty, false, dockCommitAck: ack);
+        }
+
+        internal static StickyUiCommand PrepareDockStructure(
+            IEnumerable<string> affectedNoteIds)
+        {
+            List<string> ids = new List<string>();
+            if (affectedNoteIds != null)
+                foreach (string id in affectedNoteIds)
+                    if (!String.IsNullOrWhiteSpace(id))
+                        ids.Add(id.Trim());
+            return new StickyUiCommand(
+                StickyUiCommandKind.PrepareDockStructure,
+                String.Empty, false,
+                dockNoteIds: ids.ToArray());
         }
 
         internal static StickyUiCommand CaptureWindowFacts(string noteId,
