@@ -107,6 +107,11 @@ namespace PennyPet
         private const int MaxPending = 8;
         private readonly List<Pending> _pending =
             new List<Pending>();
+        private readonly Dictionary<long, StickyDockSceneProjection>
+            _acceptedScenes =
+                new Dictionary<long, StickyDockSceneProjection>();
+        private readonly Queue<long> _acceptedOrder =
+            new Queue<long>();
 
         internal int PendingCount { get { return _pending.Count; } }
         internal bool CanBeginGesture
@@ -132,7 +137,15 @@ namespace PennyPet
                     return false;
             if (commit.DependsOnGestureId != 0 &&
                 !Contains(commit.DependsOnGestureId))
-                return false;
+            {
+                StickyDockSceneProjection acceptedScene;
+                if (!_acceptedScenes.TryGetValue(
+                    commit.DependsOnGestureId,
+                    out acceptedScene))
+                    return false;
+                commit = commit.RebaseBaselineVersions(
+                    acceptedScene);
+            }
             _pending.Add(new Pending(commit));
             return true;
         }
@@ -163,6 +176,8 @@ namespace PennyPet
             Pending resolved = _pending[index];
             List<long> cancelled = new List<long>();
             _pending.RemoveAt(index);
+            if (ack.Accepted)
+                RememberAccepted(ack.GestureId, ack.Scene);
             if (ack.Accepted && ack.Scene != null)
             {
                 foreach (Pending pending in _pending)
@@ -204,6 +219,21 @@ namespace PennyPet
         internal void Clear()
         {
             _pending.Clear();
+            _acceptedScenes.Clear();
+            _acceptedOrder.Clear();
+        }
+
+        private void RememberAccepted(long gestureId,
+            StickyDockSceneProjection scene)
+        {
+            if (!_acceptedScenes.ContainsKey(gestureId))
+                _acceptedOrder.Enqueue(gestureId);
+            _acceptedScenes[gestureId] = scene;
+            while (_acceptedOrder.Count > 16)
+            {
+                long expired = _acceptedOrder.Dequeue();
+                _acceptedScenes.Remove(expired);
+            }
         }
 
         private bool Contains(long gestureId)
