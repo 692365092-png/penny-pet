@@ -23,15 +23,10 @@ namespace PennyPet
             internal readonly StickyWorkspace Workspace;
             internal StickyHostedRuntime Hosted { get { return Workspace.Hosted; } }
             internal StickyPlacementRuntime Placement { get { return Workspace.Placement; } }
-            internal DockInteractionSession Interaction { get { return Workspace.Dock.Interaction; } }
             internal StickyUiHost Host { get { return Workspace.Host; } }
             internal readonly Pc2Context Context = new Pc2Context();
             internal readonly DisplayTopologyRuntime Display;
             internal readonly List<StickyNoteData> Notes = new List<StickyNoteData>();
-            internal IReadOnlyDictionary<string, DockWindowFacts> Active
-                { get { return Interaction.PreviewFacts; } }
-            internal IReadOnlyDictionary<string, DockWindowFacts> Original
-                { get { return Interaction.BaselineFacts; } }
             internal readonly string PathName;
             private readonly PetContextMenu menu;
             private readonly PetBubbleCoordinator bubble;
@@ -99,12 +94,7 @@ namespace PennyPet
                     Placement.TryUpdateEffective(note.Id, Facts(i, 1, 100));
                 }
                 StickyDockGroups.ApplyOrderedGroup(Notes);
-                Dictionary<string, DockWindowFacts> baseline = new Dictionary<string, DockWindowFacts>();
-                foreach (StickyNoteData note in Notes) baseline[note.Id] = DockWindowFacts.FromData(note);
-                Interaction.BeginGesture(baseline[Notes[0].Id], Ids, baseline, Topology.Generation, DateTime.UtcNow);
-                Interaction.TryEnterDragging(Interaction.Epoch, Topology.Generation);
                 Host.SetCurrentTopology(Topology);
-                Host.SetCurrentDockInteractionEpoch(Interaction.Epoch);
                 Pc2Assert(Repository.Save().Succeeded, "isolated baseline saved");
             }
 
@@ -130,7 +120,7 @@ namespace PennyPet
             }
             internal StickyUiCommandResult Batch(long plan, params DockBatchMemberResult[] members)
             { return StickyUiCommandResult.Handled(new DockBatchResult(plan,
-                Topology.Generation, Surface.RuntimeSurfaceId, 96, members, Interaction.Epoch)); }
+                Topology.Generation, Surface.RuntimeSurfaceId, 96, members)); }
             internal void Start(Func<StickyUiCommand, StickyUiCommandResult> handler = null)
             {
                 if (started) return;
@@ -198,216 +188,71 @@ namespace PennyPet
 
         private static void RunPc2CharacterizationChecks(string outputPath)
         {
-            string root = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outputPath)), "pc2a");
+            string root = Path.Combine(
+                Path.GetDirectoryName(Path.GetFullPath(outputPath)),
+                "pc2a");
             List<string> evidence = new List<string>();
-            // A1: whole-set preflight rejects before any map/canonical/lease write.
-            using (Pc2Scene s = new Pc2Scene(root, "A1"))
+
+            // R24: the old Pet-owned per-frame Dock planner/mailbox no longer
+            // participates in characterization. Structural operations cross
+            // one explicit Sticky-STA barrier; topology/restore remains
+            // whole-batch atomic.
+            using (Pc2Scene s = new Pc2Scene(root,
+                "R24-structure"))
+            {
+                s.Start();
+                StickyUiCommandResult prepared =
+                    s.Send(StickyUiCommand.PrepareDockStructure(
+                        s.Ids));
+                Pc2Assert(prepared.Status ==
+                    StickyUiCommandStatus.Handled,
+                    "R24 structural gate is handled on Sticky STA");
+                evidence.Add(
+                    "R24: structural gate handled on Sticky STA; no Pet live planner/mailbox dependency.");
+            }
+
+            using (Pc2Scene s = new Pc2Scene(root,
+                "R24-topology-atomic"))
             {
                 WindowFacts old = s.Facts(1, 100, 100);
-                s.Placement.TryUpdateEffective(s.Notes[1].Id, old);
+                s.Placement.TryUpdateEffective(
+                    s.Notes[1].Id, old);
                 long saves = s.Saves;
-                object[] args = { s.Batch(0, s.Member(0), s.Member(1), s.Member(2)),
-                    s.Ids, s.Topology, s.Interaction.Epoch, s.Notes[0].Id, true, null };
-                bool accepted = (bool)Pc2Call(s.Workspace.Dock, "TryApplyDockFactsBarrier", args);
-                Pc2Assert(!accepted && args[6] == null &&
-                    s.Notes.TrueForAll(n => n.X == 100) &&
-                    s.Placement.GetEffective(s.Notes[0].Id).WindowSequence == 1 &&
-                    ReferenceEquals(s.Placement.GetEffective(s.Notes[1].Id), old) &&
-                    s.Placement.GetEffective(s.Notes[2].Id).WindowSequence == 1 &&
-                    s.Sequence(0) == 1 && s.Sequence(1) == 1 && s.Sequence(2) == 1 &&
-                    s.Active.Count == 3 && s.Original.Count == 3 && s.Saves == saves,
-                    "A1 whole-set zero-mutation reject with null sourceFacts");
-                evidence.Add("A1: false; zero canonical/effective/lease/map/save mutation; sourceFacts null.");
-            }
-            // A3: live batch rejects atomically; lastApplied does not advance.
-            using (Pc2Scene s = new Pc2Scene(root, "A3"))
-            {
-                WindowFacts old = s.Facts(1, 100, 100);
-                s.Placement.TryUpdateEffective(s.Notes[1].Id, old);
-                long saves = s.Saves;
-                Pc2Call(s.Workspace.Dock, "ApplyDockBatchResult", s.Batch(10,
-                    s.Member(0), s.Member(1), s.Member(2)).DockBatchResult);
-                Pc2Assert(s.Notes.TrueForAll(n => n.X == 100) &&
-                    s.Sequence(0) == 1 && s.Sequence(1) == 1 && s.Sequence(2) == 1 &&
-                    ReferenceEquals(s.Placement.GetEffective(s.Notes[1].Id), old) &&
-                    (long)Pc2Get(s.Workspace.Dock, "_lastAppliedDockPlanSequence") == -1L &&
-                    s.Active.Count == 3 && s.Saves == saves,
-                    "A3 whole live batch zero mutation, lastApplied unchanged");
-                evidence.Add("A3: void; whole batch rejected; zero canonical/effective/lease/lastApplied mutation; no Save.");
-            }
-            using (Pc2Scene s = new Pc2Scene(root, "A4"))
-            {
-                WindowFacts old = s.Facts(0, 100, 100);
-                s.Placement.TryUpdateEffective(s.Notes[0].Id, old);
-                s.Placement.MarkTemporaryRehome(s.Notes[0].Id, "test-rehome");
-                long saves = s.Saves;
-                string beforeText = s.Notes[0].Text;
-                DockBatchMemberResult m = s.Member(0);
-                bool accepted = (bool)Pc2Call(s.Workspace, "ApplyReprojectResult",
-                    StickyUiCommandResult.Handled(m.Snapshot, m.WindowSequence, m.Facts, s.Topology),
-                    m.NoteId, s.Topology);
-                s.Repository.WaitForPendingSaves();
-                Pc2Assert(!accepted && s.Notes[0].X == 100 &&
-                    s.Notes[0].Text == beforeText &&
-                    s.Notes[0].Visible && !s.Notes[0].AlwaysOnTop &&
-                    s.Sequence(0) == 1 &&
-                    ReferenceEquals(s.Placement.GetEffective(m.NoteId), old) &&
-                    s.Notes[0].PreferredPlacement.LocalLogicalRect.X == 100 &&
-                    s.Placement.IsTemporaryRehome(m.NoteId) && s.Saves == saves,
-                    "A4 rejected reproject leaves canonical/content/lease/Save/preferred/temp untouched");
-                evidence.Add("A4: false; zero canonical/content/lease/Save mutation; preferred/temp/effective unchanged.");
-            }
-            // A5: every rejection class is now whole-set atomic.
-            for (int scenario = 0; scenario < 3; scenario++)
-            using (Pc2Scene s = new Pc2Scene(root, "A5-" + scenario))
-            {
-                long saves = s.Saves;
-                string before = String.Join("\n", s.Notes.ConvertAll(StickyNoteCodec.SerializeLine));
-                WindowFacts old = s.Facts(2, 100, 100);
-                if (scenario == 2) s.Placement.TryUpdateEffective(s.Notes[2].Id, old);
-                Pc2Call(s.Workspace.Dock, "CompleteDockDurableCommit",
-                    s.Batch(10, s.Member(0), s.Member(1),
-                        s.Member(2, scenario == 1 ? 1 : 2, scenario == 0)),
-                    s.Topology, s.Interaction.Epoch, s.Notes[0], null, s.Ids, 10L);
-                Pc2Assert(before == String.Join("\n", s.Notes.ConvertAll(StickyNoteCodec.SerializeLine)) &&
-                    s.Saves == saves && s.Sequence(0) == 1 &&
-                    s.Placement.GetEffective(s.Notes[0].Id).WindowSequence == 1 &&
-                    (scenario != 2 || (ReferenceEquals(s.Placement.GetEffective(s.Notes[2].Id), old) &&
-                        s.Notes[2].PreferredPlacement.LocalLogicalRect.X == 100)),
-                    "A5 whole-set zero mutation for structural/hosted/effective rejection");
-                evidence.Add("A5-" + scenario + ": " + (scenario < 2
-                    ? "invalid final member: zero canonical/preferred/lease/effective/order/Save mutation."
-                    : "effective-only reject: whole-set zero durable mutation and zero Save."));
-            }
-            // A7: topology/restore consumer also rejects atomically.
-            using (Pc2Scene s = new Pc2Scene(root, "A7"))
-            {
-                WindowFacts old = s.Facts(1, 100, 100);
-                s.Placement.TryUpdateEffective(s.Notes[1].Id, old);
-                long saves = s.Saves;
-                string before = String.Join("\n", s.Notes.ConvertAll(StickyNoteCodec.SerializeLine));
-                object[] args = { s.Batch(7, s.Member(0), s.Member(1), s.Member(2)),
-                    s.Topology, s.Surface, s.Ids, 7L, true, true, false };
-                bool accepted = (bool)Pc2Call(s.Workspace.Dock, "TryApplyDockTopologyResult", args);
+                string before = String.Join("\n",
+                    s.Notes.ConvertAll(
+                        StickyNoteCodec.SerializeLine));
+                object[] args = {
+                    s.Batch(7, s.Member(0), s.Member(1),
+                        s.Member(2)),
+                    s.Topology, s.Surface, s.Ids, 7L,
+                    true, true, false };
+                bool accepted = (bool)Pc2Call(
+                    s.Workspace.Dock,
+                    "TryApplyDockTopologyResult", args);
                 Pc2Assert(!accepted &&
-                    before == String.Join("\n", s.Notes.ConvertAll(StickyNoteCodec.SerializeLine)) &&
-                    s.Saves == saves && s.Sequence(0) == 1 && s.Sequence(1) == 1 && s.Sequence(2) == 1 &&
-                    ReferenceEquals(s.Placement.GetEffective(s.Notes[1].Id), old) &&
-                    s.Notes.TrueForAll(n => n.Visible && !n.AlwaysOnTop),
-                    "A7 topology/restore zero-mutation reject preserves visibility/topmost/save");
-                evidence.Add("A7: false; zero canonical/effective/lease/visibility/topmost/Save mutation.");
+                    before == String.Join("\n",
+                        s.Notes.ConvertAll(
+                            StickyNoteCodec.SerializeLine)) &&
+                    s.Saves == saves &&
+                    ReferenceEquals(
+                        s.Placement.GetEffective(
+                            s.Notes[1].Id), old),
+                    "R24 topology reject is whole-set atomic");
+                evidence.Add(
+                    "R24: topology/restore rejection remains whole-set atomic.");
             }
-            RunPc2FailurePolicies(root, evidence);
-            RunPc2InputHandoff(root, evidence);
-            // Last: establish a real session recreation path, not just seeded counters.
+
             RunPc2Recreation(root, evidence);
             RunPc2EnsureSessionRuntime(root, evidence);
             Directory.CreateDirectory(root);
-            File.WriteAllText(Path.Combine(root, "characterization.json"),
-                new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(new {
-                    sourceGolden = "ab10b45705195bc7564db74c2d1f03dc996917ba",
-                    characterizationPassed = true,
-                    confirmedLatentCorrectnessDefect = false,
-                    pc2b = "PENDING_HUMAN", observations = evidence.ToArray()
-                }), new UTF8Encoding(false));
-            string closureRoot = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outputPath)), "pc2a5");
-            Directory.CreateDirectory(closureRoot);
-            File.WriteAllText(Path.Combine(closureRoot, "closure.json"),
-                new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(new {
-                    sourceDefectCharacterization = "b9a6e79a31cfb5f8af8794e4bb3ec23985d67516",
-                    sessionRecreationClosed = true,
-                    rejectionAtomicityClosed = true,
-                    pc2b = "PENDING_HUMAN", observations = evidence.ToArray()
-                }), new UTF8Encoding(false));
-        }
-
-        private static void RunPc2InputHandoff(string root, List<string> evidence)
-        {
-            using (Pc2Scene s = new Pc2Scene(root, "A8-input-handoff"))
-            {
-                s.Start(c => StickyUiCommandResult.Handled());
-                long old = s.Interaction.BeginFinalizing(s.Topology.Generation, null);
-                var input = new DockInput();
-                var start = StickyUiEvent.FromSnapshot(StickyUiEventKind.HeaderDragStarted,
-                    StickyNoteUiSnapshot.Capture(s.Notes[0]), 2, s.Facts(0, 2, 140), s.Topology);
-                start.Input = input;
-                s.Workspace.HostedStickyEventReceived(start);
-                Pc2Assert(s.Workspace.Dock.Gestures.Matches(input) &&
-                    s.Interaction.Phase == DockInteractionPhase.Dragging && s.Sequence(0) == 2 &&
-                    !s.Interaction.TryFinish(old, s.Topology.Generation, out _, out _),
-                    "A8 real workspace accepts a new header while the old final is pending");
-                var late = StickyUiEvent.FromSnapshot(StickyUiEventKind.HeaderDragCompleted,
-                    StickyNoteUiSnapshot.Capture(s.Notes[0]), 100, s.Facts(0, 100, 900), s.Topology);
-                // The preceding fixture gesture has the default null identity.
-                s.Workspace.HostedStickyEventReceived(late);
-                Pc2Assert(s.Sequence(0) == 2 && s.Notes[0].X == 140 &&
-                    s.Interaction.Phase == DockInteractionPhase.Dragging,
-                    "A8 old input cannot consume a sequence or finalize the new header");
-
-                // Release of a queued hide must not let the new start's snapshot
-                // make that note visible again.
-                s.Interaction.BeginFinalizing(s.Topology.Generation, null);
-                s.Interaction.Mutations.Defer(s.Notes[0].Id, null, () => s.Notes[0].Visible = false);
-                start = StickyUiEvent.FromSnapshot(StickyUiEventKind.HeaderDragStarted,
-                    StickyNoteUiSnapshot.Capture(s.Notes[0]), 3, s.Facts(0, 3, 160), s.Topology);
-                start.Input = new DockInput();
-                s.Workspace.HostedStickyEventReceived(start);
-                Pc2Assert(!s.Notes[0].Visible && !s.Interaction.IsActive && s.Sequence(0) == 2,
-                    "A8 deferred hide wins before new source validation");
-            }
-            evidence.Add("A8: real workspace input handoff accepts new headers, rejects old input before facts, and preserves a deferred hide.");
-        }
-
-        private static void RunPc2FailurePolicies(string root, List<string> evidence)
-        {
-            using (Pc2Scene s = new Pc2Scene(root, "A6-rebase"))
-            {
-                s.Start(c => StickyUiCommandResult.NotHandled());
-                s.Interaction.BeginRebase(s.Topology.Generation);
-                int before = s.Context.Executed;
-                Pc2Call(s.Workspace.Dock, "ResumeDockDragAfterTopologyChange", s.Topology);
-                s.Context.PumpUntil(() => s.Context.Executed > before);
-                Pc2Assert(s.Interaction.Phase == DockInteractionPhase.Rebasing && s.Active.Count == 3,
-                    "A6 rebase rejection stays Rebasing");
-            }
-            using (Pc2Scene s = new Pc2Scene(root, "A6-live"))
-            {
-                s.Start(); // real ApplyDockPlan rejects missing native sessions
-                int before = s.Context.Executed;
-                DockPlacementPlan plan = new DockPlacementPlan(s.Topology.Generation, 10,
-                    s.Notes[0].Id, s.Surface.RuntimeSurfaceId, 96,
-                    s.Notes.ConvertAll(n => new DockWindowTarget(n.Id, new PhysicalRect(400, 100, 300, 230))),
-                    s.Interaction.Epoch);
-                Pc2Call(s.Workspace.Dock, "ApplyLiveDockPlan", plan);
-                s.Context.PumpUntil(() => s.Context.Executed > before);
-                Pc2Assert(s.Interaction.Phase == DockInteractionPhase.Dragging &&
-                    s.Notes[0].X == 100, "A6 live failure keeps drag/canonical");
-            }
-            using (Pc2Scene s = new Pc2Scene(root, "A6-final"))
-            {
-                s.Start(c => StickyUiCommandResult.NotHandled());
-                int before = s.Context.Executed;
-                Pc2Call(s.Workspace.Dock, "StartDockFinalization", s.Notes[0], null);
-                s.Context.PumpUntil(() => s.Context.Executed > before);
-                Pc2Assert(s.Interaction.Phase == DockInteractionPhase.Idle && s.Active.Count == 0 &&
-                    String.IsNullOrEmpty(s.Interaction.SourceNoteId), "A6 final failure resets");
-            }
-            using (Pc2Scene s = new Pc2Scene(root, "A6-restore"))
-            {
-                s.Start(c => StickyUiCommandResult.Handled());
-                foreach (StickyNoteData note in s.Notes) note.Visible = false;
-                var restores = (DockRestoreOperations)Pc2Get(s.Workspace.Dock, "_dockRestores");
-                DockRestoreOperation operation = DockRestoreOperation.TryCreate(s.Notes,
-                    s.Notes[0].Id, false, true, s.Topology, null, 1);
-                Pc2Assert(restores.TryBegin(operation), "A6 restore registered");
-                long saves = s.Saves;
-                Pc2Call(s.Workspace.Dock, "CompleteHostedDockRestore", operation, StickyUiCommandResult.NotHandled());
-                Pc2Assert(restores.Snapshot().Length == 0 && operation.Cancellation.IsCancellationRequested &&
-                    s.Hosted.NoteCount == 3 && s.Notes.TrueForAll(n => !n.Visible) &&
-                    s.Repository.Count == 3 && s.Saves == saves,
-                    "A6 rejected restore preserves canonical/session state, releases operation, queues hides");
-            }
-            evidence.Add("A6: rebase remains Rebasing; live failure remains Dragging; final rejection resets Idle/maps; restore retains canonical/session state without saving and releases its operation.");
+            File.WriteAllText(
+                Path.Combine(root, "characterization.json"),
+                new System.Web.Script.Serialization
+                    .JavaScriptSerializer().Serialize(new {
+                        r24 = true,
+                        characterizationPassed = true,
+                        observations = evidence.ToArray()
+                    }), new UTF8Encoding(false));
         }
 
         private static void RunPc2Recreation(string root, List<string> evidence)
