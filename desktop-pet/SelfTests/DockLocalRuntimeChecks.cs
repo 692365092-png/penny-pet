@@ -79,5 +79,97 @@ namespace PennyPet
                         return false;
             return applyCount == 200 && runtime.Complete() != null;
         }
+        private static void RunPc2FinalDockFailure(string root,
+            List<string> evidence)
+        {
+            using (var scene = new Pc2Scene(root, "R24-final-failure", true))
+            {
+                scene.Start();
+                var facts = new Dictionary<string, WindowFacts>();
+                var members = new List<StickyDockSceneMember>();
+                for (int index = 0; index < scene.Notes.Count; index++)
+                {
+                    StickyNoteData note = scene.Notes[index];
+                    Pc2Assert(scene.Send(StickyUiCommand.EnsureSession(
+                        StickyNoteUiSnapshot.Capture(note), null,
+                        scene.Topology)).Status == StickyUiCommandStatus.Handled,
+                        "final failure fixture creates real session");
+                    Pc2Assert(scene.Send(StickyUiCommand.Show(note.Id, false,
+                        scene.Topology, StickyPlacementRecovery.SelectForShow(
+                            note, scene.Topology))).Status == StickyUiCommandStatus.Handled,
+                        "final failure fixture shows real window");
+                    facts.Add(note.Id, scene.Send(StickyUiCommand.CaptureWindowFacts(
+                        note.Id, scene.Topology)).Facts);
+                    members.Add(new StickyDockSceneMember(note.Id, "group", index, true));
+                }
+                int attempts = 0;
+                var runtime = new StickyDockLocalGestureRuntime(
+                    id => facts.ContainsKey(id) ? facts[id] : null,
+                    (targets, source) => { attempts++; return false; });
+                // Dispatch the probe on the real Sticky STA. Only the failing
+                // native batch result is injected; rollback uses actual HWNDs.
+                scene.Host.SetCommandHandler(command =>
+                {
+                    runtime.SetTopology(scene.Topology);
+                    runtime.SetScene(new StickyDockSceneProjection(members, 1));
+                    Pc2Set(scene.Host, "_localDockGestures", runtime);
+                    string source = scene.Ids[0];
+                    Pc2Assert(runtime.TryBegin(
+                        StickyDockLocalGestureKind.DividerResize, source) != 0,
+                        "final failure gesture starts");
+                    PhysicalRect before = facts[source].PhysicalBounds;
+                    Pc2Call(scene.Host, "HandleCommand", new StickyUiCommand(
+                        StickyUiCommandKind.SetBounds, source, false, null,
+                        new StickyUiBounds(before.Left, before.Top,
+                            before.Width, before.Height + 100)));
+                    Pc2Assert((bool)Pc2Call(scene.Host, "TryHandleLocalDockEvent",
+                        null, StickyUiEvent.DockGeometry(
+                            StickyUiEventKind.DockDividerResizeCompleted,
+                            source, 1, before.Left, before.Width,
+                            before.Height + 100, facts[source], scene.Topology)),
+                        "final failure event consumed locally");
+                    Pc2Assert(attempts == 1 && !runtime.IsActive &&
+                        ((StickyDockCommitQueue)Pc2Get(scene.Host,
+                            "_dockCommitQueue")).PendingCount == 0,
+                        "failed final batch cannot enqueue a commit or retry forever");
+                    foreach (string id in scene.Ids)
+                    {
+                        var captured = (StickyUiCommandResult)Pc2Call(scene.Host,
+                            "HandleCommand", StickyUiCommand.CaptureWindowFacts(
+                                id, scene.Topology));
+                        Pc2Assert(captured.Facts != null &&
+                            captured.Facts.PhysicalBounds.Equals(facts[id].PhysicalBounds),
+                            "failed final batch restores actual window " + id);
+                    }
+                    Pc2Assert(runtime.TryBegin(
+                        StickyDockLocalGestureKind.HeaderDrag, source) != 0,
+                        "next gesture can start after final failure");
+                    Pc2Call(scene.Host, "HandleCommand", new StickyUiCommand(
+                        StickyUiCommandKind.SetBounds, source, false, null,
+                        new StickyUiBounds(before.Left + 40, before.Top + 40,
+                            before.Width, before.Height)));
+                    Pc2Call(scene.Host, "HandleCommand",
+                        StickyUiCommand.PrepareDockStructure(new[] { "unrelated" }));
+                    Pc2Assert(runtime.IsActive,
+                        "unrelated structure command preserves active gesture");
+                    Pc2Call(scene.Host, "HandleCommand",
+                        StickyUiCommand.PrepareDockStructure(new[] { scene.Ids[1] }));
+                    var restored = (StickyUiCommandResult)Pc2Call(scene.Host,
+                        "HandleCommand", StickyUiCommand.CaptureWindowFacts(
+                            source, scene.Topology));
+                    Pc2Assert(!runtime.IsActive && restored.Facts != null &&
+                        restored.Facts.PhysicalBounds.Equals(before),
+                        "affected structure command retires gesture and restores source HWND");
+                    return StickyUiCommandResult.Handled();
+                });
+                StickyUiCommandResult checkedResult = scene.Send(
+                    StickyUiCommand.PrepareDockStructure(scene.Ids));
+                scene.Host.SetCommandHandler(command =>
+                    (StickyUiCommandResult)Pc2Call(scene.Host, "HandleCommand", command));
+                Pc2Assert(checkedResult.Status == StickyUiCommandStatus.Handled,
+                    "final native failure probe: " + checkedResult.Error);
+                evidence.Add("R24 final native batch failure: one attempt, no commit, actual HWND bounds restored.");
+            }
+        }
     }
 }

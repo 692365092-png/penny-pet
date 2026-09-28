@@ -242,6 +242,7 @@ namespace PennyPet
                     "R24: topology/restore rejection remains whole-set atomic.");
             }
 
+            RunPc2FinalDockFailure(root, evidence);
             RunPc2Recreation(root, evidence);
             RunPc2EnsureSessionRuntime(root, evidence);
             Directory.CreateDirectory(root);

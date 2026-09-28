@@ -1213,20 +1213,34 @@ namespace PennyPet
                     }
                     return true;
                 }
+                bool finalApplied = true;
                 if (kind == StickyDockLocalGestureKind.HeaderDrag &&
                     value.Facts != null)
                 {
-                    MoveLocalDockHeader(value.Facts);
+                    finalApplied = MoveLocalDockHeader(value.Facts);
                     IReadOnlyList<DockWindowTarget> snap =
                         _localDockGestures
                             .BuildHeaderSnapTargets();
-                    if (snap.Count > 0)
+                    if (finalApplied && snap.Count > 0)
                         ApplyLocalDockCorrections(snap);
                 }
                 else if (kind ==
                     StickyDockLocalGestureKind.DividerResize &&
                     value.Height > 0)
-                    ResizeLocalDockDivider(value.Height);
+                    finalApplied = ResizeLocalDockDivider(value.Height);
+
+                if (!finalApplied)
+                {
+                    // A final native failure has the same rollback semantics
+                    // as a failed live frame. Never publish a partial layout.
+                    IReadOnlyList<DockWindowTarget> restore =
+                        _localDockGestures.CancelAndRestore();
+                    _activeLocalDockDependency = 0;
+                    ClearDockPreviewOnThread();
+                    ClearSplitGuideOnThread();
+                    ApplyLocalDockCorrections(restore);
+                    return true;
+                }
 
                 StickyDockLocalGestureCompletion completion =
                     CompleteLocalDockGesture();
