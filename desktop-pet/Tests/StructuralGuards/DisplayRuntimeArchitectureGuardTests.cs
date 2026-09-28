@@ -51,16 +51,14 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void DockExecutionRules_KeepGenerationAndEpochGate()
+        public void DockExecutionRules_KeepGenerationAndSourceIdentityGate()
         {
             string method = SliceMethod(
-                ReadSource("Features/StickyNotes/DockInteractionState.cs"),
-                "internal static bool CanExecute(");
-
-            StringAssert.Contains(method,
-                "plan.TopologyGeneration == currentGeneration");
-            StringAssert.Contains(method,
-                "plan.InteractionEpoch == currentEpoch");
+                ReadSource("Features/StickyNotes/StickyDockLocalGestureRuntime.cs"),
+                "internal bool MatchesSource(");
+            StringAssert.Contains(method, "facts.TopologyGeneration == TopologyGeneration");
+            StringAssert.Contains(method, "topology.Generation == TopologyGeneration");
+            StringAssert.Contains(method, "String.Equals(facts.WindowId, SourceNoteId,");
         }
 
         [TestMethod]

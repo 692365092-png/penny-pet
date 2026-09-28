@@ -35,8 +35,8 @@ namespace PennyPet.Tests
                 "Dock controller must not own feedback HWNDs on the Pet STA.");
             Assert.IsTrue(host.Contains(
                     "new DockPulseIndicatorForm(") &&
-                dock.Contains("_workspace.Host.UpdateDockPreview(") &&
-                dock.Contains("_workspace.Host.ShowSplitGuide("),
+                host.Contains("UpdateDockPreview(") &&
+                host.Contains("ShowSplitGuide(LocalDockSeam("),
                 "Dock feedback windows must be created and updated by the Sticky host.");
         }
 

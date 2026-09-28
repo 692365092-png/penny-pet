@@ -26,8 +26,13 @@ namespace PennyPet.Tests
         public void DockBatchPaths_AdoptCurrentTopologyBeforeSuppression()
         {
             string source = ReadSource("StickyUiHost.cs");
-            AssertAdoptionBeforeSuppression(SliceMethod(source,
-                "private StickyUiCommandResult ApplyDockPlan("));
+            string update = SliceMethod(source,
+                "internal void SetCurrentTopology(");
+            Assert.IsTrue(update.IndexOf("session.AdoptTopology(snapshot)",
+                StringComparison.Ordinal) < update.IndexOf(
+                    "_localDockGestures.TryRebaseTopology(snapshot)", StringComparison.Ordinal));
+            string local = SliceMethod(source, "private bool ApplyLocalDockFollowers(");
+            StringAssert.Contains(local, "topology.Generation != sourceFacts.TopologyGeneration");
             AssertAdoptionBeforeSuppression(SliceMethod(source,
                 "private StickyUiCommandResult ApplyDockGroupReproject("));
         }
@@ -36,31 +41,30 @@ namespace PennyPet.Tests
         public void CaptureDockFacts_IsAllOrNothing()
         {
             string capture = SliceMethod(ReadSource("StickyUiHost.cs"),
-                "private StickyUiCommandResult CaptureDockFactsForCommit(");
-            Assert.IsTrue(capture.IndexOf("member == null",
-                StringComparison.Ordinal) >= 0);
-            Assert.IsTrue(capture.IndexOf("member.Facts == null",
-                StringComparison.Ordinal) >= 0);
-            Assert.IsTrue(capture.IndexOf("members.Count !=",
-                StringComparison.Ordinal) >= 0);
-            Assert.IsFalse(capture.IndexOf(
-                "if (member != null) members.Add(member)",
-                StringComparison.Ordinal) >= 0);
+                "private StickyDockGestureCommit CaptureLocalDockCommit(");
+            StringAssert.Contains(capture, "completion.AffectedMemberIds");
+            StringAssert.Contains(capture, "!TryGetSession(noteId, out member)");
+            StringAssert.Contains(capture, "captured == null");
+            StringAssert.Contains(capture, "captured.Facts == null");
+            StringAssert.Contains(capture, "return null;");
+            Assert.IsFalse(capture.Contains("continue;"),
+                "A missing member cannot silently produce a partial commit.");
         }
 
         [TestMethod]
-        public void DockFactsBarrier_GuardsRebaseAndFinalizing()
+        public void DockFactsBarrier_GuardsLocalRebaseAndFinalCommit()
         {
-            string dock = SourceGuardText.ReadStickyWorkflowSource();
-            string rebase = SourceGuardText.ReadStickyWorkflowSource();
-            Assert.IsFalse(SliceMethod(dock, "internal void BeginStickyDockDrag(")
-                .Contains("TryApplyDockFactsBarrier("));
-            Assert.IsTrue(dock.IndexOf("TryApplyDockFactsBarrier(capture, expectedIds",
-                StringComparison.Ordinal) >= 0);
-            Assert.IsTrue(rebase.IndexOf("TryApplyDockFactsBarrier(result, expectedIds",
-                StringComparison.Ordinal) >= 0);
-            Assert.IsTrue(rebase.IndexOf("Interaction.RecordMove(sourceRuntime)",
-                StringComparison.Ordinal) >= 0);
+            string runtime = ReadSource("Features/StickyNotes/StickyDockLocalGestureRuntime.cs");
+            string rebase = SliceMethod(runtime, "internal bool TryRebaseTopology(");
+            StringAssert.Contains(rebase, "current.TopologyGeneration !=");
+            StringAssert.Contains(rebase, "topology.Generation ||");
+            string commit = SliceMethod(
+                ReadSource("Features/StickyNotes/StickyDockController.cs"),
+                "private bool TryApplyLocalDockGestureCommit(");
+            StringAssert.Contains(commit, "commit.TopologyGeneration");
+            StringAssert.Contains(commit, "StickyDockCommitVersion.Compute(note)");
+            StringAssert.Contains(commit, "_workspace.Facts.TryPrepare(");
+            StringAssert.Contains(commit, "member.Facts.TopologyGeneration !=");
         }
 
         private static void AssertAdoptionBeforeSuppression(string method)

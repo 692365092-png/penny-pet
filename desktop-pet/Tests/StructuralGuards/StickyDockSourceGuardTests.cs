@@ -15,7 +15,7 @@ namespace PennyPet.Tests
                 "if (value.Kind == StickyUiEventKind.SnapshotChanged)",
                 "if (value.Kind == StickyUiEventKind.Closed)");
             string apply = RawSource.SliceMethod(source,
-                "private bool ApplyHostedStickyEvent");
+                "internal bool ApplyHostedStickySnapshot");
 
             Assert.IsTrue(handler.Contains("ApplyHostedStickyEvent(") &&
                 apply.Contains("if (persist) Notes.SaveAsync();"),
@@ -204,7 +204,8 @@ namespace PennyPet.Tests
                 !menu.Contains("Menu.Items.Add(ImportNotesItem)") &&
                 !menu.Contains("Menu.Items.Add(RestoreNotesItem)"),
                 "Desktop recovery actions must live in the management console.");
-            Assert.IsTrue(action.Contains("ShowHostedSticky(note, false, false)") &&
+            Assert.IsTrue(action.Contains("_workspace.ShowHostedSticky(") &&
+                action.Contains("note, false, false)") &&
                 action.Contains("ApplyDockTarget(target, null)") &&
                 !action.Contains("ShowStickyNote("),
                 "Every note must use the hosted effect edge.");
@@ -221,17 +222,18 @@ namespace PennyPet.Tests
         [TestMethod]
         public void DockParticipantEligibility_DoesNotDependOnStickySubtypeOrExecutor()
         {
-            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
+            string runtime = ReadSource("Features/StickyNotes/StickyDockLocalGestureRuntime.cs");
             string operations = ReadSource(
                 "Core/StickyNotes/StickyDockOperations.cs");
             string geometry = ReadSource(
                 "Core/StickyNotes/StickyDockGeometry.cs");
-            string gate = Between(coordinator,
-                "private DockTarget FindDockTarget",
-                "private string FindDockChild");
-
-            Assert.IsTrue(gate.Contains("activeIds.IsSubsetOf(existingIds)"),
-                "Removed active members must invalidate target selection.");
+            string gate = RawSource.SliceMethod(runtime,
+                "private string FindSnapTarget(");
+            string begin = RawSource.SliceMethod(runtime,
+                "internal long TryBegin(");
+            Assert.IsTrue(begin.Contains("_captureFacts(ids[index])") &&
+                begin.Contains("current == null") && begin.Contains("return 0;"),
+                "Missing active windows must prevent gesture acquisition.");
             Assert.IsFalse(gate.Contains("!note.IsTodoList") ||
                 gate.Contains("!note.IsSchedule"),
                 "Todo and Schedule must be allowed to dock with ordinary notes.");
@@ -264,20 +266,18 @@ namespace PennyPet.Tests
                 receiver.Contains("snapshot.ApplyContentTo(canonical)"),
                 "Geometry events preserve actual pixels without rewriting v10 file inputs.");
 
-            string dragHandler = Between(coordinator,
-                "if (value.Kind == StickyUiEventKind.HeaderDragStarted ||",
-                "if (value.Kind == StickyUiEventKind.BoundsChanged)");
-            Assert.IsTrue(dragHandler.Contains(
-                    "DockWindowFacts.FromWindowFacts(") &&
-                !dragHandler.Contains("ApplyHostedStickySnapshot"),
-                "Drag geometry must flow from facts-derived canonical state.");
+            string host = ReadSource("StickyUiHost.cs");
+            string local = RawSource.SliceMethod(host,
+                "private bool TryHandleLocalDockEvent(");
+            Assert.IsTrue(local.Contains("MoveLocalDockHeader(value.Facts)") &&
+                !local.Contains("ApplyHostedStickySnapshot"),
+                "Live drag reads actual facts locally, without content/model publication.");
             string boundsHandler = Between(coordinator,
                 "if (value.Kind == StickyUiEventKind.BoundsChanged)",
-                "if (value.Kind == StickyUiEventKind.DockDividerResizeStarted ||");
-            Assert.IsTrue(boundsHandler.Contains(
-                    "ApplyHostedStickyEvent(value, false)") &&
+                "if (value.Kind == StickyUiEventKind.CloseRequested)");
+            Assert.IsTrue(boundsHandler.Contains("ApplyHostedStickyEvent(value, false)") &&
                 !boundsHandler.Contains("ApplyHostedStickySnapshot"),
-                "BoundsChanged must not apply the full snapshot.");
+                "Ordinary BoundsChanged must use the validated event boundary.");
         }
 
         [TestMethod]
@@ -372,13 +372,11 @@ namespace PennyPet.Tests
         [TestMethod]
         public void Drt910_DockPlanUsesSourceActualWidthForEveryMember()
         {
-            string coordinator = SourceGuardText.ReadStickyWorkflowSource();
-            string plan = Between(coordinator,
-                "private DockPlacementPlan PlanDockPlan",
-                "private List<DockLayoutTarget> PlanToDockTargets");
-
+            string runtime = ReadSource("Features/StickyNotes/StickyDockLocalGestureRuntime.cs");
+            string plan = RawSource.SliceMethod(runtime, "internal bool MoveHeader(");
             StringAssert.Contains(plan, "StickyPlacementRules.TryBuildLiveDockState(");
-            StringAssert.Contains(plan, "Placement.GetEffective(");
+            StringAssert.Contains(plan, "gesture.Baseline, sourceFacts, _topology");
+            StringAssert.Contains(plan, "DockPlacementPlanner.Plan(group, sourceFacts,");
             Assert.IsFalse(plan.Contains("LegacyPlacement") || plan.Contains("member.Height"),
                 "Live Dock geometry must not fall back to persisted coordinates.");
         }
@@ -551,7 +549,7 @@ namespace PennyPet.Tests
             Assert.IsTrue(apply.Contains(
                     "LocalDockPlacementMismatches(") &&
                 apply.Contains("!corrected") &&
-                apply.Contains("session.SetBounds("),
+                apply.Contains("sessions[index].SetBounds("),
                 "One bounded correction must be followed by actual-facts verification.");
             Assert.IsTrue(local.Contains(
                     "_pendingLocalDockRollback =") &&
