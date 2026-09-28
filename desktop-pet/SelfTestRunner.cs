@@ -2344,10 +2344,10 @@ namespace PennyPet
                 {
                     PrepareImport = delegate
                     {
-                        return new StickyNotesImportPreview(previewPlan,
-                            previewImportedNotes);
+                        return Task.FromResult(new StickyNotesImportPreview(previewPlan,
+                            previewImportedNotes));
                     },
-                    ConfirmImport = delegate { return false; },
+                    ConfirmImport = delegate { return Task.FromResult(false); },
                     DeleteNote = delegate { previewDeleteCalls++; }
                  }))
             {

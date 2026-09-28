@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using System.IO;
 using System.Text;
 using System.Collections.Generic;
@@ -157,6 +158,11 @@ namespace PennyPet
         internal PersistenceResult SaveToFile(string filePath)
         {
             return _writer.Enqueue(CaptureWrite(filePath)).GetAwaiter().GetResult();
+        }
+
+        internal Task<PersistenceResult> SaveBarrierAsync()
+        {
+            return _writer.Enqueue(CaptureWrite(FilePath));
         }
 
         internal void SaveAsync()

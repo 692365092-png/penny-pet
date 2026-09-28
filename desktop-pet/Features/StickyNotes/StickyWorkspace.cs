@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace PennyPet
@@ -220,6 +221,7 @@ namespace PennyPet
 
         private void CreateStickyNote(string text, bool todo, bool schedule)
         {
+            if (_surface.IsExiting) return;
             StickyNoteData note = null;
             try
             {
@@ -1134,6 +1136,42 @@ namespace PennyPet
                 result.Status + ": " + result.Error;
             ApplicationDiagnostics.ReportNonFatal(context,
                 new InvalidOperationException(detail));
+        }
+
+        internal async Task<StickyUiCommandResult> PreparePersistenceAsync()
+        {
+            StickyUiCommandResult result = await PersistenceCommandAsync(
+                StickyUiCommandKind.PreparePersistence);
+            if (result != null && result.Status == StickyUiCommandStatus.Handled &&
+                result.FinalSnapshots != null)
+                foreach (StickyUiFinalSnapshot snapshot in result.FinalSnapshots)
+                    if (snapshot != null)
+                        ApplyHostedStickySnapshot(snapshot.Snapshot, snapshot.Sequence,
+                            false, snapshot.Facts, snapshot.Topology);
+            return result;
+        }
+
+        internal async Task<StickyUiCommandResult> RetirePersistenceWindowsAsync()
+        {
+            StickyUiCommandResult result = await PersistenceCommandAsync(StickyUiCommandKind.CloseAll);
+            if (result != null && result.Status == StickyUiCommandStatus.Handled)
+            {
+                // The final old content was captured before replacement. Never
+                // apply it over the newly committed model during HWND retirement.
+                foreach (StickyNoteData note in Notes.InStorageOrder)
+                    Placement.InvalidateEffective(note.Id);
+                Hosted.CompleteCloseAll();
+            }
+            return result;
+        }
+
+        internal Task<StickyUiCommandResult> PersistenceCommandAsync(StickyUiCommandKind kind)
+        {
+            var completion = new TaskCompletionSource<StickyUiCommandResult>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            PostHostedStickyCommand(new StickyUiCommand(kind, String.Empty, false),
+                result => completion.TrySetResult(result));
+            return completion.Task;
         }
 
         internal bool BeginHostedStickyExitIfNeeded()

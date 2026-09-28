@@ -41,6 +41,7 @@ namespace PennyPet
         private readonly StickyDockLocalGestureRuntime _localDockGestures;
         private readonly StickyDockCommitQueue _dockCommitQueue;
         private StickyDockSceneProjection _deferredDockScene;
+        private bool _persistencePaused;
         private long _activeLocalDockDependency;
         private IReadOnlyList<DockWindowTarget>
             _pendingLocalDockRollback;
@@ -759,9 +760,11 @@ namespace PennyPet
                     case StickyUiCommandKind.EnsureSession:
                         return EnsureSession(command);
                     case StickyUiCommandKind.Show:
-                        return TryGetSession(command.NoteId, out session)
-                            ? session.Show(command.Flag, command.Topology, command.Placement)
-                            : StickyUiCommandResult.NotHandled();
+                        if (!TryGetSession(command.NoteId, out session))
+                            return StickyUiCommandResult.NotHandled();
+                        StickyUiCommandResult shown = session.Show(command.Flag, command.Topology, command.Placement);
+                        session.SetPersistencePaused(_persistencePaused);
+                        return shown;
                     case StickyUiCommandKind.Hide:
                         return TryGetSession(command.NoteId, out session)
                             ? session.Hide()
@@ -821,6 +824,11 @@ namespace PennyPet
                         return TryGetSession(command.NoteId, out session)
                             ? session.Close()
                             : StickyUiCommandResult.Handled();
+                    case StickyUiCommandKind.PreparePersistence:
+                        return PreparePersistenceSessions();
+                    case StickyUiCommandKind.ResumeAfterPersistence:
+                        SetPersistencePaused(false);
+                        return StickyUiCommandResult.Handled();
                     case StickyUiCommandKind.CloseAll:
                         return CloseAllSessions();
                     default:
@@ -845,6 +853,11 @@ namespace PennyPet
                     case StickyUiCommandKind.EnsureSession:
                     case StickyUiCommandKind.UpdateReminders:
                     case StickyUiCommandKind.UpdateAllReminders:
+                    case StickyUiCommandKind.PreparePersistence:
+                        return PreparePersistenceSessions();
+                    case StickyUiCommandKind.ResumeAfterPersistence:
+                        SetPersistencePaused(false);
+                        return StickyUiCommandResult.Handled();
                     case StickyUiCommandKind.CloseAll:
                     case StickyUiCommandKind.RestoreDockGroup:
                         RefreshReminderClock();
@@ -888,6 +901,7 @@ namespace PennyPet
                 command.Snapshot, SessionEventRaised, command.Placement);
             _sessions[command.NoteId] = session;
             session.ReminderVisibilityChanged += RefreshReminderClock;
+            session.SetPersistencePaused(_persistencePaused);
             if (command.Reminders != null)
                 session.UpdateReminders(command.Reminders);
             try
@@ -906,6 +920,7 @@ namespace PennyPet
                 _sessions.Remove(command.NoteId);
                 throw;
             }
+            finally { session.SetPersistencePaused(_persistencePaused); }
         }
 
         private StickyUiCommandResult EnsureSession(
@@ -948,6 +963,7 @@ namespace PennyPet
 
             _sessions[command.NoteId] = session;
             session.ReminderVisibilityChanged += RefreshReminderClock;
+            session.SetPersistencePaused(_persistencePaused);
 
             try
             {
@@ -1453,6 +1469,8 @@ namespace PennyPet
             StickyUiEvent value)
         {
             if (session == null || value == null) return;
+            if (_persistencePaused && value.Kind != StickyUiEventKind.FirstRendered &&
+                value.Kind != StickyUiEventKind.Closed) return;
             if (TryHandleLocalDockEvent(session, value))
             {
                 ApplySideTabZOrder();
@@ -1479,6 +1497,45 @@ namespace PennyPet
                 ApplySideTabZOrder();
 
             PostEvent(value);
+        }
+
+        private StickyUiCommandResult PreparePersistenceSessions()
+        {
+            // Wait for the user to finish IME and for final Dock ACKs. Never
+            // disable an active composition or save an uncommitted preview.
+            if (_dockCommitQueue.PendingCount != 0)
+                return StickyUiCommandResult.NotAccepted();
+            foreach (StickyWindowSession session in _sessions.Values)
+                if (session.IsAvailable && session.IsImeCompositionActive)
+                    return StickyUiCommandResult.NotAccepted();
+            PrepareLocalDockStructure(null);
+            SetPersistencePaused(true);
+            try
+            {
+                var snapshots = new List<StickyUiFinalSnapshot>();
+                foreach (StickyWindowSession session in _sessions.Values)
+                    if (session.IsAvailable)
+                    {
+                        session.SetEventsSuppressed(true);
+                        try { snapshots.Add(session.FlushAndCaptureFinal()); }
+                        finally { session.SetEventsSuppressed(false); }
+                    }
+                return StickyUiCommandResult.Handled(snapshots.ToArray());
+            }
+            catch
+            {
+                SetPersistencePaused(false);
+                throw;
+            }
+        }
+
+        private void SetPersistencePaused(bool paused)
+        {
+            _persistencePaused = paused;
+            foreach (StickyWindowSession session in _sessions.Values)
+                session.SetPersistencePaused(paused);
+            if (_leftNoteTabs != null) _leftNoteTabs.Enabled = !paused;
+            if (_rightNoteTabs != null) _rightNoteTabs.Enabled = !paused;
         }
 
         private StickyUiCommandResult CloseAllSessions()

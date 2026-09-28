@@ -25,6 +25,8 @@ namespace PennyPet
         PrepareDockStructure,
         Close,
         CloseAll,
+        PreparePersistence,
+        ResumeAfterPersistence,
         UpdateReminders,
         UpdateAllReminders
     }

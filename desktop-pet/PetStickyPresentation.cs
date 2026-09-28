@@ -24,7 +24,7 @@ namespace PennyPet
 
         Rectangle IStickyPetSurface.Bounds { get { return Bounds; } }
         bool IStickyPetSurface.IsDisposed { get { return IsDisposed || Disposing; } }
-        bool IStickyPetSurface.IsExiting { get { return _exiting; } }
+        bool IStickyPetSurface.IsExiting { get { return _exiting || _persistenceOperation; } }
         bool IStickyPetSurface.HasHandle { get { return IsHandleCreated && Handle != IntPtr.Zero; } }
         DisplayTopologySnapshot IStickyPetSurface.CurrentTopologySnapshot() { return CurrentTopologySnapshot(); }
         WindowFacts IStickyPetSurface.CaptureWindowFacts(DisplayTopologySnapshot topology)

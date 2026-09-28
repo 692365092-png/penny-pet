@@ -634,6 +634,17 @@ namespace PennyPet
 
         }
 
+        internal void SetPersistencePaused(bool paused)
+        {
+            if (!IsAvailable) return;
+            _window.IsEnabled = !paused;
+            IntPtr hwnd = PlacementHwnd;
+            if (hwnd != IntPtr.Zero) EnableWindow(hwnd, !paused);
+        }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool EnableWindow(IntPtr hwnd, bool enabled);
+
         internal StickyUiFinalSnapshot FlushAndCaptureFinal()
         {
             _window.FlushPendingChanges();

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace PennyPet
 {
@@ -16,6 +17,7 @@ namespace PennyPet
         private readonly SynchronizationContext _uiContext;
         private Exception _blockedSaveError;
         private int _blockedSaveFailures;
+        private bool _replacementPending;
 
         internal event EventHandler<PersistenceFailedEventArgs> SaveFailed;
 
@@ -171,12 +173,65 @@ namespace PennyPet
 
         internal void SaveAsync()
         {
+            if (_replacementPending) return;
             if (!LoadSucceeded)
             {
                 RejectBlockedSave("save asynchronously");
                 return;
             }
             _store.Save(new StickyWriteRequest(Model.CaptureSnapshot()), coalesce: true);
+        }
+
+        // Explicit receipts are barriers in the same queue as autosaves.
+        // Timing out a caller never cancels/replaces a write already in flight.
+        internal Task<PersistenceResult> SaveBarrierAsync()
+        {
+            if (!LoadSucceeded) return Task.FromResult(RejectBlockedSave("save"));
+            if (_replacementPending) return Task.FromResult(PersistenceResult.Failure(
+                new InvalidOperationException("A dataset replacement is still pending.")));
+            return _store.Save(new StickyWriteRequest(Model.CaptureSnapshot()));
+        }
+
+        internal Task<PersistenceResult> ExportSnapshotAsync(string filePath)
+        {
+            if (!LoadSucceeded) return Task.FromResult(PersistenceResult.Failure(
+                CreateMutationBlockedError("export")));
+            var snapshot = Model.CaptureSnapshot();
+            return Task.Run(() => _store.ExportSnapshot(filePath, snapshot));
+        }
+
+        internal Task<PersistenceResult> CommitImportedMergeAsync(StickyImportMergeResult merge)
+        {
+            return CommitReplacementAsync(merge == null ? null : merge.MergedSnapshot,
+                _filePath + ".before-import.pennysticky");
+        }
+
+        internal Task<PersistenceResult> CommitFullRestoreAsync(IEnumerable<StickyNoteData> snapshot)
+        {
+            return CommitReplacementAsync(snapshot, _filePath + ".before-restore.pennysticky");
+        }
+
+        private async Task<PersistenceResult> CommitReplacementAsync(
+            IEnumerable<StickyNoteData> snapshot, string backupPath)
+        {
+            if (!LoadSucceeded || _replacementPending || snapshot == null)
+                return PersistenceResult.Failure(new InvalidOperationException(
+                    "Dataset replacement is unavailable."));
+            List<StickyNoteData> committed;
+            try { committed = CloneAndValidateMergeSnapshot(snapshot); }
+            catch (Exception error) { return PersistenceResult.Failure(error); }
+            _replacementPending = true;
+            try
+            {
+                // Capture on the owner. The caller holds the UI editing gate
+                // until this receipt resolves, even if disk is slow.
+                PersistenceResult result = await _store.Save(new StickyWriteRequest(
+                    committed, backupPath: backupPath,
+                    backupSnapshot: Model.CaptureSnapshot()));
+                if (result.Succeeded) Model.ReplaceWith(committed);
+                return result;
+            }
+            finally { _replacementPending = false; }
         }
 
         internal PersistenceResult WaitForPendingSaves()

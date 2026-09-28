@@ -29,6 +29,7 @@ namespace PennyPet
 
         private void DeferredStartupTick(object sender, EventArgs e)
         {
+            if (_persistenceOperation) return;
             if (_exiting || IsDisposed)
             {
                 StopDeferredStartupWork();

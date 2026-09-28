@@ -47,8 +47,8 @@ namespace PennyPet.Tests
             string coordinator = ReadSource(
                 "Features/StickyNotes/PetPersistenceCoordinator.cs");
             string exit = Between(coordinator,
-                "private bool FlushPersistenceBeforeExit()",
-                "private bool ExportUnsavedStickyNotes()");
+                "private async Task<bool> FlushPersistenceBeforeExit()",
+                "private async Task<bool> ExportUnsavedStickyNotes()");
 
             Assert.IsTrue(wait.Contains("Monitor.Wait(_gate, remaining)") &&
                 wait.Contains("TimeoutException") &&
@@ -58,7 +58,7 @@ namespace PennyPet.Tests
                 commit.Contains("if (pending.Error is TimeoutException) return pending;"),
                 "Import and full restore must stop when pending saves time out.");
             int emergencyExport = exit.IndexOf(
-                "if (!ExportUnsavedStickyNotes()) return false;",
+                "if (!await ExportUnsavedStickyNotes()) return false;",
                 StringComparison.Ordinal);
             int settingsResolution = exit.IndexOf(
                 "if (!settingsResult.Succeeded)", StringComparison.Ordinal);
@@ -438,17 +438,20 @@ namespace PennyPet.Tests
             string closed = RawSource.SliceMethod(form, "protected override void OnFormClosed(");
             Assert.IsFalse(closed.Contains(".Save(") || closed.Contains(".SaveAsync(") ||
                 closed.Contains("SaveLocation("), "Disposal must not start another unobserved write.");
-            string exit = RawSource.SliceMethod(ReadSource("PetMenuActions.cs"), "internal void BeginExitSequence()");
+            string exit = RawSource.SliceMethod(ReadSource("PetMenuActions.cs"), "internal async void BeginExitSequence()");
             Assert.IsTrue(exit.IndexOf("CaptureLocationForSave()", StringComparison.Ordinal) <
                 exit.IndexOf("FlushPersistenceBeforeExit()", StringComparison.Ordinal));
-            Assert.IsTrue(exit.Contains("CancelPreparedStickyExit()"));
-            Assert.IsTrue(exit.Contains("_persistence.Dispose()"),
+            Assert.IsTrue(exit.Contains("await ResumePersistenceOperationAsync()"));
+            string finish = RawSource.SliceMethod(ReadSource("PetMenuActions.cs"), "private void FinishExitSequence()");
+            Assert.IsTrue(finish.Contains("_persistence.Dispose()"),
                 "A committed exit must stop the single persistence runtime before animation.");
             Assert.IsFalse(exit.Contains("_persistenceRetryTimer"),
                 "Exit must not retain the retired Pet-owned retry timer.");
-            string cancel = RawSource.SliceMethod(SourceGuardText.ReadStickyWorkflowSource(),
-                "internal void CancelPreparedStickyExit()");
-            Assert.IsTrue(cancel.Contains("Hosted.CancelExit()") && cancel.Contains("ReloadAllHostedStickyRuntime()"));
+            string cancel = RawSource.SliceMethod(ReadSource(
+                "Features/StickyNotes/PetPersistenceCoordinator.cs"),
+                "private async Task ResumePersistenceOperationAsync()");
+            Assert.IsTrue(cancel.Contains("StickyUiCommandKind.ResumeAfterPersistence") &&
+                !cancel.Contains("ReloadAllHostedStickyRuntime()"));
         }
     }
 }

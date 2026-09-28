@@ -229,37 +229,38 @@ namespace PennyPet
             ShowBubble(desired ? "开机自动启动已开启。" : "开机自动启动已关闭。");
         }
 
-        internal void BeginExitSequence()
+        internal async void BeginExitSequence()
         {
-            if (_exiting) return;
-            if (_stickyWorkspace != null &&
-                _stickyWorkspace.BeginHostedStickyExitIfNeeded()) return;
-            CaptureLocationForSave();
-
-            if (_notes != null)
+            if (_exiting || _persistenceOperation) return;
+            StickyWorkspace preparedWorkspace = _stickyWorkspace;
+            if (!await PreparePersistenceOperationAsync()) return;
+            try
             {
-                if (!FlushPersistenceBeforeExit())
+                CaptureLocationForSave();
+                if (!await FlushPersistenceBeforeExit()) return;
+                // A runtime may have finished loading while the settings-only
+                // startup exit was awaiting disk. Capture it before destruction.
+                if (_stickyWorkspace != null && _stickyWorkspace != preparedWorkspace)
                 {
-                    if (_stickyWorkspace != null)
-                        _stickyWorkspace.CancelPreparedStickyExit();
-                    return;
+                    StickyUiCommandResult prepared = await _stickyWorkspace.PreparePersistenceAsync();
+                    if (prepared == null || prepared.Status != StickyUiCommandStatus.Handled) return;
+                    if (!await FlushPersistenceBeforeExit()) return;
                 }
+                FinishExitSequence();
             }
-            else
+            catch (Exception error)
             {
-                PersistenceResult pending = _settings.WaitForPendingSaves();
-                PersistenceResult result = pending.Error is TimeoutException
-                    ? pending : _settings.Save();
-                if (!result.Succeeded)
-                {
-                    MessageBox.Show(this,
-                        "设置尚未写入磁盘。\n\n" + result.ErrorMessage,
-                        "Penny pet - 有未保存内容",
-                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
+                ApplicationDiagnostics.ReportNonFatal("persistence-exit", error);
+                ShowBubble("保存未完成，已取消退出，请重试。");
             }
+            finally
+            {
+                if (!_exiting) await ResumePersistenceOperationAsync();
+            }
+        }
 
+        private void FinishExitSequence()
+        {
             _exiting = true;
             _keyboardPrivacy.SetEnabled(false);
             if (_reminderRuntime != null) _reminderRuntime.Stop();

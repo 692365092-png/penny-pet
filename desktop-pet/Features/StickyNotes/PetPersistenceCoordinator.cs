@@ -1,16 +1,63 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace PennyPet
 {
     internal sealed partial class PetForm
     {
+        private bool _persistenceOperation;
+        private bool _persistenceOwnerEnabled;
+        private bool _resumeRemindersAfterPersistence;
+
+        private async Task<bool> PreparePersistenceOperationAsync()
+        {
+            if (_persistenceOperation || _exiting || IsDisposed) return false;
+            _persistenceOperation = true;
+            _persistenceOwnerEnabled = Enabled;
+            _resumeRemindersAfterPersistence = _reminderRuntime != null && _reminderRuntime.IsRunning;
+            Enabled = false;
+            _menu.Enabled = false;
+            _conversation.Stop();
+            if (_reminderRuntime != null) _reminderRuntime.Stop();
+            if (_stickyWorkspace == null) return true;
+            StickyUiCommandResult prepared = await _stickyWorkspace.PreparePersistenceAsync();
+            if (prepared != null && prepared.Status == StickyUiCommandStatus.Handled)
+                return true;
+            await ResumePersistenceOperationAsync();
+            ShowBubble("请先结束便利贴输入或拖动，再重试。");
+            return false;
+        }
+
+        private async Task ResumePersistenceOperationAsync()
+        {
+            if (_stickyWorkspace != null)
+                await _stickyWorkspace.PersistenceCommandAsync(
+                    StickyUiCommandKind.ResumeAfterPersistence);
+            _persistenceOperation = false;
+            if (IsDisposed || Disposing) return;
+            Enabled = _persistenceOwnerEnabled;
+            _menu.Enabled = true;
+            if (!_exiting) _conversation.ResumeAfterPersistence();
+            if (_reminderRuntime != null && _resumeRemindersAfterPersistence && !_exiting)
+                _reminderRuntime.Start();
+        }
+
+        private static async Task<PersistenceResult> WaitForSaveReceiptAsync(
+            Task<PersistenceResult> receipt)
+        {
+            if (await Task.WhenAny(receipt, Task.Delay(TimeSpan.FromSeconds(5))) != receipt)
+                return PersistenceResult.Failure(new TimeoutException(
+                    "磁盘仍在写入。停止等待不会取消已排队的保存。"));
+            return await receipt;
+        }
+
         private void PersistenceNoticeReceived(object sender,
             PersistenceNoticeEventArgs e)
         {
-            if (IsDisposed || Disposing || _exiting || e == null) return;
+            if (IsDisposed || Disposing || _exiting || _persistenceOperation || e == null) return;
             if (e.Kind == PersistenceNoticeKind.Warning)
             {
                 string dataName = String.IsNullOrEmpty(e.DataName)
@@ -22,22 +69,23 @@ namespace PennyPet
             ShowBubble("未保存的数据已重新写入磁盘。");
         }
 
-        private bool FlushPersistenceBeforeExit()
+        private async Task<bool> FlushPersistenceBeforeExit()
         {
-            bool notesResolved = false;
+            bool notesResolved = _notes == null;
             bool settingsResolved = false;
+            Task<PersistenceResult> notesReceipt = null;
+            Task<PersistenceResult> settingsReceipt = null;
             while (true)
             {
-                PersistenceResult pending = notesResolved
-                    ? PersistenceResult.Success() : _notes.WaitForPendingSaves();
-                PersistenceResult noteResult = notesResolved
-                    ? PersistenceResult.Success()
-                    : pending.Error is TimeoutException ? pending : _notes.Save();
-                PersistenceResult settingsPending = settingsResolved
-                    ? PersistenceResult.Success() : _settings.WaitForPendingSaves();
-                PersistenceResult settingsResult = settingsResolved
-                    ? PersistenceResult.Success()
-                    : settingsPending.Error is TimeoutException ? settingsPending : _settings.Save();
+                if (!notesResolved && (notesReceipt == null || notesReceipt.IsCompleted))
+                    notesReceipt = _notes.SaveBarrierAsync();
+                if (!settingsResolved && (settingsReceipt == null || settingsReceipt.IsCompleted))
+                    settingsReceipt = _settings.SaveBarrierAsync();
+                PersistenceResult[] results = await Task.WhenAll(
+                    notesResolved ? Task.FromResult(PersistenceResult.Success()) : WaitForSaveReceiptAsync(notesReceipt),
+                    settingsResolved ? Task.FromResult(PersistenceResult.Success()) : WaitForSaveReceiptAsync(settingsReceipt));
+                PersistenceResult noteResult = results[0];
+                PersistenceResult settingsResult = results[1];
                 if (noteResult.Succeeded && settingsResult.Succeeded)
                     return true;
 
@@ -51,7 +99,7 @@ namespace PennyPet
                         MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning);
                     if (noteChoice == DialogResult.Yes) continue;
                     if (noteChoice == DialogResult.Cancel) return false;
-                    if (!ExportUnsavedStickyNotes()) return false;
+                    if (!await ExportUnsavedStickyNotes()) return false;
                     notesResolved = true;
                 }
 
@@ -72,7 +120,7 @@ namespace PennyPet
             }
         }
 
-        private bool ExportUnsavedStickyNotes()
+        private async Task<bool> ExportUnsavedStickyNotes()
         {
             using (SaveFileDialog dialog = new SaveFileDialog())
             {
@@ -83,7 +131,7 @@ namespace PennyPet
                 dialog.InitialDirectory = Environment.GetFolderPath(
                     Environment.SpecialFolder.DesktopDirectory);
                 if (dialog.ShowDialog(this) != DialogResult.OK) return false;
-                PersistenceResult result = _notes.ExportSnapshot(dialog.FileName);
+                PersistenceResult result = await _notes.ExportSnapshotAsync(dialog.FileName);
                 if (result.Succeeded) return true;
                 MessageBox.Show(this, "导出失败：" + result.ErrorMessage,
                     "Penny pet", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -91,8 +139,11 @@ namespace PennyPet
             }
         }
 
-        internal void ExportStickyNotesBackup()
+        internal async Task ExportStickyNotesBackup()
         {
+            if (!await PreparePersistenceOperationAsync()) return;
+            try
+            {
             using (SaveFileDialog dialog = new SaveFileDialog())
             {
                 dialog.Title = "导出便利贴备份";
@@ -104,7 +155,7 @@ namespace PennyPet
                     Environment.SpecialFolder.DesktopDirectory);
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
-                PersistenceResult result = _notes.ExportSnapshot(dialog.FileName);
+                PersistenceResult result = await _notes.ExportSnapshotAsync(dialog.FileName);
                 if (result.Succeeded)
                 {
                     ShowBubble("已导出 " + _notes.Count +
@@ -115,9 +166,11 @@ namespace PennyPet
                     "Penny pet", MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
             }
+            }
+            finally { await ResumePersistenceOperationAsync(); }
         }
 
-        internal StickyNotesImportPreview PrepareStickyNotesImport()
+        internal async Task<StickyNotesImportPreview> PrepareStickyNotesImport()
         {
             if (_exiting || IsDisposed || Disposing) return null;
             using (OpenFileDialog dialog = new OpenFileDialog())
@@ -130,7 +183,8 @@ namespace PennyPet
                 if (dialog.ShowDialog(this) != DialogResult.OK) return null;
 
                 StickyImportValidationResult validation =
-                    StickyBackupFileReader.Read(dialog.FileName);
+                    await Task.Run(() => StickyBackupFileReader.Read(dialog.FileName));
+                if (_exiting || IsDisposed || Disposing) return null;
                 if (validation == null || !validation.Succeeded)
                 {
                     ShowStickyImportFailure("这个备份无法读取。\n当前便利贴没有被修改。");
@@ -165,12 +219,15 @@ namespace PennyPet
             }
         }
 
-        internal bool CommitStickyNotesImport(StickyNotesImportPreview preview)
+        internal async Task<bool> CommitStickyNotesImport(StickyNotesImportPreview preview)
         {
             if (preview == null || preview.Merge == null ||
                 preview.ImportedNotes == null || preview.ImportedNotes.Count == 0)
                 return false;
 
+            if (!await PreparePersistenceOperationAsync()) return false;
+            try
+            {
             StickyImportMergeResult currentPlan;
             try
             {
@@ -195,7 +252,7 @@ namespace PennyPet
                 return false;
             }
 
-            PersistenceResult committed = _notes.CommitImportedMerge(currentPlan);
+            PersistenceResult committed = await _notes.CommitImportedMergeAsync(currentPlan);
             if (committed == null || !committed.Succeeded)
             {
                 ShowStickyImportFailure("导入未完成。\n当前便利贴没有被修改。");
@@ -205,6 +262,8 @@ namespace PennyPet
             _stickyWorkspace.ReloadImportedStickyRuntime(currentPlan);
             ShowBubble(BuildStickyImportSummary(currentPlan));
             return true;
+            }
+            finally { await ResumePersistenceOperationAsync(); }
         }
 
         private static bool ImportPlansMatch(StickyImportMergeResult left,
@@ -227,9 +286,9 @@ namespace PennyPet
             return true;
         }
 
-        internal void RestoreStickyNotesBackup()
+        internal async void RestoreStickyNotesBackup()
         {
-            if (_exiting || IsDisposed || Disposing) return;
+            if (_exiting || _persistenceOperation || IsDisposed || Disposing) return;
             using (OpenFileDialog dialog = new OpenFileDialog())
             {
                 dialog.Title = "从备份完整恢复便利贴";
@@ -240,7 +299,8 @@ namespace PennyPet
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
                 StickyImportValidationResult validation =
-                    StickyBackupFileReader.Read(dialog.FileName);
+                    await Task.Run(() => StickyBackupFileReader.Read(dialog.FileName));
+                if (_exiting || _persistenceOperation || IsDisposed || Disposing) return;
                 if (validation == null || !validation.Succeeded)
                 {
                     ShowStickyImportFailure("这个备份无法读取。\n当前便利贴没有被修改。");
@@ -253,45 +313,37 @@ namespace PennyPet
                     "从备份完整恢复", MessageBoxButtons.YesNo,
                     MessageBoxIcon.Warning) != DialogResult.Yes) return;
 
-                BeginFullStickyRestore(validation.Notes);
+                await BeginFullStickyRestore(validation.Notes);
             }
         }
 
-        private void BeginFullStickyRestore(
-            List<StickyNoteData> restoredSnapshot)
+        private async Task BeginFullStickyRestore(List<StickyNoteData> restoredSnapshot)
         {
-            _stickyWorkspace.CloseHostedStickyRuntimeForReload(
-                delegate(StickyUiCommandResult closeResult)
+            if (!await PreparePersistenceOperationAsync()) return;
+            try
+            {
+                PersistenceResult committed = await _notes.CommitFullRestoreAsync(restoredSnapshot);
+                if (!committed.Succeeded)
                 {
-                    if (closeResult == null || closeResult.Status !=
-                        StickyUiCommandStatus.Handled)
-                    {
-                        if (closeResult != null && closeResult.Status ==
-                            StickyUiCommandStatus.NotAccepted)
-                            ShowBubble("请先结束便利贴输入，再进行完整恢复。");
-                        else
-                            ShowStickyImportFailure(
-                                "恢复未完成。\n当前便利贴没有被修改。");
-                        return;
-                    }
-
-                    PersistenceResult committed = _notes.CommitFullRestore(
-                        restoredSnapshot);
-                    if (committed == null || !committed.Succeeded)
-                    {
-                        _stickyWorkspace.ReloadAllHostedStickyRuntime();
-                        ShowStickyImportFailure(
-                            "恢复未完成。\n当前便利贴没有被修改。");
-                        return;
-                    }
-                    // Reminder records are persisted in settings, not in the
-                    // portable sticky backup.  Reconcile note-side display
-                    // ticks and remove linked reminders whose notes vanished.
-                    _reminderRuntime.ReconcileNoteLinks();
-                    _stickyWorkspace.ReloadAllHostedStickyRuntime();
-                    ShowBubble("完整恢复完成，共 " +
-                        restoredSnapshot.Count + " 张便利贴。");
-                });
+                    ShowStickyImportFailure("恢复未完成。\n当前便利贴没有被修改。");
+                    return;
+                }
+                // Notes have committed. Settings are a separate durable file;
+                // report that boundary instead of claiming a multi-file transaction.
+                _reminderRuntime.ReconcileNoteLinks();
+                PersistenceResult settings = await WaitForSaveReceiptAsync(_settings.SaveBarrierAsync());
+                StickyUiCommandResult closed = await _stickyWorkspace.RetirePersistenceWindowsAsync();
+                if (closed == null || closed.Status != StickyUiCommandStatus.Handled)
+                {
+                    ShowStickyImportFailure("便利贴文件已恢复，但窗口刷新失败，请重启 Penny。");
+                    return;
+                }
+                _stickyWorkspace.ReloadAllHostedStickyRuntime();
+                if (!settings.Succeeded)
+                    ShowStickyImportFailure("便利贴已恢复；提醒设置尚未保存，将自动重试。请勿重复导入。");
+                else ShowBubble("完整恢复完成，共 " + restoredSnapshot.Count + " 张便利贴。");
+            }
+            finally { await ResumePersistenceOperationAsync(); }
         }
 
         private void ShowStickyImportFailure(string message)

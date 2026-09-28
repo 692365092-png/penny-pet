@@ -78,6 +78,8 @@ namespace PennyPet
             _daily.Invalidate();
         }
 
+        internal void ResumeAfterPersistence() { _active = true; }
+
         internal void Stop()
         {
             _active = false;

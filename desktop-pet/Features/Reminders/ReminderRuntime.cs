@@ -29,6 +29,7 @@ namespace PennyPet
         private ReminderItem _preAlertItem;
         private int _attentionGeneration;
         private bool _running;
+        internal bool IsRunning { get { return _running; } }
 
         internal ReminderRuntime(ReminderSchedule schedule, PetSettings settings,
             StickyFeature notes, IReminderPresentation view)
@@ -179,7 +180,7 @@ namespace PennyPet
             if (_preAlertItem != null && String.Equals(
                 _preAlertItem.SourceNoteId, note.Id, StringComparison.OrdinalIgnoreCase))
                 _view.ClosePreAlert();
-            _notes.Save();
+            _notes.SaveAsync();
             SaveChanges();
             return removed;
         }
@@ -222,7 +223,7 @@ namespace PennyPet
                 changed |= previous != note.ReminderUtcTicks;
             }
             int removed = _schedule.RemoveLinkedNotesNotIn(noteIds);
-            if (changed) _notes.Save();
+            if (changed) _notes.SaveAsync();
             return removed > 0;
         }
 
@@ -233,7 +234,7 @@ namespace PennyPet
             if (note == null) return null;
             RefreshLinkedNote(note);
             if (makeVisible) note.Visible = true;
-            _notes.Save();
+            _notes.SaveAsync();
             return note;
         }
 
