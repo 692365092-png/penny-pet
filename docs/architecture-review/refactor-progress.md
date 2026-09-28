@@ -239,3 +239,9 @@ Completed-but-unacknowledged gestures are separate from the active native gestur
 The old Pet-side live planner/mailbox implementation remains compiled as a migration fallback surface for the R22–R24 batch, but it is no longer reachable from hosted Dock input: `SessionEventRaised` consumes all three Dock lifecycles first. R24 can now retire that dead transport together with the old mutation/restore paths rather than deleting pieces before the structural-operation migration is ready.
 
 Windows CI #142 on `29d9901` passed the full pipeline: build, all 679 discoverable tests, modular native self-tests, single-file EXE smoke, managed Dock baseline, render-cost observation and release artifacts.
+
+## R24 — structural gate and retired live transport, verification in progress
+
+The branch reached `720b35e` before this continuation. Windows CI #156 failed in the self-test project: product assemblies built, but SelfTestRunner still referenced the removed Pet Dock mailbox, resize session, raise command and geometry wrappers. The continuation migrates the repeated divider cycle to `StickyDockLocalGestureRuntime`, checking every synchronous follower application, and replaces the mailbox probe with ordered final-commit/ACK checks. Native hosted geometry checks call the surviving Core rules through test-only platform adapters. Local host raise-order validation and seam checks remain; the deleted transport is not restored merely to compile tests.
+
+R24 already routes structural operations through the Sticky gate, handles topology rebasing and bounded native placement correction, and removes the Pet live pipeline. This entry does not mark the migration complete until the full Windows pipeline passes. Real mixed-DPI drag, physical hotplug and IME scenarios remain manual validation boundaries.

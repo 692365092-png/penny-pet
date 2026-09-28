@@ -1492,9 +1492,9 @@ namespace PennyPet
         {
             DockGeometryCheckResult result = new DockGeometryCheckResult();
             result.BottomDockingOk =
-                StickyDockController.CanDockBelow(new Rectangle(100, 330, 320, 300),
+                CanDockBelowForCheck(new Rectangle(100, 330, 320, 300),
                     new Rectangle(100, 30, 320, 300), 20) &&
-                !StickyDockController.CanDockBelow(new Rectangle(170, 330, 320, 300),
+                !CanDockBelowForCheck(new Rectangle(170, 330, 320, 300),
                     new Rectangle(100, 30, 320, 300), 20);
             List<Rectangle> unifiedLayout = StickyDockController.CalculateUnifiedDockLayout(
                 new Size[] { new Size(320, 300), new Size(500, 240),
@@ -1506,7 +1506,7 @@ namespace PennyPet
             result.RootAnchorPreservedOk = unifiedLayout.Count == 3 &&
                 unifiedLayout[0].Location == new Point(120, 80);
             List<DockLayoutTarget> dividerTargets =
-                StickyDockController.CalculateDockDividerTargets(
+                CalculateDividerTargetsForCheck(
                     new DockWindowFacts("upper", 120, 80, 420, 500,
                         true, true),
                     new DockWindowFacts("lower", 120, 310, 420, 230,
@@ -1542,37 +1542,11 @@ namespace PennyPet
                     beforeDividerLayout[1].Top + 50 &&
                 afterDividerLayout[2].Top ==
                     beforeDividerLayout[2].Top + 50;
-            List<WindowFacts> liveResizeStart = new List<WindowFacts>();
-            string[] resizeIds = { "a", "b", "c", "d" };
-            for (int index = 0; index < resizeIds.Length; index++)
-                liveResizeStart.Add(new WindowFacts(resizeIds[index], "screen", "DISPLAY1",
-                    new PhysicalRect(100, 100 + 300 * index, 420, 300), 96, 1, 1));
-            DockResizeSession resize = DockResizeSession.TryStart(DockResizeKind.Divider, "b", liveResizeStart);
-            StickyNoteUiSnapshot resizeSnapshot = StickyNoteUiSnapshot.Capture(
-                new StickyNoteData { Id = "b", Visible = true });
-            long resizeSequence = 1;
-            bool liveAccepted = true;
-            int[] liveCycle = { 450, 250, 600, 300 };
-            for (int repeat = 0; repeat < 50; repeat++)
-                foreach (int requested in liveCycle)
-                {
-                    resizeSequence++;
-                    bool post;
-                    liveAccepted &= resize.QueueLive(StickyUiEvent.DividerResize(
-                        StickyUiEventKind.DockDividerResizing, resizeSnapshot, resizeSequence,
-                        requested, new WindowFacts("b", "screen", "DISPLAY1",
-                            new PhysicalRect(100, 400, 420, requested), 96, 1, resizeSequence)), out post);
-                }
-            DockResizeBatch liveTargets = resize.Mailbox.TakeLatest();
-            result.DividerLiveSessionTargetsOk = liveAccepted && liveTargets.Targets.Count == 2 &&
-                liveTargets.Targets[0].NoteId == "c" && liveTargets.Targets[0].PhysicalBounds.Top == 700 &&
-                liveTargets.Targets[1].NoteId == "d" && liveTargets.Targets[1].PhysicalBounds.Top == 1000 &&
-                liveTargets.Targets[0].PhysicalBounds.Height == 300 && liveTargets.Targets[1].PhysicalBounds.Height == 300 &&
-                liveTargets.Targets[0].PhysicalBounds.Width == 420 && liveTargets.Targets[1].PhysicalBounds.Width == 420;
-            result.WideNarrowDockingOk = StickyDockController.CanDockBelow(
+            result.DividerLiveSessionTargetsOk = RunLocalDividerCycleCheck();
+            result.WideNarrowDockingOk = CanDockBelowForCheck(
                 new Rectangle(80, 400, 900, 300),
                 new Rectangle(400, 100, 280, 300), 20) &&
-                StickyDockController.CanDockBelow(new Rectangle(400, 400, 280, 300),
+                CanDockBelowForCheck(new Rectangle(400, 400, 280, 300),
                     new Rectangle(80, 100, 900, 300), 20);
             result.LongCoordinateGuardOk =
                 StickyDockOperations.IsDockCoordinateRangeSafe(100,
@@ -1617,10 +1591,10 @@ namespace PennyPet
                 recoveredSecondary.Y >= 0 &&
                 recoveredSecondary.Y <= 1008;
             result.ExecutorNeutralDockVisualSeamOk =
-                StickyDockController.CalculateDockVisualSeam(new DockWindowFacts(
-                    "hosted-note", -860, 140, 420, 310, true, true)) ==
-                    new Rectangle(-860, 447, 420, 6) &&
-                StickyDockController.CalculateDockVisualSeam(null).IsEmpty;
+                (Rectangle)typeof(StickyUiHost).GetMethod("LocalDockSeam",
+                    BindingFlags.Static | BindingFlags.NonPublic).Invoke(null,
+                    new object[] { new PhysicalRect(-860, 140, 420, 310) }) ==
+                    new Rectangle(-860, 447, 420, 6);
             return result;
         }
 
@@ -4120,7 +4094,7 @@ namespace PennyPet
             internal bool NativeDisplayAbiOk;
             internal bool V11PreferredOk;
             internal bool TemporaryRehomeOk;
-            internal bool DockPlanMailboxOk;
+            internal bool DockCommitHandoffOk;
             internal bool DockTopologyReprojectOk;
             internal bool DockZOrderOk;
         }
@@ -4702,30 +4676,25 @@ namespace PennyPet
                 returnedClearsFlags;
         }
 
-        // DRT-9 mailbox contract: live frames are latest-wins, but a final
-        // mouse-up plan and its queued flag remain owned until final apply.
-        private static bool RunDockPlanMailboxCheck()
+        // Final results now cross the owner boundary once, in dependency
+        // order. No live frame mailbox participates in the product path.
+        private static bool RunDockCommitHandoffCheck()
         {
-            var mailbox = new DockFrameMailbox<DockPlacementPlan>();
-            var first = new DockPlacementPlan(3, 1, "source", "surface-1", 96,
-                new[] { new DockWindowTarget("a", new PhysicalRect(10, 20, 320, 300)) });
-            var second = new DockPlacementPlan(3, 2, "source", "surface-1", 96,
-                new[] { new DockWindowTarget("b", new PhysicalRect(30, 40, 320, 300)) });
-            bool firstPosted = mailbox.QueueLive(first);
-            bool coalesced = !mailbox.QueueLive(second);
-            DockPlacementPlan taken = mailbox.TakeLatest();
-            bool latestWins = firstPosted && coalesced && ReferenceEquals(taken, second) && !mailbox.HasPending;
-
-            var finalPlan = new DockPlacementPlan(3, 3, "source", "surface-1", 96,
-                new[] { new DockWindowTarget("a", new PhysicalRect(50, 60, 320, 300)),
-                    new DockWindowTarget("b", new PhysicalRect(370, 60, 320, 300)) });
-            mailbox.QueueFinal(finalPlan);
-            bool finalBarrierHolds = mailbox.TakeLatest() == null && mailbox.HasPending &&
-                ReferenceEquals(mailbox.TakeFinal(finalPlan), finalPlan);
-            mailbox.CompleteFinal(finalPlan);
-            finalBarrierHolds = finalBarrierHolds && !mailbox.HasPending && !mailbox.QueueLive(first);
-            mailbox.Cancel();
-            finalBarrierHolds = finalBarrierHolds && !mailbox.QueueFinal(finalPlan);
+            var queue = new StickyDockCommitQueue();
+            var first = new StickyDockGestureCommit(1, 0,
+                StickyDockCommitIntent.Move, "a", null, 3, null, null);
+            var second = new StickyDockGestureCommit(2, 1,
+                StickyDockCommitIntent.DividerResize, "a", null, 3, null, null);
+            bool ordered = queue.TryAdd(first) &&
+                ReferenceEquals(queue.PeekReady(), first) &&
+                queue.TryAdd(second) && queue.PeekReady() == null &&
+                !queue.TryAdd(first);
+            bool acknowledged = queue.Acknowledge(
+                new StickyDockCommitAck(1, true)).Accepted &&
+                ReferenceEquals(queue.PeekReady(), second) &&
+                !queue.Acknowledge(new StickyDockCommitAck(1, true)).Matched &&
+                queue.Acknowledge(new StickyDockCommitAck(2, true)).Accepted &&
+                queue.PendingCount == 0;
 
             StickyNoteData snapshotSource = new StickyNoteData
             {
@@ -4760,7 +4729,7 @@ namespace PennyPet
             var members = new List<DockBatchMemberResult> { new DockBatchMemberResult("a", 1, null, contentOnly) };
             var detachedBatch = new DockBatchResult(1, 1, members);
             members.Clear();
-            return latestWins && finalBarrierHolds && contentSnapshotIsNarrow &&
+            return ordered && acknowledged && contentSnapshotIsNarrow &&
                 detachedPlan.WindowTargets.Count == 1 && detachedBatch.Members.Count == 1;
         }
 
@@ -4906,8 +4875,8 @@ namespace PennyPet
         }
 
         // Z-order band contract: the pure raise sequence preserves membership
-        // and puts the source last for root/middle/tail drags, and the typed
-        // command factory rejects duplicates, missing source and short groups.
+        // and puts the source last for root/middle/tail drags. The local
+        // host rejects duplicates, missing source and short groups.
         private static bool RunDockZOrderCheck()
         {
             string[] order;
@@ -4945,49 +4914,8 @@ namespace PennyPet
                     new[] { "a" }, "a", out order) &&
                 order == null;
 
-            DisplayTopologySnapshot topology =
-                new DisplayTopologySnapshot(0, new[]
-                {
-                    FakeSurface(1, 0, true, 1080, 1032,
-                        FakeTarget("mdp:zorder"))
-                });
-            bool factoryRejectsDuplicate = false;
-            try
-            {
-                StickyUiCommand.RaiseDockGroupForDrag(
-                    new[] { "a", "a" }, "a", topology, 1);
-            }
-            catch (ArgumentException)
-            {
-                factoryRejectsDuplicate = true;
-            }
-            bool factoryRejectsMissingSource = false;
-            try
-            {
-                StickyUiCommand.RaiseDockGroupForDrag(
-                    new[] { "a", "b" }, "x", topology, 1);
-            }
-            catch (ArgumentException)
-            {
-                factoryRejectsMissingSource = true;
-            }
-            bool factoryPreserves = false;
-            StickyUiCommand command = StickyUiCommand.RaiseDockGroupForDrag(
-                new[] { "a", "b", "c" }, "b", topology, 7);
-            factoryPreserves =
-                command.Kind == StickyUiCommandKind.RaiseDockGroupForDrag &&
-                command.NoteId == "b" &&
-                command.DockNoteIds != null &&
-                command.DockNoteIds.Length == 3 &&
-                command.DockNoteIds[0] == "a" &&
-                command.DockNoteIds[2] == "c" &&
-                command.InteractionEpoch == 7 &&
-                command.Topology != null;
-
             return rootSource && middleSource && tailSource &&
-                duplicateRejected && missingSourceRejected &&
-                shortGroupRejected && factoryRejectsDuplicate &&
-                factoryRejectsMissingSource && factoryPreserves;
+                duplicateRejected && missingSourceRejected && shortGroupRejected;
         }
 
         private static WindowShellCheckResult RunWindowShellChecks(
@@ -5072,8 +5000,8 @@ namespace PennyPet
                 RunV11PreferredCheck();
             result.TemporaryRehomeOk =
                 RunTemporaryRehomeCheck();
-            result.DockPlanMailboxOk =
-                RunDockPlanMailboxCheck();
+            result.DockCommitHandoffOk =
+                RunDockCommitHandoffCheck();
             result.DockTopologyReprojectOk =
                 RunDockTopologyReprojectCheck();
             result.DockZOrderOk =
@@ -5344,7 +5272,7 @@ namespace PennyPet
                 DockWindowFacts sourceFacts = sourcePositioned == null ? null :
                     HostedDockFacts(sourcePositioned);
                 bool dockHit = sourceFacts != null && targetFacts != null &&
-                    StickyDockController.CanDockBelow(new Rectangle(sourceFacts.X,
+                    CanDockBelowForCheck(new Rectangle(sourceFacts.X,
                         sourceFacts.Y, sourceFacts.Width, sourceFacts.Height),
                         new Rectangle(targetFacts.X, targetFacts.Y,
                             targetFacts.Width, targetFacts.Height), 20);
@@ -5498,7 +5426,7 @@ namespace PennyPet
                 DockWindowFacts twoUpperRequested = new DockWindowFacts(
                     second.Id, 80, 140, 420, 500, true, true);
                 List<DockLayoutTarget> twoDividerTargets =
-                    StickyDockController.CalculateDockDividerTargets(twoUpperRequested,
+                    CalculateDividerTargetsForCheck(twoUpperRequested,
                         HostedDockFacts(sourceResized));
                 StickyUiCommandResult targetDividerResized =
                     PostStickyCommandAndWait(host,
@@ -5627,7 +5555,7 @@ namespace PennyPet
                             canonical.Id, false, null, null,
                             groupBottomRole), petContext);
                 List<DockLayoutTarget> firstDivider =
-                    StickyDockController.CalculateDockDividerTargets(
+                    CalculateDividerTargetsForCheck(
                         new DockWindowFacts(second.Id, 80, 140, 420, 500,
                             true, true),
                         HostedDockFacts(thirdInserted));
@@ -5656,7 +5584,7 @@ namespace PennyPet
                                 firstDividerLayout[2].Y, 420,
                                 firstDividerLayout[2].Height)), petContext);
                 List<DockLayoutTarget> secondDivider =
-                    StickyDockController.CalculateDockDividerTargets(
+                    CalculateDividerTargetsForCheck(
                         new DockWindowFacts(third.Id, 80,
                             firstLower.Facts.PhysicalBounds.Top, 420, 500,
                             true, true),
@@ -5672,12 +5600,12 @@ namespace PennyPet
                             secondDivider[1].Y,
                             420, secondDivider[1].Height)), petContext);
                 List<DockLayoutTarget> dividerMinimum =
-                    StickyDockController.CalculateDockDividerTargets(
+                    CalculateDividerTargetsForCheck(
                         new DockWindowFacts(second.Id, 80, 140, 420, 50,
                             true, true),
                         HostedDockFacts(firstLower));
                 List<DockLayoutTarget> dividerMaximum =
-                    StickyDockController.CalculateDockDividerTargets(
+                    CalculateDividerTargetsForCheck(
                         new DockWindowFacts(second.Id, 80, 140, 420, 900,
                             true, true),
                         HostedDockFacts(firstLower));
@@ -6413,8 +6341,8 @@ namespace PennyPet
                     shellChecks.V11PreferredOk) + ",\n" +
                 "  \"temporary_rehome_ok\": " + Bool(
                     shellChecks.TemporaryRehomeOk) + ",\n" +
-                "  \"dock_plan_mailbox_ok\": " + Bool(
-                    shellChecks.DockPlanMailboxOk) + ",\n" +
+                "  \"dock_commit_handoff_ok\": " + Bool(
+                    shellChecks.DockCommitHandoffOk) + ",\n" +
                 "  \"dock_topology_reproject_ok\": " + Bool(
                     shellChecks.DockTopologyReprojectOk) + ",\n" +
                 "  \"dock_zorder_ok\": " + Bool(
