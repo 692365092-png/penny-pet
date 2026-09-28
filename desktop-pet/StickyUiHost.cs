@@ -853,11 +853,6 @@ namespace PennyPet
                     case StickyUiCommandKind.EnsureSession:
                     case StickyUiCommandKind.UpdateReminders:
                     case StickyUiCommandKind.UpdateAllReminders:
-                    case StickyUiCommandKind.PreparePersistence:
-                        return PreparePersistenceSessions();
-                    case StickyUiCommandKind.ResumeAfterPersistence:
-                        SetPersistencePaused(false);
-                        return StickyUiCommandResult.Handled();
                     case StickyUiCommandKind.CloseAll:
                     case StickyUiCommandKind.RestoreDockGroup:
                         RefreshReminderClock();

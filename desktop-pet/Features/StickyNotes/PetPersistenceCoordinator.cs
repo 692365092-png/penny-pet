@@ -144,28 +144,28 @@ namespace PennyPet
             if (!await PreparePersistenceOperationAsync()) return;
             try
             {
-            using (SaveFileDialog dialog = new SaveFileDialog())
-            {
-                dialog.Title = "导出便利贴备份";
-                dialog.Filter = "Penny 便利贴备份 (*.pennysticky)|*.pennysticky|" +
-                    "所有文件 (*.*)|*.*";
-                dialog.FileName = "Penny-Stickies-" +
-                    DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".pennysticky";
-                dialog.InitialDirectory = Environment.GetFolderPath(
-                    Environment.SpecialFolder.DesktopDirectory);
-                if (dialog.ShowDialog(this) != DialogResult.OK) return;
-
-                PersistenceResult result = await _notes.ExportSnapshotAsync(dialog.FileName);
-                if (result.Succeeded)
+                using (SaveFileDialog dialog = new SaveFileDialog())
                 {
-                    ShowBubble("已导出 " + _notes.Count +
-                        " 张便利贴。");
-                    return;
+                    dialog.Title = "导出便利贴备份";
+                    dialog.Filter = "Penny 便利贴备份 (*.pennysticky)|*.pennysticky|" +
+                        "所有文件 (*.*)|*.*";
+                    dialog.FileName = "Penny-Stickies-" +
+                        DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".pennysticky";
+                    dialog.InitialDirectory = Environment.GetFolderPath(
+                        Environment.SpecialFolder.DesktopDirectory);
+                    if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+                    PersistenceResult result = await _notes.ExportSnapshotAsync(dialog.FileName);
+                    if (result.Succeeded)
+                    {
+                        ShowBubble("已导出 " + _notes.Count +
+                            " 张便利贴。");
+                        return;
+                    }
+                    MessageBox.Show(this, "导出失败：" + result.ErrorMessage,
+                        "Penny pet", MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
                 }
-                MessageBox.Show(this, "导出失败：" + result.ErrorMessage,
-                    "Penny pet", MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
-            }
             }
             finally { await ResumePersistenceOperationAsync(); }
         }
@@ -228,40 +228,40 @@ namespace PennyPet
             if (!await PreparePersistenceOperationAsync()) return false;
             try
             {
-            StickyImportMergeResult currentPlan;
-            try
-            {
-                currentPlan = StickyImportMergePlanner.Calculate(
-                    _notes.GetAll(), preview.ImportedNotes);
-            }
-            catch (Exception error)
-            {
-                ApplicationDiagnostics.ReportNonFatal(
-                    "sticky-notes-import-replan", error);
-                ShowStickyImportFailure("导入未完成。\n当前便利贴没有被修改。");
-                return false;
-            }
-            if (!ImportPlansMatch(preview.Merge, currentPlan))
-            {
-                ShowBubble("当前内容已变化，请重新导入。\n当前便利贴没有被修改。");
-                return false;
-            }
-            if (currentPlan.AddedCount == 0)
-            {
-                ShowBubble("备份中的便利贴都已存在，当前内容没有修改。");
-                return false;
-            }
+                StickyImportMergeResult currentPlan;
+                try
+                {
+                    currentPlan = StickyImportMergePlanner.Calculate(
+                        _notes.GetAll(), preview.ImportedNotes);
+                }
+                catch (Exception error)
+                {
+                    ApplicationDiagnostics.ReportNonFatal(
+                        "sticky-notes-import-replan", error);
+                    ShowStickyImportFailure("导入未完成。\n当前便利贴没有被修改。");
+                    return false;
+                }
+                if (!ImportPlansMatch(preview.Merge, currentPlan))
+                {
+                    ShowBubble("当前内容已变化，请重新导入。\n当前便利贴没有被修改。");
+                    return false;
+                }
+                if (currentPlan.AddedCount == 0)
+                {
+                    ShowBubble("备份中的便利贴都已存在，当前内容没有修改。");
+                    return false;
+                }
 
-            PersistenceResult committed = await _notes.CommitImportedMergeAsync(currentPlan);
-            if (committed == null || !committed.Succeeded)
-            {
-                ShowStickyImportFailure("导入未完成。\n当前便利贴没有被修改。");
-                return false;
-            }
+                PersistenceResult committed = await _notes.CommitImportedMergeAsync(currentPlan);
+                if (committed == null || !committed.Succeeded)
+                {
+                    ShowStickyImportFailure("导入未完成。\n当前便利贴没有被修改。");
+                    return false;
+                }
 
-            _stickyWorkspace.ReloadImportedStickyRuntime(currentPlan);
-            ShowBubble(BuildStickyImportSummary(currentPlan));
-            return true;
+                _stickyWorkspace.ReloadImportedStickyRuntime(currentPlan);
+                ShowBubble(BuildStickyImportSummary(currentPlan));
+                return true;
             }
             finally { await ResumePersistenceOperationAsync(); }
         }
