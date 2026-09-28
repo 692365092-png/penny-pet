@@ -1141,7 +1141,7 @@ namespace PennyPet
         internal async Task<StickyUiCommandResult> PreparePersistenceAsync()
         {
             StickyUiCommandResult result = await PersistenceCommandAsync(
-                StickyUiCommandKind.PreparePersistence);
+                StickyUiCommand.PreparePersistence());
             if (result != null && result.Status == StickyUiCommandStatus.Handled &&
                 result.FinalSnapshots != null)
                 foreach (StickyUiFinalSnapshot snapshot in result.FinalSnapshots)
@@ -1153,7 +1153,7 @@ namespace PennyPet
 
         internal async Task<StickyUiCommandResult> RetirePersistenceWindowsAsync()
         {
-            StickyUiCommandResult result = await PersistenceCommandAsync(StickyUiCommandKind.CloseAll);
+            StickyUiCommandResult result = await PersistenceCommandAsync(StickyUiCommand.CloseAll());
             if (result != null && result.Status == StickyUiCommandStatus.Handled)
             {
                 // The final old content was captured before replacement. Never
@@ -1165,11 +1165,11 @@ namespace PennyPet
             return result;
         }
 
-        internal Task<StickyUiCommandResult> PersistenceCommandAsync(StickyUiCommandKind kind)
+        internal Task<StickyUiCommandResult> PersistenceCommandAsync(StickyUiCommand command)
         {
             var completion = new TaskCompletionSource<StickyUiCommandResult>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
-            PostHostedStickyCommand(new StickyUiCommand(kind, String.Empty, false),
+            PostHostedStickyCommand(command,
                 result => completion.TrySetResult(result));
             return completion.Task;
         }

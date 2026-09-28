@@ -35,7 +35,7 @@ namespace PennyPet
         {
             if (_stickyWorkspace != null)
                 await _stickyWorkspace.PersistenceCommandAsync(
-                    StickyUiCommandKind.ResumeAfterPersistence);
+                    StickyUiCommand.ResumeAfterPersistence());
             _persistenceOperation = false;
             if (IsDisposed || Disposing) return;
             Enabled = _persistenceOwnerEnabled;

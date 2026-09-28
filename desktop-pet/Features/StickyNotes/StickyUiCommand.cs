@@ -231,6 +231,18 @@ namespace PennyPet
                 String.Empty, false);
         }
 
+        internal static StickyUiCommand PreparePersistence()
+        {
+            return new StickyUiCommand(StickyUiCommandKind.PreparePersistence,
+                String.Empty, false);
+        }
+
+        internal static StickyUiCommand ResumeAfterPersistence()
+        {
+            return new StickyUiCommand(StickyUiCommandKind.ResumeAfterPersistence,
+                String.Empty, false);
+        }
+
         internal StickyUiCommandKind Kind { get; private set; }
         internal string NoteId { get; private set; }
         internal bool Flag { get; private set; }

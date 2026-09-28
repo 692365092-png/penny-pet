@@ -267,3 +267,5 @@ Manager read/validation runs in the background, with async prepare/confirm comma
 New deterministic tests cover blocked writes, returning to editing behind a pending exit receipt, replacement publication/order and failure recovery. Native integration checks exercise IME refusal, final Chinese text capture, retained HWND identity, resumption and a second capture after editing. This synthetic composition test does not replace real Chinese/Japanese IME candidate-window validation. Windows CI pending.
 
 R25 CI #161 caught duplicate persistence command cases accidentally inserted into HandleCommand's finally-only reminder refresh switch. The follow-up removes those cases from the cleanup switch; command execution remains in the primary switch.
+
+R25 CI #162 built successfully and passed 580 of 581 discoverable tests. Its protocol guard caught a raw constructor in the new persistence dispatcher; production now passes named PreparePersistence, ResumeAfterPersistence and CloseAll commands through the dispatcher. The existing guard remains unchanged.
