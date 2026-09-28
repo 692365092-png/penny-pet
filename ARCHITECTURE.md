@@ -134,6 +134,8 @@ Ordinary、Todo、Schedule 属于同一个 Sticky window system，内容模式�
 
 `StickyNotesManagerForm` 是现有 Sticky repository 的 Windows 管理视图，不是 persistence owner。表头排序只改变当前表格顺序，不修改 canonical、SideTab 或 Dock order。Import & Merge 固定走 `Read → Parse → Validate → Plan → Preview → Confirm → Commit`；Preview 只保留在当前 Form 生命周期内，取消或关闭即丢弃。确认时 Pet 端重新计算计划，再由 `StickyNoteRepository` 使用单个轮转 pre-import backup 和原子写入提交；既有 NoteId 的空间/可见状态保留，新 note 与 conflict copy 默认 `Visible=false` 进入 Side Tabs。
 
+R25 将导入解析与校验放在线程池，模型计划和发布仍在 Pet STA。确认、导出和退出先暂停业务，再由 Sticky STA 拒绝尚未完成的 IME/Dock ACK、取消活动预览、取得最后编辑快照并暂停编辑；原 HWND 和内容视图保留。保存屏障进入原串行 writer 队列，UI 异步等待。五秒超时只停止等待，重试复用未完成的 receipt；取消后编辑产生的新写入仍排在旧写入后。完整恢复的 Notes 成功后才发布模型，旧窗口通过专用退役命令解除事件并关闭，不再读取旧内容；Settings 的失败独立报告。退出取消恢复原编辑器，成功退出才销毁窗口。
+
 Sticky Backup v1 的 portable dataset 是 `sticky-notes.dat` 中的 Sticky 模型。`StickyNoteData.ReminderUtcTicks` 只是便于 Sticky UI 显示的下一次提醒投影；真正的 reminder records（文本、时间、预提醒和 `SourceNoteId`）由 `settings.ini` / `ReminderSchedule` 持有，当前 `.pennysticky` 不包含它们。因此 v1 不宣称 linked reminder 可跨电脑迁移，standalone reminder 也明确不属于 Sticky Backup；若以后支持，必须同时迁移并在 conflict copy 时重映射 `SourceNoteId`，不能只复制时间戳。
 
 ### 提醒、设置、启动与键盘隐私

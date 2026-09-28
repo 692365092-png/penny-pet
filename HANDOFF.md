@@ -93,4 +93,11 @@
 - 实时拖动、横向缩放、分隔线缩放由 `StickyDockLocalGestureRuntime` 和 Sticky-owned HWND 在同一 STA 执行。旧 Pet live mailbox/resize session/input epoch 通道已删除。
 - 完成提交由 `StickyDockCommitQueue` 保持依赖顺序，Pet 的 `StickyDockController` 验证模型版本、拓扑、facts 和 lease 后提交并返回 ACK；活动手势不因接受旧 ACK 而回跳。
 - 结构变更先通过 `PrepareDockStructure` 取消受影响手势并恢复基准。原生 follower 批处理有界校正后仍失败时，不能提交部分布局，包括鼠标松开的最终帧。
-- 最新执行记录与 Windows CI 证据见 `docs/architecture-review/refactor-progress.md`。后续 R25 处理异步导入、保存屏障和失败可取消退出；现有兼容 codec 不随 Dock 清理删除。
+- 最新执行记录与 Windows CI 证据见 `docs/architecture-review/refactor-progress.md`。R25 的异步导入、保存屏障和失败可取消退出已实现，验证状态见执行记录；现有兼容 codec 不随 Dock 清理删除。
+
+## Persistence R25 续作入口
+
+- `PreparePersistence` 保留 Sticky HWND/内容视图，先拒绝活动 IME 和未确认 Dock 结果，捕获最后编辑，再暂停输入；取消通过 `ResumeAfterPersistence` 恢复原窗口。
+- `SaveBarrierAsync` 与导入替换共用串行 writer。超时不取消底层写入，未完成 receipt 可继续等待；普通编辑不能越过旧写入。
+- 导入读取/校验在后台，Pet owner 发布模型。完整恢复已写入 Notes 后，通过 `RetirePersistenceWindows` 退役旧编辑器，禁止再次采集旧模型。提醒设置的成功/失败单独报告。
+- 合成 IME/native HWND 检查属于自动化证据；真实中日文候选窗和物理多屏交互仍需 Windows 人工验收。R26 先完成版本兼容矩阵与旧文件样本盘点，再决定字段退役。

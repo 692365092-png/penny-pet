@@ -450,7 +450,7 @@ namespace PennyPet.Tests
             string cancel = RawSource.SliceMethod(ReadSource(
                 "Features/StickyNotes/PetPersistenceCoordinator.cs"),
                 "private async Task ResumePersistenceOperationAsync()");
-            Assert.IsTrue(cancel.Contains("StickyUiCommandKind.ResumeAfterPersistence") &&
+            Assert.IsTrue(cancel.Contains("StickyUiCommand.ResumeAfterPersistence()") &&
                 !cancel.Contains("ReloadAllHostedStickyRuntime()"));
         }
     }
