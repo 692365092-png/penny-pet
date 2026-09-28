@@ -1153,7 +1153,7 @@ namespace PennyPet
 
         internal async Task<StickyUiCommandResult> RetirePersistenceWindowsAsync()
         {
-            StickyUiCommandResult result = await PersistenceCommandAsync(StickyUiCommand.CloseAll());
+            StickyUiCommandResult result = await PersistenceCommandAsync(StickyUiCommand.RetirePersistenceWindows());
             if (result != null && result.Status == StickyUiCommandStatus.Handled)
             {
                 // The final old content was captured before replacement. Never

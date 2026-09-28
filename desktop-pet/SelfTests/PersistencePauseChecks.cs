@@ -34,8 +34,7 @@ namespace PennyPet
                         prepared.FinalSnapshots[0].Snapshot.Text.Contains("最后一笔中文输入") &&
                         !window.IsEnabled && session.PlacementHwnd == hwnd,
                         "prepare flushes final text and retains the disabled HWND");
-                    Pc2Call(scene.Host, "HandleCommand", new StickyUiCommand(
-                        StickyUiCommandKind.ResumeAfterPersistence, String.Empty, false));
+                    Pc2Call(scene.Host, "HandleCommand", StickyUiCommand.ResumeAfterPersistence());
                     Pc2Assert(window.IsEnabled && session.PlacementHwnd == hwnd &&
                         ReferenceEquals(session, sessions[note.Id]),
                         "cancel resumes the same editor/session/undo lifetime");
@@ -43,8 +42,18 @@ namespace PennyPet
                     var again = (StickyUiCommandResult)Pc2Call(scene.Host, "PreparePersistenceSessions");
                     Pc2Assert(again.FinalSnapshots[0].Snapshot.Text.Contains("取消退出后继续编辑"),
                         "a second exit captures edits made after cancellation");
-                    Pc2Call(scene.Host, "HandleCommand", new StickyUiCommand(
-                        StickyUiCommandKind.ResumeAfterPersistence, String.Empty, false));
+                    // Retirement must consume only the prepared lifetime, without
+                    // capturing the obsolete editor a second time after commit.
+                    var retired = (StickyUiCommandResult)Pc2Call(scene.Host,
+                        "HandleCommand", StickyUiCommand.RetirePersistenceWindows());
+                    Pc2Assert(retired.Status == StickyUiCommandStatus.Handled &&
+                        retired.FinalSnapshots == null && sessions.Count == 0 && !session.IsAvailable,
+                        "replacement retires old editors without recapturing old content");
+                    Pc2Call(scene.Host, "HandleCommand", StickyUiCommand.ResumeAfterPersistence());
+                    var unprepared = (StickyUiCommandResult)Pc2Call(scene.Host,
+                        "HandleCommand", StickyUiCommand.RetirePersistenceWindows());
+                    Pc2Assert(unprepared.Status == StickyUiCommandStatus.NotAccepted,
+                        "retirement cannot bypass persistence preparation");
                     return StickyUiCommandResult.Handled();
                 });
                 StickyUiCommandResult result = scene.Send(new StickyUiCommand(
@@ -53,7 +62,7 @@ namespace PennyPet
                     (StickyUiCommandResult)Pc2Call(scene.Host, "HandleCommand", command));
                 Pc2Assert(result.Status == StickyUiCommandStatus.Handled,
                     "persistence pause probe: " + result.Error);
-                evidence.Add("R25: IME preflight, final content capture, retained HWND, cancel and repeated exit passed.");
+                evidence.Add("R25: IME preflight, final content capture, retained HWND, cancel, repeated exit and prepared-window retirement passed.");
             }
         }
     }

@@ -27,6 +27,7 @@ namespace PennyPet
         CloseAll,
         PreparePersistence,
         ResumeAfterPersistence,
+        RetirePersistenceWindows,
         UpdateReminders,
         UpdateAllReminders
     }
@@ -234,6 +235,12 @@ namespace PennyPet
         internal static StickyUiCommand PreparePersistence()
         {
             return new StickyUiCommand(StickyUiCommandKind.PreparePersistence,
+                String.Empty, false);
+        }
+
+        internal static StickyUiCommand RetirePersistenceWindows()
+        {
+            return new StickyUiCommand(StickyUiCommandKind.RetirePersistenceWindows,
                 String.Empty, false);
         }
 

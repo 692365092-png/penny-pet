@@ -829,6 +829,8 @@ namespace PennyPet
                     case StickyUiCommandKind.ResumeAfterPersistence:
                         SetPersistencePaused(false);
                         return StickyUiCommandResult.Handled();
+                    case StickyUiCommandKind.RetirePersistenceWindows:
+                        return RetirePersistenceSessions();
                     case StickyUiCommandKind.CloseAll:
                         return CloseAllSessions();
                     default:
@@ -1531,6 +1533,20 @@ namespace PennyPet
                 session.SetPersistencePaused(paused);
             if (_leftNoteTabs != null) _leftNoteTabs.Enabled = !paused;
             if (_rightNoteTabs != null) _rightNoteTabs.Enabled = !paused;
+        }
+
+        private StickyUiCommandResult RetirePersistenceSessions()
+        {
+            if (!_persistencePaused) return StickyUiCommandResult.NotAccepted();
+            // The replacement is already durable and published. These disabled
+            // editors are obsolete: never flush/capture their old model again.
+            // Unwire every session even if a native close fails, so a leftover
+            // disabled HWND cannot publish content after the host resumes.
+            foreach (StickyWindowSession session in _sessions.Values)
+                session.CloseAfterFailure();
+            _sessions.Clear();
+            RefreshReminderClock();
+            return StickyUiCommandResult.Handled();
         }
 
         private StickyUiCommandResult CloseAllSessions()

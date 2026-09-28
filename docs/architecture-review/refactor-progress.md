@@ -269,3 +269,5 @@ New deterministic tests cover blocked writes, returning to editing behind a pend
 R25 CI #161 caught duplicate persistence command cases accidentally inserted into HandleCommand's finally-only reminder refresh switch. The follow-up removes those cases from the cleanup switch; command execution remains in the primary switch.
 
 R25 CI #162 built successfully and passed 580 of 581 discoverable tests. Its protocol guard caught a raw constructor in the new persistence dispatcher; production now passes named PreparePersistence, ResumeAfterPersistence and CloseAll commands through the dispatcher. The existing guard remains unchanged.
+
+R25 restore follow-up separates prepared-window retirement from ordinary CloseAll. After replacement publication, retirement requires the paused host, unwires and closes obsolete editors without another content capture, and clears their sessions. A native probe checks no old final snapshot is returned and rejects retirement before preparation. A failed native close leaves an unwired, disabled old window rather than allowing old editor content to overwrite the restored model.
