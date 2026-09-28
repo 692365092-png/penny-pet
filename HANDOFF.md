@@ -58,7 +58,7 @@
 
 ## 当前 Sticky hosted 单执行器
 
-- `PetForm` 在 WinForms STA 持有 canonical `StickyNoteData`、`StickyHostedRuntime` 和 Side Tabs。
+- `PetForm` 在 WinForms STA 持有 canonical `StickyNoteData` 和 `StickyHostedRuntime`；SideTabs 窗口归 Sticky STA。
 - `StickyUiThreadHost` 只管理 STA Thread / Dispatcher / async Post / Shutdown，不拥有 WPF Window。
 - `StickyUiHost` 是唯一 production Sticky window executor，管理 session registry、命令路由和 CloseAll；`PetForm` 不再直接持有窗口表或 silent legacy fallback。
 - `StickyWindowSession` 是唯一持有 `StickyNoteWindow` 的运行时会话对象；窗口内数据是 detached working copy，canonical ownership 仍在 Pet thread。
@@ -68,7 +68,7 @@
 - persisted standalone 与 Dock component 都通过 hosted session 恢复；v1-v11 codec 和旧文件迁移继续保留，persisted data 不记录 executor 类型。
 - “展开全部并平铺到此屏幕”会展开全部 note、真正清除 Dock relation，并通过唯一 hosted effect path 平铺。
 - Side Tabs 是不激活的 Pet chrome；左右 strip 按几何 overlap 独立决定 TopMost，被可见 Sticky 覆盖的 strip 临时降层，移开后恢复；monitor、work area 或 Pet scale 改变时会重新验证左右 split，仅在分配变化时 rebuild。
-- Side Tabs 继续由 WinForms Pet STA 承载，直接消费 Core 中 detached `SideTabSnapshot`；业务 note identity 使用稳定 `NoteId`，平台 UI source identity 保持本地 opaque object。OLE nested-loop、透明 canvas 和 WinForms z-order workaround 属于 Windows 实现，不要求 macOS 复制。
+- SideTabs 保留 WinForms 控件，但由 Sticky STA 承载，消费 `StickySideTabsProjection` 中的 detached `SideTabSnapshot`；业务 note identity 使用稳定 `NoteId`，平台 UI source identity 保持本地 opaque object。OLE nested-loop、透明 canvas 和 WinForms z-order workaround 属于 Windows 实现，不要求 macOS 复制。
 - Pet-owned WinForms Form modal 统一经过 `PetWindowLayerCoordinator` 的内存栈；Keyboard Overlay、Bubble 和 Side Tabs 保持 no-activate，并位于嵌套 modal chain 之后。键盘提示始终跟随 Pet，不因 modal 改变位置。密码/凭据检测仍由原隐私链独立 fail closed。
 
 ## Sticky 管理与备份
@@ -87,3 +87,10 @@
 - `PetStartupCoordinator` 在 runtime 尚未发布时停在 `WaitForStickyRuntime`，之后才向 Sticky STA 喂入恢复请求；R18 的 6 ms 预算包住实际 WPF Create/Show。
 - `StartupBackgroundReady` 只表示后台便笺恢复完成，不再阻塞 Pet 首帧。`ShellReady` 与它是两个独立阶段。
 - 关闭中的 shell 会拒绝晚到 publication；future-schema 数据在 runtime publication 前 fail closed。旧 loading form、独立 loading STA、ready/exit wait chain 与专用 loading artwork已经删除。
+
+## Dock R24 续作入口
+
+- 实时拖动、横向缩放、分隔线缩放由 `StickyDockLocalGestureRuntime` 和 Sticky-owned HWND 在同一 STA 执行。旧 Pet live mailbox/resize session/input epoch 通道已删除。
+- 完成提交由 `StickyDockCommitQueue` 保持依赖顺序，Pet 的 `StickyDockController` 验证模型版本、拓扑、facts 和 lease 后提交并返回 ACK；活动手势不因接受旧 ACK 而回跳。
+- 结构变更先通过 `PrepareDockStructure` 取消受影响手势并恢复基准。原生 follower 批处理有界校正后仍失败时，不能提交部分布局，包括鼠标松开的最终帧。
+- 最新执行记录与 Windows CI 证据见 `docs/architecture-review/refactor-progress.md`。后续 R25 处理异步导入、保存屏障和失败可取消退出；现有兼容 codec 不随 Dock 清理删除。

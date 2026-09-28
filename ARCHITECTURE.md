@@ -186,37 +186,20 @@ Sticky Backup v1 的 portable dataset 是 `sticky-notes.dat` 中的 Sticky 模�
 
 只有出现真实需求和调用者时才建立相应边界，并用最小可运行测试保护。跨平台拆分定义的是技术边界，不替未来接手程序员决定产品流程。
 
-UI ownership 按 framework / message-loop 划分，而不是要求同一 feature 的所有窗口必须位于同一个线程。WPF `StickyNoteWindow` 可以继续由 `StickyUiHost` 的 WPF Dispatcher STA 承载；WinForms Side Tabs 可以留在 Pet/WinForms UI thread，只要它们只消费 typed snapshot，并只产生 typed user-action，不直接访问 hosted WPF 窗口。
+UI ownership 跟随交互所有者。`StickyUiHost` 在 Sticky Dispatcher STA 同时承载 WPF 便利贴、WinForms SideTabs 和 Dock 提示窗，实时遮挡、层级和手势几何在同一 STA 处理。Pet STA 持有 canonical 模型，通过低频投影、语义命令和完成提交交接；控件框架不决定窗口必须跨线程。
 
 Side Tabs 是附着于 Pet chrome 的 no-activate UI；左右 strip 各自按几何 overlap 决定是否 TopMost，被可见 Sticky 覆盖的 strip 临时降层，移开后恢复。TopMost/BringToFront 与 window-layer 诊断只在 overlap 状态变化时执行。Pet monitor、working area 或 scale 改变时会重新验证 desired left/right split；分配不变时只 reposition，分配改变时才 rebuild controls。
 
 ## 7. 当前 Windows UI ownership
 
-```text
-Pet / WinForms STA
-├─ PetForm
-├─ canonical StickyNoteData
-├─ StickyHostedRuntime
-└─ Side Tabs
+| 所有者 | 负责内容 |
+| --- | --- |
+| Pet / WinForms STA | PetForm、canonical StickyModel、StickyHostedRuntime、最终 Dock 提交和保存请求 |
+| StickyUiThreadHost | Sticky STA Thread、Dispatcher、async Post、Shutdown |
+| StickyUiHost / Sticky STA | 便利贴 session registry、SideTabs、Dock 提示窗、本地手势执行、待确认结果队列 |
+| StickyWindowSession / Sticky STA | 一个 StickyNoteWindow、普通编辑 sequence、会话 lease、IME、程序化放置和窗口事件 |
 
-        typed commands/events/snapshots
-                   ↓ ↑
-
-Sticky WPF STA
-├─ StickyUiThreadHost
-│   └─ Thread / Dispatcher / async Post / Shutdown
-│
-├─ StickyUiHost
-│   └─ session registry / routing / CloseAll
-│
-└─ StickyWindowSession
-    └─ one StickyNoteWindow
-       sequence
-       LastSnapshot
-       IME deferred close
-       ApplyingBounds
-       event wiring
-```
+Pet 只发送模型/拓扑/SideTab 投影与低频命令；Sticky 在手势完成时发送一次几何和语义提交，Pet 校验后返回 ACK。实时拖动、横向缩放、分隔线缩放均留在 Sticky STA。
 
 数据 ownership：
 
@@ -236,7 +219,7 @@ Sticky WPF STA
 - “展开全部并平铺到此屏幕”会展开所有 note、清除 canonical Dock membership，并通过唯一 hosted effect path 平铺到 Pet 当前屏幕。
 - v1-v11 Sticky persistence codec 继续保留；旧数据先转换为 canonical `StickyNoteData`，运行时 executor 信息不写入用户数据。
 - Side Tabs 保持 no-activate chrome，并只在真实被可见 Sticky 覆盖时按 strip 降层；monitor/work-area/scale 改变时按需重新验证左右布局。
-- Side Tabs 仍在 WinForms Pet STA，直接消费 detached `SideTabSnapshot`；便利贴业务身份使用稳定 `NoteId`，拖拽来源 UI identity 保持平台本地 opaque object。OLE nested-loop、TransparencyKey canvas、BringToFront timing 等 workaround 是 Windows-only，不是未来 macOS UI 的复用契约。
+- SideTabs 由 Sticky STA 承载，消费 `StickySideTabsProjection` 中 detached 的 `SideTabSnapshot`；便利贴业务身份使用稳定 `NoteId`，拖拽来源 UI identity 保持平台本地 opaque object。OLE nested-loop、TransparencyKey canvas、BringToFront timing 等 workaround 是 Windows-only，不是未来 macOS UI 的复用契约。
 
 启动 ownership：
 
@@ -248,8 +231,10 @@ Sticky WPF STA
 
 ## 8. Dock 帧与手势生命周期
 
-`DockGestureOwner` 拥有当前输入、拖动/缩放 session 和单调递增计划序号。`DockFrameMailbox<T>` 只负责跨 STA 的最新帧合并、终帧替换及取消，不决定哪个手势拥有输入。drag reset 或 topology invalidation 会取消旧 mailbox 并创建新对象；旧 dispatcher 回调持有旧对象，不能消费下一生命周期的计划。终帧完成以实际计划对象匹配，不额外维护运输层序号。
+`StickyDockLocalGestureRuntime` 从 Sticky-owned HWND 捕获手势基准，并在同一 STA 计算、执行 follower 几何。`StickyDockCommitQueue` 只保存有界的已完成待确认结果；活动手势与待确认结果分离，ACK 不覆盖下一次手势的实时位置。旧 `DockGestureOwner`、`DockFrameMailbox`、Pet live 事件分支和输入 epoch 转发已删除。
 
-拖动与恢复共享 `DockPlacementPlanner.ProjectGroup` 的纯投影。恢复直接从逻辑意图生成计划，无需构造假的窗口事实。实际窗口结果仍由 `StickyFactsReceiver` 整批验收，live 计划不写 durable preferred。只枚举的组查询使用 repository 的现有只读视图；有产品顺序意义的查询仍明确排序。
+完成结果携带 GestureId、依赖、Dock 基准版本、拓扑代次和窗口 facts/lease。Pet 在一次模型变换前验证完整结果，接受后排队保存；拒绝后返回必要校正。隐藏、删除、恢复和模型替换通过 `PrepareDockStructure` 先处理受影响的本地手势。拓扑变化先更新 session 的采集拓扑，再重建基准；不能重建时取消手势。
+
+原生 follower 批处理有一次有界校正并读取实际 facts；最终放置失败同样取消手势并恢复基准，不得继续提交部分结果。普通编辑、窗口重建的 sequence/lease 验证仍保留。拖动与恢复复用 `DockLayout` 纯投影，兼容文件格式与持久字段留待 R25/R26 的独立数据边界工作。
 
 详见 [2026-09-22 分层审查与验证](docs/architecture-review/2026-09-22-dock-pipeline-review.md)，其中列出了已修复问题、保留的边界、可重跑基准及仍需 Windows 实测的部分。

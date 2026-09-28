@@ -87,7 +87,7 @@ Dock 修改必须同时检查：组关系、组内顺序、持久化快照、统
 - “展开全部并平铺到此屏幕”会展开全部 note、清除 canonical Dock relation，再通过 hosted effect path 平铺；不要把它退化成只移动可见窗口。
 - `StickyNoteCodec` 的 v1-v11 compatibility readers 是用户数据兼容层，不属于已删除的 legacy runtime executor，必须保留。
 - Side Tabs 保持 no-activate chrome；左右 strip 按几何 overlap 独立决定 TopMost，被可见 Sticky 覆盖时该 strip 临时降层。monitor、working area 或 Pet scale 改变时会重新验证 desired left/right split；split 不变只 reposition，改变才 rebuild controls。
-- Side Tabs 直接消费 `SideTabSnapshot`；业务 note identity 使用稳定 `NoteId`，拖拽 source identity 才使用平台 UI object reference。OLE nested-loop、透明 canvas、BringToFront timing 等 workaround 是 Windows-only，不应复制成 macOS UI 框架。
+- SideTabs、Dock 提示窗和实时手势执行均归 Sticky STA；SideTabs 消费 `StickySideTabsProjection` 中的 `SideTabSnapshot`；业务 note identity 使用稳定 `NoteId`，拖拽 source identity 才使用平台 UI object reference。OLE nested-loop、透明 canvas、BringToFront timing 等 workaround 是 Windows-only，不应复制成 macOS UI 框架。
 - Manager 排序与搜索只改变表格视图。Import & Merge 必须先完整 read/parse/validate/plan，在同一个 Manager 预览；取消或关闭不得修改 repository，确认时重新规划后才允许原子 commit。Preview 是 Form 生命周期内的有界运行状态，不写磁盘、不留历史。
 - 新导入及 conflict copy 默认 `Visible=false`；current NoteId 的 geometry、visibility 和 Dock relation 优先。不得为导入创建另一套 window creator 或 Dock engine。
 
