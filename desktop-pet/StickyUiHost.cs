@@ -41,6 +41,8 @@ namespace PennyPet
         private readonly StickyDockLocalGestureRuntime _localDockGestures;
         private readonly StickyDockCommitQueue _dockCommitQueue;
         private StickyDockSceneProjection _deferredDockScene;
+        private readonly HashSet<string> _deferredDockSnapshotIds =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private bool _persistencePaused;
         private long _activeLocalDockDependency;
         private IReadOnlyList<DockWindowTarget>
@@ -1292,6 +1294,7 @@ namespace PennyPet
                     if (TryGetSession(target.NoteId, out session)) surviving.Add(target);
                 }
                 ApplyLocalDockCorrections(surviving.AsReadOnly());
+                FlushDeferredDockSnapshots();
                 return;
             }
             _localDockGestures.ApplyProvisional(completion);
@@ -1426,7 +1429,24 @@ namespace PennyPet
                     _deferredDockScene);
                 _deferredDockScene = null;
             }
+            FlushDeferredDockSnapshots();
             return StickyUiCommandResult.Handled();
+        }
+
+        private void FlushDeferredDockSnapshots()
+        {
+            foreach (string id in new List<string>(_deferredDockSnapshotIds))
+            {
+                if (_dockCommitQueue.ContainsMember(id) ||
+                    _localDockGestures.AffectsStructure(new[] { id })) continue;
+                _deferredDockSnapshotIds.Remove(id);
+                StickyWindowSession session;
+                if (!TryGetSession(id, out session)) continue;
+                DockBatchMemberResult latest = session.CaptureDockCommitMember();
+                if (latest != null)
+                    PostEvent(StickyUiEvent.FromSnapshot(StickyUiEventKind.SnapshotChanged,
+                        latest.Snapshot, latest.WindowSequence, latest.Facts, _currentTopology));
+            }
         }
 
         private bool ApplyLocalDockCorrections(
@@ -1502,6 +1522,15 @@ namespace PennyPet
             if (TryHandleLocalDockEvent(session, value))
             {
                 ApplySideTabZOrder();
+                return;
+            }
+            if ((value.Kind == StickyUiEventKind.SnapshotChanged ||
+                 value.Kind == StickyUiEventKind.BoundsChanged) &&
+                _dockCommitQueue.ContainsMember(value.NoteId))
+            {
+                // A newer snapshot watermark must not overtake captured A/B
+                // commits. Re-capture after ACK so rollback geometry is current.
+                _deferredDockSnapshotIds.Add(value.NoteId);
                 return;
             }
             if ((value.Kind == StickyUiEventKind.SnapshotChanged ||

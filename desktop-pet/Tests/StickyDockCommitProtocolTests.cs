@@ -8,6 +8,20 @@ namespace PennyPet.Tests
     public sealed class StickyDockCommitProtocolTests
     {
         [TestMethod]
+        public void PendingMemberRemainsHeldUntilDependentBIsAcknowledged()
+        {
+            var queue = new StickyDockCommitQueue();
+            queue.TryAdd(Commit(1, 0, StickyDockCommitIntent.Move));
+            queue.TryAdd(Commit(2, 1, StickyDockCommitIntent.Move));
+            Assert.IsTrue(queue.ContainsMember("A"));
+            Assert.IsFalse(queue.ContainsMember("unrelated"));
+            queue.Acknowledge(new StickyDockCommitAck(1, true));
+            Assert.IsTrue(queue.ContainsMember("A"));
+            queue.Acknowledge(new StickyDockCommitAck(2, true));
+            Assert.IsFalse(queue.ContainsMember("A"));
+        }
+
+        [TestMethod]
         public void FastAB_AckAReleasesBWithoutTouchingActiveState()
         {
             StickyDockCommitQueue queue =

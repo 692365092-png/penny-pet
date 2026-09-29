@@ -139,6 +139,13 @@ namespace PennyPet
             }
         }
 
+        internal bool ContainsMember(string noteId)
+        {
+            foreach (Pending pending in _pending)
+                if (pending.Commit.BaselineVersions.ContainsKey(noteId)) return true;
+            return false;
+        }
+
         internal bool TryAdd(StickyDockGestureCommit commit)
         {
             if (commit == null || !CanBeginGesture)
