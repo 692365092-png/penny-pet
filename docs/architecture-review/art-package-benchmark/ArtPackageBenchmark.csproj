@@ -6,6 +6,7 @@
     <AssemblyName>PennyPet.ArtPackageBenchmark</AssemblyName>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <Prefer32Bit>false</Prefer32Bit>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <StartupCache Condition="'$(StartupCache)' == ''">true</StartupCache>
     <PetSource>../../../desktop-pet</PetSource>
     <GeneratedArt>$(PetSource)/obj/PennyPet.ArtResources/Release/net48</GeneratedArt>
