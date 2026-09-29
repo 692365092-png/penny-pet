@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>PennyPet.ArtPackageBenchmark</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <Prefer32Bit>false</Prefer32Bit>
+    <StartupCache Condition="'$(StartupCache)' == ''">true</StartupCache>
+    <PetSource>../../../desktop-pet</PetSource>
+    <GeneratedArt>$(PetSource)/obj/PennyPet.ArtResources/Release/net48</GeneratedArt>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="$(PetSource)/PetArt.cs" Link="PetArt.cs" />
+    <Compile Include="$(PetSource)/LayeredSpriteRenderer.cs" Link="LayeredSpriteRenderer.cs" />
+    <Compile Include="$(PetSource)/Features/Art/*.cs" Link="Art/%(Filename)%(Extension)" />
+    <Compile Include="$(PetSource)/Core/Art/*.cs" Link="Core/%(Filename)%(Extension)" />
+    <Compile Include="$(PetSource)/Infrastructure/Persistence/WindowsDataPaths.cs" Link="WindowsDataPaths.cs" />
+    <Reference Include="System.Web.Extensions" />
+    <EmbeddedResource Include="$(GeneratedArt)/release-art.ppap" LogicalName="PennyPet.Art.ReleasePack" />
+    <EmbeddedResource Include="$(GeneratedArt)/startup-art.cache" LogicalName="PennyPet.Art.StartupCache"
+      Condition="'$(StartupCache)' == 'true'" />
+    <EmbeddedResource Include="../../../art/pet-art.json" LogicalName="PennyPet.Art.Manifest" />
+  </ItemGroup>
+</Project>

@@ -145,6 +145,12 @@ jobs:
           Set-Content -LiteralPath $combinedReport -Value $json -Encoding UTF8
           Write-Host $json
 
+      - name: Compare art package layouts
+        shell: powershell
+        run: |
+          & "$env:GITHUB_WORKSPACE\docs\architecture-review\art-package-benchmark\run.ps1" `
+            -ReportPath (Join-Path $env:RUNNER_TEMP "penny-art-package.json")
+
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -158,6 +164,7 @@ jobs:
             ${{ runner.temp }}/penny-render-cost.json
             ${{ runner.temp }}/penny-render-default.json
             ${{ runner.temp }}/penny-render-software.json
+            ${{ runner.temp }}/penny-art-package.json
           if-no-files-found: warn
           retention-days: 14
 
