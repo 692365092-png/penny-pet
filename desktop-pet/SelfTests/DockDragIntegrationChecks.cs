@@ -44,11 +44,25 @@ namespace PennyPet
                 IntPtr.Zero, IntPtr.Zero, false);
         }
 
+        // Pc2Scene deliberately has no real Pet HWND. Supply that boundary
+        // through the existing port; Sticky windows and restore remain real.
+        private sealed class StartupPetSurface : IStickyPetSurface
+        {
+            internal DisplayTopologySnapshot Topology;
+            public System.Drawing.Rectangle Bounds { get { return System.Drawing.Rectangle.Empty; } }
+            public bool IsDisposed { get { return false; } }
+            public bool IsExiting { get { return false; } }
+            public bool HasHandle { get { return false; } }
+            public DisplayTopologySnapshot CurrentTopologySnapshot() { return Topology; }
+            public WindowFacts CaptureWindowFacts(DisplayTopologySnapshot topology) { return null; }
+        }
+
         private static void RunStartupDockRestoreChecks(string root, List<string> evidence)
         {
             foreach (bool fail in new[] { false, true })
             using (var scene = new Pc2Scene(root, "startup-dock-" + fail, true))
             {
+                Pc2Set(scene.Workspace, "_surface", new StartupPetSurface { Topology = scene.Topology });
                 foreach (StickyNoteData note in scene.Notes) scene.Hosted.RemoveNote(note.Id);
                 // A visible child must restore its whole group, including the hidden root.
                 scene.Notes[0].Visible = false;

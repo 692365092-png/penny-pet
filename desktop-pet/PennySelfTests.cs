@@ -246,6 +246,25 @@ namespace PennyPet
                     "R24: topology/restore rejection remains whole-set atomic.");
             }
 
+            using (var scene = new Pc2Scene(root, "shell-before-attach"))
+            {
+                object reminder = Pc2Get(scene.Pet, "_reminderRuntime");
+                Pc2Set(scene.Pet, "_stickyWorkspace", null);
+                Pc2Set(scene.Pet, "_reminderRuntime", null);
+                try
+                {
+                    ((IPetDisplayWindow)scene.Pet).PlacementChanged();
+                    Pc2Call(scene.Pet, "BubbleMessageClosed", PetMessageKind.Feedback);
+                    Pc2Call(scene.Pet, "RestoreAmbientBubble");
+                }
+                finally
+                {
+                    Pc2Set(scene.Pet, "_stickyWorkspace", scene.Workspace);
+                    Pc2Set(scene.Pet, "_reminderRuntime", reminder);
+                }
+                evidence.Add("shell placement and bubble callbacks work before Sticky/reminder attach");
+            }
+
             RunPc2PersistencePause(root, evidence);
             RunDockCommitMembershipChecks(root, evidence);
             RunPc2FinalDockFailure(root, evidence);
