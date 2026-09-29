@@ -100,4 +100,10 @@
 - `PreparePersistence` 保留 Sticky HWND/内容视图，先拒绝活动 IME 和未确认 Dock 结果，捕获最后编辑，再暂停输入；取消通过 `ResumeAfterPersistence` 恢复原窗口。
 - `SaveBarrierAsync` 与导入替换共用串行 writer。超时不取消底层写入，未完成 receipt 可继续等待；普通编辑不能越过旧写入。
 - 导入读取/校验在后台，Pet owner 发布模型。完整恢复已写入 Notes 后，通过 `RetirePersistenceWindows` 退役旧编辑器，禁止再次采集旧模型。提醒设置的成功/失败单独报告。
-- 合成 IME/native HWND 检查属于自动化证据；真实中日文候选窗和物理多屏交互仍需 Windows 人工验收。R26 先完成版本兼容矩阵与旧文件样本盘点，再决定字段退役。
+- 合成 IME/native HWND 检查属于自动化证据；真实中日文候选窗和物理多屏交互仍需 Windows 人工验收。R26 兼容矩阵与条件结论见 `docs/architecture-review/R26-persistence-compatibility.md`。
+
+## R26 兼容与后续入口
+
+- `StickyNoteUiSnapshot` 不再携带或回写 `ReminderUtcTicks`；Pet 的 ReminderRuntime 负责 Manager/文件需要的投影，Sticky 提醒条继续使用独立 reminders 命令。
+- 磁盘 v11 及 v1–v10 读取保持兼容。旧坐标有实际恢复消费者，仓库样本为合成数据，删除磁盘字段/历史解析器的条件未满足，不实施格式退役。
+- CI #168 在 `3979a62` 上全通过（597 项测试及完整 Windows 流水线）。下一项 R27 先评估美术包格式的启动、内存和维护成本收益，再决定是否合并。

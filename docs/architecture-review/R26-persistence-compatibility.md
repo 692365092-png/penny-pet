@@ -54,3 +54,9 @@ Sticky 窗口的提醒条已有独立 `UpdateReminders` / `UpdateAllReminders` �
 现有 `StickyCodecBoundaryTests` 验证截断、尾部字段和版本 token；`StickyFactsReceiverTests` 验证 v10 单次迁移及无法解析显示器时的保存；`PetSettingsPlacementCodecTests` 验证物理回退和 preferred 独立往返；`StickyRepositoryWriterTests` 验证导入前备份、失败保留及 future-schema 边界。新增验证应针对完整文件升级的备份和重复保存/导入，以及新提醒不能被旧内容快照覆盖。
 
 因此磁盘列删除和历史解析器删除暂不实施。后续需要有来源的旧客户端样本、原始文件保全、对应旧 EXE 的读写能力，以及明确的降级范围，才能推进格式层退役。这个条件不阻塞已确认多余的运行时镜像清理。
+
+## 本轮验证结论
+
+实现提交 `3979a62` 的 [Windows CI #168](https://github.com/692365092-png/penny-pet/actions/runs/36501501881) 全部通过：597 项 discoverable 测试、原生窗口自测、正式单文件 EXE 冒烟、Dock 基线、美术校验、渲染成本观察与产物检查。新增 16 个执行用例包括 11 个历史格式整文件流程、4 个普通/批量内容回传与提醒更新交错场景、1 个提醒变化不重建正文快照的检查。
+
+R26 的兼容盘点和运行时镜像清理完成；磁盘字段/历史解析器删除的证据条件尚未满足，明确不实施。现有测试证明当前版本处理合成旧格式的行为，不证明未测试旧 EXE 的读写能力，也不替代真实旧文件样本。
