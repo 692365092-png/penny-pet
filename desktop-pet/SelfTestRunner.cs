@@ -6692,7 +6692,7 @@ namespace PennyPet
                 File.WriteAllText(outputPath,
                     "{\"ok\":false,\"error\":\"" + message + "\"}",
                     new UTF8Encoding(false));
-                Console.Error.WriteLine("MODULAR ERROR: " + message);
+                Console.Error.WriteLine("MODULAR ERROR: " + ex);
             }
         }
 

@@ -181,7 +181,11 @@ namespace PennyPet
         {
             try { return owner.GetType().GetMethod(method,
                 BindingFlags.Instance | BindingFlags.NonPublic).Invoke(owner, args); }
-            catch (TargetInvocationException error) { throw error.InnerException ?? error; }
+            catch (TargetInvocationException error)
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error.InnerException ?? error).Throw();
+                throw;
+            }
         }
         private static void Pc2Assert(bool value, string message)
         { if (!value) throw new InvalidOperationException("PC2 characterization: " + message); }
