@@ -759,6 +759,13 @@ namespace PennyPet
         internal void QueueStartupStickyRestore(StickyNoteData note)
         {
             if (note == null || IsDisposed) return;
+            List<StickyNoteData> group = Dock.BuildDockChainOrderIncludingHidden(note);
+            if (group.Count > 1)
+            {
+                if (!Dock.TryRestoreHostedDockComponent(group, note, false, false, true))
+                    RecoverFailedStartupDockRestore(group.ConvertAll(member => member.Id), null);
+                return;
+            }
             string noteId = note.Id;
             if (!Hosted.AddNote(noteId)) return;
             HostedStickyWindowCreatedCount++;
@@ -780,6 +787,12 @@ namespace PennyPet
                     HandleHostedStickyFailure(new string[] { noteId },
                         "deferred-sticky-restore", result);
                 }, Context);
+        }
+
+        internal void RecoverFailedStartupDockRestore(IEnumerable<string> noteIds,
+            StickyUiCommandResult result)
+        {
+            HandleHostedStickyFailure(noteIds, "deferred-dock-restore", result);
         }
 
         internal void PostHostedStickyCommand(StickyUiCommand command,

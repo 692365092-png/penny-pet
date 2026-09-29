@@ -50,6 +50,7 @@ namespace PennyPet
         internal string FocusId { get; private set; }
         internal bool FocusEditor { get; private set; }
         internal bool PersistVisibility { get; private set; }
+        internal bool StartupRestore { get; private set; }
         internal DisplayTopologySnapshot Topology { get; private set; }
         internal DisplaySurfaceSnapshot Target { get; private set; }
         internal DockTopologyReprojectReason Reason { get; private set; }
@@ -60,7 +61,7 @@ namespace PennyPet
 
         internal static DockRestoreOperation TryCreate(IList<StickyNoteData> ordered,
             string focusId, bool focusEditor, bool persistVisibility,
-            DisplayTopologySnapshot topology, WindowFacts petFacts, long planSequence)
+            DisplayTopologySnapshot topology, WindowFacts petFacts, long planSequence, bool startupRestore = false)
         {
             if (ordered == null || ordered.Count < 2 || topology == null ||
                 ordered[0] == null || String.IsNullOrWhiteSpace(ordered[0].DockGroupId)) return null;
@@ -80,7 +81,7 @@ namespace PennyPet
                     new List<DockWindowTarget>(layout.Targets));
                 return new DockRestoreOperation(ordered, focusId, focusEditor, persistVisibility,
                     topology, topology.FindByRuntimeSurfaceId(recovery.TargetSurfaceId),
-                    DockTopologyReprojectReason.LegacyRecovery, recovery);
+                    DockTopologyReprojectReason.LegacyRecovery, recovery) { StartupRestore = startupRestore };
             }
             var members = new List<DockLogicalMember>(ordered.Count);
             foreach (StickyNoteData member in ordered)
@@ -100,7 +101,7 @@ namespace PennyPet
                 X = root.PreferredPlacement.LocalLogicalRect.X, Y = root.PreferredPlacement.LocalLogicalRect.Y }, members);
             var plan = new DockGroupReprojectPlan(topology.Generation, planSequence, target.RuntimeSurfaceId,
                 logical, reason == DockTopologyReprojectReason.TemporaryRehome);
-            return new DockRestoreOperation(ordered, focusId, focusEditor, persistVisibility, topology, target, reason, plan);
+            return new DockRestoreOperation(ordered, focusId, focusEditor, persistVisibility, topology, target, reason, plan) { StartupRestore = startupRestore };
         }
 
         internal static bool HasCompletePreferred(IList<StickyNoteData> group)

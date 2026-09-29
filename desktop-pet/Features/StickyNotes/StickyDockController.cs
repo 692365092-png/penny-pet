@@ -1121,7 +1121,7 @@ namespace PennyPet
         // member/group scope. Header, horizontal and divider use one policy.
         internal bool TryRestoreHostedDockComponent(
             List<StickyNoteData> ordered, StickyNoteData focus,
-            bool focusEditor, bool persistVisibility)
+            bool focusEditor, bool persistVisibility, bool startupRestore = false)
         {
             if (ordered == null || ordered.Count < 2) return false;
             string rootId = ordered[0].Id;
@@ -1136,32 +1136,47 @@ namespace PennyPet
                     StickyNoteData root =
                         _workspace.Notes.Find(rootId);
                     if (root == null) return;
-                    TryRestoreHostedDockComponentPrepared(
-                        BuildDockChainOrderIncludingHidden(root),
-                        _workspace.Notes.Find(focusId),
-                        focusEditor, persistVisibility);
+                    try
+                    {
+                        bool queued = TryRestoreHostedDockComponentPrepared(
+                            BuildDockChainOrderIncludingHidden(root),
+                            _workspace.Notes.Find(focusId),
+                            focusEditor, persistVisibility, startupRestore);
+                        if (!queued && startupRestore)
+                            _workspace.RecoverFailedStartupDockRestore(affected, null);
+                    }
+                    catch (Exception error)
+                    {
+                        if (!startupRestore) throw;
+                        _workspace.RecoverFailedStartupDockRestore(affected,
+                            StickyUiCommandResult.Failed(error));
+                    }
                 });
             return true;
         }
 
         private bool TryRestoreHostedDockComponentPrepared(
             List<StickyNoteData> ordered, StickyNoteData focus,
-            bool focusEditor, bool persistVisibility)
+            bool focusEditor, bool persistVisibility, bool startupRestore = false)
         {
             if (ordered == null || ordered.Count < 2) return false;
             if (_dockRestores.ContainsGroup(ordered[0].DockGroupId)) return true;
             DisplayTopologySnapshot topology = _workspace.CurrentTopologySnapshot();
             if (topology == null) return false;
-            foreach (StickyNoteData member in ordered)
             if (MigrateDockRestorePreferredIfNeeded(ordered, topology)) _workspace.Notes.SaveAsync();
             DockRestoreOperation operation = DockRestoreOperation.TryCreate(ordered,
                 focus == null ? null : focus.Id, focusEditor, persistVisibility,
-                topology, _workspace.CapturePetWindowFacts(topology), NextDockOperationSequence());
+                topology, _workspace.CapturePetWindowFacts(topology), NextDockOperationSequence(), startupRestore);
             if (!_dockRestores.TryBegin(operation)) return false;
             try
             {
-                _workspace.PostHostedStickyCommand(StickyUiCommand.RestoreDockGroup(operation, _workspace.ReminderItems),
-                    result => CompleteHostedDockRestore(operation, result));
+                StickyUiCommand command = StickyUiCommand.RestoreDockGroup(operation, _workspace.ReminderItems);
+                if (startupRestore)
+                    _workspace.Host.PostStartupRestore(command,
+                        result => CompleteHostedDockRestore(operation, result), _workspace.Context);
+                else
+                    _workspace.PostHostedStickyCommand(command,
+                        result => CompleteHostedDockRestore(operation, result));
                 return true;
             }
             catch
@@ -1206,6 +1221,11 @@ namespace PennyPet
             if (!accepted)
             {
                 HideUncommittedDockRestore(operation);
+                if (operation.StartupRestore)
+                {
+                    _workspace.RecoverFailedStartupDockRestore(operation.MemberIds, result);
+                    return;
+                }
                 StickyWorkspace.ReportHostedStickyCommandFailure("sticky-hosted-dock-restore", result);
                 _workspace.ShowBubble("Dock 便利贴组恢复未完成，未展开的便利贴仍保留在侧边页签中。");
                 return;
@@ -1270,7 +1290,7 @@ namespace PennyPet
                 List<StickyNoteData> group = BuildDockChainOrderIncludingHidden(_workspace.Notes.Find(operation.MemberIds[0]));
                 if (group.Count >= 2)
                     TryRestoreHostedDockComponent(group, _workspace.Notes.Find(operation.FocusId),
-                        operation.FocusEditor, operation.PersistVisibility);
+                        operation.FocusEditor, operation.PersistVisibility, operation.StartupRestore);
             }
         }
     }

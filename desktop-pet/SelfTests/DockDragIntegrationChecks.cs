@@ -44,6 +44,34 @@ namespace PennyPet
                 IntPtr.Zero, IntPtr.Zero, false);
         }
 
+        private static void RunStartupDockRestoreChecks(string root, List<string> evidence)
+        {
+            foreach (bool fail in new[] { false, true })
+            using (var scene = new Pc2Scene(root, "startup-dock-" + fail, true))
+            {
+                foreach (StickyNoteData note in scene.Notes) scene.Hosted.RemoveNote(note.Id);
+                // A visible child must restore its whole group, including the hidden root.
+                scene.Notes[0].Visible = false;
+                scene.Start();
+                scene.Host.Configure(scene.Workspace.HostedStickyEventReceived, scene.Context);
+                if (fail)
+                    scene.Host.SetCommandHandler(command => command.Kind == StickyUiCommandKind.RestoreDockGroup
+                        ? StickyUiCommandResult.Failed(new InvalidOperationException("injected restore failure"))
+                        : StickyUiCommandResult.Handled());
+                var queue = (Queue<StickyNoteData>)Pc2Call(scene.Pet, "BuildStartupRestoreQueue");
+                Pc2Assert(queue.Count == 1, "startup queues one transaction for a Dock group");
+                scene.Workspace.QueueStartupStickyRestore(queue.Dequeue());
+                scene.Context.PumpUntil(() => fail
+                    ? scene.Notes.TrueForAll(note => !note.Visible)
+                    : scene.Notes.TrueForAll(note => scene.Hosted.ContainsNote(note.Id)));
+                scene.Context.PumpUntil(() => (bool)Pc2Call(scene.Pet, "AllExpectedNotesHaveFirstRendered"));
+                if (!fail)
+                    Pc2Assert(scene.Notes.TrueForAll(note => note.Visible),
+                        "startup restores hidden members through the group transaction");
+            }
+            evidence.Add("startup Dock groups restore all members; failure releases first-render wait");
+        }
+
         private static void RunNativeDockDragChecks(string root, List<string> evidence)
         {
             using (var scene = new Pc2Scene(root, "native-header-" + Guid.NewGuid().ToString("N"), true))
