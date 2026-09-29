@@ -13,3 +13,5 @@ The script launches seven fresh processes per variant, alternating order. It mea
 Both probes run outside the repository, without an external art directory. The idle source must identify the intended embedded path. Separate verification processes hash every state, frame dimension, frame duration and premultiplied BGRA byte (including transparency). Existing encoders regenerate both files and their SHA-256 values must match the solution build. No source artwork, timing or licensing files are changed. Results retain raw samples and hashes.
 
 This screens one concrete candidate. If removing the pre-rendered idle cache materially worsens idle-ready time or memory, keep the two formats. It does not prove every future indexed format is worse: a new pre-rendered single pack would need a separate experiment covering dimensions, render settings, aliases, size, startup and maintenance cost. No format is adopted merely because it saves one file.
+
+Result: [CI #171 decision](../R27-art-package-decision.md) retains both resources. Use workflow_dispatch with `compare_art_packages=true` to repeat the experiment; ordinary PR builds skip this observational benchmark.

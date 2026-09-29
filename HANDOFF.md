@@ -106,4 +106,10 @@
 
 - `StickyNoteUiSnapshot` 不再携带或回写 `ReminderUtcTicks`；Pet 的 ReminderRuntime 负责 Manager/文件需要的投影，Sticky 提醒条继续使用独立 reminders 命令。
 - 磁盘 v11 及 v1–v10 读取保持兼容。旧坐标有实际恢复消费者，仓库样本为合成数据，删除磁盘字段/历史解析器的条件未满足，不实施格式退役。
-- CI #168 在 `3979a62` 上全通过（597 项测试及完整 Windows 流水线）。下一项 R27 先评估美术包格式的启动、内存和维护成本收益，再决定是否合并。
+- CI #168 在 `3979a62` 上全通过（597 项测试及完整 Windows 流水线）。R27 已完成条件评估，见下方结论。
+
+## R27 美术包评估结论
+
+- 保留 PPAP 完整包与 PCAF 启动缓存。仅 PPAP 候选节省 0.903 MiB，却使 idle-ready 中位数从 58.47 ms 增到 334.14 ms，启动内存也增加。
+- CI #171 全通过。10 个动画状态的像素、透明度、帧时长完全一致，生成文件可重复；生产美术及格式未变。
+- 详细证据见 `docs/architecture-review/R27-art-package-decision.md`。实验为手动 opt-in；常规 PR 不重复跑。R27 不再推进格式迁移，真实 IME/物理多屏和 R26 旧文件来源条件仍需后续验收。

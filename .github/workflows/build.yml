@@ -2,6 +2,11 @@ name: Build single-file Windows release
 
 on:
   workflow_dispatch:
+    inputs:
+      compare_art_packages:
+        description: Run the R27 art-package comparison
+        type: boolean
+        default: false
   push:
     branches: [main]
     tags: ['v*']
@@ -146,6 +151,7 @@ jobs:
           Write-Host $json
 
       - name: Compare art package layouts
+        if: github.event_name == 'workflow_dispatch' && inputs.compare_art_packages
         shell: powershell
         run: |
           & "$env:GITHUB_WORKSPACE\docs\architecture-review\art-package-benchmark\run.ps1" `
