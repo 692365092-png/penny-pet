@@ -6,6 +6,22 @@ namespace PennyPet
 {
     internal sealed partial class PetForm
     {
+        private Action _deferredRuntimeComposition;
+
+        internal bool DeferRuntimeCompositionWhilePersisting(Action complete)
+        {
+            if (!_persistenceOperation) return false;
+            _deferredRuntimeComposition = complete;
+            return true;
+        }
+
+        private void ResumeDeferredRuntimeComposition()
+        {
+            Action complete = _deferredRuntimeComposition;
+            _deferredRuntimeComposition = null;
+            if (!IsExitingForComposition) complete?.Invoke();
+        }
+
         internal bool IsExitingForComposition
         {
             get { return _exiting || IsDisposed || Disposing; }

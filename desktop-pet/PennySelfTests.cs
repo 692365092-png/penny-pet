@@ -262,6 +262,16 @@ namespace PennyPet
                     Pc2Set(scene.Pet, "_stickyWorkspace", scene.Workspace);
                     Pc2Set(scene.Pet, "_reminderRuntime", reminder);
                 }
+                int attached = 0;
+                Pc2Set(scene.Pet, "_persistenceOperation", true);
+                Pc2Assert(scene.Pet.DeferRuntimeCompositionWhilePersisting(() => attached++),
+                    "runtime publication waits behind the persistence operation");
+                Pc2Assert(attached == 0, "no runtime starts or writes after the exit snapshot");
+                Pc2Set(scene.Pet, "_persistenceOperation", false);
+                Pc2Call(scene.Pet, "ResumeDeferredRuntimeComposition");
+                Pc2Assert(attached == 1, "cancelled exit resumes publication exactly once");
+                Pc2Call(scene.Pet, "ResumeDeferredRuntimeComposition");
+                Pc2Assert(attached == 1, "deferred publication is consumed");
                 evidence.Add("shell placement and bubble callbacks work before Sticky/reminder attach");
             }
 

@@ -232,20 +232,11 @@ namespace PennyPet
         internal async void BeginExitSequence()
         {
             if (_exiting || _persistenceOperation) return;
-            StickyWorkspace preparedWorkspace = _stickyWorkspace;
             if (!await PreparePersistenceOperationAsync()) return;
             try
             {
                 CaptureLocationForSave();
                 if (!await FlushPersistenceBeforeExit()) return;
-                // A runtime may have finished loading while the settings-only
-                // startup exit was awaiting disk. Capture it before destruction.
-                if (_stickyWorkspace != null && _stickyWorkspace != preparedWorkspace)
-                {
-                    StickyUiCommandResult prepared = await _stickyWorkspace.PreparePersistenceAsync();
-                    if (prepared == null || prepared.Status != StickyUiCommandStatus.Handled) return;
-                    if (!await FlushPersistenceBeforeExit()) return;
-                }
                 FinishExitSequence();
             }
             catch (Exception error)

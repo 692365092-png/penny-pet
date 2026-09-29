@@ -83,6 +83,9 @@ namespace PennyPet
             if (pet == null || pet.IsDisposed || pet.Disposing ||
                 pet.IsExitingForComposition) return;
 
+            if (pet.DeferRuntimeCompositionWhilePersisting(
+                () => CompleteRuntimeComposition(pet, prepared, failure))) return;
+
             UnsupportedStickySchemaException future =
                 failure as UnsupportedStickySchemaException ??
                 StickyFeature.PreparedFutureSchemaError(prepared);

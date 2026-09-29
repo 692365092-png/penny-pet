@@ -43,6 +43,7 @@ namespace PennyPet
             if (!_exiting) _conversation.ResumeAfterPersistence();
             if (_reminderRuntime != null && _resumeRemindersAfterPersistence && !_exiting)
                 _reminderRuntime.Start();
+            ResumeDeferredRuntimeComposition();
         }
 
         private static async Task<PersistenceResult> WaitForSaveReceiptAsync(
