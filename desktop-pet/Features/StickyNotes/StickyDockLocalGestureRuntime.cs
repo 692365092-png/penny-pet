@@ -609,7 +609,7 @@ namespace PennyPet
                 intent, gesture.SourceNoteId, target,
                 gesture.SceneRevision,
                 gesture.TopologyGeneration,
-                gesture.MemberIds, affected, versions);
+                gesture.MemberIds, affected, versions, gesture.BaselineTargets());
         }
 
         internal void Cancel()
@@ -765,8 +765,10 @@ namespace PennyPet
             long sceneRevision, long topologyGeneration,
             IReadOnlyList<string> memberIds,
             IReadOnlyList<string> affectedMemberIds,
-            IDictionary<string, long> baselineVersions)
+            IDictionary<string, long> baselineVersions,
+            IReadOnlyList<DockWindowTarget> rollbackTargets = null)
         {
+            RollbackTargets = rollbackTargets ?? Array.AsReadOnly(new DockWindowTarget[0]);
             GestureId = gestureId;
             Kind = kind;
             Intent = intent;
@@ -788,6 +790,7 @@ namespace PennyPet
                             StringComparer.OrdinalIgnoreCase));
         }
 
+        internal IReadOnlyList<DockWindowTarget> RollbackTargets { get; private set; }
         internal long GestureId { get; private set; }
         internal StickyDockLocalGestureKind Kind { get; private set; }
         internal StickyDockCommitIntent Intent { get; private set; }

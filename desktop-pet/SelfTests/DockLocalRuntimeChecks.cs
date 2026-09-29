@@ -160,6 +160,36 @@ namespace PennyPet
                     Pc2Assert(!runtime.IsActive && restored.Facts != null &&
                         restored.Facts.PhysicalBounds.Equals(before),
                         "affected structure command retires gesture and restores source HWND");
+                    foreach (bool captureFailure in new[] { true, false })
+                    {
+                        string child = scene.Ids[1];
+                        runtime.TryBegin(StickyDockLocalGestureKind.HeaderDrag, child);
+                        var completed = runtime.Complete();
+                        var affected = new List<string>(completed.AffectedMemberIds);
+                        if (captureFailure) affected.Add("missing-session");
+                        var versions = new Dictionary<string, long>();
+                        foreach (var pair in completed.BaselineVersions) versions.Add(pair.Key, pair.Value);
+                        var detached = new StickyDockLocalGestureCompletion(completed.GestureId,
+                            completed.Kind, StickyDockCommitIntent.Detach, child, null,
+                            completed.SceneRevision, completed.TopologyGeneration,
+                            completed.MemberIds, affected.AsReadOnly(), versions, completed.RollbackTargets);
+                        PhysicalRect childBefore = facts[child].PhysicalBounds;
+                        Pc2Call(scene.Host, "HandleCommand", new StickyUiCommand(
+                            StickyUiCommandKind.SetBounds, child, false, null,
+                            new StickyUiBounds(childBefore.Left + 60, childBefore.Top,
+                                childBefore.Width, childBefore.Height)));
+                        // An unknown dependency makes TryAdd reject even a complete capture.
+                        Pc2Set(scene.Host, "_activeLocalDockDependency", captureFailure ? 0L : 999L);
+                        Pc2Call(scene.Host, "PublishLocalDockCompletion", detached);
+                        var captured = (StickyUiCommandResult)Pc2Call(scene.Host,
+                            "HandleCommand", StickyUiCommand.CaptureWindowFacts(child, scene.Topology));
+                        Pc2Assert(captured.Facts.PhysicalBounds.Equals(childBefore),
+                            "unpublished commit restores physical position");
+                        Pc2Assert(((StickyDockSceneProjection)Pc2Get(runtime, "_scene"))
+                            .VisibleGroup(child).Count == 3 &&
+                            ((StickyDockCommitQueue)Pc2Get(scene.Host, "_dockCommitQueue")).PendingCount == 0,
+                            "failed capture/enqueue cannot leave a provisional split or pending ACK");
+                    }
                     return StickyUiCommandResult.Handled();
                 });
                 StickyUiCommandResult checkedResult = scene.Send(

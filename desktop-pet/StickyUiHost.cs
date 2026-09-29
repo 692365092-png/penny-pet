@@ -1261,18 +1261,41 @@ namespace PennyPet
                     CompleteLocalDockGesture();
                 if (completion == null)
                     return true;
-                _localDockGestures.ApplyProvisional(completion);
-                StickyDockGestureCommit commit =
-                    CaptureLocalDockCommit(
-                        completion,
-                        _activeLocalDockDependency);
-                _activeLocalDockDependency = 0;
-                if (commit != null &&
-                    _dockCommitQueue.TryAdd(commit))
-                    PumpLocalDockCommits();
+                PublishLocalDockCompletion(completion);
                 return true;
             }
             return true;
+        }
+
+        private void PublishLocalDockCompletion(StickyDockLocalGestureCompletion completion)
+        {
+            long dependency = _activeLocalDockDependency;
+            _activeLocalDockDependency = 0;
+            bool queued = false;
+            try
+            {
+                StickyDockGestureCommit commit = CaptureLocalDockCommit(completion, dependency);
+                queued = commit != null && _dockCommitQueue.TryAdd(commit);
+            }
+            catch (Exception error)
+            {
+                ApplicationDiagnostics.ReportNonFatal("sticky-dock-capture-commit", error);
+            }
+            if (!queued)
+            {
+                // No Pet ACK will arrive. Restore physical geometry here while
+                // keeping the scene (including any earlier pending gesture) intact.
+                var surviving = new List<DockWindowTarget>();
+                foreach (DockWindowTarget target in completion.RollbackTargets)
+                {
+                    StickyWindowSession session;
+                    if (TryGetSession(target.NoteId, out session)) surviving.Add(target);
+                }
+                ApplyLocalDockCorrections(surviving.AsReadOnly());
+                return;
+            }
+            _localDockGestures.ApplyProvisional(completion);
+            PumpLocalDockCommits();
         }
 
         private StickyDockGestureCommit CaptureLocalDockCommit(
