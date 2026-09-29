@@ -60,13 +60,14 @@ namespace PennyPet
             {
                 var first = asset.LoadAsync();
                 if (!SpinWait.SpinUntil(() => first.IsCompleted, 5000) || !first.IsFaulted) return false;
-                if (!Object.ReferenceEquals(first, asset.LoadAsync())) return false;
+                if (asset.PermanentlyFailed ||
+                    !Object.ReferenceEquals(first, asset.LoadAsync())) return false;
                 now = now.AddSeconds(1);
                 var second = asset.LoadAsync();
                 if (Object.ReferenceEquals(first, second) ||
                     !SpinWait.SpinUntil(() => second.IsCompleted, 5000) || !second.IsFaulted) return false;
                 now = now.AddDays(1);
-                return decodes == 2 && asset.Ready == null &&
+                return decodes == 2 && asset.Ready == null && asset.PermanentlyFailed &&
                     Object.ReferenceEquals(second, asset.LoadAsync());
             }
         }

@@ -13,6 +13,8 @@ namespace PennyPet.Tests
 
         private sealed class Art : IInteractionArt
         {
+            internal readonly HashSet<int> Failed = new HashSet<int>();
+            public bool IsPermanentlyFailed(int row) { return Failed.Contains(row); }
             internal readonly HashSet<int> Missing = new HashSet<int>();
             internal readonly HashSet<int> Requested = new HashSet<int>();
             public bool IsReady(int row) { return !Missing.Contains(row); }
@@ -29,6 +31,35 @@ namespace PennyPet.Tests
 
         private static void Tick(InteractionRuntime runtime, int ms, bool menu = false, bool slow = false)
         { runtime.Tick(Start.AddMilliseconds(ms), menu, slow); }
+
+        [TestMethod]
+        public void PermanentlyFailedPoke_ReleasesProtectedIntentAndAcceptsNextPoke()
+        {
+            var art = new Art(); art.Missing.Add(WaitingRow);
+            var runtime = Create(art);
+            runtime.StartPoke(WaitingRow, PetInteractionAnimationKind.OrdinaryPoke, Start, true);
+            Tick(runtime, 1000);
+            Assert.AreEqual(PetInteractionAnimationKind.OrdinaryPoke, runtime.InteractionAnimationKind);
+            art.Failed.Add(WaitingRow);
+            Tick(runtime, 1100);
+            Assert.AreEqual(PetInteractionAnimationKind.None, runtime.InteractionAnimationKind);
+            Assert.IsTrue(runtime.StartPoke(HoverRow, PetInteractionAnimationKind.OrdinaryPoke,
+                Start.AddMilliseconds(1100)));
+        }
+
+        [TestMethod]
+        public void PermanentlyFailedNotification_ReleasesReminderAttention()
+        {
+            var art = new Art(); art.Missing.Add(NotificationRow);
+            var runtime = Create(art);
+            runtime.BeginReminderAttention(Start);
+            Tick(runtime, 1000); Assert.IsTrue(runtime.ReminderAttentionActive);
+            art.Failed.Add(NotificationRow);
+            Tick(runtime, 1100);
+            Assert.IsFalse(runtime.ReminderAttentionActive);
+            Assert.IsTrue(runtime.StartPoke(HoverRow, PetInteractionAnimationKind.OrdinaryPoke,
+                Start.AddMilliseconds(1100)));
+        }
 
         [TestMethod]
         public void MissingPoke_PlaysIdleThenOneWholeRequestedCycle()

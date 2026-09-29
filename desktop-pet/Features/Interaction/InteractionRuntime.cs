@@ -9,6 +9,7 @@ namespace PennyPet
     internal interface IInteractionArt
     {
         bool IsReady(int row);
+        bool IsPermanentlyFailed(int row);
         void Request(int row);
         int FrameCount(int row);
         int FrameDuration(int row, int frame);
@@ -82,6 +83,17 @@ namespace PennyPet
 
             TickHover(now);
             if (TypingSession && now > _typingUntilUtc) TypingSession = false;
+            // Failed optional assets can never satisfy a pending one-shot intent.
+            // Release its ownership even while another input has higher priority.
+            if (ReminderAttentionActive && _art.IsPermanentlyFailed(NotificationRow))
+            {
+                ReminderAttentionActive = false;
+                _idleRow = IdleRow;
+            }
+            if (InteractionAnimationKind != PetInteractionAnimationKind.None &&
+                _art.IsPermanentlyFailed(InteractionAnimationRow))
+                CompleteInteractionAnimation();
+            if (_art.IsPermanentlyFailed(_idleRow)) _idleRow = IdleRow;
             int wanted = ChooseRow();
             bool ready = _art.IsReady(wanted);
             if (!ready) { _art.Request(wanted); wanted = IdleRow; }

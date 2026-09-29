@@ -17,6 +17,7 @@ namespace PennyPet
         }
 
         bool IInteractionArt.IsReady(int row) { return _art.IsRowLoaded(row); }
+        bool IInteractionArt.IsPermanentlyFailed(int row) { return _art.IsRowPermanentlyFailed(row); }
         void IInteractionArt.Request(int row) { QueueArtPreload(row); }
         int IInteractionArt.FrameCount(int row) { return _art.GetLoadedClip(row).FrameCount; }
         int IInteractionArt.FrameDuration(int row, int frame)

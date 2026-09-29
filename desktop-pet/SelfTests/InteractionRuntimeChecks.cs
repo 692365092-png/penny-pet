@@ -10,6 +10,7 @@ namespace PennyPet
         private sealed class InteractionTestArt : IInteractionArt
         {
             public bool IsReady(int row) { return true; }
+            public bool IsPermanentlyFailed(int row) { return false; }
             public void Request(int row) { }
             public int FrameCount(int row) { return 3; }
             public int FrameDuration(int row, int frame) { return 40; }

@@ -792,6 +792,11 @@ namespace PennyPet
                 _runtimeAssets[row].Ready != null;
         }
 
+        internal bool IsRowPermanentlyFailed(int row)
+        {
+            return _runtimeAssets[row].PermanentlyFailed;
+        }
+
         internal AnimationClip GetLoadedClip(int row)
         {
             if (_disposed) throw new ObjectDisposedException("PetArtPackage");

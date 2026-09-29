@@ -15,6 +15,7 @@ namespace PennyPet
         private AnimationClip _ready;
         private TaskCompletionSource<AnimationClip> _completion;
         private int _attempts;
+        private int _permanentlyFailed;
         private DateTime _retryAfterUtc;
         private bool _disposed;
 
@@ -30,6 +31,8 @@ namespace PennyPet
                 _completion.SetResult(ready);
             }
         }
+
+        internal bool PermanentlyFailed { get { return Volatile.Read(ref _permanentlyFailed) != 0; } }
 
         internal AnimationClip Ready { get { return Volatile.Read(ref _ready); } }
 
@@ -90,6 +93,7 @@ namespace PennyPet
                 lock (_gate)
                 {
                     _retryAfterUtc = _utcNow().AddSeconds(1);
+                    if (_attempts >= 2) Volatile.Write(ref _permanentlyFailed, 1);
                     completion.TrySetException(error);
                 }
             }
