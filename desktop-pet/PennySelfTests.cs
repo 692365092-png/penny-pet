@@ -244,6 +244,7 @@ namespace PennyPet
 
             RunPc2PersistencePause(root, evidence);
             RunPc2FinalDockFailure(root, evidence);
+            RunNativeDockDragChecks(root, evidence);
             RunPc2Recreation(root, evidence);
             RunPc2EnsureSessionRuntime(root, evidence);
             Directory.CreateDirectory(root);

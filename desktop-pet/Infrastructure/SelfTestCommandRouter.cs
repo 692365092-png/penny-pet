@@ -7,6 +7,9 @@ namespace PennyPet
     {
         internal static bool TryRun(string[] args, out int exitCode)
         {
+            if (TryCommand(args, "--dock-drag-probe=", true,
+                delegate(string value) { SelfTest.RunDockDragProbe(value); },
+                out exitCode)) return true;
             if (TryCommand(args, "--self-test=", false,
                 delegate(string value) { SelfTest.Run(value); }, out exitCode))
                 return true;

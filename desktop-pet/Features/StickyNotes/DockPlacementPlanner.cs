@@ -154,11 +154,30 @@ namespace PennyPet
                     "The source window must belong to the Dock group.",
                     nameof(sourceFacts));
 
+            List<DockWindowTarget> projected = DockLayout.ProjectGroup(
+                group, group.RootAnchor, targetSurface, targetDpi);
+            int sourceIndex = projected.FindIndex(target => String.Equals(
+                target.NoteId, sourceFacts.WindowId, StringComparison.OrdinalIgnoreCase));
+            PhysicalRect actual = sourceFacts.PhysicalBounds;
+            PhysicalRect rounded = projected[sourceIndex].PhysicalBounds;
+            // Logical integer round-trips lose pixels at fractional DPI. The
+            // native drag owns the source, so anchor both seams to its exact
+            // HWND edges instead of leaving followers at the rounded anchor.
+            var targets = new List<DockWindowTarget>(projected.Count);
+            for (int index = 0; index < projected.Count; index++)
+            {
+                PhysicalRect rect = projected[index].PhysicalBounds;
+                long dy = index < sourceIndex
+                    ? (long)actual.Top - rounded.Top
+                    : (long)actual.Bottom - rounded.Bottom;
+                targets.Add(new DockWindowTarget(projected[index].NoteId,
+                    index == sourceIndex ? actual : new PhysicalRect(
+                        actual.Left, checked((int)(rect.Top + dy)),
+                        actual.Width, rect.Height)));
+            }
             return new DockPlacementPlan(topologyGeneration, planSequence,
                 sourceFacts.WindowId, targetSurface.RuntimeSurfaceId,
-                targetDpi, DockLayout.ProjectGroup(
-                    group, group.RootAnchor,
-                    targetSurface, targetDpi));
+                targetDpi, targets);
         }
 
         private static bool IsSourceOnTarget(WindowFacts sourceFacts,

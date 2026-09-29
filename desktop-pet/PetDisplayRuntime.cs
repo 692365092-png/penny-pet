@@ -18,7 +18,11 @@ namespace PennyPet
         int IPetDisplayWindow.GetDpi(int fallbackDpi) { return ActualPetDpi(fallbackDpi); }
         bool IPetDisplayWindow.MoveTopLeft(int x, int y) { return TrySetPetTopLeft(x, y); }
         void IPetDisplayWindow.ApplyScale(int dpi) { ApplyCurrentDisplayScale(dpi); }
-        void IPetDisplayWindow.PlacementChanged() { _stickyWorkspace.PositionNoteTabs(); }
+        void IPetDisplayWindow.PlacementChanged()
+        {
+            if (_stickyWorkspace != null)
+                _stickyWorkspace.PositionNoteTabs();
+        }
         WindowFacts IPetDisplayWindow.CaptureFacts(DisplayTopologySnapshot topology, long sequence)
         {
             return WindowsWindowFactsReader.Capture(Handle, "pet",

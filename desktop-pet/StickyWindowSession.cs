@@ -719,6 +719,13 @@ namespace PennyPet
             return CaptureWindowFacts(_sequence);
         }
 
+        // A DPI transition deliberately hides a follower while moving its
+        // HWND. Placement verification must still inspect that live HWND.
+        internal WindowFacts CapturePlacementFacts()
+        {
+            return IsAvailable ? CaptureWindowFacts(_sequence) : null;
+        }
+
         private void WireEvents()
         {
             _window.IsVisibleChanged += WindowVisibilityChanged;
@@ -847,7 +854,7 @@ namespace PennyPet
             // A programmatic bounds mutation is not a user drag. Suppress the
             // WPF LocationChanged echo so canonical state only receives the
             // authoritative final snapshot from SetBounds.
-            if (_applyingBounds) return;
+            if (_applyingBounds || !_headerDragActive) return;
             EmitLocalDockGeometry(
                 StickyUiEventKind.HeaderDragMoved);
         }

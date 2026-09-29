@@ -46,6 +46,13 @@ $ProtectedExe = Join-Path $ProtectedRoot $ProtectedFileName
 $ProjectFile = Join-Path $BuildRoot "penny.crproj"
 $SelfTestFile = Join-Path $BuildRoot "protected-selftest.json"
 $StartupProbeFile = Join-Path $BuildRoot "protected-startup.json"
+$BuiltOutputDir = Join-Path $ProjectRoot "bin"
+if ($TargetPlatform -ne "anycpu") {
+    $BuiltOutputDir = Join-Path $BuiltOutputDir $TargetPlatform
+}
+$BuiltOutputDir = Join-Path $BuiltOutputDir "Release\net48"
+$SelfTestExe = Join-Path $BuiltOutputDir "PennyPet.SelfTests.exe"
+$SelfTestProject = Join-Path $ProjectRoot "PennyPet.SelfTests.csproj"
 
 function Ensure-ConfuserEx {
     if (Test-Path -LiteralPath $ConfuserCli -PathType Leaf) { return }
@@ -86,11 +93,33 @@ try {
         throw "The unprotected build was not created."
     }
 
+    $selfTestBuildArguments = @(
+        "build", $SelfTestProject, "/p:Configuration=Release")
+    if ($TargetPlatform -ne "anycpu") {
+        $selfTestBuildArguments += "/p:Platform=$TargetPlatform"
+        $selfTestBuildArguments += "/p:PlatformTarget=$TargetPlatform"
+    }
+    & dotnet @selfTestBuildArguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "dotnet self-test host build failed with exit code $LASTEXITCODE"
+    }
+
+    # ConfuserEx resolves referenced assemblies from its module search paths.
+    # Keep the complete build output beside the input module so embedded
+    # runtime dependencies (for example lunar.dll and astronomy.dll) can be
+    # resolved while protecting the executable.
+    if (-not (Test-Path -LiteralPath $BuiltOutputDir -PathType Container)) {
+        throw "The unprotected build output directory was not found: $BuiltOutputDir"
+    }
+    Get-ChildItem -LiteralPath $BuiltOutputDir -File |
+        Copy-Item -Destination $InputRoot -Force
+
     $escapedInput = [Security.SecurityElement]::Escape($InputRoot)
     $escapedOutput = [Security.SecurityElement]::Escape($ProtectedRoot)
     $confuserProject = @"
 <?xml version="1.0" encoding="utf-8"?>
 <project outputDir="$escapedOutput" baseDir="$escapedInput" seed="PennyPet-$PennyProductVersion-NINII-1111">
+  <probePath path="$escapedInput" />
   <rule pattern="true" preset="none" inherit="false">
     <protection id="rename" />
     <protection id="constants" />
@@ -116,13 +145,25 @@ try {
             "ProductVersion.props ($PennyAssemblyVersion)."
     }
 
-    & $ProtectedExe ("--self-test=" + $SelfTestFile)
+    # The product EXE is a WinForms host and intentionally does not parse
+    # self-test arguments. Use the dedicated self-test host from the same
+    # build output so validation is finite and does not start the pet UI.
+    if (-not (Test-Path -LiteralPath $SelfTestExe -PathType Leaf)) {
+        throw "The self-test host was not created: $SelfTestExe"
+    }
+    & $SelfTestExe ("--self-test=" + $SelfTestFile)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Protected build self-test host failed with exit code $LASTEXITCODE."
+    }
     Wait-ForFile $SelfTestFile 300
     $selfTest = Get-Content -LiteralPath $SelfTestFile -Raw | ConvertFrom-Json
     if (-not $selfTest.ok) {
         throw "Protected executable self-test failed."
     }
-    & $ProtectedExe ("--startup-probe=" + $StartupProbeFile)
+    & $SelfTestExe ("--startup-probe=" + $StartupProbeFile)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Protected build startup probe failed with exit code $LASTEXITCODE."
+    }
     Wait-ForFile $StartupProbeFile 60
     $startup = Get-Content -LiteralPath $StartupProbeFile -Raw |
         ConvertFrom-Json

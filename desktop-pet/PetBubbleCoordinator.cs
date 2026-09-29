@@ -384,13 +384,15 @@ namespace PennyPet
 
         private void BubbleMessageClosed(PetMessageKind kind)
         {
-            _reminderRuntime.MessageClosed(kind);
+            if (_reminderRuntime != null)
+                _reminderRuntime.MessageClosed(kind);
         }
 
         private void RestoreAmbientBubble()
         {
             if (_interaction.PointerDown || _exiting || IsDisposed) return;
-            if (_reminderRuntime.RefreshPreAlert(DateTime.UtcNow)) return;
+            if (_reminderRuntime != null &&
+                _reminderRuntime.RefreshPreAlert(DateTime.UtcNow)) return;
             if (!PetHoverStabilityRules.ShouldSuppressHover(
                 _interaction.StableMouseInside, _menu.Visible, _interaction.PointerDown,
                 _settings.SilentMode, _interaction.HoverSuppressed))

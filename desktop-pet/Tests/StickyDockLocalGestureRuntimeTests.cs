@@ -433,6 +433,156 @@ namespace PennyPet.Tests
             Assert.IsFalse(runtime.IsActive);
         }
 
+        [TestMethod]
+        public void HeaderDrag_AllMembersAndDpis_StayAttachedToExactNativeEdges()
+        {
+            foreach (int baselineDpi in new[] { 96, 120, 144, 168, 192 })
+            foreach (int dpi in new[] { 96, 120, 144, 168, 192 })
+            foreach (int sourceIndex in new[] { 0, 1, 2 })
+            {
+                var surface = Surface("one", "display", "mdp:one",
+                    new PhysicalRect(-2560, -300, 2560, 2000));
+                var initial = Surface("initial", "display-initial", "mdp:initial",
+                    new PhysicalRect(0, 0, 2560, 2000), false);
+                var topology = new DisplayTopologySnapshot(1, new[] { initial, surface });
+                var facts = new Dictionary<string, WindowFacts>();
+                string[] ids = { "A", "B", "C" };
+                int width = 320 * dpi / 96;
+                int height = 300 * dpi / 96;
+                for (int i = 0; i < ids.Length; i++)
+                    facts[ids[i]] = Facts(ids[i], initial, baselineDpi,
+                        new PhysicalRect(100, 100 + 300 * baselineDpi / 96 * i,
+                            320 * baselineDpi / 96, 300 * baselineDpi / 96), 1);
+                var runtime = Runtime(facts, (targets, source) =>
+                {
+                    foreach (var target in targets)
+                        facts[target.NoteId] = Facts(target.NoteId, surface, dpi,
+                            target.PhysicalBounds, 1);
+                });
+                runtime.SetScene(Scene(1, ids));
+                runtime.SetTopology(topology);
+                Assert.AreNotEqual(0, runtime.TryBegin(
+                    StickyDockLocalGestureKind.HeaderDrag, ids[sourceIndex]));
+                // An arbitrary physical pointer coordinate and odd physical
+                // size must survive conversion through fractional DIP scales.
+                var native = new PhysicalRect(-2303, 37, width + 1, height + 1);
+                facts[ids[sourceIndex]] = Facts(ids[sourceIndex], surface, dpi, native, 1);
+                Assert.IsTrue(runtime.MoveHeader(facts[ids[sourceIndex]]));
+                Assert.AreEqual(native, facts[ids[sourceIndex]].PhysicalBounds);
+                for (int i = 0; i < ids.Length; i++)
+                {
+                    var current = facts[ids[i]].PhysicalBounds;
+                    Assert.AreEqual(native.Left, current.Left, "DPI " + dpi);
+                    Assert.AreEqual(native.Width, current.Width, "DPI " + dpi);
+                    if (i > 0) Assert.AreEqual(facts[ids[i - 1]].PhysicalBounds.Bottom,
+                        current.Top, "No gap or overlap at DPI " + dpi + " source " + sourceIndex);
+                }
+                Assert.AreEqual(StickyDockCommitIntent.Move, runtime.Complete().Intent);
+            }
+        }
+
+        [TestMethod]
+        public void HeaderDrag_ChildMergesWholeStackAndReflowsTargetTail()
+        {
+            foreach (int dpi in new[] { 96, 120, 144, 168, 192 })
+            {
+                var surface = Surface("one", "display", "mdp:one",
+                    new PhysicalRect(0, 0, 3000, 3000));
+                int height = 300 * dpi / 96;
+                int width = 320 * dpi / 96;
+                var facts = new Dictionary<string, WindowFacts>
+                {
+                    ["T"] = Facts("T", surface, dpi, new PhysicalRect(100, 100, width, height), 1),
+                    ["U"] = Facts("U", surface, dpi, new PhysicalRect(100, 100 + height, width, height), 1),
+                    ["A"] = Facts("A", surface, dpi, new PhysicalRect(110, 105 + height, width - 10, height), 1),
+                    ["B"] = Facts("B", surface, dpi, new PhysicalRect(110, 105 + 2 * height, width - 10, height), 1)
+                };
+                var runtime = Runtime(facts, (targets, source) =>
+                {
+                    foreach (var target in targets)
+                        facts[target.NoteId] = Facts(target.NoteId, surface, dpi, target.PhysicalBounds, 1);
+                });
+                runtime.SetScene(new StickyDockSceneProjection(new[] {
+                    new StickyDockSceneMember("T", "target", 0, true),
+                    new StickyDockSceneMember("U", "target", 1, true),
+                    new StickyDockSceneMember("A", "source", 0, true),
+                    new StickyDockSceneMember("B", "source", 1, true)
+                }, 1));
+                runtime.SetTopology(new DisplayTopologySnapshot(1, new[] { surface }));
+                Assert.AreNotEqual(0, runtime.TryBegin(StickyDockLocalGestureKind.HeaderDrag, "B"));
+                // Release the actual child near the target seam. The root is
+                // intentionally far away so this catches regressions that
+                // accidentally use the root's edge for snap detection.
+                facts["B"] = Facts("B", surface, dpi,
+                    new PhysicalRect(110, 100 + height + 32,
+                        width - 10, height), 1);
+                Assert.IsTrue(runtime.MoveHeader(facts["B"]));
+                Assert.AreEqual("T", runtime.LastSnapTargetNoteId);
+                var snap = runtime.BuildHeaderSnapTargets();
+                Assert.AreEqual(3, snap.Count);
+                string[] order = { "A", "B", "U" };
+                for (int i = 0; i < order.Length; i++)
+                {
+                    Assert.AreEqual(order[i], snap[i].NoteId);
+                    AssertRect(snap[i].PhysicalBounds, 100, 100 + height * (i + 1), width, height);
+                }
+                Assert.AreEqual(StickyDockCommitIntent.MergeAfter, runtime.Complete().Intent);
+            }
+        }
+
+        [TestMethod]
+        public void HeaderDrag_ChildUsesDraggedEdgeForSnapAtHighDpi()
+        {
+            foreach (int dpi in new[] { 96, 120, 144, 168, 192 })
+            {
+                var surface = Surface("one", "display", "mdp:one",
+                    new PhysicalRect(0, 0, 4000, 4000));
+                int height = 300 * dpi / 96;
+                int width = 320 * dpi / 96;
+                var facts = new Dictionary<string, WindowFacts>
+                {
+                    ["T"] = Facts("T", surface, dpi,
+                        new PhysicalRect(100, 100, width, height), 1),
+                    ["A"] = Facts("A", surface, dpi,
+                        new PhysicalRect(100, 900, width, height), 1),
+                    ["B"] = Facts("B", surface, dpi,
+                        new PhysicalRect(100, 1200, width, height), 1)
+                };
+                var runtime = Runtime(facts, (targets, source) =>
+                {
+                    foreach (var target in targets)
+                        facts[target.NoteId] = Facts(target.NoteId,
+                            surface, dpi, target.PhysicalBounds, 1);
+                });
+                runtime.SetScene(new StickyDockSceneProjection(new[] {
+                    new StickyDockSceneMember("T", "target", 0, true),
+                    new StickyDockSceneMember("A", "source", 0, true),
+                    new StickyDockSceneMember("B", "source", 1, true)
+                }, 1));
+                runtime.SetTopology(new DisplayTopologySnapshot(1,
+                    new[] { surface }));
+                Assert.AreNotEqual(0, runtime.TryBegin(
+                    StickyDockLocalGestureKind.HeaderDrag, "B"));
+
+                // The child is released 32 physical pixels below the target.
+                // The source group root is still far above it at this point.
+                var dragged = Facts("B", surface, dpi,
+                    new PhysicalRect(100, 100 + height + 32,
+                        width, height), 1);
+                Assert.IsTrue(runtime.MoveHeader(dragged));
+                Assert.AreEqual("T", runtime.LastSnapTargetNoteId,
+                    "DPI " + dpi);
+                var snap = runtime.BuildHeaderSnapTargets();
+                Assert.AreEqual(2, snap.Count);
+                AssertRect(snap[0].PhysicalBounds, 100, 100 + height,
+                    width, height);
+                AssertRect(snap[1].PhysicalBounds, 100, 100 + 2 * height,
+                    width, height);
+                Assert.AreEqual(StickyDockCommitIntent.MergeAfter,
+                    runtime.Complete().Intent);
+            }
+        }
+
         private static StickyDockLocalGestureRuntime Runtime(
             IDictionary<string, WindowFacts> facts,
             Action<IReadOnlyList<DockWindowTarget>, string> apply)

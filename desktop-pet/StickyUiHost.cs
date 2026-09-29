@@ -232,7 +232,7 @@ namespace PennyPet
             for (int index = 0; index < sessions.Count; index++)
             {
                 WindowFacts facts =
-                    sessions[index].CaptureVisibleFactsForChrome();
+                    sessions[index].CapturePlacementFacts();
                 if (facts == null ||
                     facts.TopologyGeneration != topologyGeneration ||
                     !facts.PhysicalBounds.Equals(expected[index]))
@@ -1234,8 +1234,10 @@ namespace PennyPet
                     IReadOnlyList<DockWindowTarget> snap =
                         _localDockGestures
                             .BuildHeaderSnapTargets();
-                    if (finalApplied && snap.Count > 0)
-                        ApplyLocalDockCorrections(snap);
+                    if (finalApplied && !String.IsNullOrEmpty(
+                        _localDockGestures.LastSnapTargetNoteId))
+                        finalApplied = snap.Count > 0 &&
+                            ApplyLocalDockCorrections(snap);
                 }
                 else if (kind ==
                     StickyDockLocalGestureKind.DividerResize &&
@@ -1404,14 +1406,14 @@ namespace PennyPet
             return StickyUiCommandResult.Handled();
         }
 
-        private void ApplyLocalDockCorrections(
+        private bool ApplyLocalDockCorrections(
             IReadOnlyList<DockWindowTarget> targets)
         {
             DisplayTopologySnapshot topology;
             lock (_configurationGate)
                 topology = _currentTopology;
             if (topology == null || targets == null)
-                return;
+                return false;
 
             List<StickyWindowSession> sessions =
                 new List<StickyWindowSession>();
@@ -1421,10 +1423,11 @@ namespace PennyPet
                 if (target == null ||
                     !TryGetSession(target.NoteId,
                         out session))
-                    continue;
+                    return false;
                 sessions.Add(session);
-                session.SetEventsSuppressed(true);
             }
+            foreach (StickyWindowSession session in sessions)
+                session.SetEventsSuppressed(true);
             try
             {
                 foreach (DockWindowTarget target in targets)
@@ -1450,6 +1453,11 @@ namespace PennyPet
                     session.SetEventsSuppressed(false);
                 ApplySideTabZOrder();
             }
+            var expected = new List<PhysicalRect>(targets.Count);
+            foreach (DockWindowTarget target in targets)
+                expected.Add(target.PhysicalBounds);
+            return LocalDockPlacementMismatches(sessions, expected,
+                topology.Generation).Count == 0;
         }
 
         private static bool ContainsGestureId(
@@ -1471,6 +1479,17 @@ namespace PennyPet
             if (TryHandleLocalDockEvent(session, value))
             {
                 ApplySideTabZOrder();
+                return;
+            }
+            if ((value.Kind == StickyUiEventKind.SnapshotChanged ||
+                 value.Kind == StickyUiEventKind.BoundsChanged) &&
+                _localDockGestures.AffectsStructure(new[] { value.NoteId }))
+            {
+                // Autosave/content callbacks may run inside DragMove's nested
+                // message loop. Deliver content, but let the completed Dock
+                // transaction be the sole publisher of gesture geometry.
+                PostEvent(StickyUiEvent.FromSnapshot(value.Kind,
+                    value.Snapshot, value.Sequence));
                 return;
             }
             if (value.Kind == StickyUiEventKind.Closed)

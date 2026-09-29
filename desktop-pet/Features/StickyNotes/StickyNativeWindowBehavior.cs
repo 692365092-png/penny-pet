@@ -24,10 +24,12 @@ namespace PennyPet
                 return;
             }
             base.WindowState = W.WindowState.Normal;
-            _headerDragStartBounds = Bounds;
-            W.Point pointer = e.GetPosition(this);
+            _headerDragStartBounds = PhysicalBounds;
+            W.Point pointer = PointToScreen(e.GetPosition(this));
             _headerDragPointerOffset = new System.Drawing.Point(
-                (int)Math.Round(pointer.X), (int)Math.Round(pointer.Y));
+                (int)Math.Round(pointer.X) - _headerDragStartBounds.Left,
+                (int)Math.Round(pointer.Y) - _headerDragStartBounds.Top);
+            _lastResizeHitTest = 0;
             _headerDragInProgress = true;
             Raise(HeaderDragStarted);
             try
@@ -56,11 +58,11 @@ namespace PennyPet
         {
             if (_recoveringSystemGeometry || _headerDragStartBounds.IsEmpty)
                 return;
-            Rectangle current = Bounds;
+            Rectangle current = PhysicalBounds;
+            // A per-monitor DPI change legitimately changes physical size.
+            // Only undo a system maximize, never the normal DPI handoff.
             bool systemChangedGeometry =
-                base.WindowState != W.WindowState.Normal ||
-                current.Width != _headerDragStartBounds.Width ||
-                current.Height != _headerDragStartBounds.Height;
+                base.WindowState != W.WindowState.Normal;
             if (!systemChangedGeometry) return;
             System.Drawing.Point cursor;
             if (!GetCursorPos(out cursor))
@@ -74,10 +76,8 @@ namespace PennyPet
             try
             {
                 base.WindowState = W.WindowState.Normal;
-                base.Left = recovered.Left;
-                base.Top = recovered.Top;
-                base.Width = recovered.Width;
-                base.Height = recovered.Height;
+                SetWindowPos(Handle, IntPtr.Zero, recovered.Left, recovered.Top,
+                    recovered.Width, recovered.Height, SwpNoZOrder | SwpNoActivate);
             }
             finally { _recoveringSystemGeometry = false; }
         }
@@ -292,7 +292,7 @@ namespace PennyPet
                         CurrentPhysicalHeight());
                 }
                 else if (horizontalResize) Raise(DockHorizontalResizeCompleted);
-                else Raise(UserResizeCompleted);
+                else if (!_headerDragInProgress) Raise(UserResizeCompleted);
                 return IntPtr.Zero;
             }
             if (message == WmSizing && _dockSplitBottom &&

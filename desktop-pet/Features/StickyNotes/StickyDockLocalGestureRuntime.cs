@@ -201,6 +201,12 @@ namespace PennyPet
     // R23 will attach its completion object to the commit/ack protocol.
     internal sealed class StickyDockLocalGestureRuntime
     {
+        // The pointer is released in physical pixels, while WPF reports the
+        // drag in DIP. A 20px physical window made a normal mouse release
+        // miss at 150%/200% scaling, so keep a DPI-independent, human-sized
+        // magnetic band for the local gesture and leave the pure core rule
+        // unchanged for callers that need exact geometry.
+        private const int HeaderSnapThresholdPhysicalPixels = 48;
         private readonly Func<string, WindowFacts> _captureFacts;
         private readonly Func<IReadOnlyList<DockWindowTarget>, string, bool>
             _applyFollowers;
@@ -396,8 +402,9 @@ namespace PennyPet
                     ApplyFollowers(
                         gesture.BaselineTargets(),
                         gesture.SourceNoteId);
-                LastSnapTargetNoteId =
-                    FindSnapTarget(sourceFacts, gesture);
+                // A hold-to-detach gesture finishes the split first. Do not
+                // visually reattach to a parent while committing Detach.
+                LastSnapTargetNoteId = String.Empty;
                 return true;
             }
 
@@ -435,6 +442,10 @@ namespace PennyPet
         private string FindSnapTarget(WindowFacts sourceFacts,
             LocalGesture gesture)
         {
+            // The native source is the window under the pointer. Its actual
+            // edge is the only reliable release coordinate: a child can be
+            // dragged onto a target while the group's root remains hundreds
+            // of pixels away until the final reflow.
             HashSet<string> active = new HashSet<string>(
                 gesture.ActiveMemberIds,
                 StringComparer.OrdinalIgnoreCase);
@@ -455,7 +466,7 @@ namespace PennyPet
             return StickyDockOperations.FindSnapTarget(
                 new DockWindowTarget(sourceFacts.WindowId,
                     sourceFacts.PhysicalBounds),
-                candidates, 20) ?? String.Empty;
+                candidates, HeaderSnapThresholdPhysicalPixels) ?? String.Empty;
         }
 
         internal IReadOnlyList<DockWindowTarget>
@@ -482,53 +493,42 @@ namespace PennyPet
 
             PhysicalRect targetRect =
                 target.PhysicalBounds;
-            PhysicalRect sourceRect =
-                source.PhysicalBounds;
-            long leftDx =
-                (long)targetRect.Left -
-                sourceRect.Left;
-            long rightDx =
-                (long)targetRect.Right -
-                sourceRect.Right;
-            long centerDx =
-                ((long)targetRect.Left +
-                    targetRect.Right -
-                    sourceRect.Left -
-                    sourceRect.Right) / 2;
-            long dx = Math.Abs(leftDx) <=
-                    Math.Abs(rightDx)
-                ? leftDx : rightDx;
-            if (Math.Abs(centerDx) < Math.Abs(dx))
-                dx = centerDx;
-            long dy =
-                (long)targetRect.Bottom -
-                sourceRect.Top;
-
+            // Reflow the insertion and the target's remaining tail together.
+            // Translating only the incoming group leaves existing children
+            // overlapping and causes the next group drag to jump positions.
+            var order = new List<string>(gesture.ActiveMemberIds);
+            bool afterParent = false;
+            foreach (string id in _scene.VisibleGroup(target.WindowId))
+            {
+                if (afterParent) order.Add(id);
+                if (String.Equals(id, target.WindowId,
+                    StringComparison.OrdinalIgnoreCase)) afterParent = true;
+            }
+            long top = targetRect.Bottom;
             List<DockWindowTarget> targets =
                 new List<DockWindowTarget>();
-            foreach (string noteId in
-                gesture.ActiveMemberIds)
+            foreach (string noteId in order)
             {
                 WindowFacts facts =
                     _captureFacts(noteId);
                 if (facts == null ||
-                    !facts.PhysicalBounds.IsValid)
+                    !facts.PhysicalBounds.IsValid || facts.Dpi <= 0 ||
+                    facts.TopologyGeneration != target.TopologyGeneration)
                     return Array.AsReadOnly(
                         new DockWindowTarget[0]);
                 PhysicalRect rect =
                     facts.PhysicalBounds;
-                long left = (long)rect.Left + dx;
-                long top = (long)rect.Top + dy;
-                if (left < Int32.MinValue ||
-                    left > Int32.MaxValue ||
-                    top < Int32.MinValue ||
-                    top > Int32.MaxValue)
+                int height = checked((int)Math.Round(
+                    rect.Height * (double)target.Dpi / facts.Dpi,
+                    MidpointRounding.AwayFromZero));
+                if (top < Int32.MinValue || top + height > Int32.MaxValue)
                     return Array.AsReadOnly(
                         new DockWindowTarget[0]);
                 targets.Add(new DockWindowTarget(
                     noteId, new PhysicalRect(
-                        (int)left, (int)top,
-                        rect.Width, rect.Height)));
+                        targetRect.Left, (int)top,
+                        targetRect.Width, height)));
+                top += height;
             }
             return targets.AsReadOnly();
         }
