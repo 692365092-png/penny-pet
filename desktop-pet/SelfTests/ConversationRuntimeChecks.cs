@@ -30,12 +30,14 @@ namespace PennyPet
                 {
                     Task<ConversationAnimation> first = p.Poke();
                     Pc2Assert(!first.IsCompleted, "weather wait is asynchronous");
-                    p.Poke().GetAwaiter().GetResult();
+                    Pc2Assert(p.Poke().GetAwaiter().GetResult() == ConversationAnimation.None,
+                        "in-flight repeat does not start Notification");
                     Pc2Assert(p.Loads.Count == 1 && p.Settings.DailyLedgerDaypartsMask == 0 &&
                         String.IsNullOrEmpty(p.Settings.LastDailyBriefingDate),
                         "an in-flight repeat does not consume a daily slot");
                     p.Loads[0].SetResult(null);
-                    first.GetAwaiter().GetResult();
+                    Pc2Assert(first.GetAwaiter().GetResult() == ConversationAnimation.Notification,
+                        "accepted opening returns its animation only after presentation");
                     Pc2Assert(p.Accepted == 1 && p.Settings.LastDailyBriefingDate == "20350101" &&
                         p.Settings.DailyLedgerDaypartsMask == PetDaypartRule.ConsumedMask(DayPart.Morning),
                         "accepted opening records its original daypart exactly once");
@@ -106,6 +108,20 @@ namespace PennyPet
                     pending.GetAwaiter().GetResult();
                     Pc2Assert(p.Accepted == 0 && p.Poke().GetAwaiter().GetResult() == ConversationAnimation.None,
                         "stopped conversation never publishes late or future requests");
+                }
+                foreach (bool accept in new[] { false, true })
+                using (ConversationProbe p = new ConversationProbe())
+                {
+                    p.Now = DateTimeOffset.Now;
+                    p.Accept = accept;
+                    var interaction = new InteractionRuntime(new InteractionTestArt(), DateTime.UtcNow);
+                    Task pending = interaction.PokeAsync(p.Runtime, () => false, () => false);
+                    Pc2Assert(!pending.IsCompleted && interaction.InteractionAnimationKind ==
+                        PetInteractionAnimationKind.None, "weather wait does not pre-start an animation");
+                    p.Loads[0].SetResult(null);
+                    pending.GetAwaiter().GetResult();
+                    Pc2Assert((interaction.InteractionAnimationKind == PetInteractionAnimationKind.Notification) == accept,
+                        "Notification follows presentation acceptance, never a rejected opening");
                 }
                 return true;
             }).GetAwaiter().GetResult();

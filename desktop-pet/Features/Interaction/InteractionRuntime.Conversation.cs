@@ -24,8 +24,6 @@ namespace PennyPet
 
             int generation = _pokeGeneration;
             DateTimeOffset localNow = DateTimeOffset.Now;
-            if (conversation.IsOpeningEligible(localNow) && !protectedMessage())
-                StartPoke(NotificationRow, PetInteractionAnimationKind.Notification, nowUtc);
             ConversationAnimation animation = await conversation.HandlePetPokedAsync(localNow);
             if (_stopped || _exiting || generation != _pokeGeneration || protectedMessage()) return;
             // Publication can await weather. Schedule from acceptance time,

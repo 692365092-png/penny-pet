@@ -36,7 +36,7 @@ namespace PennyPet
         // true means this poke was handled/claimed by DailyContent,
         // including an already in-flight daily attempt.
         internal async Task<bool> HandlePetPokedAsync(
-            DateTimeOffset localNow)
+            DateTimeOffset localNow, Action presentationAccepted = null)
         {
             DailyContentPreferencesSnapshot preferences = _preferences();
             if (!preferences.DailyContentEnabled ||
@@ -99,6 +99,7 @@ namespace PennyPet
                 if (generation != _generation) return true;
                 if (!_showDailyGreeting(preferences, localNow, text)) return false;
                 _recordBriefingDate(localNow);
+                presentationAccepted?.Invoke();
                 return true;
             }
             finally

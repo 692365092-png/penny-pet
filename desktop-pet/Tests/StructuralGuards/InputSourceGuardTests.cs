@@ -104,10 +104,10 @@ namespace PennyPet.Tests
             Assert.IsTrue(form.Contains(
                     "private readonly ConversationRuntime") &&
                 poke.Contains("PickRandomManualAnimationRow(_random, Row)") &&
-                poke.Contains("IsOpeningEligible") &&
+                runtime.Contains("IsOpeningEligible") &&
                 poke.Contains("StartPoke(NotificationRow,") &&
                 poke.Contains(".HandlePetPokedAsync") &&
-                runtime.Contains("_daily.HandlePetPokedAsync(now)") &&
+                runtime.Contains("_daily.HandlePetPokedAsync(now, () => accepted = true)") &&
                 runtime.Contains("_daypart.HandlePetPoked(now)") &&
                 runtime.Contains("_smallTalk.HandlePetPoked(now.UtcDateTime)") &&
                 !poke.Contains("PersistDailyLedger") &&
@@ -270,7 +270,7 @@ namespace PennyPet.Tests
                 "Forecast request must keep the reviewed eight-variable shape.");
             string poke = ReadSource("Features/Interaction/InteractionRuntime.Conversation.cs");
             Assert.IsTrue(poke.IndexOf("StartPoke(NotificationRow,",
-                    StringComparison.Ordinal) <
+                    StringComparison.Ordinal) >
                 poke.IndexOf(".HandlePetPokedAsync", StringComparison.Ordinal) &&
                 coordinator.Contains("await _weatherForecast") &&
                 coordinator.Contains("WeatherMeaningRules.Select") &&

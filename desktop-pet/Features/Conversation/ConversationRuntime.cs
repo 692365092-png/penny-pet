@@ -55,7 +55,9 @@ namespace PennyPet
             CurrentLedger();
             if (_daily.IsOpeningEligible(now))
             {
-                if (await _daily.HandlePetPokedAsync(now)) return ConversationAnimation.None;
+                bool accepted = false;
+                if (await _daily.HandlePetPokedAsync(now, () => accepted = true))
+                    return accepted ? ConversationAnimation.Notification : ConversationAnimation.None;
                 if (!_active || !SameDaypart(now, _localNow())) return ConversationAnimation.None;
             }
             if (_daypart.HandlePetPoked(now))
