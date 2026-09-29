@@ -243,6 +243,7 @@ namespace PennyPet
             }
 
             RunPc2PersistencePause(root, evidence);
+            RunDockCommitMembershipChecks(root, evidence);
             RunPc2FinalDockFailure(root, evidence);
             RunStartupDockRestoreChecks(root, evidence);
             RunNativeDockDragChecks(root, evidence);

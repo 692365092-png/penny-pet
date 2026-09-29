@@ -1008,11 +1008,11 @@ namespace PennyPet
                     new DockCommitCandidate(
                         update, preference));
             }
-            if (actual.Count == 0 ||
+            if (!actual.SetEquals(expected) || actual.Count == 0 ||
                 !actual.Contains(commit.SourceNoteId))
             {
                 TraceDockCommitRejected(
-                    "local commit source missing");
+                    "local commit member set incomplete");
                 return false;
             }
 

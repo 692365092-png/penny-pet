@@ -278,7 +278,7 @@ namespace PennyPet.Tests
                 !poke.Contains(".Wait(") && !poke.Contains(".Result") &&
                 !coordinator.Contains(".Wait(") &&
                 !coordinator.Contains(".Result"),
-                "Poke animation must start before the asynchronous weather path.");
+                "Notification must start only after presentation acceptance.");
             Assert.IsTrue(preferences.Contains(
                     "sealed class DailyContentPreferencesSnapshot") &&
                 preferences.Contains("WeatherLocation WeatherLocation") &&

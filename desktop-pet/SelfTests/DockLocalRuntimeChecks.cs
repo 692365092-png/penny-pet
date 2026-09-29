@@ -79,6 +79,28 @@ namespace PennyPet
                         return false;
             return applyCount == 200 && runtime.Complete() != null;
         }
+        private static void RunDockCommitMembershipChecks(string root, List<string> evidence)
+        {
+            foreach (StickyDockCommitIntent intent in new[] { StickyDockCommitIntent.Move,
+                StickyDockCommitIntent.HorizontalResize, StickyDockCommitIntent.DividerResize,
+                StickyDockCommitIntent.Detach, StickyDockCommitIntent.MergeAfter })
+            using (var scene = new Pc2Scene(root, "commit-members-" + intent))
+            {
+                var versions = new Dictionary<string, long>();
+                foreach (var note in scene.Notes) versions.Add(note.Id, StickyDockCommitVersion.Compute(note));
+                string before = String.Join("\n", scene.Notes.ConvertAll(StickyNoteCodec.SerializeLine));
+                long saves = scene.Saves;
+                var partial = new StickyDockGestureCommit(1, 0, intent,
+                    scene.Ids[1], scene.Ids[0], scene.Topology.Generation, versions,
+                    new[] { scene.Member(1) });
+                bool accepted = (bool)Pc2Call(scene.Workspace.Dock, "TryApplyLocalDockGestureCommit", partial);
+                Pc2Assert(!accepted && saves == scene.Saves && before ==
+                    String.Join("\n", scene.Notes.ConvertAll(StickyNoteCodec.SerializeLine)),
+                    "partial " + intent + " commit rejects before any relation, geometry or content mutation");
+            }
+            evidence.Add("all five Dock intents reject partial member sets atomically");
+        }
+
         private static void RunPc2FinalDockFailure(string root,
             List<string> evidence)
         {
