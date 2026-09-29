@@ -308,7 +308,6 @@ namespace PennyPet
             IsSchedule = source.IsSchedule;
             CreatedUtcTicks = source.CreatedUtcTicks;
             ModifiedUtcTicks = source.ModifiedUtcTicks;
-            ReminderUtcTicks = source.ReminderUtcTicks;
             List<StickyTodoUiSnapshot> todos =
                 new List<StickyTodoUiSnapshot>();
             foreach (StickyTodoItem item in source.TodoItems)
@@ -338,7 +337,6 @@ namespace PennyPet
         internal bool IsSchedule { get; private set; }
         internal long CreatedUtcTicks { get; private set; }
         internal long ModifiedUtcTicks { get; private set; }
-        internal long ReminderUtcTicks { get; private set; }
         internal IReadOnlyList<StickyTodoUiSnapshot> TodoItems { get; private set; }
         internal IReadOnlyList<StickyScheduleUiSnapshot> ScheduleItems { get; private set; }
 
@@ -368,7 +366,7 @@ namespace PennyPet
                 BackgroundOpacityPercent != source.BackgroundOpacityPercent ||
                 TextColorArgb != source.TextColorArgb || IsTodoList != source.IsTodoList ||
                 IsSchedule != source.IsSchedule || CreatedUtcTicks != source.CreatedUtcTicks ||
-                ModifiedUtcTicks != source.ModifiedUtcTicks || ReminderUtcTicks != source.ReminderUtcTicks) return false;
+                ModifiedUtcTicks != source.ModifiedUtcTicks) return false;
             int index = 0;
             foreach (StickyTodoItem item in source.TodoItems)
             {
@@ -401,8 +399,9 @@ namespace PennyPet
             return copy;
         }
 
-        // Content-only apply: never touches identity, visibility, topmost or
-        // any geometry field. Geometry must flow through WindowFacts instead.
+        // Content-only apply: never touches identity, visibility, topmost,
+        // geometry or the Pet-owned reminder projection. Geometry arrives as
+        // WindowFacts; reminder banners use the separate reminder commands.
         internal void ApplyContentTo(StickyNoteData target)
         {
             if (target == null) throw new ArgumentNullException(nameof(target));
@@ -424,7 +423,6 @@ namespace PennyPet
             target.IsSchedule = IsSchedule;
             target.CreatedUtcTicks = CreatedUtcTicks;
             target.ModifiedUtcTicks = ModifiedUtcTicks;
-            target.ReminderUtcTicks = ReminderUtcTicks;
             target.TodoItems.Clear();
             if (TodoItems != null)
                 foreach (StickyTodoUiSnapshot item in TodoItems)

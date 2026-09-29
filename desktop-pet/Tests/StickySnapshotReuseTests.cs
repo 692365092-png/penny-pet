@@ -97,18 +97,26 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void AppearancePreviewAndReminderChangesAreCapturedBeforeSave()
+        public void AppearancePreviewIsCapturedBeforeSave()
         {
             var note = Note();
             var before = StickyNoteUiSnapshot.Capture(note);
             note.BackgroundOpacityPercent = 25;
             note.FontSizeTwips = 500;
-            note.ReminderUtcTicks = 123;
             var after = StickyNoteUiSnapshot.Capture(note, before);
             Assert.AreNotSame(before, after);
             Assert.AreEqual(25, after.BackgroundOpacityPercent);
             Assert.AreEqual(500, after.FontSizeTwips);
-            Assert.AreEqual(123L, after.ReminderUtcTicks);
+        }
+
+        [TestMethod]
+        public void ReminderProjectionDoesNotRebuildOrEnterEditorContent()
+        {
+            var note = Note();
+            var before = StickyNoteUiSnapshot.Capture(note);
+            note.ReminderUtcTicks = new DateTime(2030, 1, 1).Ticks;
+            Assert.AreSame(before, StickyNoteUiSnapshot.Capture(note, before));
+            Assert.AreEqual(0L, StickyNoteUiSnapshot.Capture(note).CreateWorkingCopy().ReminderUtcTicks);
         }
 
         [TestMethod]

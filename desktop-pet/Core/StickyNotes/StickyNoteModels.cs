@@ -184,6 +184,8 @@ namespace PennyPet
         public int TabOrder = -1;
         public long CreatedUtcTicks = DateTime.UtcNow.Ticks;
         public long ModifiedUtcTicks = DateTime.UtcNow.Ticks;
+        // Pet-owned schedule projection for Manager and file compatibility.
+        // Sticky editor content snapshots must never write it back.
         public long ReminderUtcTicks;
 
         public DateTime ModifiedUtc
