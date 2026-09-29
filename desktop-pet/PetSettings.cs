@@ -97,14 +97,17 @@ namespace PennyPet
 
         internal static PetSettings LoadFromFile(string filePath)
         {
-            if (String.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+            if (String.IsNullOrWhiteSpace(filePath))
                 return new PetSettings();
             PetSettings settings;
             Exception primaryError;
-            if (TryLoadSingleFile(filePath, out settings, out primaryError))
-                return settings;
-            ApplicationDiagnostics.ReportNonFatal("settings-load-primary",
-                primaryError);
+            bool primaryExists = File.Exists(filePath);
+            if (primaryExists)
+            {
+                if (TryLoadSingleFile(filePath, out settings, out primaryError))
+                    return settings;
+                ApplicationDiagnostics.ReportNonFatal("settings-load-primary", primaryError);
+            }
 
             string backupPath = filePath + ".bak";
             Exception backupError = null;
@@ -113,7 +116,7 @@ namespace PennyPet
             {
                 // The recovered values are safe to use. Preserve the unreadable
                 // primary before the next atomic save replaces it.
-                settings._unreadablePrimaryPath = Path.GetFullPath(filePath);
+                if (primaryExists) settings._unreadablePrimaryPath = Path.GetFullPath(filePath);
                 return settings;
             }
             if (File.Exists(backupPath))
@@ -121,7 +124,7 @@ namespace PennyPet
                     backupError);
 
             settings = new PetSettings();
-            settings._unreadablePrimaryPath = Path.GetFullPath(filePath);
+            if (primaryExists) settings._unreadablePrimaryPath = Path.GetFullPath(filePath);
             if (File.Exists(backupPath))
                 settings._unreadableBackupPath = Path.GetFullPath(backupPath);
             return settings;

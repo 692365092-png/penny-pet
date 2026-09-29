@@ -160,6 +160,23 @@ namespace PennyPet.Tests
             finally { Directory.Delete(directory, true); }
         }
 
+        [TestMethod]
+        public void OrphanBackupRestoresSettingsWhenPrimaryIsMissing()
+        {
+            string directory = Path.Combine(Path.GetTempPath(), "penny-orphan-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(directory);
+            string path = Path.Combine(directory, "settings.ini");
+            try
+            {
+                File.WriteAllLines(path + ".bak", PetSettingsCodec.Serialize(new PetSettingsData { ScalePercent = 150 }));
+                PetSettings recovered = PetSettings.LoadFromFile(path);
+                Assert.AreEqual(150, recovered.ScalePercent);
+                Assert.IsTrue(recovered.SaveToFile(path).Succeeded);
+                Assert.AreEqual(150, PetSettings.LoadFromFile(path).ScalePercent);
+            }
+            finally { Directory.Delete(directory, true); }
+        }
+
         private sealed class QueuedContext : SynchronizationContext
         {
             private readonly ConcurrentQueue<Action> _posted = new ConcurrentQueue<Action>();
