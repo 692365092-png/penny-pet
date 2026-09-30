@@ -1,7 +1,8 @@
 param(
     [ValidateSet("anycpu", "x86", "x64")]
     [string]$TargetPlatform = "anycpu",
-    [string]$OutputFile = ""
+    [string]$OutputFile = "",
+    [string]$SmokeReportPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -114,6 +115,14 @@ try {
     Get-ChildItem -LiteralPath $BuiltOutputDir -File |
         Copy-Item -Destination $InputRoot -Force
 
+    # Use a separate process for each smoke check: reflection-only assembly
+    # loading otherwise reuses the raw assembly identity for the protected file.
+    $smokeScript = Join-Path $ProjectRoot "test-release.ps1"
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $smokeScript `
+        -Executable $RawExe -ExpectedVersion $PennyAssemblyVersion `
+        -ReportPath (Join-Path $BuildRoot "raw-release-smoke.json")
+    if ($LASTEXITCODE -ne 0) { throw "Unprotected input release smoke failed." }
+
     $escapedInput = [Security.SecurityElement]::Escape($InputRoot)
     $escapedOutput = [Security.SecurityElement]::Escape($ProtectedRoot)
     $confuserProject = @"
@@ -134,6 +143,7 @@ try {
 
     $confuserLog = Join-Path $BuildRoot "confuser.log"
     & $ConfuserCli -n $ProjectFile *>&1 | Tee-Object -FilePath $confuserLog
+    if ($LASTEXITCODE -ne 0) { throw "ConfuserEx failed with exit code $LASTEXITCODE." }
     if (-not (Test-Path -LiteralPath $ProtectedExe -PathType Leaf)) {
         throw "ConfuserEx did not create the protected executable."
     }
@@ -145,9 +155,8 @@ try {
             "ProductVersion.props ($PennyAssemblyVersion)."
     }
 
-    # The product EXE is a WinForms host and intentionally does not parse
-    # self-test arguments. Use the dedicated self-test host from the same
-    # build output so validation is finite and does not start the pet UI.
+    # These semantic checks run on the unprotected self-test host. The actual
+    # protected product is launched separately below; it has no test entry point.
     if (-not (Test-Path -LiteralPath $SelfTestExe -PathType Leaf)) {
         throw "The self-test host was not created: $SelfTestExe"
     }
@@ -158,7 +167,7 @@ try {
     Wait-ForFile $SelfTestFile 300
     $selfTest = Get-Content -LiteralPath $SelfTestFile -Raw | ConvertFrom-Json
     if (-not $selfTest.ok) {
-        throw "Protected executable self-test failed."
+        throw "Unprotected semantic self-test failed."
     }
     & $SelfTestExe ("--startup-probe=" + $StartupProbeFile)
     if ($LASTEXITCODE -ne 0) {
@@ -168,7 +177,20 @@ try {
     $startup = Get-Content -LiteralPath $StartupProbeFile -Raw |
         ConvertFrom-Json
     if (-not $startup.ok -or -not $startup.startup_cache_used) {
-        throw "Protected executable startup probe failed."
+        throw "Unprotected self-test host startup probe failed."
+    }
+
+    if ([String]::IsNullOrWhiteSpace($SmokeReportPath)) {
+        $SmokeReportPath = Join-Path $BuildRoot "protected-release-smoke.json"
+    }
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $smokeScript `
+        -Executable $ProtectedExe -ExpectedVersion $PennyAssemblyVersion `
+        -ReportPath $SmokeReportPath -Protected
+    if ($LASTEXITCODE -ne 0) { throw "Protected executable release smoke failed." }
+    $protectedSmoke = Get-Content -LiteralPath $SmokeReportPath -Raw | ConvertFrom-Json
+    if (-not $protectedSmoke.ok -or -not $protectedSmoke.protected -or
+        -not $protectedSmoke.window -or -not $protectedSmoke.exited) {
+        throw "Protected executable did not pass real window startup/shutdown validation."
     }
 
     $binaryText = [Text.Encoding]::Unicode.GetString(
@@ -196,7 +218,7 @@ try {
     Write-Host $FinalOutput
     Write-Host ("Size: " + [Math]::Round(
         (Get-Item -LiteralPath $FinalOutput).Length / 1MB, 2) + " MiB")
-    Write-Host ("Startup probe: " + $startup.elapsed_milliseconds + " ms")
+    Write-Host ("Protected responsive window: " + $protectedSmoke.firstResponsivePetMilliseconds + " ms")
     Write-Host ("SHA-256: " + $hash)
 }
 finally {

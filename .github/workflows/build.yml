@@ -99,6 +99,14 @@ jobs:
             -ExpectedVersion ($env:PENNY_PRODUCT_VERSION + ".0") `
             -ReportPath (Join-Path $env:RUNNER_TEMP "penny-release-smoke.json")
 
+      - name: Build and smoke test protected EXE
+        shell: powershell
+        run: |
+          & "$env:GITHUB_WORKSPACE\desktop-pet\build-protected.ps1" `
+            -TargetPlatform anycpu `
+            -OutputFile (Join-Path $env:RUNNER_TEMP "Penny-pet-Protected.exe") `
+            -SmokeReportPath (Join-Path $env:RUNNER_TEMP "penny-protected-smoke.json")
+
       - name: Record managed Dock baseline
         shell: powershell
         run: |
@@ -165,6 +173,7 @@ jobs:
           path: |
             ${{ runner.temp }}/penny-modular-selftest.json
             ${{ runner.temp }}/penny-release-smoke.json
+            ${{ runner.temp }}/penny-protected-smoke.json
             ${{ runner.temp }}/penny-dock-baseline.json
             ${{ runner.temp }}/penny-art-validation.json
             ${{ runner.temp }}/penny-render-cost.json

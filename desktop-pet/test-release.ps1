@@ -2,7 +2,8 @@
 param(
     [Parameter(Mandatory = $true)][string]$Executable,
     [Parameter(Mandatory = $true)][string]$ExpectedVersion,
-    [Parameter(Mandatory = $true)][string]$ReportPath
+    [Parameter(Mandatory = $true)][string]$ReportPath,
+    [switch]$Protected
 )
 
 $ErrorActionPreference = "Stop"
@@ -57,6 +58,8 @@ $ReportPath = [IO.Path]::GetFullPath($ReportPath)
 $stage = Join-Path ([IO.Path]::GetTempPath()) ("penny-release-smoke-" + [Guid]::NewGuid())
 $process = $null
 $result = [ordered]@{ ok = $false; version = $ExpectedVersion; resources = @(); window = $false; exited = $false }
+$result.protected = [bool]$Protected
+$result.executableSha256 = (Get-FileHash -LiteralPath $Executable -Algorithm SHA256).Hash
 $result.sourceRevision = $env:GITHUB_SHA
 $result.os = [Environment]::OSVersion.VersionString
 $result.processorCount = [Environment]::ProcessorCount
@@ -67,19 +70,23 @@ try {
         throw "Release version does not match ProductVersion.props."
     }
     $assembly = [Reflection.Assembly]::ReflectionOnlyLoadFrom($Executable)
-    foreach ($name in @("PennyPet.SelfTest", "PennyPet.SelfTestCommandRouter",
-        "PennyPet.ArtCommandRouter", "PennyPet.CommandLineArguments",
-        "PennyPet.PetArtWriter", "PennyPet.PetArtPackage+RawAnimationClip")) {
-        if ($null -ne $assembly.GetType($name, $false)) {
-            throw "Release contains a test/tool entry point: $name"
+    # Type names are intentionally changed by protection. The protected build
+    # runs these structure checks against its exact input before obfuscation.
+    if (-not $Protected) {
+        foreach ($name in @("PennyPet.SelfTest", "PennyPet.SelfTestCommandRouter",
+            "PennyPet.ArtCommandRouter", "PennyPet.CommandLineArguments",
+            "PennyPet.PetArtWriter", "PennyPet.PetArtPackage+RawAnimationClip")) {
+            if ($null -ne $assembly.GetType($name, $false)) {
+                throw "Release contains a test/tool entry point: $name"
+            }
         }
-    }
-    $artType = $assembly.GetType("PennyPet.PetArtPackage", $true)
-    foreach ($name in @("WriteValidationReport", "WriteReleasePack", "WriteStartupCache",
-        "BuildClipPalette", "WritePackedClip")) {
-        if ($null -ne $artType.GetMethod($name,
-            [Reflection.BindingFlags]"Static,Instance,Public,NonPublic")) {
-            throw "Release contains an art generator: $name"
+        $artType = $assembly.GetType("PennyPet.PetArtPackage", $true)
+        foreach ($name in @("WriteValidationReport", "WriteReleasePack", "WriteStartupCache",
+            "BuildClipPalette", "WritePackedClip")) {
+            if ($null -ne $artType.GetMethod($name,
+                [Reflection.BindingFlags]"Static,Instance,Public,NonPublic")) {
+                throw "Release contains an art generator: $name"
+            }
         }
     }
     if (@($assembly.GetManifestResourceNames() | Where-Object { $_ -like "PennyPet.Tests.*" }).Count -ne 0) {
