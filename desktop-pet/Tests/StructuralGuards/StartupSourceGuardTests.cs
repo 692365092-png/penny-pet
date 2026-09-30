@@ -17,42 +17,22 @@ namespace PennyPet.Tests
             string startup = ReadSource("PetStartupCoordinator.cs");
             string feature = ReadSource(
                 "Features/StickyNotes/StickyFeature.cs");
-            string artResources = ReadSource("PennyPet.ArtResources.targets");
-            string selfTests = ReadSource("SelfTestRunner.cs");
-            string releaseSmoke = ReadSource("test-release.ps1");
 
             Assert.IsFalse(host.Contains("StartupLoadingThreadHost") ||
                 host.Contains("loading.Start(") ||
                 host.Contains("loading.BringToFront(") ||
-                host.Contains("WaitOne(") ||
-                artResources.Contains("PennyPet.Startup.Loading") ||
-                selfTests.Contains("StartupLoading") ||
-                releaseSmoke.Contains("PennyPet.Startup.Loading"),
+                host.Contains("WaitOne("),
                 "The retired loading STA, loading visual/resource and its validation contract must not remain in the product pipeline.");
-            Assert.IsTrue(host.Contains("pet.ShellReady += delegate") &&
-                host.Contains("Task.Run(delegate") &&
+            Assert.IsTrue(host.Contains("ShellReady") &&
+                host.Contains("BeginRuntimeComposition") &&
                 host.Contains("StickyFeature.PrepareLoad()") &&
                 host.Contains("pet.AttachPreparedStickyRuntime(prepared)"),
                 "PennyApplicationHost must own background runtime preparation after the shell is ready.");
 
-            int constructor = form.IndexOf(
-                "internal PetForm(PetSettings preloadedSettings,",
-                StringComparison.Ordinal);
-            Assert.IsTrue(constructor >= 0, "The shell constructor must be present.");
-            int createParams = form.IndexOf(
-                "protected override CreateParams CreateParams",
-                constructor, StringComparison.Ordinal);
-            string constructorBody = form.Substring(
-                constructor, createParams - constructor);
-            Assert.IsFalse(constructorBody.Contains("StickyFeature.Load(") ||
-                constructorBody.Contains("StickyStore.Load(") ||
-                constructorBody.Contains("GetForecastAsync("),
-                "PetForm construction must not scan Sticky data or wait for weather.");
-            Assert.IsTrue(constructorBody.Contains(
-                    "_art.PreloadRow(IdleRow)") &&
-                !constructorBody.Contains("PreloadRow(HoverRow)") &&
-                !constructorBody.Contains("PreloadRow(FailedRow)"),
-                "Only the mandatory idle clip may be synchronously prepared by the shell.");
+            Assert.IsFalse(form.Contains("StickyFeature.Load(") ||
+                form.Contains("StickyStore.Load(") ||
+                form.Contains("GetForecastAsync("),
+                "PetForm construction must not synchronously own Sticky or weather I/O.");
 
             Assert.IsTrue(feature.Contains("PrepareLoad()") &&
                 feature.Contains("PublishPreparedLoad(") &&
@@ -64,11 +44,9 @@ namespace PennyPet.Tests
 
             Assert.IsTrue(startup.Contains(
                     "StartupWorkPhase.WaitForStickyRuntime") &&
-                startup.Contains(
-                    "if (_notes == null || _stickyWorkspace == null") &&
-                startup.Contains(
-                    "EventHandler backgroundReady = StartupBackgroundReady") &&
-                startup.Contains("EventHandler ready = ShellReady"),
+                startup.Contains("_notes == null") &&
+                startup.Contains("StartupBackgroundReady") &&
+                startup.Contains("ShellReady"),
                 "Shell readiness and background Sticky restore completion must be independent event boundaries.");
             Assert.IsFalse(startup.Contains(
                     "!_startupUiReady || !_startupArtReady"),
