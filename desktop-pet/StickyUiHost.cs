@@ -1184,12 +1184,18 @@ namespace PennyPet
                     _pendingLocalDockRollback = null;
                 }
                 if (!_dockCommitQueue.CanBeginGesture)
+                {
+                    session?.RejectDockGesture();
                     return true;
+                }
                 _activeLocalDockDependency =
                     _dockCommitQueue.LatestPendingGestureId;
                 if (TryBeginLocalDockGesture(
                     kind, value.NoteId) == 0)
+                {
                     _activeLocalDockDependency = 0;
+                    session?.RejectDockGesture();
+                }
                 return true;
             }
 

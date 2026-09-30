@@ -842,6 +842,11 @@ namespace PennyPet
             EmitSnapshot(StickyUiEventKind.BoundsChanged);
         }
 
+        internal void RejectDockGesture()
+        {
+            if (_window != null) _window.RejectDockGesture();
+        }
+
         private void HeaderDragStarted(object sender, EventArgs e)
         {
             _headerDragActive = true;

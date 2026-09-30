@@ -11,6 +11,11 @@ namespace PennyPet
 {
     internal sealed partial class StickyNoteWindow
     {
+        private bool _dockGestureRejected;
+        private Rectangle _dockGestureStartBounds;
+
+        internal void RejectDockGesture() { _dockGestureRejected = true; }
+
         private void HeaderMouseLeftButtonDown(object sender,
             MouseButtonEventArgs e)
         {
@@ -31,7 +36,15 @@ namespace PennyPet
                 (int)Math.Round(pointer.Y) - _headerDragStartBounds.Top);
             _lastResizeHitTest = 0;
             _headerDragInProgress = true;
+            _dockGestureRejected = false;
             Raise(HeaderDragStarted);
+            if (_dockGestureRejected)
+            {
+                _headerDragInProgress = false;
+                Raise(HeaderDragCompleted);
+                e.Handled = true;
+                return;
+            }
             try
             {
                 DragMove();
@@ -253,6 +266,8 @@ namespace PennyPet
             }
             if (message == WmEnterSizeMove)
             {
+                if (!_headerDragInProgress) _dockGestureRejected = false;
+                _dockGestureStartBounds = PhysicalBounds;
                 _windowResizeActive = true;
                 _dockDividerResizeActive = _dockSplitBottom &&
                     _lastResizeHitTest == HtBottom;
@@ -294,6 +309,17 @@ namespace PennyPet
                 else if (horizontalResize) Raise(DockHorizontalResizeCompleted);
                 else if (!_headerDragInProgress) Raise(UserResizeCompleted);
                 return IntPtr.Zero;
+            }
+            if (message == WmSizing && _dockGestureRejected && lParam != IntPtr.Zero)
+            {
+                NativeRect denied = new NativeRect();
+                denied.Left = _dockGestureStartBounds.Left;
+                denied.Top = _dockGestureStartBounds.Top;
+                denied.Right = _dockGestureStartBounds.Right;
+                denied.Bottom = _dockGestureStartBounds.Bottom;
+                Marshal.StructureToPtr(denied, lParam, false);
+                handled = true;
+                return new IntPtr(1);
             }
             if (message == WmSizing && _dockSplitBottom &&
                 (_dockDividerResizeActive ||

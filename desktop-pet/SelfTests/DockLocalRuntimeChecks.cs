@@ -212,6 +212,18 @@ namespace PennyPet
                             ((StickyDockCommitQueue)Pc2Get(scene.Host, "_dockCommitQueue")).PendingCount == 0,
                             "failed capture/enqueue cannot leave a provisional split or pending ACK");
                     }
+                    var full = (StickyDockCommitQueue)Pc2Get(scene.Host, "_dockCommitQueue");
+                    for (int i = 1; i <= 8; i++)
+                        full.TryAdd(new StickyDockGestureCommit(100 + i, 0, StickyDockCommitIntent.Move,
+                            source, null, scene.Topology.Generation, new Dictionary<string, long> { [source] = 1 },
+                            new DockBatchMemberResult[0]));
+                    var deniedSession = DockSession(scene, 0);
+                    var deniedWindow = (StickyNoteWindow)Pc2Get(deniedSession, "_window");
+                    Pc2Call(deniedSession, "HeaderDragStarted", deniedWindow, EventArgs.Empty);
+                    Pc2Assert((bool)Pc2Get(deniedWindow, "_dockGestureRejected") && !runtime.IsActive,
+                        "queue refusal synchronously denies the native header drag");
+                    Pc2Call(deniedSession, "HeaderDragCompleted", deniedWindow, EventArgs.Empty);
+                    full.Clear();
                     return StickyUiCommandResult.Handled();
                 });
                 StickyUiCommandResult checkedResult = scene.Send(
