@@ -36,8 +36,9 @@ namespace PennyPet.Tests
                 "PennyApplicationHost must own background runtime preparation after the shell is ready.");
 
             int constructor = form.IndexOf(
-                "internal PetForm(PetSettings preloadedSettings)",
+                "internal PetForm(PetSettings preloadedSettings,",
                 StringComparison.Ordinal);
+            Assert.IsTrue(constructor >= 0, "The shell constructor must be present.");
             int createParams = form.IndexOf(
                 "protected override CreateParams CreateParams",
                 constructor, StringComparison.Ordinal);
