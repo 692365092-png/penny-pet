@@ -23,6 +23,7 @@
 ```mermaid
 flowchart TD
     Core["PennyPet.Core\nnetstandard2.0"]
+    CoreSources["Core/**/*.cs\nsource inclusion"]
     Tools["PennyPet.Tools\nnet48 art generator"]
     WindowsCore["PennyPet.Windows.Core\nnet48 library"]
     App["PennyPet.App\nnet48 WinExe"]
@@ -34,6 +35,7 @@ flowchart TD
     Core --> Tools
     Core --> WindowsCore
     Core --> Tests
+    CoreSources -. "compiled into standalone product" .-> Windows
     Tools -. "build-only resource generation" .-> WindowsCore
     Tools -. "build-only resource generation" .-> Windows
     WindowsCore --> App
@@ -50,8 +52,10 @@ flowchart TD
 
 Windows 业务代码由 `PennyPet.Windows.Core` 作为可复用的 net48 library 编译；
 `PennyPet.App` 以它作为宿主。`PennyPet.Windows` 是兼容单文件发布入口，它在
-自己的项目内编译同一批 Windows 源码，并只通过 Tools 的 build-only reference
-取得资源生成顺序；`build.ps1` 只构建这个项目并复制 `Penny pet.exe`。
+自己的项目内通过 wildcard Compile 直接编译 `Core/**/*.cs` 和 Windows 源码，
+不引用 `PennyPet.Core.dll` 或 `PennyPet.Windows.Core.dll`；它只通过 Tools 的
+build-only reference 取得资源生成顺序。图中的 `CoreSources` 是源码纳入关系，
+不是 ProjectReference。`build.ps1` 只构建这个项目并复制 `Penny pet.exe`。
 
 运行时的 Windows 依赖方向仍是：
 

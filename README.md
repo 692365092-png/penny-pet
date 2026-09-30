@@ -45,6 +45,7 @@ Release 页面同时提供 `SHA256SUMS.txt` 校验文件，供需要核对文件
 ```mermaid
 flowchart TD
     Core["PennyPet.Core\nnetstandard2.0"]
+    CoreSources["Core/**/*.cs\nsource inclusion"]
     Tools["PennyPet.Tools\nnet48 + art generator"]
     WindowsCore["PennyPet.Windows.Core\nnet48 library"]
     App["PennyPet.App\nnet48 WinExe"]
@@ -55,6 +56,7 @@ flowchart TD
     Core --> Tools
     Core --> WindowsCore
     Core --> Tests
+    CoreSources -. "compiled into standalone product" .-> Windows
     Tools -. "build-only: generate .ppap/cache" .-> WindowsCore
     Tools -. "build-only: generate .ppap/cache" .-> Windows
     WindowsCore --> App
@@ -71,6 +73,9 @@ flowchart TD
 构建前者并复制其 `Penny pet.exe`。`PennyPet.App` 是使用同一 Windows Core
 实现的另一个 WinForms/WPF 宿主；它参与解决方案编译，但不产生公开下载文件。
 `PennyPet.Tests` 只编译可测试的 Core/协议片段，不能代替 net48 Windows 编译。
+特别要注意：`PennyPet.Windows.csproj` 是兼容单文件项目，它把 `Core/**/*.cs`
+直接编进自己的程序集，不是对 `PennyPet.Core.dll` 或 `PennyPet.Windows.Core.dll`
+的运行时引用；图中的 `CoreSources` 是源码纳入关系，不是 ProjectReference。
 
 使用 Visual Studio 或标准 .NET 工具进行源码编译检查：
 
