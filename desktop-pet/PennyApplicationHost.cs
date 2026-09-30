@@ -11,6 +11,7 @@ namespace PennyPet
 
         internal static void Run()
         {
+            DateTime launchedUtc = DateTime.UtcNow;
             bool createdNew;
             _singleInstance = new Mutex(true, "Local\\PennyPet.SingleInstance",
                 out createdNew);
@@ -26,7 +27,7 @@ namespace PennyPet
             try
             {
                 PetSettings settings = PetSettings.Load();
-                PetForm pet = new PetForm(settings);
+                PetForm pet = new PetForm(settings, launchedUtc);
                 bool runtimeLoadStarted = false;
                 pet.ShellReady += delegate
                 {

@@ -89,12 +89,15 @@ namespace PennyPet
         internal event EventHandler ShellReady;
         internal event EventHandler StartupBackgroundReady;
 
+        private readonly DateTime _launchedUtc;
+
         public PetForm() : this(null)
         {
         }
 
-        internal PetForm(PetSettings preloadedSettings)
+        internal PetForm(PetSettings preloadedSettings, DateTime? launchedUtc = null)
         {
+            _launchedUtc = launchedUtc ?? DateTime.UtcNow;
             Text = "Penny pet";
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;

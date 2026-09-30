@@ -111,6 +111,16 @@ namespace PennyPet
                         settings.Reminders.Count == 1 && notes.Count == 0,
                         "full restore removes orphan reminder links and preserves standalone reminders");
                 }
+                DateTime launch = DateTime.UtcNow.AddMinutes(-1);
+                settings.Reminders.Clear();
+                settings.Reminders.Add(new ReminderItem(launch.AddSeconds(10), "due during loading"));
+                settings.Reminders.Add(new ReminderItem(launch.AddSeconds(-10), "expired before launch"));
+                using (var delayed = new ReminderRuntime(schedule, settings, notes, view))
+                {
+                    delayed.Restore(launch);
+                    Pc2Assert(schedule.Count == 1 && schedule.Next.Text == "due during loading",
+                        "late attachment retains reminders that became due after the actual launch");
+                }
                 return true;
             }
             finally

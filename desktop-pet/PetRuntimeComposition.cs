@@ -55,7 +55,7 @@ namespace PennyPet
             _stickyWorkspace = AttachStickyWorkspace(ownerContext);
             _reminderRuntime = new ReminderRuntime(
                 _reminders, _settings, _notes, this);
-            _reminderRuntime.Restore(DateTime.UtcNow);
+            _reminderRuntime.Restore(_launchedUtc);
 
             _stickyWorkspace.Start();
             DisplayTopologySnapshot topology = CurrentTopologySnapshot();
