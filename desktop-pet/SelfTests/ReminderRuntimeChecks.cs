@@ -73,10 +73,15 @@ namespace PennyPet
                     runtime.Tick(deadline);
                     runtime.Add(deadline, "B", 10, false);
                     runtime.Tick(deadline);
+                    Pc2Assert(schedule.Count == 1 && view.Loads.Count == 2,
+                        "second due reminder waits durably until the first is dismissed");
+                    view.CloseCurrentMessage();
+                    runtime.Tick(deadline);
                     CompleteReminderArt(view.Loads[2], context);
                     CompleteReminderArt(view.Loads[1], context);
                     Pc2Assert(view.Animations == 1 && view.AnimationThread == Thread.CurrentThread.ManagedThreadId,
                         "only the newest intent starts animation, on the owning STA");
+                    view.CloseCurrentMessage();
                     runtime.Add(deadline, "cancel-all", 10, false);
                     runtime.Tick(deadline);
                     runtime.CancelAll();

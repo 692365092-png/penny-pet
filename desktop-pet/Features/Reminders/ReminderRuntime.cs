@@ -29,6 +29,8 @@ namespace PennyPet
         private ReminderItem _preAlertItem;
         private int _attentionGeneration;
         private bool _running;
+        private bool _dueMessageActive;
+        private bool _deliveringDue;
         internal bool IsRunning { get { return _running; } }
 
         internal ReminderRuntime(ReminderSchedule schedule, PetSettings settings,
@@ -81,19 +83,25 @@ namespace PennyPet
 
         internal void Tick(DateTime nowUtc)
         {
-            if (!_running) return;
+            if (!_running || _dueMessageActive || _deliveringDue) return;
             ReminderItem due = _schedule.FirstDue(nowUtc);
             if (due != null)
             {
                 // Consume before callbacks: a nested message loop or repeated
                 // tick must never deliver this reminder twice.
-                _schedule.Remove(due);
-                StickyNoteData linkedNote = UpdateLinkedNote(due, true);
-                _view.CloseCurrentMessage();
-                SaveChanges();
-                int generation = ++_attentionGeneration;
-                _view.ShowDue(due, linkedNote);
-                RequestAttentionAnimation(generation);
+                _deliveringDue = true;
+                try
+                {
+                    _schedule.Remove(due);
+                    StickyNoteData linkedNote = UpdateLinkedNote(due, true);
+                    _view.CloseCurrentMessage();
+                    SaveChanges();
+                    int generation = ++_attentionGeneration;
+                    _dueMessageActive = true;
+                    _view.ShowDue(due, linkedNote);
+                    RequestAttentionAnimation(generation);
+                }
+                finally { _deliveringDue = false; }
                 return;
             }
             RefreshPreAlert(nowUtc);
@@ -120,7 +128,11 @@ namespace PennyPet
         internal void MessageClosed(PetMessageKind kind)
         {
             if (kind == PetMessageKind.ReminderPreAlert) _preAlertItem = null;
-            if (kind == PetMessageKind.ReminderDue) ++_attentionGeneration;
+            if (kind == PetMessageKind.ReminderDue)
+            {
+                _dueMessageActive = false;
+                ++_attentionGeneration;
+            }
         }
 
         private async void RequestAttentionAnimation(int generation)
