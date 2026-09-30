@@ -13,6 +13,32 @@ namespace PennyPet
         private bool _temporaryRehome;
         private bool _userMovedSinceTemporaryRehome;
         private int _placementDepth;
+        internal const int PreferredPlacementRetryLimit = 3;
+        private int _preferredRetriesRemaining;
+        private DateTime _preferredRetryDueUtc;
+        private bool _retryingPreferredPlacement;
+
+        private void TrackPreferredPlacement(bool succeeded)
+        {
+            if (succeeded) _preferredRetriesRemaining = 0;
+            else
+            {
+                if (!_retryingPreferredPlacement)
+                    _preferredRetriesRemaining = PreferredPlacementRetryLimit;
+                _preferredRetryDueUtc = DateTime.UtcNow.AddMilliseconds(250);
+            }
+        }
+
+        internal void RetryPendingPlacement(DateTime nowUtc)
+        {
+            if (_preferredRetriesRemaining == 0 || nowUtc < _preferredRetryDueUtc ||
+                !_window.IsAvailable || _window.IsUserDragging || _placementDepth != 0)
+                return;
+            _preferredRetriesRemaining--;
+            _retryingPreferredPlacement = true;
+            try { Reconcile(_topology(), "PreferredPlacementRetry"); }
+            finally { _retryingPreferredPlacement = false; }
+        }
 
         internal PetDisplayRuntime(IPetDisplayWindow window, PetSettings settings,
             Func<DisplayTopologySnapshot> topology, Action<string, string> trace = null)
@@ -271,6 +297,7 @@ namespace PennyPet
 
         internal bool CommitUserPlacement()
         {
+            _preferredRetriesRemaining = 0;
             if (_placementDepth != 0) return false;
             DisplayTopologySnapshot topology = _topology();
             WindowFacts facts = Capture(topology);
@@ -325,7 +352,7 @@ namespace PennyPet
 
             if (preferred != null)
             {
-                TryPlacePetAtPreferred(
+                bool moved = TryPlacePetAtPreferred(
                     topology,
                     preferred,
                     new LogicalPoint
@@ -335,8 +362,8 @@ namespace PennyPet
                     },
                     "StartupPreferred");
 
-                _temporaryRehome = false;
-                _window.PlacementChanged();
+                TrackPreferredPlacement(moved);
+                if (moved) _temporaryRehome = false;
                 return;
             }
 
@@ -386,6 +413,7 @@ namespace PennyPet
             if (!IsCurrent(topology) || !_window.IsAvailable || _placementDepth != 0)
                 return;
 
+            if (!_retryingPreferredPlacement) _preferredRetriesRemaining = 0;
             if (!_initialized)
             {
                 Initialize();
@@ -424,6 +452,7 @@ namespace PennyPet
                     },
                     _temporaryRehome ? "PreferredReturned" : "TopologyRepair");
 
+                TrackPreferredPlacement(moved);
                 if (moved)
                 {
                     if (_temporaryRehome)
@@ -440,6 +469,7 @@ namespace PennyPet
                 return;
             }
 
+            _preferredRetriesRemaining = 0;
             // If Windows already left Pet on a valid current surface,
             // accept that as temporary Effective and do not fight Windows.
             DisplaySurfaceSnapshot active = FindPetSurface(actual, topology);

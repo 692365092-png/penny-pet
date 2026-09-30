@@ -50,6 +50,7 @@ namespace PennyPet.Tests
             public int ScalePercent { get { return 100; } }
             internal int Dpi = 96;
             internal int Moves;
+            internal bool FailMoves;
             internal Action OnMove;
             internal Action OnScale;
             internal Action OnCapture;
@@ -58,6 +59,7 @@ namespace PennyPet.Tests
             public bool MoveTopLeft(int x, int y)
             {
                 Moves++;
+                if (FailMoves) return false;
                 Bounds = new PhysicalRect(x, y, Bounds.Width, Bounds.Height);
                 OnMove?.Invoke();
                 return true;
@@ -79,6 +81,51 @@ namespace PennyPet.Tests
                 return facts;
             }
             public void PlacementChanged() { }
+        }
+
+        [TestMethod]
+        public void FailedPreferredPlacementRetriesWithoutAnotherTopologyHint()
+        {
+            using (var s = new Scene(Surface("a")))
+            {
+                s.Window.FailMoves = true;
+                s.Runtime.Initialize();
+                int failedMoves = s.Window.Moves;
+                s.Runtime.RetryPendingPlacement(DateTime.MinValue);
+                Assert.AreEqual(failedMoves, s.Window.Moves);
+                s.Window.FailMoves = false;
+                s.Runtime.RetryPendingPlacement(DateTime.MaxValue);
+                Assert.AreEqual(100, s.Window.Bounds.Left);
+                Assert.AreEqual(-120, s.Window.Bounds.Top);
+                int succeededMoves = s.Window.Moves;
+                s.Runtime.RetryPendingPlacement(DateTime.MaxValue);
+                Assert.AreEqual(succeededMoves, s.Window.Moves);
+                Assert.AreEqual(0, s.Writes);
+            }
+        }
+
+        [TestMethod]
+        public void PreferredPlacementRetryIsBoundedAndYieldsToUserDrag()
+        {
+            using (var s = new Scene(Surface("a")))
+            {
+                s.Window.FailMoves = true;
+                s.Runtime.Initialize();
+                int initialMoves = s.Window.Moves;
+                s.Window.IsUserDragging = true;
+                s.Runtime.RetryPendingPlacement(DateTime.MaxValue);
+                Assert.AreEqual(initialMoves, s.Window.Moves);
+                s.Window.IsUserDragging = false;
+                for (int i = 0; i < 10; i++)
+                    s.Runtime.RetryPendingPlacement(DateTime.MaxValue);
+                Assert.AreEqual(initialMoves + PetDisplayRuntime.PreferredPlacementRetryLimit,
+                    s.Window.Moves);
+                s.Runtime.Reconcile(s.Topology, "new hint");
+                s.Runtime.CommitUserPlacement();
+                int userMoves = s.Window.Moves;
+                s.Runtime.RetryPendingPlacement(DateTime.MaxValue);
+                Assert.AreEqual(userMoves, s.Window.Moves);
+            }
         }
 
         [TestMethod]
