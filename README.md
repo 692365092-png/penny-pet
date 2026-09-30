@@ -38,19 +38,55 @@ Release 页面同时提供 `SHA256SUMS.txt` 校验文件，供需要核对文件
 
 要求：Windows 10/11、Windows PowerShell 5.1、.NET 8 SDK，以及 .NET Framework 4.8 Developer Pack（仅安装 4.8 Runtime 不包含构建所需的引用程序集）。
 
+### Canonical build graph
+
+仓库的解决方案构建和公开发布使用同一组项目，依赖关系如下：
+
+```mermaid
+flowchart TD
+    Core[PennyPet.Core\nnetstandard2.0]
+    Tools[PennyPet.Tools\nnet48 + art generator]
+    WindowsCore[PennyPet.Windows.Core\nnet48 library]
+    App[PennyPet.App\nnet48 WinExe]
+    Windows[PennyPet.Windows\nnet48 WinExe]
+    SelfTests[PennyPet.SelfTests\nnet48 probes]
+    Tests[PennyPet.Tests\nnet8 tests]
+
+    Core --> Tools
+    Core --> WindowsCore
+    Core --> Tests
+    Tools -. "build-only: generate .ppap/cache" .-> WindowsCore
+    Tools -. "build-only: generate .ppap/cache" .-> Windows
+    WindowsCore --> App
+    WindowsCore --> SelfTests
+    Windows --> Release[release/Penny-pet-Windows.exe]
+```
+
+`PennyPet.Tools` 的程序集不是桌宠运行时依赖。它在构建阶段读取 `art/`，生成
+`release-art.ppap` 和 `startup-art.cache`；`PennyPet.Windows` 与
+`PennyPet.Windows.Core` 通过 `ReferenceOutputAssembly=false` 只借用这个构建顺序，
+再由 `PennyPet.ArtResources.targets` 把生成文件嵌入各自的输出。
+
+真正的公开单文件入口是 `PennyPet.Windows`，不是 `PennyPet.App`：`build.ps1`
+构建前者并复制其 `Penny pet.exe`。`PennyPet.App` 是使用同一 Windows Core
+实现的另一个 WinForms/WPF 宿主；它参与解决方案编译，但不产生公开下载文件。
+`PennyPet.Tests` 只编译可测试的 Core/协议片段，不能代替 net48 Windows 编译。
+
 使用 Visual Studio 或标准 .NET 工具进行源码编译检查：
 
 ```powershell
 dotnet build ".\PennyPet.sln" --configuration Release
 ```
 
-解决方案会构建跨平台 `PennyPet.Core`、Windows Core、App、Tools、标准 Tests 和 SelfTests；模块化 App 会通过 Tools 生成并嵌入美术资源。生成用于公开分发的兼容单文件 EXE 仍使用：
+解决方案会构建上图中的全部项目。生成用于公开分发的兼容单文件 EXE 仍使用：
 
 ```powershell
 .\desktop-pet\build.ps1 -TargetPlatform anycpu -OutputFile ".\release\Penny pet-release.exe"
 ```
 
-构建过程会把 `art/pet-art.json` 引用的完整分辨率动画和启动缓存嵌入 EXE。生成结果仍然是一个文件。
+这一步会先构建 `PennyPet.Windows.csproj`，由 build-only 的 `PennyPet.Tools`
+生成资源，再把 `art/pet-art.json` 引用的完整分辨率动画和启动缓存嵌入 EXE。
+生成结果仍然是一个文件。
 
 运行自动测试：
 
@@ -58,6 +94,18 @@ dotnet build ".\PennyPet.sln" --configuration Release
 dotnet test ".\desktop-pet\PennyPet.Tests.csproj" --configuration Release
 .\desktop-pet\bin\Release\net48\PennyPet.SelfTests.exe --self-test="$env:TEMP\penny-selftest.json"
 ```
+
+保护版构建会在未保护语义自测之后，使用固定哈希的 ConfuserEx 生成保护版，
+并启动**实际保护后的 EXE** 做资源、窗口响应和正常退出检查：
+
+```powershell
+.\desktop-pet\build-protected.ps1 `
+  -TargetPlatform anycpu `
+  -OutputFile ".\release\Penny-pet-Protected.exe" `
+  -SmokeReportPath "$env:TEMP\penny-protected-smoke.json"
+```
+
+这也是 Windows CI 的发布前门禁；它不表示 EXE 已购买商业代码签名证书。
 
 正式 EXE 不包含自测命令入口。验证发布物时，在 Windows 测试环境运行外部冒烟脚本（会启动并正常关闭实际桌宠）：
 
@@ -74,7 +122,7 @@ dotnet test ".\desktop-pet\PennyPet.Tests.csproj" --configuration Release
 ## 源码结构
 
 - `desktop-pet/`：Windows 桌宠、便利贴、待办、日程、提醒和自动测试。
-- `PennyPet.sln`：跨平台 Core、Windows Core、App、Tools、Tests、SelfTests 和兼容单 EXE 项目；正式单文件发布由 `build.ps1` 生成。
+- `PennyPet.sln`：Core、Windows Core、App、Tools、Tests、SelfTests 和兼容单 EXE 项目；依赖和发布顺序见上面的 canonical build graph。
 - `art/`：构建单文件 EXE 所需的角色动画与界面美术；其许可边界见 `ASSET_LICENSE.md`。
 - `ARCHITECTURE.md`：当前跨平台技术边界与 macOS 迁移地图。
 - `DEVELOPER_GUIDE.md`：维护说明、数据位置、高风险兼容逻辑和平台边界。

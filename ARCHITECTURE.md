@@ -2,7 +2,7 @@
 
 本文记录当前已经落地的技术架构、Windows/通用边界和 macOS 迁移地图。它不是未来业务功能设计稿，也不要求立即创建 macOS UI、Application 层或网络基础设施。
 
-本文对应当前发布版本 `1.0.2`。
+本文对应当前发布版本 `1.0.2`；源码边界和构建关系以当前分支 HEAD 的项目文件为准。
 
 当前原则：保持 Windows 版行为、数据格式和构建结果；只把已能用平台无关数据表达和验证的规则放入 Core，不为架构形式引入空接口、依赖注入或大型框架。
 
@@ -20,12 +20,45 @@
 
 ## 2. 依赖方向
 
+```mermaid
+flowchart TD
+    Core["PennyPet.Core\nnetstandard2.0"]
+    Tools["PennyPet.Tools\nnet48 art generator"]
+    WindowsCore["PennyPet.Windows.Core\nnet48 library"]
+    App["PennyPet.App\nnet48 WinExe"]
+    Windows["PennyPet.Windows\nnet48 WinExe"]
+    SelfTests["PennyPet.SelfTests\nnet48 probes"]
+    Tests["PennyPet.Tests\nnet8 tests"]
+    Release["official single-file EXE"]
+
+    Core --> Tools
+    Core --> WindowsCore
+    Core --> Tests
+    Tools -. "build-only resource generation" .-> WindowsCore
+    Tools -. "build-only resource generation" .-> Windows
+    WindowsCore --> App
+    WindowsCore --> SelfTests
+    Windows --> Release
+```
+
+这里的虚线不是运行时依赖：`PennyPet.Windows` 和 `PennyPet.Windows.Core`
+对 `PennyPet.Tools` 使用 `ReferenceOutputAssembly=false`，只要求 Tools 先构建并
+生成 `obj/PennyPet.ArtResources/<Configuration>/<TargetFramework>/` 下的
+`release-art.ppap` 与 `startup-art.cache`。随后 `PennyPet.ArtResources.targets`
+把这两个文件和固定图片/manifest 嵌入产品输出。桌宠运行时不会加载
+`PennyPet.Tools.exe`。
+
+Windows 业务代码由 `PennyPet.Windows.Core` 作为可复用的 net48 library 编译；
+`PennyPet.App` 以它作为宿主。`PennyPet.Windows` 是兼容单文件发布入口，它在
+自己的项目内编译同一批 Windows 源码，并只通过 Tools 的 build-only reference
+取得资源生成顺序；`build.ps1` 只构建这个项目并复制 `Penny pet.exe`。
+
+运行时的 Windows 依赖方向仍是：
+
 ```text
-PennyPet.App / PennyPet.Windows
-  -> PennyApplicationHost
-  -> PetForm（Windows 窗口与协调）
-       -> Core 动画、提醒、设置、键盘隐私规则
-       -> Windows Hook、UIA、GDI、Registry、Screen 与窗口副作用
+PetForm / PennyApplicationHost
+  -> Core 动画、提醒、设置、键盘隐私规则
+  -> Windows Hook、UIA、GDI、Registry、Screen 与窗口副作用
 
 Pet Sticky coordination
   -> canonical StickyNoteData / Core Dock rules
@@ -33,10 +66,6 @@ Pet Sticky coordination
   -> StickyUiHost session registry（Sticky WPF STA）
        -> StickyWindowSession
             -> StickyNoteWindow（Editor / Todo / Schedule / Reminder / Link）
-
-PennyPet.Tests -> PennyPet.Core
-PennyPet.SelfTests -> Windows 产品程序集与真实资源/平台探针
-PennyPet.Tools -> 美术发布包和启动缓存生成
 ```
 
 平台层可以调用 Core；Core 不得反向引用 `PetForm`、WPF、WinForms、Win32、Registry、Screen、Bitmap 或平台路径规则。
@@ -173,12 +202,23 @@ Sticky Backup v1 的 portable dataset 是 `sticky-notes.dat` 中的 Sticky 模�
 ## 5. 构建与验证
 
 - `PennyPet.Core.csproj`：`netstandard2.0` 共享规则。
-- `PennyPet.Tests.csproj`：`net8.0` Core 单元测试和程序集边界门禁。
-- `PennyPet.Windows.Core.csproj`：Windows 产品程序集。
-- `PennyPet.App.csproj`：正常桌宠入口。
-- `PennyPet.Tools.csproj`：美术发布资源生成。
+- `PennyPet.Tools.csproj`：`net48` 美术发布资源生成器；只参与构建，不是产品运行时依赖。
+- `PennyPet.Windows.Core.csproj`：`net48` Windows 产品 library，引用 Core，并按上图消费生成资源。
+- `PennyPet.App.csproj`：引用 Windows Core 的普通桌宠 WinExe 宿主，参与 solution build，不是公开下载入口。
 - `PennyPet.SelfTests.csproj`：Windows 资源、文件系统、WinForms/WPF、Hook 与探针。
-- `PennyPet.Windows.csproj`：兼容单文件 EXE 入口。
+- `PennyPet.Tests.csproj`：`net8.0` Core/协议单元测试及少量平台边界门禁；它不编译完整 Windows UI。
+- `PennyPet.Windows.csproj`：兼容单文件 EXE 入口；`build.ps1` 和保护版流程以它为 canonical product build。
+
+canonical 验证顺序是：
+
+1. `dotnet build PennyPet.sln --configuration Release`：编译全部七个 solution project，并让 Tools 生成产品所需资源。
+2. `dotnet test desktop-pet/PennyPet.Tests.csproj --configuration Release`：运行 Core、协议、数据和保留的边界门禁。
+3. `PennyPet.SelfTests.exe --self-test=...`：在 Windows/net48 上运行资源、持久化、WinForms/WPF、Hook 和 native Dock 探针。
+4. `desktop-pet/build.ps1 -TargetPlatform anycpu -OutputFile ...`：从 `PennyPet.Windows.csproj` 生成普通发布 EXE。
+5. `desktop-pet/test-release.ps1 -Executable ...`：隔离运行普通 EXE，验证嵌入资源、窗口响应和正常退出。
+6. `desktop-pet/build-protected.ps1 ...`：生成保护版并隔离运行实际保护后的 EXE；保护版 smoke 是 CI 门禁，不是另一个产品入口。
+
+`Tests/StructuralGuards` 现在只保留平台依赖边界、协议数据形状和仍没有更好运行时替代的约束；已经由标准行为测试或 native self-test 覆盖的 Dock 私有方法/源码拼写检查已删除或放宽。
 
 自动测试可以验证纯规则、codec 和程序集依赖，不能替代真实中文 IME、WPF/WinForms 消息循环、透明窗口、Dock 拖拽、多屏、键盘隐私和危险路径确认的人工回归。
 
