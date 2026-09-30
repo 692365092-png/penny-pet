@@ -48,7 +48,9 @@ boundaries. Each item was committed and pushed separately.
 ## Validation
 
 [Windows CI #203](https://github.com/692365092-png/penny-pet/actions/runs/36657135214)
-validated the current pushed revision after the guard cleanup:
+validated code revision `9b8b30b35e412b1358f74d058e729829804b5545` after the
+guard cleanup. The later `efa0840` documentation-only closeout does not change
+the code under test:
 
 - Full Release solution build and embedded art validation.
 - 604 discoverable tests: 0 failures, 0 skipped; seven implementation-coupled
