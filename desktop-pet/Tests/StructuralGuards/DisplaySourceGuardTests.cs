@@ -139,7 +139,7 @@ namespace PennyPet.Tests
             Assert.IsTrue(provider.Contains(
                     "return new DisplayTopologySnapshot(0, surfaces)") &&
                 runtime.Contains(".WithGeneration(") &&
-                runtime.Contains("Generation++") &&
+                runtime.Contains("Generation = Current == null ? 0 : Generation + 1") &&
                 models.Contains("WithGeneration(long generation)"),
                 "Only DisplayTopologyRuntime may assign semantic generations.");
             Assert.IsFalse(provider.Contains("Generation++"),
