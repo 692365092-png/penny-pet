@@ -11,6 +11,8 @@ namespace PennyPet
         internal const int QuietDelayMilliseconds = 150;
         internal const int SettleWindowMilliseconds = 750;
         internal const int CaptureFailureTraceLimit = 8;
+        internal const int CaptureRetryLimit = 3;
+        private const int CaptureRetryDelayMilliseconds = 250;
 
         private readonly Func<DisplayTopologySnapshot> _capture;
         private readonly object _gate = new object();
@@ -18,6 +20,8 @@ namespace PennyPet
         private readonly System.Windows.Forms.Timer _settleTimer;
         private DateTime _firstHintUtc;
         private bool _hintActive;
+        private bool _capturePending;
+        private int _captureRetriesRemaining;
         private bool _disposed;
         private int _captureFailureTraceCount;
 
@@ -42,8 +46,14 @@ namespace PennyPet
 
         internal void CaptureInitial()
         {
+            lock (_gate)
+            {
+                if (_disposed) return;
+                LastReason = "initial";
+                _captureRetriesRemaining = CaptureRetryLimit;
+            }
             DisplayTopologySnapshot snapshot = SafeCapture();
-            if (snapshot == null) return;
+            if (snapshot == null) { ScheduleCaptureRetry(); return; }
             DisplayTopologySnapshot owned;
             lock (_gate)
             {
@@ -60,6 +70,9 @@ namespace PennyPet
             {
                 if (_disposed) return;
                 LastReason = reason ?? String.Empty;
+                _capturePending = true;
+                _captureRetriesRemaining = CaptureRetryLimit;
+                _quietTimer.Interval = QuietDelayMilliseconds;
                 if (!_hintActive)
                 {
                     _hintActive = true;
@@ -165,27 +178,41 @@ namespace PennyPet
                 left.Width == right.Width && left.Height == right.Height;
         }
 
+        private void ScheduleCaptureRetry()
+        {
+            lock (_gate)
+            {
+                if (_disposed || _captureRetriesRemaining == 0) return;
+                _captureRetriesRemaining--;
+                _capturePending = true;
+                _quietTimer.Interval = CaptureRetryDelayMilliseconds;
+                _quietTimer.Start();
+            }
+        }
+
         private void TryCapture()
         {
             lock (_gate)
             {
-                if (_disposed) return;
+                if (_disposed || !_capturePending) return;
+                _capturePending = false;
                 _quietTimer.Stop();
                 _settleTimer.Stop();
                 _hintActive = false;
             }
             DisplayTopologySnapshot snapshot = SafeCapture();
-            if (snapshot == null) return;
+            if (snapshot == null) { ScheduleCaptureRetry(); return; }
             string reason;
             DisplayTopologySnapshot owned = null;
             lock (_gate)
             {
                 if (_disposed) return;
+                _captureRetriesRemaining = 0;
                 if (SemanticEquals(Current, snapshot))
                 {
                     return;
                 }
-                Generation++;
+                Generation = Current == null ? 0 : Generation + 1;
                 Current = snapshot.WithGeneration(Generation);
                 owned = Current;
                 reason = LastReason;
@@ -202,9 +229,8 @@ namespace PennyPet
             }
             catch
             {
-                // Bounded evidence: capture failures are rare and hint-driven,
-                // so a small trace cap documents the failure without building
-                // a retry framework or spamming the diagnostic log forever.
+                // Retries and diagnostic output are independently bounded;
+                // a failed capture never replaces the last valid snapshot.
                 lock (_gate)
                 {
                     if (_captureFailureTraceCount < CaptureFailureTraceLimit)

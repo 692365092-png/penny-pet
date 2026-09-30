@@ -4451,10 +4451,38 @@ namespace PennyPet
                 rapidHintsOneSettledCapture =
                     burstCaptures == 2 && burst.Generation == 0;
             }
+            bool retriesRecoverAndStop;
+            int retryCaptures = 0;
+            bool failCapture = true;
+            using (DisplayTopologyRuntime retry = new DisplayTopologyRuntime(delegate
+            {
+                retryCaptures++;
+                if (failCapture) throw new InvalidOperationException("capture unavailable");
+                return two;
+            }))
+            {
+                retry.CaptureInitial();
+                failCapture = false;
+                retry.FlushPendingForTest();
+                retriesRecoverAndStop = retry.Current != null && retry.Generation == 0 &&
+                    retryCaptures == 2;
+                DisplayTopologySnapshot valid = retry.Current;
+                failCapture = true;
+                retry.NotifyPotentialChange("transient display failure");
+                for (int index = 0; index < 10; index++) retry.FlushPendingForTest();
+                retriesRecoverAndStop &= retryCaptures == 2 + 1 +
+                    DisplayTopologyRuntime.CaptureRetryLimit &&
+                    Object.ReferenceEquals(valid, retry.Current);
+                failCapture = false;
+                retry.NotifyPotentialChange("new external hint");
+                retry.FlushPendingForTest();
+                retriesRecoverAndStop &= retryCaptures == 4 +
+                    DisplayTopologyRuntime.CaptureRetryLimit && retry.Generation == 0;
+            }
             return initialGenerationZero && sameSnapshotUnchanged &&
                 addedSurface && removedMany && reorderIgnored &&
                 workAreaChanged && eventSnapshotsMatchGeneration &&
-                rapidHintsOneSettledCapture;
+                rapidHintsOneSettledCapture && retriesRecoverAndStop;
         }
 
         private static DisplayTargetIdentity FakeTarget(string key)
