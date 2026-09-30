@@ -106,6 +106,10 @@ try {
         } finally { $stream.Dispose() }
     }
     $result.resources = $required
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+        (Join-Path $PSScriptRoot "test-weather-contract.ps1") -Executable $Executable
+    if ($LASTEXITCODE -ne 0) { throw "Release weather JSON contract check failed." }
+    $result.weatherJsonContracts = $true
     $reader = New-Object IO.StreamReader($assembly.GetManifestResourceStream("PennyPet.Art.Manifest"))
     try { $title = ($reader.ReadToEnd() | ConvertFrom-Json).displayName }
     finally { $reader.Dispose() }

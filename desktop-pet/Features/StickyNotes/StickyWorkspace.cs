@@ -661,6 +661,9 @@ namespace PennyPet
                             CompleteTemporaryRehome(noteId, fallback,
                                 "preferred-display-missing-at-restore",
                                 topology);
+                        // Creation must publish membership even when Visible was
+                        // already true in the draft. Header input uses this scene.
+                        Dock.RefreshDockResizeRoles();
                         return;
                     }
                     HandleHostedStickyFailure(new string[] { noteId },
@@ -696,6 +699,7 @@ namespace PennyPet
                             CompleteTemporaryRehome(noteId, fallback,
                                 "preferred-display-missing-at-reopen",
                                 topology);
+                            Dock.RefreshDockResizeRoles();
                             if (focusEditor)
                                 PostHostedStickyCommand(
                                     StickyUiCommand.FocusPrimaryInput(noteId),
@@ -725,6 +729,7 @@ namespace PennyPet
                             topology != null && topology.FindByTargetKey(
                                 note.PreferredPlacement?.PreferredTargetKey) != null)
                             Placement.MarkReturnedToPreferred(noteId);
+                        Dock.RefreshDockResizeRoles();
                         return;
                     }
                     HandleHostedStickyFailure(new string[] { noteId },
@@ -782,6 +787,7 @@ namespace PennyPet
                     {
                         ApplyHostedStickySnapshot(result.Snapshot,
                             result.Sequence, true, result.Facts, result.Topology);
+                        Dock.RefreshDockResizeRoles();
                         return;
                     }
                     HandleHostedStickyFailure(new string[] { noteId },

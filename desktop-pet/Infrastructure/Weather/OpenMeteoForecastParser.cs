@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Reflection;
 using System.Web.Script.Serialization;
 
 namespace PennyPet
@@ -90,12 +91,15 @@ namespace PennyPet
             return values != null && values.Length == count;
         }
 
+        // Preserve the external JSON contract in protected release builds.
+        [Obfuscation(Exclude = false, Feature = "-rename", ApplyToMembers = true)]
         private sealed class ForecastResponse
         {
             public int? utc_offset_seconds { get; set; }
             public HourlyData hourly { get; set; }
         }
 
+        [Obfuscation(Exclude = false, Feature = "-rename", ApplyToMembers = true)]
         private sealed class HourlyData
         {
             public string[] time { get; set; }
