@@ -136,7 +136,7 @@ Dock begin denial; detach follower failure; rollback failure propagation;
 startup prepare recovery; preferred Pet placement retry; bounded topology capture
 retry; complete keyboard/focus hook availability; and actual protected EXE smoke.
 
-Windows CI #198 validated `3afdc9f`: 611 core tests, native modular tests,
-ordinary and protected EXE startup/shutdown, and normal build gates. A follow-up
-also holds snapshots during failed rollback and releases them after successful
-recovery. See [review evidence](docs/architecture-review/2026-09-30-review-fixes.md).
+Windows CI #203 validated the current branch: 604 core tests, native modular
+tests, ordinary and protected EXE startup/shutdown, and normal build gates. The
+overly implementation-coupled Dock source guards were reduced from the test
+suite; runtime and native behavior coverage remains. See [review evidence](docs/architecture-review/2026-09-30-review-fixes.md).

@@ -26,6 +26,12 @@ boundaries. Each item was committed and pushed separately.
 - Updated two exact-source guards for the launch constructor and initial topology
   retry generation. These initially failed CI despite successful compilation;
   the runtime behavior tests were not weakened.
+- Removed seven Dock guards that only searched for retired private method names,
+  mailbox names, or exact local call spelling. The corresponding ownership,
+  follower-failure, topology-rebase, sequence, and live-input behavior remains
+  covered by standard runtime tests and native self-tests. The remaining source
+  guards are limited to platform boundaries, protocol shape, and gaps without
+  a useful runtime probe.
 - `3afdc9f` extends snapshot holding through failed rollback and releases fresh
   snapshots/ready commits after successful recovery, including when no gesture
   remains active. A native HWND probe covers this boundary.
@@ -41,11 +47,12 @@ boundaries. Each item was committed and pushed separately.
 
 ## Validation
 
-[Windows CI #198](https://github.com/692365092-png/penny-pet/actions/runs/36649309987)
-validated code revision `3afdc9f20f3d2aa9578eb79bf5b60a6d4742c749`:
+[Windows CI #203](https://github.com/692365092-png/penny-pet/actions/runs/36657135214)
+validated the current pushed revision after the guard cleanup:
 
 - Full Release solution build and embedded art validation.
-- 611 discoverable tests: 0 failures, 0 skipped.
+- 604 discoverable tests: 0 failures, 0 skipped; seven implementation-coupled
+  Dock source guards were intentionally removed.
 - Modular self-tests, including the native rollback/snapshot recovery probe.
 - Ordinary single-file EXE build, responsive-window and normal-shutdown smoke.
 - ConfuserEx protected build plus **actual protected EXE** resource, responsive
@@ -56,7 +63,6 @@ validated code revision `3afdc9f20f3d2aa9578eb79bf5b60a6d4742c749`:
   No .NET SDK is installed in this Linux workspace; executable results came from
   the Windows runner.
 
-The preceding complete run #197 also passed all gates, including protected smoke.
 The optional R27 art comparison was skipped; no product release was published.
 Synthetic HWND/failure injection covers these regressions. Physical monitor
 hot-plug, actual driver failure, and third-party hook denial still need real
