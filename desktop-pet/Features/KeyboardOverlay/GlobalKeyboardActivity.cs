@@ -31,19 +31,30 @@ namespace PennyPet
                 if (changed != null) changed(this, EventArgs.Empty);
             });
         }
-        public bool IsRunning { get { return _hook != IntPtr.Zero; } }
+        public bool IsRunning { get { return _hook != IntPtr.Zero && _focusMonitor.IsActive; } }
 
         public void Start()
         {
-            if (_hook != IntPtr.Zero) return;
-            _pressedKeys.Clear();
-            _focusMonitor.Start();
-            _callback = HookCallback;
-            using (Process process = Process.GetCurrentProcess())
-            using (ProcessModule module = process.MainModule)
+            if (IsRunning) return;
+            Dispose();
+            try
             {
-                _hook = SetWindowsHookEx(WhKeyboardLl, _callback,
-                    GetModuleHandle(module.ModuleName), 0);
+                if (!_focusMonitor.Start())
+                    throw new InvalidOperationException("Keyboard focus monitoring is unavailable.");
+                _callback = HookCallback;
+                using (Process process = Process.GetCurrentProcess())
+                using (ProcessModule module = process.MainModule)
+                {
+                    _hook = SetWindowsHookEx(WhKeyboardLl, _callback,
+                        GetModuleHandle(module.ModuleName), 0);
+                }
+                if (_hook == IntPtr.Zero)
+                    throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            }
+            catch
+            {
+                Dispose();
+                throw;
             }
         }
 
