@@ -44,13 +44,13 @@ Release 页面同时提供 `SHA256SUMS.txt` 校验文件，供需要核对文件
 
 ```mermaid
 flowchart TD
-    Core[PennyPet.Core\nnetstandard2.0]
-    Tools[PennyPet.Tools\nnet48 + art generator]
-    WindowsCore[PennyPet.Windows.Core\nnet48 library]
-    App[PennyPet.App\nnet48 WinExe]
-    Windows[PennyPet.Windows\nnet48 WinExe]
-    SelfTests[PennyPet.SelfTests\nnet48 probes]
-    Tests[PennyPet.Tests\nnet8 tests]
+    Core["PennyPet.Core\nnetstandard2.0"]
+    Tools["PennyPet.Tools\nnet48 + art generator"]
+    WindowsCore["PennyPet.Windows.Core\nnet48 library"]
+    App["PennyPet.App\nnet48 WinExe"]
+    Windows["PennyPet.Windows\nnet48 WinExe"]
+    SelfTests["PennyPet.SelfTests\nnet48 probes"]
+    Tests["PennyPet.Tests\nnet8 tests"]
 
     Core --> Tools
     Core --> WindowsCore
@@ -59,7 +59,7 @@ flowchart TD
     Tools -. "build-only: generate .ppap/cache" .-> Windows
     WindowsCore --> App
     WindowsCore --> SelfTests
-    Windows --> Release[release/Penny-pet-Windows.exe]
+    Windows --> Release["release/Penny-pet-Windows.exe"]
 ```
 
 `PennyPet.Tools` 的程序集不是桌宠运行时依赖。它在构建阶段读取 `art/`，生成
