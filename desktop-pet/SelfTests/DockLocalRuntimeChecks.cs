@@ -214,6 +214,15 @@ namespace PennyPet
                     }
                     Pc2Set(scene.Host, "_pendingLocalDockRollback", new[] {
                         new DockWindowTarget(source, facts[source].PhysicalBounds) });
+                    var rollbackSession = DockSession(scene, 0);
+                    var pendingSnapshot = rollbackSession.CaptureDockCommitMember();
+                    Pc2Call(scene.Host, "SessionEventRaised", rollbackSession,
+                        StickyUiEvent.FromSnapshot(StickyUiEventKind.SnapshotChanged,
+                            pendingSnapshot.Snapshot, pendingSnapshot.WindowSequence,
+                            pendingSnapshot.Facts, scene.Topology));
+                    var heldSnapshots = (HashSet<string>)Pc2Get(scene.Host, "_deferredDockSnapshotIds");
+                    Pc2Assert(heldSnapshots.Contains(source),
+                        "pending rollback holds snapshots even without a pending ACK");
                     Pc2Set(scene.Host, "_currentTopology", null);
                     var blocked = (StickyUiCommandResult)Pc2Call(scene.Host, "PrepareLocalDockStructure", new object[] { null });
                     Pc2Assert(blocked.Status != StickyUiCommandStatus.Handled &&
@@ -224,6 +233,8 @@ namespace PennyPet
                     Pc2Assert(retried.Status == StickyUiCommandStatus.Handled &&
                         Pc2Get(scene.Host, "_pendingLocalDockRollback") == null,
                         "successful rollback retry releases preparation");
+                    Pc2Assert(!heldSnapshots.Contains(source),
+                        "successful rollback retry releases the fresh snapshot without another gesture");
                     var full = (StickyDockCommitQueue)Pc2Get(scene.Host, "_dockCommitQueue");
                     for (int i = 1; i <= 8; i++)
                         full.TryAdd(new StickyDockGestureCommit(100 + i, 0, StickyDockCommitIntent.Move,

@@ -1182,6 +1182,8 @@ namespace PennyPet
                     session?.RejectDockGesture();
                     return true;
                 }
+                PumpLocalDockCommits();
+                FlushDeferredDockSnapshots();
                 _activeLocalDockDependency =
                     _dockCommitQueue.LatestPendingGestureId;
                 if (TryBeginLocalDockGesture(
@@ -1220,7 +1222,11 @@ namespace PennyPet
             {
                 if (!_localDockGestures.IsActive)
                 {
-                    if (TryResolveLocalDockRollback()) FlushDeferredDockSnapshots();
+                    if (TryResolveLocalDockRollback())
+                    {
+                        PumpLocalDockCommits();
+                        FlushDeferredDockSnapshots();
+                    }
                     return true;
                 }
                 bool finalApplied = true;
@@ -1356,9 +1362,12 @@ namespace PennyPet
             IEnumerable<string> affectedNoteIds)
         {
             if (!TryResolveLocalDockRollback()) return StickyUiCommandResult.NotAccepted();
-            if (!_localDockGestures.AffectsStructure(
-                affectedNoteIds))
+            if (!_localDockGestures.AffectsStructure(affectedNoteIds))
+            {
+                PumpLocalDockCommits();
+                FlushDeferredDockSnapshots();
                 return StickyUiCommandResult.Handled();
+            }
 
             IReadOnlyList<DockWindowTarget> restore =
                 _localDockGestures.CancelAndRestore();
@@ -1366,6 +1375,7 @@ namespace PennyPet
             ClearDockPreviewOnThread();
             ClearSplitGuideOnThread();
             if (!TryResolveLocalDockRollback(restore)) return StickyUiCommandResult.NotAccepted();
+            PumpLocalDockCommits();
             FlushDeferredDockSnapshots();
             return StickyUiCommandResult.Handled();
         }
@@ -1525,7 +1535,8 @@ namespace PennyPet
             }
             if ((value.Kind == StickyUiEventKind.SnapshotChanged ||
                  value.Kind == StickyUiEventKind.BoundsChanged) &&
-                _dockCommitQueue.ContainsMember(value.NoteId))
+                (_pendingLocalDockRollback != null ||
+                 _dockCommitQueue.ContainsMember(value.NoteId)))
             {
                 // A newer snapshot watermark must not overtake captured A/B
                 // commits. Re-capture after ACK so rollback geometry is current.
