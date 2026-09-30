@@ -8,6 +8,24 @@ namespace PennyPet.Tests
     public sealed class StickyDockLocalGestureRuntimeTests
     {
         [TestMethod]
+        public void DetachFollowerFailureRequiresRollbackInsteadOfACommit()
+        {
+            var surface = Surface("one", "display", "mdp:one", new PhysicalRect(0, 0, 1920, 1080));
+            var facts = GroupFacts(surface, 61);
+            var runtime = new StickyDockLocalGestureRuntime(id => facts[id], (targets, source) => false);
+            runtime.SetTopology(new DisplayTopologySnapshot(61, new[] { surface }));
+            runtime.SetScene(Scene(13, "A", "B", "C"));
+            runtime.TryBegin(StickyDockLocalGestureKind.HeaderDrag, "B");
+            var active = typeof(StickyDockLocalGestureRuntime).GetField("_active",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(runtime);
+            active.GetType().GetProperty("StartedUtc", System.Reflection.BindingFlags.Instance |
+                System.Reflection.BindingFlags.NonPublic).SetValue(active, DateTime.UtcNow.AddMinutes(-1));
+            Assert.IsFalse(runtime.MoveHeader(facts["B"]));
+            Assert.AreEqual(3, runtime.CancelAndRestore().Count);
+            Assert.IsNull(runtime.Complete());
+        }
+
+        [TestMethod]
         public void CompletionRetainsBaselineForCaptureFailureRollback()
         {
             var surface = Surface("one", "display", "mdp:one", new PhysicalRect(0, 0, 1920, 1080));

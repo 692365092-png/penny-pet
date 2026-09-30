@@ -398,10 +398,9 @@ namespace PennyPet
             gesture.EvaluateSplit(sourceFacts, DateTime.UtcNow);
             if (gesture.Detached)
             {
-                if (!wasDetached)
-                    ApplyFollowers(
-                        gesture.BaselineTargets(),
-                        gesture.SourceNoteId);
+                if (!wasDetached && !ApplyFollowers(
+                        gesture.BaselineTargets(), gesture.SourceNoteId))
+                    return false;
                 // A hold-to-detach gesture finishes the split first. Do not
                 // visually reattach to a parent while committing Detach.
                 LastSnapTargetNoteId = String.Empty;
