@@ -59,9 +59,10 @@ namespace PennyPet
 
         private static void RunStartupDockRestoreChecks(string root, List<string> evidence)
         {
-            foreach (bool fail in new[] { false, true })
-            using (var scene = new Pc2Scene(root, "startup-dock-" + fail, true))
+            foreach (int failureStage in new[] { 0, 1, 2 })
+            using (var scene = new Pc2Scene(root, "startup-dock-" + failureStage, true))
             {
+                bool fail = failureStage != 0;
                 Pc2Set(scene.Workspace, "_surface", new StartupPetSurface { Topology = scene.Topology });
                 foreach (StickyNoteData note in scene.Notes) scene.Hosted.RemoveNote(note.Id);
                 // A visible child must restore its whole group, including the hidden root.
@@ -69,7 +70,8 @@ namespace PennyPet
                 scene.Start();
                 scene.Host.Configure(scene.Workspace.HostedStickyEventReceived, scene.Context);
                 if (fail)
-                    scene.Host.SetCommandHandler(command => command.Kind == StickyUiCommandKind.RestoreDockGroup
+                    scene.Host.SetCommandHandler(command => command.Kind == (failureStage == 1
+                        ? StickyUiCommandKind.RestoreDockGroup : StickyUiCommandKind.PrepareDockStructure)
                         ? StickyUiCommandResult.Failed(new InvalidOperationException("injected restore failure"))
                         : StickyUiCommandResult.Handled());
                 var queue = (Queue<StickyNoteData>)Pc2Call(scene.Pet, "BuildStartupRestoreQueue");

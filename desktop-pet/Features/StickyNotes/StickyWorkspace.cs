@@ -803,7 +803,8 @@ namespace PennyPet
 
         internal void PrepareDockStructure(
             IEnumerable<string> affectedNoteIds,
-            string context, Action continuation)
+            string context, Action continuation,
+            Action<StickyUiCommandResult> rejected = null)
         {
             if (continuation == null || IsDisposed) return;
             PostHostedStickyCommand(
@@ -819,8 +820,8 @@ namespace PennyPet
                         continuation();
                         return;
                     }
-                    ReportHostedStickyCommandFailure(
-                        context, result);
+                    if (rejected != null) rejected(result);
+                    else ReportHostedStickyCommandFailure(context, result);
                 });
         }
 

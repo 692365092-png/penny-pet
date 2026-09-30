@@ -1151,7 +1151,10 @@ namespace PennyPet
                         _workspace.RecoverFailedStartupDockRestore(affected,
                             StickyUiCommandResult.Failed(error));
                     }
-                });
+                }, startupRestore
+                    ? new Action<StickyUiCommandResult>(result =>
+                        _workspace.RecoverFailedStartupDockRestore(affected, result))
+                    : null);
             return true;
         }
 
