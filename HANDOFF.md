@@ -125,3 +125,18 @@ guards were already present in the baseline and now have regression probes.
 Windows CI #181 passed on `9ab0752`: 603 standard tests, native modular self-tests,
 EXE build/smoke and all normal gates. See
 [review fixes and evidence](docs/architecture-review/2026-09-29-review-fixes.md).
+
+
+## 2026-09-30 thirteen-item reliability follow-up
+
+All thirteen findings against `115daad` were confirmed and fixed, with one push
+per item: orphan settings backup; persistence/runtime attachment exclusion;
+pending Dock snapshots; serialized due reminders; true launch timestamp; native
+Dock begin denial; detach follower failure; rollback failure propagation;
+startup prepare recovery; preferred Pet placement retry; bounded topology capture
+retry; complete keyboard/focus hook availability; and actual protected EXE smoke.
+
+Windows CI #198 validated `3afdc9f`: 611 core tests, native modular tests,
+ordinary and protected EXE startup/shutdown, and normal build gates. A follow-up
+also holds snapshots during failed rollback and releases them after successful
+recovery. See [review evidence](docs/architecture-review/2026-09-30-review-fixes.md).
