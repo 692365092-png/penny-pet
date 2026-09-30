@@ -212,6 +212,18 @@ namespace PennyPet
                             ((StickyDockCommitQueue)Pc2Get(scene.Host, "_dockCommitQueue")).PendingCount == 0,
                             "failed capture/enqueue cannot leave a provisional split or pending ACK");
                     }
+                    Pc2Set(scene.Host, "_pendingLocalDockRollback", new[] {
+                        new DockWindowTarget(source, facts[source].PhysicalBounds) });
+                    Pc2Set(scene.Host, "_currentTopology", null);
+                    var blocked = (StickyUiCommandResult)Pc2Call(scene.Host, "PrepareLocalDockStructure", new object[] { null });
+                    Pc2Assert(blocked.Status != StickyUiCommandStatus.Handled &&
+                        Pc2Get(scene.Host, "_pendingLocalDockRollback") != null,
+                        "failed rollback blocks preparation and retains its recovery targets");
+                    Pc2Set(scene.Host, "_currentTopology", scene.Topology);
+                    var retried = (StickyUiCommandResult)Pc2Call(scene.Host, "PrepareLocalDockStructure", new object[] { null });
+                    Pc2Assert(retried.Status == StickyUiCommandStatus.Handled &&
+                        Pc2Get(scene.Host, "_pendingLocalDockRollback") == null,
+                        "successful rollback retry releases preparation");
                     var full = (StickyDockCommitQueue)Pc2Get(scene.Host, "_dockCommitQueue");
                     for (int i = 1; i <= 8; i++)
                         full.TryAdd(new StickyDockGestureCommit(100 + i, 0, StickyDockCommitIntent.Move,

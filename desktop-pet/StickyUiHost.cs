@@ -1177,13 +1177,7 @@ namespace PennyPet
             if (start)
             {
                 // Fail closed: never fall back to the old per-frame Pet path.
-                if (_pendingLocalDockRollback != null)
-                {
-                    ApplyLocalDockCorrections(
-                        _pendingLocalDockRollback);
-                    _pendingLocalDockRollback = null;
-                }
-                if (!_dockCommitQueue.CanBeginGesture)
+                if (!TryResolveLocalDockRollback() || !_dockCommitQueue.CanBeginGesture)
                 {
                     session?.RejectDockGesture();
                     return true;
@@ -1226,12 +1220,7 @@ namespace PennyPet
             {
                 if (!_localDockGestures.IsActive)
                 {
-                    if (_pendingLocalDockRollback != null)
-                    {
-                        ApplyLocalDockCorrections(
-                            _pendingLocalDockRollback);
-                        _pendingLocalDockRollback = null;
-                    }
+                    if (TryResolveLocalDockRollback()) FlushDeferredDockSnapshots();
                     return true;
                 }
                 bool finalApplied = true;
@@ -1261,7 +1250,7 @@ namespace PennyPet
                     _activeLocalDockDependency = 0;
                     ClearDockPreviewOnThread();
                     ClearSplitGuideOnThread();
-                    ApplyLocalDockCorrections(restore);
+                    if (TryResolveLocalDockRollback(restore)) FlushDeferredDockSnapshots();
                     return true;
                 }
 
@@ -1299,8 +1288,8 @@ namespace PennyPet
                     StickyWindowSession session;
                     if (TryGetSession(target.NoteId, out session)) surviving.Add(target);
                 }
-                ApplyLocalDockCorrections(surviving.AsReadOnly());
-                FlushDeferredDockSnapshots();
+                if (TryResolveLocalDockRollback(surviving.AsReadOnly()))
+                    FlushDeferredDockSnapshots();
                 return;
             }
             _localDockGestures.ApplyProvisional(completion);
@@ -1346,6 +1335,7 @@ namespace PennyPet
 
         private void PumpLocalDockCommits()
         {
+            if (_pendingLocalDockRollback != null) return;
             StickyDockGestureCommit ready =
                 _dockCommitQueue.PeekReady();
             if (ready == null) return;
@@ -1365,12 +1355,7 @@ namespace PennyPet
         private StickyUiCommandResult PrepareLocalDockStructure(
             IEnumerable<string> affectedNoteIds)
         {
-            if (_pendingLocalDockRollback != null)
-            {
-                ApplyLocalDockCorrections(
-                    _pendingLocalDockRollback);
-                _pendingLocalDockRollback = null;
-            }
+            if (!TryResolveLocalDockRollback()) return StickyUiCommandResult.NotAccepted();
             if (!_localDockGestures.AffectsStructure(
                 affectedNoteIds))
                 return StickyUiCommandResult.Handled();
@@ -1380,8 +1365,8 @@ namespace PennyPet
             _activeLocalDockDependency = 0;
             ClearDockPreviewOnThread();
             ClearSplitGuideOnThread();
-            if (restore.Count > 0)
-                ApplyLocalDockCorrections(restore);
+            if (!TryResolveLocalDockRollback(restore)) return StickyUiCommandResult.NotAccepted();
+            FlushDeferredDockSnapshots();
             return StickyUiCommandResult.Handled();
         }
 
@@ -1395,10 +1380,8 @@ namespace PennyPet
             if (!resolution.Matched)
                 return StickyUiCommandResult.Handled();
 
-            if (!resolution.Accepted &&
-                ack.Corrections.Count > 0)
-                ApplyLocalDockCorrections(
-                    ack.Corrections);
+            bool corrected = resolution.Accepted || ack.Corrections.Count == 0 ||
+                TryResolveLocalDockRollback(ack.Corrections);
 
             if (!resolution.Accepted &&
                 _localDockGestures.IsActive &&
@@ -1436,11 +1419,21 @@ namespace PennyPet
                 _deferredDockScene = null;
             }
             FlushDeferredDockSnapshots();
-            return StickyUiCommandResult.Handled();
+            return corrected ? StickyUiCommandResult.Handled() : StickyUiCommandResult.NotAccepted();
+        }
+
+        private bool TryResolveLocalDockRollback(IReadOnlyList<DockWindowTarget> targets = null)
+        {
+            if (targets != null && targets.Count > 0) _pendingLocalDockRollback = targets;
+            if (_pendingLocalDockRollback == null) return true;
+            if (!ApplyLocalDockCorrections(_pendingLocalDockRollback)) return false;
+            _pendingLocalDockRollback = null;
+            return true;
         }
 
         private void FlushDeferredDockSnapshots()
         {
+            if (_pendingLocalDockRollback != null) return;
             foreach (string id in new List<string>(_deferredDockSnapshotIds))
             {
                 if (_dockCommitQueue.ContainsMember(id) ||
@@ -1582,7 +1575,8 @@ namespace PennyPet
             foreach (StickyWindowSession session in _sessions.Values)
                 if (session.IsAvailable && session.IsImeCompositionActive)
                     return StickyUiCommandResult.NotAccepted();
-            PrepareLocalDockStructure(null);
+            StickyUiCommandResult restored = PrepareLocalDockStructure(null);
+            if (restored.Status != StickyUiCommandStatus.Handled) return restored;
             SetPersistencePaused(true);
             try
             {
