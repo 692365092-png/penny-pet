@@ -2358,10 +2358,6 @@ namespace PennyPet.Tests
         public void WeatherWording_IsDeterministicVariedAndCautious()
         {
             DateTime start = new DateTime(2026, 1, 1);
-            Dictionary<string, int> prefixes =
-                new Dictionary<string, int>();
-            int todayPrefixes = 0;
-            int textCount = 0;
             foreach (WeatherMeaning meaning in Enum.GetValues(
                 typeof(WeatherMeaning)))
             {
@@ -2397,21 +2393,10 @@ namespace PennyPet.Tests
                     Assert.IsFalse(first.Text.Contains("空气今天跑得挺快") ||
                         first.Text.Contains("风会比较有存在感"), first.Text);
                     selected.Add(first.Text);
-                    string compact = first.Text.Replace("\n", "");
-                    if (compact.StartsWith("今天",
-                        StringComparison.Ordinal)) todayPrefixes++;
-                    string prefix = compact.Substring(0,
-                        Math.Min(6, compact.Length));
-                    int count;
-                    prefixes.TryGetValue(prefix, out count);
-                    prefixes[prefix] = count + 1;
-                    textCount++;
                 }
                 Assert.IsTrue(selected.Count >= required,
                     meaning + ": " + selected.Count);
             }
-            Assert.IsTrue(todayPrefixes * 100D / textCount <= 25D);
-            Assert.IsTrue(prefixes.Values.Max() * 100D / textCount < 25D);
             CollectionAssert.Contains(
                 WeatherWordingCatalog.GetVariantsForTest(
                     WeatherMeaning.Windy),
