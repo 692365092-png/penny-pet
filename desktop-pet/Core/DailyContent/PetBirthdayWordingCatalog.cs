@@ -6,20 +6,20 @@ namespace PennyPet
     {
         private static readonly DailyLineEntry[] Penny =
         {
-            Line("BIRTHDAY-PENNY-APR22", "今天可是我的生日，四月二十二。"),
-            Line("BIRTHDAY-PENNY-APR22-2", "今天对我来说有点特别。")
+            Line("BIRTHDAY-PENNY-APR22", "今天是我生日欸，四月二十二号。"),
+            Line("BIRTHDAY-PENNY-APR22-2", "今天是我生日，所以有点特别。")
         };
 
         private static readonly DailyLineEntry[] User =
         {
-            Line("BIRTHDAY-USER", "生日快乐，今天对你好一点。"),
-            Line("BIRTHDAY-USER-2", "今天是你的日子呀。")
+            Line("BIRTHDAY-USER", "生日快乐。今天就对自己好一点吧。"),
+            Line("BIRTHDAY-USER-2", "生日快乐呀，今天想怎么过？")
         };
 
         private static readonly DailyLineEntry[] Shared =
         {
-            Line("BIRTHDAY-SHARED-APR22", "我们今天一起过生日呀。"),
-            Line("BIRTHDAY-SHARED-APR22-2", "居然和我同一天生日，这一天算有点缘分。")
+            Line("BIRTHDAY-SHARED-APR22", "原来我们是同一天生日。生日快乐呀。"),
+            Line("BIRTHDAY-SHARED-APR22-2", "居然和我同一天生日，还挺有缘的。")
         };
 
         internal static DailyLineEntry Select(PetBirthdayKind kind,
