@@ -232,6 +232,7 @@ namespace PennyPet
         private void FinishExitSequence()
         {
             _exiting = true;
+            _startup.Dispose();
             _keyboardPrivacy.SetEnabled(false);
             if (_reminderRuntime != null) _reminderRuntime.Stop();
             _conversation.Stop();

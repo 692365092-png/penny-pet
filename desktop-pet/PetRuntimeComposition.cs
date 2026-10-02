@@ -4,34 +4,39 @@ using System.Windows.Forms;
 
 namespace PennyPet
 {
-    internal sealed partial class PetForm
+    internal sealed partial class PetForm : IPetStartupHost
     {
-        private Action _deferredRuntimeComposition;
+        internal void EnableRuntimeComposition() { _startup.EnableRuntimeComposition(); }
 
-        internal bool DeferRuntimeCompositionWhilePersisting(Action complete)
+        internal event EventHandler ShellReady
         {
-            if (!_persistenceCoordinator.IsActive) return false;
-            _deferredRuntimeComposition = complete;
-            return true;
+            add { _startup.ShellReady += value; }
+            remove { _startup.ShellReady -= value; }
+        }
+        internal event EventHandler StartupBackgroundReady
+        {
+            add { _startup.StartupBackgroundReady += value; }
+            remove { _startup.StartupBackgroundReady -= value; }
         }
 
-        private void ResumeDeferredRuntimeComposition()
-        {
-            Action complete = _deferredRuntimeComposition;
-            _deferredRuntimeComposition = null;
-            if (!IsExitingForComposition) complete?.Invoke();
-        }
+        Form IPetStartupHost.Window { get { return this; } }
+        bool IPetStartupHost.IsExiting { get { return _exiting; } }
+        bool IPetStartupHost.PersistenceActive { get { return _persistenceCoordinator.IsActive; } }
+        PetSettings IPetStartupHost.Settings { get { return _settings; } }
+        GlobalKeyboardActivity IPetStartupHost.Keyboard { get { return _keyboard; } }
+        StickyFeature IPetStartupHost.Notes { get { return _notes; } }
+        StickyWorkspace IPetStartupHost.Workspace { get { return _stickyWorkspace; } }
+        ReminderRuntime IPetStartupHost.Reminders { get { return _reminderRuntime; } }
+        void IPetStartupHost.RefreshKeyboardMenu() { RefreshKeyboardMenuText(); }
+        void IPetStartupHost.RefreshMenu() { RefreshMenuText(); }
+        void IPetStartupHost.RenderFrame() { RenderCurrentFrame(); }
+        void IPetStartupHost.ShowBubble(string text) { ShowBubble(text); }
 
-        internal bool IsExitingForComposition
-        {
-            get { return _exiting || IsDisposed || Disposing; }
-        }
-
-        internal void AttachPreparedStickyRuntime(StickyLoadResult prepared)
+        void IPetStartupHost.PublishPreparedStickyRuntime(StickyLoadResult prepared)
         {
             if (prepared == null)
                 throw new ArgumentNullException(nameof(prepared));
-            if (IsExitingForComposition) return;
+            if (_exiting || IsDisposed || Disposing) return;
             if (_notes != null)
                 throw new InvalidOperationException(
                     "Sticky runtime has already been published.");
@@ -55,7 +60,7 @@ namespace PennyPet
             _stickyWorkspace = AttachStickyWorkspace(ownerContext);
             _reminderRuntime = new ReminderRuntime(
                 _reminders, _settings, _notes, this);
-            _reminderRuntime.Restore(_launchedUtc);
+            _reminderRuntime.Restore(_startup.LaunchedUtc);
 
             _stickyWorkspace.Start();
             DisplayTopologySnapshot topology = CurrentTopologySnapshot();
@@ -70,11 +75,11 @@ namespace PennyPet
             RefreshMenuText();
         }
 
-        internal void AbortStartupComposition()
+        void IPetStartupHost.AbortStartupComposition()
         {
             if (_exiting || IsDisposed || Disposing) return;
             _exiting = true;
-            StopDeferredStartupWork();
+            _startup.Dispose();
             Close();
         }
 

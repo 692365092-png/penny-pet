@@ -59,11 +59,6 @@ namespace PennyPet
         private StickyWorkspace _stickyWorkspace;
         private readonly object _keyboardQueueGate = new object();
         private readonly InteractionRuntime _interaction;
-        internal readonly HashSet<string> _expectedFirstRenderNoteIds =
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        internal readonly HashSet<string> _renderedFirstRenderNoteIds =
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
         private PetArtPackage _art;
         private Bitmap[][] _renderedFrames;
         private bool _renderedFramesOwnBitmaps;
@@ -76,21 +71,7 @@ namespace PennyPet
         private KeyboardInputEventArgs _latestKeyboardEvent;
         private bool _keyboardUiDispatchQueued;
         private readonly KeyboardPrivacyWorker _keyboardPrivacy;
-        private System.Windows.Forms.Timer _startupWorkTimer;
-        private StartupWorkPhase _startupWorkPhase;
-        private Queue<StickyNoteData> _startupVisibleNotes;
-        private bool _startupArtReady;
-        private bool _shellReadyRaised;
-        // The loading window is the only startup visual. Keep the layered pet
-        // window alive for initialization, but do not publish one of its
-        // frames until the restored notes and the first idle frame are ready.
-        // Optional interaction rows continue warming after startup.
-        private bool _startupDisplaySuppressed = true;
-
-        internal event EventHandler ShellReady;
-        internal event EventHandler StartupBackgroundReady;
-
-        private readonly DateTime _launchedUtc;
+        private readonly PetStartupCoordinator _startup;
 
         public PetForm() : this(null)
         {
@@ -99,7 +80,7 @@ namespace PennyPet
         internal PetForm(PetSettings preloadedSettings, DateTime? launchedUtc = null)
         {
             _persistenceCoordinator = new PetPersistenceCoordinator(this);
-            _launchedUtc = launchedUtc ?? DateTime.UtcNow;
+            _startup = new PetStartupCoordinator(this, launchedUtc ?? DateTime.UtcNow);
             Text = "Penny pet";
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;
@@ -143,7 +124,7 @@ namespace PennyPet
             BuildRenderedFrameCache();
 
             _reminders = new ReminderSchedule();
-            // Sticky disk parsing is prepared by PennyApplicationHost only
+            // Sticky disk parsing is prepared by the lifecycle owner only
             // after this shell has rendered and become interactive.
             if (persistKeyboardPrivacyReset) _settings.SaveAsync();
             if (!_settings.StartupPreferenceInitialized)
@@ -298,10 +279,9 @@ namespace PennyPet
 
                 // Shell readiness is intentionally independent of Sticky disk
                 // parsing and first-render acknowledgements.
-                _startupArtReady = _art.IsRowLoaded(IdleRow);
-                TryRaiseShellReady();
+                _startup.ArtReady(_art.IsRowLoaded(IdleRow));
                 QueueStartupInteractionPreload();
-                BeginDeferredStartupWork();
+                _startup.BeginDeferredStartupWork();
             };
         }
 
@@ -434,7 +414,7 @@ namespace PennyPet
             ClientSize = physical;
             DisposeRenderedFrameCache();
             BuildRenderedFrameCache(physical);
-            if (!_startupDisplaySuppressed) RenderCurrentFrame();
+            if (!_startup.DisplaySuppressed) RenderCurrentFrame();
         }
 
         private static Size ScaleForDpi(Size size, int dpi)
@@ -514,6 +494,7 @@ namespace PennyPet
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
+            _startup.Dispose();
             if (_stickyWorkspace != null) _stickyWorkspace.Dispose();
             if (_displayTopologyRuntime != null)
             {
@@ -545,7 +526,6 @@ namespace PennyPet
             _animationTimer.Dispose();
             if (_reminderRuntime != null) _reminderRuntime.Dispose();
             _conversation.Stop();
-            StopDeferredStartupWork();
             DisposeRenderedFrameCache();
             _art.Dispose();
             base.OnFormClosed(e);

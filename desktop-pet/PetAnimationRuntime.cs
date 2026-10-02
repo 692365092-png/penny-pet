@@ -137,8 +137,7 @@ namespace PennyPet
             {
                 ApplicationDiagnostics.ReportNonFatal("startup-interaction-render", error);
             }
-            _startupArtReady = _art.IsRowLoaded(IdleRow);
-            TryRaiseShellReady();
+            _startup.ArtReady(_art.IsRowLoaded(IdleRow));
         }
 
         private void QueueArtPreload(int row)
@@ -160,7 +159,7 @@ namespace PennyPet
 
         private void RenderCurrentFrame()
         {
-            if (_startupDisplaySuppressed || !IsHandleCreated || IsDisposed)
+            if (_startup.DisplaySuppressed || !IsHandleCreated || IsDisposed)
                 return;
             EnsureRenderedRow(_interaction.Row);
             Bitmap[] rowFrames = _renderedFrames[_interaction.Row];

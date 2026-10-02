@@ -72,8 +72,7 @@ namespace PennyPet
                 Pc2Set(Pet, "_bubbleCoordinator", bubble);
 
                 Pc2Set(Pet, "_persistenceCoordinator", new PetPersistenceCoordinator(Pet));
-                Pc2Set(Pet, "_expectedFirstRenderNoteIds", new HashSet<string>());
-                Pc2Set(Pet, "_renderedFirstRenderNoteIds", new HashSet<string>());
+                Pc2Set(Pet, "_startup", new PetStartupCoordinator(Pet, DateTime.UtcNow));
                 Workspace = Pet.AttachStickyWorkspace(Context);
                 Pc2Set(Pet, "_stickyWorkspace", Workspace);
                 Pc2Set(Pet, "_reminderRuntime", new ReminderRuntime(
@@ -265,17 +264,18 @@ namespace PennyPet
                 }
                 int attached = 0;
                 Pc2Set(Pc2Get(scene.Pet, "_persistenceCoordinator"), "_persistenceOperation", true);
-                Pc2Assert(scene.Pet.DeferRuntimeCompositionWhilePersisting(() => attached++),
+                Pc2Assert(((PetStartupCoordinator)Pc2Get(scene.Pet, "_startup")).DeferRuntimeCompositionWhilePersisting(() => attached++),
                     "runtime publication waits behind the persistence operation");
                 Pc2Assert(attached == 0, "no runtime starts or writes after the exit snapshot");
                 Pc2Set(Pc2Get(scene.Pet, "_persistenceCoordinator"), "_persistenceOperation", false);
-                Pc2Call(scene.Pet, "ResumeDeferredRuntimeComposition");
+                Pc2Call(Pc2Get(scene.Pet, "_startup"), "ResumeDeferredRuntimeComposition");
                 Pc2Assert(attached == 1, "cancelled exit resumes publication exactly once");
-                Pc2Call(scene.Pet, "ResumeDeferredRuntimeComposition");
+                Pc2Call(Pc2Get(scene.Pet, "_startup"), "ResumeDeferredRuntimeComposition");
                 Pc2Assert(attached == 1, "deferred publication is consumed");
                 evidence.Add("shell placement and bubble callbacks work before Sticky/reminder attach");
             }
 
+            RunPetLifecycleChecks(evidence);
             RunPc2PersistencePause(root, evidence);
             RunDockCommitMembershipChecks(root, evidence);
             RunPc2FinalDockFailure(root, evidence);

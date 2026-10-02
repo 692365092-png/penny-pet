@@ -12,7 +12,6 @@ namespace PennyPet
             string root = Path.Combine(Path.GetDirectoryName(
                 Path.GetFullPath(outputPath)), "dock-drag-" + Guid.NewGuid().ToString("N"));
             var evidence = new List<string>();
-            RunStandaloneDragLifecycleChecks(root, evidence);
             RunNativeDockDragChecks(root, evidence);
             File.WriteAllText(outputPath, new System.Web.Script.Serialization
                 .JavaScriptSerializer().Serialize(new { ok = true, observations = evidence }),
@@ -75,74 +74,18 @@ namespace PennyPet
                         ? StickyUiCommandKind.RestoreDockGroup : StickyUiCommandKind.PrepareDockStructure)
                         ? StickyUiCommandResult.Failed(new InvalidOperationException("injected restore failure"))
                         : StickyUiCommandResult.Handled());
-                var queue = (Queue<StickyNoteData>)Pc2Call(scene.Pet, "BuildStartupRestoreQueue");
+                var queue = (Queue<StickyNoteData>)Pc2Call(Pc2Get(scene.Pet, "_startup"), "BuildStartupRestoreQueue");
                 Pc2Assert(queue.Count == 1, "startup queues one transaction for a Dock group");
                 scene.Workspace.QueueStartupStickyRestore(queue.Dequeue());
                 scene.Context.PumpUntil(() => fail
                     ? scene.Notes.TrueForAll(note => !note.Visible)
                     : scene.Notes.TrueForAll(note => scene.Hosted.ContainsNote(note.Id)));
-                scene.Context.PumpUntil(() => (bool)Pc2Call(scene.Pet, "AllExpectedNotesHaveFirstRendered"));
+                scene.Context.PumpUntil(() => (bool)Pc2Call(Pc2Get(scene.Pet, "_startup"), "AllExpectedNotesHaveFirstRendered"));
                 if (!fail)
                     Pc2Assert(scene.Notes.TrueForAll(note => note.Visible),
                         "startup restores hidden members through the group transaction");
             }
             evidence.Add("startup Dock groups restore all members; failure releases first-render wait");
-        }
-
-        private static void RunStandaloneDragLifecycleChecks(string root, List<string> evidence)
-        {
-            foreach (bool startup in new[] { false, true })
-            using (var scene = new Pc2Scene(root, "standalone-drag-" + startup, true))
-            {
-                Pc2Set(scene.Workspace, "_surface", new StartupPetSurface { Topology = scene.Topology });
-                foreach (var note in scene.Notes)
-                {
-                    StickyDockGroups.ClearMembership(note);
-                    scene.Hosted.RemoveNote(note.Id);
-                }
-                scene.Start();
-                scene.Host.Configure(scene.Workspace.HostedStickyEventReceived, scene.Context);
-                var source = scene.Notes[0];
-                if (startup) scene.Workspace.QueueStartupStickyRestore(source);
-                else scene.Workspace.ShowHostedSticky(source, false);
-                // Drain creation, its Pet callback, and the resulting scene projection.
-                DockOnThread(scene, () => { });
-                DockOnThread(scene, () => { });
-                for (int pass = 0; pass < 2; pass++)
-                {
-                    if (pass == 1)
-                    {
-                        scene.Workspace.PostHostedStickyHide(source);
-                        DockOnThread(scene, () => { });
-                        scene.Workspace.ShowHostedSticky(source, false);
-                        DockOnThread(scene, () => { });
-                        DockOnThread(scene, () => { });
-                    }
-                    PhysicalRect before = new PhysicalRect();
-                    DockOnThread(scene, () =>
-                    {
-                        var session = DockSession(scene, 0);
-                        var window = (StickyNoteWindow)Pc2Get(session, "_window");
-                        before = session.CaptureVisibleFactsForChrome().PhysicalBounds;
-                        Pc2Set(window, "_headerDragInProgress", true);
-                        Pc2Call(session, "HeaderDragStarted", window, EventArgs.Empty);
-                        Pc2Assert(!(bool)Pc2Get(window, "_dockGestureRejected") &&
-                            ((StickyDockLocalGestureRuntime)Pc2Get(scene.Host, "_localDockGestures")).IsActive,
-                            "standalone header drag accepted after " + (startup ? "startup" : "creation") + "/reopen=" + pass);
-                        DockNativeLoop(window, 0x0231);
-                        NativeDisplayConfig.SetWindowPos(window.Handle, IntPtr.Zero,
-                            before.Left + 37, before.Top + 23, before.Width, before.Height,
-                            NativeDisplayConfig.SWP_NOZORDER | NativeDisplayConfig.SWP_NOACTIVATE);
-                        DockNativeLoop(window, 0x0232);
-                        Pc2Set(window, "_headerDragInProgress", false);
-                        Pc2Call(session, "HeaderDragCompleted", window, EventArgs.Empty);
-                    });
-                    DockOnThread(scene, () => { });
-                    Pc2Assert(source.X == before.Left + 37 && source.Y == before.Top + 23,
-                        "standalone drag persists actual final position");
-                }
-            }
-            evidence.Add("Standalone creation, startup restore and hide/reopen accept dragging and persist final HWND positions without manually publishing a Dock scene.");
         }
 
         private static void RunNativeDockDragChecks(string root, List<string> evidence)

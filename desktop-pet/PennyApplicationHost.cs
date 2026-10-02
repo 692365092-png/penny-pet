@@ -1,6 +1,5 @@
 using System;
 using System.Threading;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace PennyPet
@@ -28,13 +27,7 @@ namespace PennyPet
             {
                 PetSettings settings = PetSettings.Load();
                 PetForm pet = new PetForm(settings, launchedUtc);
-                bool runtimeLoadStarted = false;
-                pet.ShellReady += delegate
-                {
-                    if (runtimeLoadStarted) return;
-                    runtimeLoadStarted = true;
-                    BeginRuntimeComposition(pet);
-                };
+                pet.EnableRuntimeComposition();
                 pet.Show();
                 Application.Run(pet);
             }
@@ -48,90 +41,6 @@ namespace PennyPet
             }
             WpfApplicationHost.Shutdown();
             GC.KeepAlive(_singleInstance);
-        }
-
-        private static void BeginRuntimeComposition(PetForm pet)
-        {
-            Task.Run(delegate
-            {
-                return StickyFeature.PrepareLoad();
-            }).ContinueWith(delegate(Task<StickyLoadResult> task)
-            {
-                Exception failure = task.IsFaulted && task.Exception != null
-                    ? task.Exception.GetBaseException() : null;
-                StickyLoadResult prepared = task.Status ==
-                    TaskStatus.RanToCompletion ? task.Result : null;
-
-                if (pet == null || pet.IsDisposed || pet.Disposing) return;
-                try
-                {
-                    pet.BeginInvoke((MethodInvoker)delegate
-                    {
-                        CompleteRuntimeComposition(pet, prepared, failure);
-                    });
-                }
-                catch (InvalidOperationException)
-                {
-                    // The shell closed while disk preparation was completing.
-                    // Never recreate windows or publish late runtime state.
-                }
-            }, TaskScheduler.Default);
-        }
-
-        private static void CompleteRuntimeComposition(PetForm pet,
-            StickyLoadResult prepared, Exception failure)
-        {
-            if (pet == null || pet.IsDisposed || pet.Disposing ||
-                pet.IsExitingForComposition) return;
-
-            if (pet.DeferRuntimeCompositionWhilePersisting(
-                () => CompleteRuntimeComposition(pet, prepared, failure))) return;
-
-            UnsupportedStickySchemaException future =
-                failure as UnsupportedStickySchemaException ??
-                StickyFeature.PreparedFutureSchemaError(prepared);
-            if (future != null)
-            {
-                MessageBox.Show(pet, BuildFutureSchemaBlockedMessage(future),
-                    "Penny pet - 便利贴数据版本不兼容",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                pet.AbortStartupComposition();
-                return;
-            }
-
-            if (failure != null)
-            {
-                ApplicationDiagnostics.ReportFatal(
-                    "runtime-composition-load", failure);
-                MessageBox.Show(pet,
-                    "Penny pet 无法安全恢复便利贴数据。诊断记录已保存到：\n" +
-                    ApplicationDiagnostics.LogFilePath,
-                    "Penny pet", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                pet.AbortStartupComposition();
-                return;
-            }
-
-            try
-            {
-                pet.AttachPreparedStickyRuntime(prepared);
-            }
-            catch (UnsupportedStickySchemaException error)
-            {
-                MessageBox.Show(pet, BuildFutureSchemaBlockedMessage(error),
-                    "Penny pet - 便利贴数据版本不兼容",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                pet.AbortStartupComposition();
-            }
-            catch (Exception error)
-            {
-                ApplicationDiagnostics.ReportFatal(
-                    "runtime-composition-publish", error);
-                MessageBox.Show(pet,
-                    "Penny pet 无法完成后台功能初始化。诊断记录已保存到：\n" +
-                    ApplicationDiagnostics.LogFilePath,
-                    "Penny pet", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                pet.AbortStartupComposition();
-            }
         }
 
         internal static string BuildFutureSchemaBlockedMessage(

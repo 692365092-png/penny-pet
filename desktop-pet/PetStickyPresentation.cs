@@ -11,12 +11,8 @@ namespace PennyPet
         internal StickyWorkspace AttachStickyWorkspace(SynchronizationContext context)
         {
             StickyWorkspace workspace = _notes.AttachWorkspace(this, this, this, context);
-            workspace.FirstRendered += MarkFirstRendered;
-            workspace.WindowRemoved += delegate(string noteId, bool forgetExpected)
-            {
-                _renderedFirstRenderNoteIds.Remove(noteId);
-                if (forgetExpected) _expectedFirstRenderNoteIds.Remove(noteId);
-            };
+            workspace.FirstRendered += _startup.MarkFirstRendered;
+            workspace.WindowRemoved += _startup.ForgetFirstRendered;
             workspace.TypingActivity += TriggerTypingAnimation;
             workspace.ExitReady += BeginExitSequence;
             return workspace;
