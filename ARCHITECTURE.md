@@ -2,7 +2,7 @@
 
 本文记录当前已经落地的技术架构、Windows/通用边界和 macOS 迁移地图。它不是未来业务功能设计稿，也不要求立即创建 macOS UI、Application 层或网络基础设施。
 
-本文对应当前发布版本 `1.0.2`。
+本文对应当前发布版本 `1.0.2`；源码边界和构建关系以当前分支 HEAD 的项目文件为准。
 
 当前原则：保持 Windows 版行为、数据格式和构建结果；只把已能用平台无关数据表达和验证的规则放入 Core，不为架构形式引入空接口、依赖注入或大型框架。
 
@@ -10,7 +10,7 @@
 
 - `PennyPet.Core` 目标为 `netstandard2.0`，保存平台无关模型与纯规则。
 - `PennyPet.Windows.Core`、`PennyPet.App`、`PennyPet.Windows` 和 `PennyPet.SelfTests` 仍是 Windows 实现或宿主。
-- `PetForm` 与 `StickyNoteWindow` 各自按职责拆成 partial 文件；partial 只是同一类型内部的代码定位边界，不是假装独立的服务层。
+- `PetForm.*.cs` 是窗口适配 partial，只表示同一类型内部的代码定位。持久化操作由真实的 `PetPersistenceCoordinator` 持有；启动阶段、readiness 与 runtime publication 生命周期由真实的 `PetStartupCoordinator` 持有。
 - 高风险 IME、WPF/WinForms 消息桥、Window Message、Keyboard Hook、UI Automation、GDI、Shell、Registry 和真实窗口副作用继续留在 Windows 实现。
 - Dock 组关系、统一置顶数据、页签拖放会话和纯数值几何已进入 Core；启动 Core 当前只包含 loading readiness 纯判定。
 - HTTP(S) 与 Windows 路径/UNC 链接识别、危险扩展名、确认文案、文件探测和 Shell 打开位于 `Features/StickyNotes`。
@@ -20,12 +20,49 @@
 
 ## 2. 依赖方向
 
+```mermaid
+flowchart TD
+    Core["PennyPet.Core\nnetstandard2.0"]
+    CoreSources["Core/**/*.cs\nsource inclusion"]
+    Tools["PennyPet.Tools\nnet48 art generator"]
+    WindowsCore["PennyPet.Windows.Core\nnet48 library"]
+    App["PennyPet.App\nnet48 WinExe"]
+    Windows["PennyPet.Windows\nnet48 WinExe"]
+    SelfTests["PennyPet.SelfTests\nnet48 probes"]
+    Tests["PennyPet.Tests\nnet8 tests"]
+    Release["official single-file EXE"]
+
+    Core --> Tools
+    Core --> WindowsCore
+    Core --> Tests
+    CoreSources -. "compiled into standalone product" .-> Windows
+    Tools -. "build-only resource generation" .-> WindowsCore
+    Tools -. "build-only resource generation" .-> Windows
+    WindowsCore --> App
+    WindowsCore --> SelfTests
+    Windows --> Release
+```
+
+这里的虚线不是运行时依赖：`PennyPet.Windows` 和 `PennyPet.Windows.Core`
+对 `PennyPet.Tools` 使用 `ReferenceOutputAssembly=false`，只要求 Tools 先构建并
+生成 `obj/PennyPet.ArtResources/<Configuration>/<TargetFramework>/` 下的
+`release-art.ppap` 与 `startup-art.cache`。随后 `PennyPet.ArtResources.targets`
+把这两个文件和固定图片/manifest 嵌入产品输出。桌宠运行时不会加载
+`PennyPet.Tools.exe`。
+
+Windows 业务代码由 `PennyPet.Windows.Core` 作为可复用的 net48 library 编译；
+`PennyPet.App` 以它作为宿主。`PennyPet.Windows` 是兼容单文件发布入口，它在
+自己的项目内通过 wildcard Compile 直接编译 `Core/**/*.cs` 和 Windows 源码，
+不引用 `PennyPet.Core.dll` 或 `PennyPet.Windows.Core.dll`；它只通过 Tools 的
+build-only reference 取得资源生成顺序。图中的 `CoreSources` 是源码纳入关系，
+不是 ProjectReference。`build.ps1` 只构建这个项目并复制 `Penny pet.exe`。
+
+运行时的 Windows 依赖方向仍是：
+
 ```text
-PennyPet.App / PennyPet.Windows
-  -> PennyApplicationHost
-  -> PetForm（Windows 窗口与协调）
-       -> Core 动画、提醒、设置、键盘隐私规则
-       -> Windows Hook、UIA、GDI、Registry、Screen 与窗口副作用
+PetForm / PennyApplicationHost
+  -> Core 动画、提醒、设置、键盘隐私规则
+  -> Windows Hook、UIA、GDI、Registry、Screen 与窗口副作用
 
 Pet Sticky coordination
   -> canonical StickyNoteData / Core Dock rules
@@ -33,10 +70,6 @@ Pet Sticky coordination
   -> StickyUiHost session registry（Sticky WPF STA）
        -> StickyWindowSession
             -> StickyNoteWindow（Editor / Todo / Schedule / Reminder / Link）
-
-PennyPet.Tests -> PennyPet.Core
-PennyPet.SelfTests -> Windows 产品程序集与真实资源/平台探针
-PennyPet.Tools -> 美术发布包和启动缓存生成
 ```
 
 平台层可以调用 Core；Core 不得反向引用 `PetForm`、WPF、WinForms、Win32、Registry、Screen、Bitmap 或平台路径规则。
@@ -52,7 +85,7 @@ PennyPet.Tools -> 美术发布包和启动缓存生成
 | `PetArt.cs` | 发布资源包、位图解码、运行时缓存和资源校验 | Windows/GDI 资源适配 |
 | `Features/Art` | GDI 帧生命周期、画布适配和内描边 | Windows-only |
 | `LayeredSpriteRenderer.cs` | 透明分层窗口像素提交 | Windows-only |
-| `PetAnimationRuntime.cs` | 计时器、资源预载和实际帧提交 | Windows-only |
+| `PetForm.Animation.cs` | 计时器、资源预载和实际帧提交 | Windows-only |
 
 `Core/Art` 的“跨平台”只表示代码和数据模型可复用，不代表 `art/` 中的美术资源采用 GPL 授权。泥泥NINII原创美术资源的版权与使用限制见根目录 [`ASSET_LICENSE.md`](ASSET_LICENSE.md)。
 
@@ -67,7 +100,7 @@ PennyPet.Tools -> 美术发布包和启动缓存生成
 | `Core/Interaction/PetSmallTalkPolicy.cs` | SmallTalk 概率、cooldown 和相邻文案不重复规则 | 平台无关 |
 | `PetSmallTalkCoordinator.cs` | SmallTalk eligibility、文案选择、cooldown 状态及显示接受结果 | 平台无关产品协调 |
 | `PetBubbleCoordinator.cs` | Bubble 窗口生命周期、pending、minimum readability 和 reposition | Windows-only |
-| `PetAnimationRuntime.cs` | Poke 输入、产品顺序与实际 Windows 动画接线 | Windows-only |
+| `PetForm.Animation.cs` | Poke 输入、产品顺序与实际 Windows 动画接线 | Windows-only |
 
 `PetBubbleCoordinator` 只在 pending request 真正显示成功后将其移出队列；因 minimum readable 或 replacement policy 暂时失败的 request 会保留到现有 MouseUp/当前 Bubble 关闭重试点。没有额外轮询 Timer 或第二套消息管道。
 
@@ -112,7 +145,7 @@ Open-Meteo Forecast 请求固定为昨天、今天、明天和 8 个小时变量
 | 文件/目录 | 当前职责 | 边界 |
 |---|---|---|
 | `Core/StickyNotes/StickyNoteModels.cs` | 便利贴、三态 Todo、Schedule 和 Dock 持久化模型 | 平台无关 |
-| `Core/StickyNotes/StickyNoteCodec.cs` | v1-v9 数据行编解码、兼容和内容限制 | 平台无关 |
+| `Core/StickyNotes/StickyNoteCodec.cs` | v1-v11 数据行编解码、兼容和内容限制 | 平台无关 |
 | `Core/StickyNotes/StickyImportBackupValidator.cs` / `StickyImportMergePlanner.cs` | 完整备份校验、稳定 NoteId 合并、冲突副本、Dock 保守降级 | 平台无关纯规则；不读文件、不修改 live repository |
 | `Core/StickyNotes/StickyDockOperations.cs` | Dock 组插入、抽离、隐藏槽位、快照和统一置顶数据 | 平台无关 |
 | `Core/StickyNotes/SideTabSnapshot.cs` | Side Tabs 所需的 detached 轻量显示投影 | 平台无关；不是 canonical/persistence owner |
@@ -124,7 +157,7 @@ Open-Meteo Forecast 请求固定为昨天、今天、明天和 8 个小时变量
 | `Features/StickyNotes/StickyNotes.cs` / `PetPersistenceCoordinator.cs` / `StickyBackupFileReader.cs` | Manager、导入预览、文件选择、pre-import backup、原子 commit 和 hosted reconcile | Windows-only UI/文件副作用 |
 | `Features/StickyNotes/StickyLinkService.cs` | 盘符/UNC、扩展名风险、确认、文件探测和 Shell 打开 | Windows-only 路径策略 |
 | `Features/StickyNotes/StickyLinkCoordinator.cs` | WPF 链接格式、点击和光标 | Windows-only UI |
-| `Features/StickyNotes/PetStickyDockCoordinator.cs` | 屏幕/DPI/原生几何转换、canonical Dock 协调和 typed hosted effects | Windows-only 副作用适配 |
+| `Features/StickyNotes/StickyDockController.cs` | 屏幕/DPI/原生几何转换、canonical Dock 协调和 typed hosted effects | Windows-only 副作用适配 |
 | `Features/StickyNotes/StickyEditorCoordinator.cs` | RichText、焦点和 IME | Windows-only，高风险 |
 | `Features/StickyNotes/StickyNativeWindowBehavior.cs` | Win32 消息、拖拽、resize 和最大化拦截 | Windows-only，高风险 |
 
@@ -134,24 +167,27 @@ Ordinary、Todo、Schedule 属于同一个 Sticky window system，内容模式�
 
 `StickyNotesManagerForm` 是现有 Sticky repository 的 Windows 管理视图，不是 persistence owner。表头排序只改变当前表格顺序，不修改 canonical、SideTab 或 Dock order。Import & Merge 固定走 `Read → Parse → Validate → Plan → Preview → Confirm → Commit`；Preview 只保留在当前 Form 生命周期内，取消或关闭即丢弃。确认时 Pet 端重新计算计划，再由 `StickyNoteRepository` 使用单个轮转 pre-import backup 和原子写入提交；既有 NoteId 的空间/可见状态保留，新 note 与 conflict copy 默认 `Visible=false` 进入 Side Tabs。
 
-Sticky Backup v1 的 portable dataset 是 `sticky-notes.dat` 中的 Sticky 模型。`StickyNoteData.ReminderUtcTicks` 只是便于 Sticky UI 显示的下一次提醒投影；真正的 reminder records（文本、时间、预提醒和 `SourceNoteId`）由 `settings.ini` / `ReminderSchedule` 持有，当前 `.pennysticky` 不包含它们。因此 v1 不宣称 linked reminder 可跨电脑迁移，standalone reminder 也明确不属于 Sticky Backup；若以后支持，必须同时迁移并在 conflict copy 时重映射 `SourceNoteId`，不能只复制时间戳。
+R25 将导入解析与校验放在线程池，模型计划和发布仍在 Pet STA。确认、导出和退出先暂停业务，再由 Sticky STA 拒绝尚未完成的 IME/Dock ACK、取消活动预览、取得最后编辑快照并暂停编辑；原 HWND 和内容视图保留。保存屏障进入原串行 writer 队列，UI 异步等待。五秒超时只停止等待，重试复用未完成的 receipt；取消后编辑产生的新写入仍排在旧写入后。完整恢复的 Notes 成功后才发布模型，旧窗口通过专用退役命令解除事件并关闭，不再读取旧内容；Settings 的失败独立报告。退出取消恢复原编辑器，成功退出才销毁窗口。
+
+Sticky Backup v1 的 portable dataset 是 `sticky-notes.dat` 中的 Sticky 模型。`StickyNoteData.ReminderUtcTicks` 是 Pet owner 维护、供 Manager 显示/排序及文件兼容使用的下一次提醒投影；`StickyNoteUiSnapshot` 不再携带或回写该值，Sticky 窗口的提醒条使用独立 reminders 命令；真正的 reminder records（文本、时间、预提醒和 `SourceNoteId`）由 `settings.ini` / `ReminderSchedule` 持有，当前 `.pennysticky` 不包含它们。因此 v1 不宣称 linked reminder 可跨电脑迁移，standalone reminder 也明确不属于 Sticky Backup；若以后支持，必须同时迁移并在 conflict copy 时重映射 `SourceNoteId`，不能只复制时间戳。
 
 ### 提醒、设置、启动与键盘隐私
 
 | 文件/目录 | 当前职责 | 边界 |
 |---|---|---|
 | `Core/Reminders` | 提醒模型、时间刷新和气泡替换规则 | 平台无关 |
-| `PetReminderWindowsCoordinator.cs` / `ReminderUi.cs` | 提醒窗口、动画和气泡协调 | Windows-only |
+| `PetForm.Reminders.cs` / `ReminderUi.cs` | 提醒窗口、动画和气泡协调 | Windows-only |
 | `Core/Settings` | 设置数据、`StartAtLogin` 语义和旧 INI codec | 平台无关 |
 | `PetSettings.cs` / `WindowsDataPaths.cs` | Windows 路径、备份、原子保存和诊断 | Windows-only |
 | `Core/Keyboard` | 首次确认、偏好和 fail-closed 隐私判定 | 平台无关标准化输入 |
 | `Features/KeyboardOverlay` | Hook、虚拟键、UIA/Win32 敏感输入证据和覆盖窗口 | Windows-only |
 | `PetWindowLayerCoordinator.cs` | Pet-owned Form modal stack 和 no-activate transient z-order | Windows-only 必要运行状态；不持久化 |
-| `PetStartupCoordinator.cs` | Timer、Registry、窗口创建、首帧等待和事件触发 | Windows-only 启动协调 |
-| `StartupLoadingForm.cs` | 直接读取 embedded loading asset、按 Pet canvas 等比贴底呈现 | Windows-only bootstrap visual；不依赖 `PetArtPackage` 或 Sticky runtime |
-| `StartupLoadingThreadHost.cs` | 临时 WinForms STA、独立 message loop、异步置前/关闭和线程退出 | Windows-only bootstrap host；不创建 `PetForm`、Art 或 Sticky state |
+| `PennyApplicationHost.cs` | 单实例、创建 shell、启用生命周期 owner、应用消息循环和入口异常兜底 | Windows-only application entry |
+| `PetForm.Startup.cs` | 在 Pet STA 发布准备好的 Sticky/持久化/提醒/UI runtime | Windows-only runtime publication |
+| `PetStartupCoordinator.cs` | 持有启动阶段、计时器、art/shell readiness、首帧集合、后台 load 与延迟 publication；退出时丢弃待发布结果 | Windows-only 生命周期 owner |
+| `PetForm.Persistence.cs` | 提供窗口启停、退出动画和 live service 访问；不持有 persistence operation 状态 | Windows-only 窗口适配 |
 
-`PennyApplicationHost` 先启动临时 loading STA，确认 loading 已呈现后才在主 Pet STA 构造 `PetForm`。同步 bootstrap 工作不会阻塞 loading message loop；既有 UI + art readiness 满足并触发 `StartupReady` 后，loading host 异步关闭窗口并退出。启动方面目前只有 `PetStartupRules` 中的小范围 readiness 纯门禁可复用；它不是完整的跨平台 startup framework 或状态机。
+`PennyApplicationHost` 先构造并显示只含必要 idle 资源的 `PetForm`。由 `PetStartupCoordinator` 确认 Pet 首帧可交互并触发 `ShellReady` 后，Sticky 文件读取才在 thread pool 准备；准备结果回到 Pet STA，经该 owner 的关闭/持久化门禁后，调用 `PetForm.Startup.cs` 适配层一次发布 Sticky、持久化和提醒 runtime。便利贴窗口恢复继续使用 Sticky STA 的 R18 执行侧预算，`StartupBackgroundReady` 与 Shell readiness 分离。旧的第三个 loading STA、loading form、ready/exit wait chain 和专用 loading artwork 已退役。
 
 ## 4. Windows / macOS 迁移地图
 
@@ -171,12 +207,25 @@ Sticky Backup v1 的 portable dataset 是 `sticky-notes.dat` 中的 Sticky 模�
 ## 5. 构建与验证
 
 - `PennyPet.Core.csproj`：`netstandard2.0` 共享规则。
-- `PennyPet.Tests.csproj`：`net8.0` Core 单元测试和程序集边界门禁。
-- `PennyPet.Windows.Core.csproj`：Windows 产品程序集。
-- `PennyPet.App.csproj`：正常桌宠入口。
-- `PennyPet.Tools.csproj`：美术发布资源生成。
+- `PennyPet.Tools.csproj`：`net48` 美术发布资源生成器；只参与构建，不是产品运行时依赖。
+- `PennyPet.Windows.Core.csproj`：`net48` Windows 产品 library，引用 Core，并按上图消费生成资源。
+- `PennyPet.App.csproj`：引用 Windows Core 的普通桌宠 WinExe 宿主，参与 solution build，不是公开下载入口。
 - `PennyPet.SelfTests.csproj`：Windows 资源、文件系统、WinForms/WPF、Hook 与探针。
-- `PennyPet.Windows.csproj`：兼容单文件 EXE 入口。
+- `PennyPet.Tests.csproj`：`net8.0` Core/协议单元测试及少量平台边界门禁；它不编译完整 Windows UI。
+- `PennyPet.Windows.csproj`：兼容单文件 EXE 入口；`build.ps1` 和保护版流程以它为 canonical product build。
+
+canonical 验证顺序是：
+
+1. `dotnet build PennyPet.sln --configuration Release`：编译全部七个 solution project，并让 Tools 生成产品所需资源。
+2. `dotnet test desktop-pet/PennyPet.Tests.csproj --configuration Release`：运行 Core、协议、数据和保留的边界门禁。
+3. `PennyPet.SelfTests.exe --self-test=...`：在 Windows/net48 上运行资源、持久化、WinForms/WPF、Hook 和 native Dock 探针。
+4. `desktop-pet/build.ps1 -TargetPlatform anycpu -OutputFile ...`：从 `PennyPet.Windows.csproj` 生成普通发布 EXE。
+5. `desktop-pet/test-release.ps1 -Executable ...`：隔离运行普通 EXE，验证嵌入资源、窗口响应和正常退出。
+6. `desktop-pet/build-protected.ps1 ...`：生成保护版并隔离运行实际保护后的 EXE；保护版 smoke 是 CI 门禁，不是另一个产品入口。
+
+`Tests/StructuralGuards` 保留 18 个硬边界 case：Core 平台/程序集依赖、产品构建排除 SelfTests/Tools、跨 UI 线程不得同步等待、键盘 Hook 不执行 UI Automation、启动不请求天气，以及 detached 协议不拥有原生窗口。私有方法、语句顺序和协议 factory 拼写不再作为源码契约；运行行为由标准测试和 native self-test 验证。具体范围见该目录的 README。
+
+`SelfTestRunner.cs` 只编排 probe 和生成报告，具体 Windows probe 位于 `SelfTests/` 的领域 partial 文件。`Tests/CoreBehaviorTests.cs` 保留 MSTest 类声明，测试与 fixture helper 按领域放在 `Tests/CoreBehavior/`，保留原测试身份和逻辑，不增加测试框架。
 
 自动测试可以验证纯规则、codec 和程序集依赖，不能替代真实中文 IME、WPF/WinForms 消息循环、透明窗口、Dock 拖拽、多屏、键盘隐私和危险路径确认的人工回归。
 
@@ -186,37 +235,20 @@ Sticky Backup v1 的 portable dataset 是 `sticky-notes.dat` 中的 Sticky 模�
 
 只有出现真实需求和调用者时才建立相应边界，并用最小可运行测试保护。跨平台拆分定义的是技术边界，不替未来接手程序员决定产品流程。
 
-UI ownership 按 framework / message-loop 划分，而不是要求同一 feature 的所有窗口必须位于同一个线程。WPF `StickyNoteWindow` 可以继续由 `StickyUiHost` 的 WPF Dispatcher STA 承载；WinForms Side Tabs 可以留在 Pet/WinForms UI thread，只要它们只消费 typed snapshot，并只产生 typed user-action，不直接访问 hosted WPF 窗口。
+UI ownership 跟随交互所有者。`StickyUiHost` 在 Sticky Dispatcher STA 同时承载 WPF 便利贴、WinForms SideTabs 和 Dock 提示窗，实时遮挡、层级和手势几何在同一 STA 处理。Pet STA 持有 canonical 模型，通过低频投影、语义命令和完成提交交接；控件框架不决定窗口必须跨线程。
 
 Side Tabs 是附着于 Pet chrome 的 no-activate UI；左右 strip 各自按几何 overlap 决定是否 TopMost，被可见 Sticky 覆盖的 strip 临时降层，移开后恢复。TopMost/BringToFront 与 window-layer 诊断只在 overlap 状态变化时执行。Pet monitor、working area 或 scale 改变时会重新验证 desired left/right split；分配不变时只 reposition，分配改变时才 rebuild controls。
 
 ## 7. 当前 Windows UI ownership
 
-```text
-Pet / WinForms STA
-├─ PetForm
-├─ canonical StickyNoteData
-├─ StickyHostedRuntime
-└─ Side Tabs
+| 所有者 | 负责内容 |
+| --- | --- |
+| Pet / WinForms STA | PetForm、canonical StickyModel、StickyHostedRuntime、最终 Dock 提交和保存请求 |
+| StickyUiThreadHost | Sticky STA Thread、Dispatcher、async Post、Shutdown |
+| StickyUiHost / Sticky STA | 便利贴 session registry、SideTabs、Dock 提示窗、本地手势执行、待确认结果队列 |
+| StickyWindowSession / Sticky STA | 一个 StickyNoteWindow、普通编辑 sequence、会话 lease、IME、程序化放置和窗口事件 |
 
-        typed commands/events/snapshots
-                   ↓ ↑
-
-Sticky WPF STA
-├─ StickyUiThreadHost
-│   └─ Thread / Dispatcher / async Post / Shutdown
-│
-├─ StickyUiHost
-│   └─ session registry / routing / CloseAll
-│
-└─ StickyWindowSession
-    └─ one StickyNoteWindow
-       sequence
-       LastSnapshot
-       IME deferred close
-       ApplyingBounds
-       event wiring
-```
+Pet 只发送模型/拓扑/SideTab 投影与低频命令；Sticky 在手势完成时发送一次几何和语义提交，Pet 校验后返回 ACK。实时拖动、横向缩放、分隔线缩放均留在 Sticky STA。
 
 数据 ownership：
 
@@ -234,13 +266,30 @@ Sticky WPF STA
 - 新建、独立恢复、persisted Dock component 恢复、SideTab 展开及 Dock/TopMost/resize/hide/close effects 全部由 `StickyUiHost` 执行；`PetForm` 不再持有 `StickyNoteWindow` registry 或 legacy fallback。
 - Hosted Dock 覆盖 merge、group move、TopMost、horizontal resize、vertical divider、collapse-reopen、split、多成员 insertion、preview、merge pulse 和 split guide。
 - “展开全部并平铺到此屏幕”会展开所有 note、清除 canonical Dock membership，并通过唯一 hosted effect path 平铺到 Pet 当前屏幕。
-- v1-v9 Sticky persistence codec 继续保留；旧数据先转换为 canonical `StickyNoteData`，运行时 executor 信息不写入用户数据。
+- v1-v11 Sticky persistence codec 继续保留；旧数据先转换为 canonical `StickyNoteData`，运行时 executor 信息不写入用户数据。
 - Side Tabs 保持 no-activate chrome，并只在真实被可见 Sticky 覆盖时按 strip 降层；monitor/work-area/scale 改变时按需重新验证左右布局。
-- Side Tabs 仍在 WinForms Pet STA，直接消费 detached `SideTabSnapshot`；便利贴业务身份使用稳定 `NoteId`，拖拽来源 UI identity 保持平台本地 opaque object。OLE nested-loop、TransparencyKey canvas、BringToFront timing 等 workaround 是 Windows-only，不是未来 macOS UI 的复用契约。
+- SideTabs 由 Sticky STA 承载，消费 `StickySideTabsProjection` 中 detached 的 `SideTabSnapshot`；便利贴业务身份使用稳定 `NoteId`，拖拽来源 UI identity 保持平台本地 opaque object。OLE nested-loop、TransparencyKey canvas、BringToFront timing 等 workaround 是 Windows-only，不是未来 macOS UI 的复用契约。
 
-启动 loading ownership：
+持久化 ownership：
 
-- `StartupLoadingForm` 只负责 embedded bootstrap visual、Pet scale 和保存位置/fallback；不依赖 `PetArtPackage`、Sticky repository 或 hosted runtime。
-- `StartupLoadingThreadHost` 是短生命周期 WinForms STA host，拥有独立 message loop、loading form、ready/exit signal，以及异步 `BringToFront` / `Close`。
-- `PetForm` 仍由主 Pet STA 创建；Art decode、Sticky restore 和 `StickyUiThreadHost.Start` 没有迁到 loading thread。
-- `_startupUiReady + _startupArtReady` 仍通过 `PetStartupRules` 纯门禁释放 normal Pet frame，并由 `StartupReady` 关闭 loading。
+- `PetPersistenceCoordinator` 持有独占操作状态、原窗口 Enabled 状态和提醒恢复标记，编排 prepare、保存回执、重试/导出/取消、导入与完整恢复。
+- `PetForm.Persistence.cs` 通过 `IPetPersistenceHost` 提供窗口副作用和当前服务；磁盘写入仍由 `PetPersistenceRuntime` / writer 完成。
+- 操作期间 startup 暂停推进，准备好的 runtime 由 startup owner 暂存。取消操作后只消费一次；确认退出则 dispose startup owner，晚到结果不能重新发布。
+
+启动 ownership：
+
+- `PetForm` 构造只同步准备窗口基础、设置和 mandatory idle clip；不会扫描 Sticky 文件、等待天气或恢复便笺窗口。
+- `ShellReady` 只表示 Pet 首帧已可交互，不依赖 Sticky 首帧确认。
+- `PetStartupCoordinator` 在 `ShellReady` 后启动一次 `StickyFeature.PrepareLoad`；准备结果回到 Pet STA 后，调用 `PetForm.Startup.cs` 发布 live runtime，以保留正确的 owner `SynchronizationContext`。
+- `PetStartupCoordinator` 等待 runtime 后才恢复提醒/便笺；实际窗口创建预算属于 Sticky STA。全部预期便笺首帧完成后才发 `StartupBackgroundReady`。
+- 关闭或 fatal startup 期间，晚到的准备结果在发布前检查 disposed/exiting 状态，不能重新创建窗口。future-schema 数据在 publication 前 fail closed，不会用默认模型覆盖。
+
+## 8. Dock 帧与手势生命周期
+
+`StickyDockLocalGestureRuntime` 从 Sticky-owned HWND 捕获手势基准，并在同一 STA 计算、执行 follower 几何。`StickyDockCommitQueue` 只保存有界的已完成待确认结果；活动手势与待确认结果分离，ACK 不覆盖下一次手势的实时位置。旧 `DockGestureOwner`、`DockFrameMailbox`、Pet live 事件分支和输入 epoch 转发已删除。
+
+完成结果携带 GestureId、依赖、Dock 基准版本、拓扑代次和窗口 facts/lease。Pet 在一次模型变换前验证完整结果，接受后排队保存；拒绝后返回必要校正。隐藏、删除、恢复和模型替换通过 `PrepareDockStructure` 先处理受影响的本地手势。拓扑变化先更新 session 的采集拓扑，再重建基准；不能重建时取消手势。
+
+原生 follower 批处理有一次有界校正并读取实际 facts；最终放置失败同样取消手势并恢复基准，不得继续提交部分结果。普通编辑、窗口重建的 sequence/lease 验证仍保留。拖动与恢复复用 `DockLayout` 纯投影，兼容文件格式与持久字段留待 R25/R26 的独立数据边界工作。
+
+详见 [2026-09-22 分层审查与验证](docs/architecture-review/2026-09-22-dock-pipeline-review.md)，其中列出了已修复问题、保留的边界、可重跑基准及仍需 Windows 实测的部分。

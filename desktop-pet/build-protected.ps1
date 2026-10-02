@@ -1,7 +1,8 @@
 param(
     [ValidateSet("anycpu", "x86", "x64")]
     [string]$TargetPlatform = "anycpu",
-    [string]$OutputFile = ""
+    [string]$OutputFile = "",
+    [string]$SmokeReportPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -46,6 +47,13 @@ $ProtectedExe = Join-Path $ProtectedRoot $ProtectedFileName
 $ProjectFile = Join-Path $BuildRoot "penny.crproj"
 $SelfTestFile = Join-Path $BuildRoot "protected-selftest.json"
 $StartupProbeFile = Join-Path $BuildRoot "protected-startup.json"
+$BuiltOutputDir = Join-Path $ProjectRoot "bin"
+if ($TargetPlatform -ne "anycpu") {
+    $BuiltOutputDir = Join-Path $BuiltOutputDir $TargetPlatform
+}
+$BuiltOutputDir = Join-Path $BuiltOutputDir "Release\net48"
+$SelfTestExe = Join-Path $BuiltOutputDir "PennyPet.SelfTests.exe"
+$SelfTestProject = Join-Path $ProjectRoot "PennyPet.SelfTests.csproj"
 
 function Ensure-ConfuserEx {
     if (Test-Path -LiteralPath $ConfuserCli -PathType Leaf) { return }
@@ -86,11 +94,41 @@ try {
         throw "The unprotected build was not created."
     }
 
+    $selfTestBuildArguments = @(
+        "build", $SelfTestProject, "/p:Configuration=Release")
+    if ($TargetPlatform -ne "anycpu") {
+        $selfTestBuildArguments += "/p:Platform=$TargetPlatform"
+        $selfTestBuildArguments += "/p:PlatformTarget=$TargetPlatform"
+    }
+    & dotnet @selfTestBuildArguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "dotnet self-test host build failed with exit code $LASTEXITCODE"
+    }
+
+    # ConfuserEx resolves referenced assemblies from its module search paths.
+    # Keep the complete build output beside the input module so embedded
+    # runtime dependencies (for example lunar.dll and astronomy.dll) can be
+    # resolved while protecting the executable.
+    if (-not (Test-Path -LiteralPath $BuiltOutputDir -PathType Container)) {
+        throw "The unprotected build output directory was not found: $BuiltOutputDir"
+    }
+    Get-ChildItem -LiteralPath $BuiltOutputDir -File |
+        Copy-Item -Destination $InputRoot -Force
+
+    # Use a separate process for each smoke check: reflection-only assembly
+    # loading otherwise reuses the raw assembly identity for the protected file.
+    $smokeScript = Join-Path $ProjectRoot "test-release.ps1"
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $smokeScript `
+        -Executable $RawExe -ExpectedVersion $PennyAssemblyVersion `
+        -ReportPath (Join-Path $BuildRoot "raw-release-smoke.json")
+    if ($LASTEXITCODE -ne 0) { throw "Unprotected input release smoke failed." }
+
     $escapedInput = [Security.SecurityElement]::Escape($InputRoot)
     $escapedOutput = [Security.SecurityElement]::Escape($ProtectedRoot)
     $confuserProject = @"
 <?xml version="1.0" encoding="utf-8"?>
 <project outputDir="$escapedOutput" baseDir="$escapedInput" seed="PennyPet-$PennyProductVersion-NINII-1111">
+  <probePath path="$escapedInput" />
   <rule pattern="true" preset="none" inherit="false">
     <protection id="rename" />
     <protection id="constants" />
@@ -105,6 +143,7 @@ try {
 
     $confuserLog = Join-Path $BuildRoot "confuser.log"
     & $ConfuserCli -n $ProjectFile *>&1 | Tee-Object -FilePath $confuserLog
+    if ($LASTEXITCODE -ne 0) { throw "ConfuserEx failed with exit code $LASTEXITCODE." }
     if (-not (Test-Path -LiteralPath $ProtectedExe -PathType Leaf)) {
         throw "ConfuserEx did not create the protected executable."
     }
@@ -116,18 +155,42 @@ try {
             "ProductVersion.props ($PennyAssemblyVersion)."
     }
 
-    & $ProtectedExe ("--self-test=" + $SelfTestFile)
+    # These semantic checks run on the unprotected self-test host. The actual
+    # protected product is launched separately below; it has no test entry point.
+    if (-not (Test-Path -LiteralPath $SelfTestExe -PathType Leaf)) {
+        throw "The self-test host was not created: $SelfTestExe"
+    }
+    & $SelfTestExe ("--self-test=" + $SelfTestFile)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Protected build self-test host failed with exit code $LASTEXITCODE."
+    }
     Wait-ForFile $SelfTestFile 300
     $selfTest = Get-Content -LiteralPath $SelfTestFile -Raw | ConvertFrom-Json
     if (-not $selfTest.ok) {
-        throw "Protected executable self-test failed."
+        throw "Unprotected semantic self-test failed."
     }
-    & $ProtectedExe ("--startup-probe=" + $StartupProbeFile)
+    & $SelfTestExe ("--startup-probe=" + $StartupProbeFile)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Protected build startup probe failed with exit code $LASTEXITCODE."
+    }
     Wait-ForFile $StartupProbeFile 60
     $startup = Get-Content -LiteralPath $StartupProbeFile -Raw |
         ConvertFrom-Json
     if (-not $startup.ok -or -not $startup.startup_cache_used) {
-        throw "Protected executable startup probe failed."
+        throw "Unprotected self-test host startup probe failed."
+    }
+
+    if ([String]::IsNullOrWhiteSpace($SmokeReportPath)) {
+        $SmokeReportPath = Join-Path $BuildRoot "protected-release-smoke.json"
+    }
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $smokeScript `
+        -Executable $ProtectedExe -ExpectedVersion $PennyAssemblyVersion `
+        -ReportPath $SmokeReportPath -Protected
+    if ($LASTEXITCODE -ne 0) { throw "Protected executable release smoke failed." }
+    $protectedSmoke = Get-Content -LiteralPath $SmokeReportPath -Raw | ConvertFrom-Json
+    if (-not $protectedSmoke.ok -or -not $protectedSmoke.protected -or
+        -not $protectedSmoke.window -or -not $protectedSmoke.exited) {
+        throw "Protected executable did not pass real window startup/shutdown validation."
     }
 
     $binaryText = [Text.Encoding]::Unicode.GetString(
@@ -155,7 +218,7 @@ try {
     Write-Host $FinalOutput
     Write-Host ("Size: " + [Math]::Round(
         (Get-Item -LiteralPath $FinalOutput).Length / 1MB, 2) + " MiB")
-    Write-Host ("Startup probe: " + $startup.elapsed_milliseconds + " ms")
+    Write-Host ("Protected responsive window: " + $protectedSmoke.firstResponsivePetMilliseconds + " ms")
     Write-Host ("SHA-256: " + $hash)
 }
 finally {

@@ -8,7 +8,7 @@ namespace PennyPet
     internal static class StickyDockGroups
     {
         internal static List<StickyNoteData> GetOrderedGroup(
-            IList<StickyNoteData> notes, StickyNoteData seed)
+            IEnumerable<StickyNoteData> notes, StickyNoteData seed)
         {
             List<StickyNoteData> result = new List<StickyNoteData>();
             if (notes == null || seed == null) return result;
@@ -25,7 +25,7 @@ namespace PennyPet
         }
 
         internal static List<StickyNoteData> GetVisibleGroup(
-            IList<StickyNoteData> notes, StickyNoteData seed)
+            IEnumerable<StickyNoteData> notes, StickyNoteData seed)
         {
             List<StickyNoteData> result = GetOrderedGroup(notes, seed);
             result.RemoveAll(note => !note.Visible);
@@ -33,7 +33,7 @@ namespace PennyPet
         }
 
         internal static StickyNoteData GetVisibleNeighbor(
-            IList<StickyNoteData> notes, StickyNoteData seed, int direction)
+            IEnumerable<StickyNoteData> notes, StickyNoteData seed, int direction)
         {
             if (seed == null) return null;
             List<StickyNoteData> visible = GetVisibleGroup(notes, seed);

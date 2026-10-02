@@ -1,152 +1,52 @@
 using System;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
-using System.Text;
 using System.Windows.Automation;
 
 namespace PennyPet
 {
+    // Called only by the single no-window MTA worker. Unknown evidence denies display.
     internal static class SensitiveInputDetector
     {
-        private const int GwlStyle = -16;
-        private const int EsPassword = 0x0020;
-
-        public static bool IsSensitiveFocus()
+        internal static bool IsSensitiveFocus(KeyboardFocusSnapshot snapshot)
         {
-            return IsSensitiveFocus(KeyboardFocusSnapshot.Capture());
-        }
-
-        public static bool IsSensitiveFocus(KeyboardFocusSnapshot snapshot)
-        {
-            if (snapshot == null || !snapshot.IsComplete ||
-                !snapshot.StillMatchesCurrentTarget()) return true;
-            bool automationPassword = false;
-            bool automationInspected = false;
+            if (snapshot == null || !snapshot.HasNativeInputIdentity || !snapshot.StillMatchesCurrentTarget())
+                return true;
             try
             {
                 AutomationElement focused = AutomationElement.FocusedElement;
-                if (focused != null)
+                if (focused == null) return true;
+                int[] runtimeId = focused.GetRuntimeId();
+                if (runtimeId == null || runtimeId.Length == 0) return true;
+                object password = focused.GetCurrentPropertyValue(AutomationElement.IsPasswordProperty, true);
+                bool matches = focused.Current.NativeWindowHandle == snapshot.FocusedWindow.ToInt64() &&
+                    focused.Current.ProcessId == snapshot.ProcessId && focused.Current.HasKeyboardFocus &&
+                    focused.Current.ControlType == ControlType.Edit;
+                bool credential;
+                using (Process process = Process.GetProcessById((int)snapshot.ProcessId))
                 {
-                    object value = focused.GetCurrentPropertyValue(
-                        AutomationElement.IsPasswordProperty, true);
-                    automationPassword = value is bool && (bool)value;
-                    if (!automationPassword)
-                    {
-                        string name = SafeAutomationName(focused);
-                        ControlType type = SafeControlType(focused);
-                        if (type == ControlType.Edit &&
-                            ContainsSensitiveWord(name))
-                            automationPassword = true;
-                    }
-                    automationInspected = true;
+                    string name = process.ProcessName;
+                    credential = name.Equals("CredentialUIBroker", StringComparison.OrdinalIgnoreCase) ||
+                        name.Equals("LogonUI", StringComparison.OrdinalIgnoreCase) ||
+                        name.Equals("consent", StringComparison.OrdinalIgnoreCase);
                 }
+                string label = focused.Current.Name ?? String.Empty;
+                credential |= ContainsSensitiveWord(label);
+                AutomationElement after = AutomationElement.FocusedElement;
+                bool sameElement = after != null && KeyboardFocusSnapshot.SameRuntimeId(runtimeId, after.GetRuntimeId());
+                return !PetKeyboardPrivacyPolicy.CanPublishNativeInput(snapshot.HasNativeInputIdentity,
+                    snapshot.StillMatchesCurrentTarget(), password as bool?, matches && sameElement, credential);
             }
             catch
             {
-                // Win32 checks remain available if a UIA provider rejects access.
+                // Provider errors, missing properties, exited processes and access failures are unknown.
+                return true;
             }
-
-            bool standardPassword = false;
-            bool knownCredentialWindow = false;
-            bool nativeInspected = false;
-            try
-            {
-                uint processId = snapshot.ProcessId;
-                uint threadId = snapshot.ThreadId;
-                GuiThreadInfo info = new GuiThreadInfo();
-                info.cbSize = Marshal.SizeOf(typeof(GuiThreadInfo));
-                if (threadId != 0 && GetGUIThreadInfo(threadId, ref info) &&
-                    info.hwndFocus == snapshot.FocusedWindow)
-                {
-                    int style = GetWindowLong(info.hwndFocus, GwlStyle);
-                    standardPassword = (style & EsPassword) != 0;
-                    StringBuilder className = new StringBuilder(256);
-                    GetClassName(info.hwndFocus, className, className.Capacity);
-                    if (ContainsSensitiveWord(className.ToString()))
-                        standardPassword = true;
-                    nativeInspected = true;
-                }
-                if (processId != 0)
-                {
-                    using (Process process = Process.GetProcessById(
-                        (int)processId))
-                    {
-                        string name = process.ProcessName ?? String.Empty;
-                        knownCredentialWindow = name.Equals(
-                            "CredentialUIBroker",
-                            StringComparison.OrdinalIgnoreCase) ||
-                            name.Equals("LogonUI",
-                                StringComparison.OrdinalIgnoreCase) ||
-                            name.Equals("consent",
-                                StringComparison.OrdinalIgnoreCase);
-                    }
-                }
-            }
-            catch
-            {
-                // Failure to inspect one fallback must not publish input.
-            }
-            if (!snapshot.StillMatchesCurrentTarget()) return true;
-            bool sensitiveTargetDetected = automationPassword ||
-                standardPassword || knownCredentialWindow;
-            return PetKeyboardPrivacyPolicy.ShouldSuppressCapturedInput(
-                sensitiveTargetDetected,
-                automationInspected || nativeInspected);
         }
-
-        private static string SafeAutomationName(AutomationElement element)
-        {
-            try { return element.Current.Name ?? String.Empty; }
-            catch { return String.Empty; }
-        }
-
-        private static ControlType SafeControlType(AutomationElement element)
-        {
-            try { return element.Current.ControlType; }
-            catch { return null; }
-        }
-
         private static bool ContainsSensitiveWord(string value)
         {
             string text = (value ?? String.Empty).ToLowerInvariant();
-            return text.Contains("password") || text.Contains("passwd") ||
-                text.Contains("credential") || text.Contains("passcode") ||
-                text.Contains("密码") || text.Contains("口令");
+            return text.Contains("password") || text.Contains("passwd") || text.Contains("credential") ||
+                text.Contains("passcode") || text.Contains("密码") || text.Contains("口令");
         }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct GuiThreadInfo
-        {
-            public int cbSize;
-            public int flags;
-            public IntPtr hwndActive;
-            public IntPtr hwndFocus;
-            public IntPtr hwndCapture;
-            public IntPtr hwndMenuOwner;
-            public IntPtr hwndMoveSize;
-            public IntPtr hwndCaret;
-            public NativeRect rcCaret;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct NativeRect
-        {
-            public int Left;
-            public int Top;
-            public int Right;
-            public int Bottom;
-        }
-
-        [DllImport("user32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool GetGUIThreadInfo(uint threadId,
-            ref GuiThreadInfo info);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern int GetWindowLong(IntPtr window, int index);
-
-        [DllImport("user32.dll", CharSet = CharSet.Auto)]
-        private static extern int GetClassName(IntPtr window,
-            StringBuilder text, int maximumCount);
     }
 }

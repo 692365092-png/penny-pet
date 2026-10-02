@@ -530,7 +530,8 @@ namespace PennyPet.Tests
             DisplaySurfaceSnapshot plain = Surface(2, true, 1920,
                 Target("mdp:plain"));
             DockPlacementPlan at100 = DockPlacementPlanner.Plan(group,
-                Facts("A", plain, 96, 7), plain, 96, 7, 11);
+                Facts("A", plain, 96, 7, new PhysicalRect(1960, -50, 320, 300)),
+                plain, 96, 7, 11);
 
             AssertPlan(at100, 7, 11, "A", "surface-2", 96,
                 new PhysicalRect(1960, -50, 320, 300),
@@ -543,7 +544,8 @@ namespace PennyPet.Tests
                 new PhysicalRect(3840, 0, 3840, 2080), false, 0,
                 new[] { Target("mdp:scaled") });
             DockPlacementPlan at200 = DockPlacementPlanner.Plan(group,
-                Facts("B", scaled, 192, 8), scaled, 192, 8, 12);
+                Facts("B", scaled, 192, 8, new PhysicalRect(3920, 700, 640, 800)),
+                scaled, 192, 8, 12);
 
             AssertPlan(at200, 8, 12, "B", "surface-7", 192,
                 new PhysicalRect(3920, 100, 640, 600),
@@ -570,7 +572,8 @@ namespace PennyPet.Tests
                     new DockLogicalMember("C", 321, 261)
                 });
             DockPlacementPlan plan = DockPlacementPlanner.Plan(
-                group, Facts("C", surface, dpi, 9),
+                group, Facts("C", surface, dpi, 9,
+                    DockLayout.ProjectGroup(group, group.RootAnchor, surface, dpi)[2].PhysicalBounds),
                 surface, dpi, 9, 13);
 
             Assert.AreEqual(-3840 + (int)Math.Round(41 * scale,
@@ -691,12 +694,13 @@ namespace PennyPet.Tests
         }
 
         private static WindowFacts Facts(string noteId,
-            DisplaySurfaceSnapshot surface, int dpi, long generation)
+            DisplaySurfaceSnapshot surface, int dpi, long generation,
+            PhysicalRect? bounds = null)
         {
             return new WindowFacts(noteId,
                 surface.Targets.Count == 0
                     ? String.Empty : surface.Targets[0].StableKey,
-                surface.RuntimeGdiName, surface.Bounds, dpi, generation, 1);
+                surface.RuntimeGdiName, bounds ?? surface.Bounds, dpi, generation, 1);
         }
 
         private static void AssertPlan(DockPlacementPlan plan,

@@ -24,6 +24,14 @@ namespace PennyPet
             return storedEnabled && !noticeAccepted;
         }
 
+        internal static bool CanPublishNativeInput(bool eventTargetKnown,
+            bool currentTargetMatches, bool? automationPassword,
+            bool automationIdentityMatches, bool credentialTarget)
+        {
+            return eventTargetKnown && currentTargetMatches && automationPassword == false &&
+                automationIdentityMatches && !credentialTarget;
+        }
+
         internal static bool ShouldSuppressCapturedInput(
             bool sensitiveTargetDetected, bool inspectionAvailable)
         {

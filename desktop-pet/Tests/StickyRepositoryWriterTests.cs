@@ -38,7 +38,7 @@ namespace PennyPet.Tests
             using (var release = new ManualResetEventSlim())
             {
                 var written = new ConcurrentQueue<string>();
-                var repository = new StickyNoteRepository(primary, request =>
+                var repository = new StickyFeature(primary, request =>
                 {
                     AtomicTextFile.WriteAllLines(primary, BlockedLines(request, entered, release), true);
                     written.Enqueue(request.Snapshot[0].Text);
@@ -70,8 +70,8 @@ namespace PennyPet.Tests
                     Assert.IsTrue(independent, "A stalled primary write must not hold the export path.");
                     Assert.IsTrue(exported.Result.Succeeded);
                     CollectionAssert.AreEqual(new[] { "captured", "newer content" }, written.ToArray());
-                    StickyNoteData saved = StickyNoteRepository.LoadFromFile(primary).Find(note.Id);
-                    StickyNoteData rescued = StickyNoteRepository.LoadFromFile(export).Find(note.Id);
+                    StickyNoteData saved = StickyFeature.LoadFromFile(primary).Find(note.Id);
+                    StickyNoteData rescued = StickyFeature.LoadFromFile(export).Find(note.Id);
                     Assert.AreEqual("newer content", saved.Text);
                     Assert.AreEqual("newer content", rescued.Text);
                     Assert.AreEqual(333, rescued.PreferredPlacement.LocalLogicalRect.Height);
@@ -85,7 +85,7 @@ namespace PennyPet.Tests
         {
             string directory = DirectoryForTest();
             var failure = new IOException("disk full");
-            var repository = new StickyNoteRepository(Path.Combine(directory, "notes.dat"),
+            var repository = new StickyFeature(Path.Combine(directory, "notes.dat"),
                 request => PersistenceResult.Failure(failure));
             try
             {
@@ -105,7 +105,7 @@ namespace PennyPet.Tests
         {
             string directory = DirectoryForTest();
             string primary = Path.Combine(directory, "notes.dat");
-            var repository = StickyNoteRepository.LoadFromFile(primary);
+            var repository = StickyFeature.LoadFromFile(primary);
             try
             {
                 repository.CreateDraft("original", Point.Empty);
@@ -126,7 +126,7 @@ namespace PennyPet.Tests
             string primary = Path.Combine(directory, "notes.dat");
             string backup = Path.Combine(directory, "occupied");
             Directory.CreateDirectory(backup);
-            var repository = StickyNoteRepository.LoadFromFile(primary);
+            var repository = StickyFeature.LoadFromFile(primary);
             try
             {
                 StickyNoteData original = repository.CreateDraft("original", Point.Empty);
@@ -149,7 +149,7 @@ namespace PennyPet.Tests
             string directory = DirectoryForTest();
             string primary = Path.Combine(directory, "notes.dat");
             string backup = Path.Combine(directory, "before.pennysticky");
-            var repository = StickyNoteRepository.LoadFromFile(primary);
+            var repository = StickyFeature.LoadFromFile(primary);
             try
             {
                 StickyNoteData original = repository.CreateDraft("original", Point.Empty);
@@ -158,8 +158,8 @@ namespace PennyPet.Tests
                 Assert.IsTrue(repository.CommitFullRestore(replacement, backup).Succeeded);
                 Assert.IsNull(repository.Find(original.Id));
                 Assert.AreEqual("new", repository.Find("replacement").Text);
-                Assert.AreEqual("original", StickyNoteRepository.LoadFromFile(backup).Find(original.Id).Text);
-                Assert.AreEqual("new", StickyNoteRepository.LoadFromFile(primary).Find("replacement").Text);
+                Assert.AreEqual("original", StickyFeature.LoadFromFile(backup).Find(original.Id).Text);
+                Assert.AreEqual("new", StickyFeature.LoadFromFile(primary).Find("replacement").Text);
                 Assert.IsFalse(repository.HasUnsavedChanges);
             }
             finally { Directory.Delete(directory, true); }
@@ -172,7 +172,7 @@ namespace PennyPet.Tests
         {
             string directory = DirectoryForTest();
             string primary = Path.Combine(directory, "notes.dat");
-            var repository = StickyNoteRepository.LoadFromFile(primary);
+            var repository = StickyFeature.LoadFromFile(primary);
             try
             {
                 var notes = new[] { repository.CreateDraft("A", Point.Empty),
@@ -216,7 +216,7 @@ namespace PennyPet.Tests
             string primary = Path.Combine(directory, "notes.dat");
             try
             {
-                StickyNoteRepository repository = StickyNoteRepository.LoadFromFile(primary);
+                StickyFeature repository = StickyFeature.LoadFromFile(primary);
                 StickyNoteData[] notes = { repository.CreateDraft("A", Point.Empty),
                     repository.CreateDraft("B", Point.Empty), repository.CreateDraft("C", Point.Empty),
                     repository.CreateDraft("D", Point.Empty) };
@@ -225,7 +225,7 @@ namespace PennyPet.Tests
                 string hiddenId = notes[1].Id;
                 Assert.IsTrue(repository.Remove(notes[deletedIndex]));
                 Assert.IsTrue(repository.WaitForPendingSaves().Succeeded);
-                StickyNoteRepository restored = StickyNoteRepository.LoadFromFile(primary);
+                StickyFeature restored = StickyFeature.LoadFromFile(primary);
                 List<StickyNoteData> group = StickyDockGroups.GetOrderedGroup(restored.GetAll(), restored.Find(hiddenId));
                 Assert.AreEqual(3, group.Count);
                 Assert.AreEqual(hiddenId, group[deletedIndex == 0 ? 0 : 1].Id);
@@ -246,7 +246,7 @@ namespace PennyPet.Tests
             using (var release = new ManualResetEventSlim())
             {
                 var written = new ConcurrentQueue<StickyWriteRequest>();
-                var repository = new StickyNoteRepository(Path.Combine(directory, "notes.dat"), request =>
+                var repository = new StickyFeature(Path.Combine(directory, "notes.dat"), request =>
                 {
                     entered.Set();
                     if (!release.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException();
@@ -301,7 +301,7 @@ namespace PennyPet.Tests
             string primary = Path.Combine(directory, "notes.dat");
             const string future = "12|future payload";
             File.WriteAllText(primary, future);
-            var repository = StickyNoteRepository.LoadFromFile(primary);
+            var repository = StickyFeature.LoadFromFile(primary);
             try
             {
                 Assert.IsTrue(repository.IsFutureSchemaBlocked);

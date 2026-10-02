@@ -49,6 +49,8 @@ namespace PennyPet
         private readonly ToolTip _toolTip;
         private readonly System.Windows.Forms.Timer _layoutAnimationTimer;
         private int _globalStartIndex;
+        private readonly List<SideTabSnapshot> _notes = new List<SideTabSnapshot>();
+        internal int NoteCount { get { return _notes.Count; } }
         private int _dropIndex = -1;
         private int _normalHeight = 1;
         private int _dragPointerY;
@@ -175,9 +177,15 @@ namespace PennyPet
         public void SetNotes(IList<SideTabSnapshot> notes,
             int globalStartIndex)
         {
+            int count = notes == null ? 0 : notes.Count;
+            bool unchanged = _notes.Count == count;
+            for (int i = 0; unchanged && i < count; i++)
+                unchanged = _notes[i].HasSameContent(notes[i]);
+            _globalStartIndex = Math.Max(0, globalStartIndex);
+            if (unchanged) return;
+
             ClearCrossSideBoundaryPreview();
             RestoreSourceHorizontalOffset();
-            _globalStartIndex = Math.Max(0, globalStartIndex);
             _dropIndex = -1;
             _previewDraggedNoteId = null;
             _restoringLayout = false;
@@ -188,7 +196,8 @@ namespace PennyPet
                 Controls.Remove(control);
                 control.Dispose();
             }
-            int count = notes == null ? 0 : notes.Count;
+            _notes.Clear();
+            if (notes != null) _notes.AddRange(notes);
             _normalHeight = Math.Max(1,
                 count * (_metrics.Height + _metrics.Gap) - _metrics.Gap);
             ClientSize = new Size(_metrics.Width, _normalHeight);

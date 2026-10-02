@@ -67,7 +67,8 @@ namespace PennyPet.Tests
             StickyUiCommand[] commands = {
                 StickyUiCommand.Create(snapshot, false, input),
                 StickyUiCommand.EnsureSession(snapshot, input),
-                StickyUiCommand.UpdateReminders("n", input)
+                StickyUiCommand.UpdateReminders("n", input),
+                StickyUiCommand.UpdateAllReminders(input)
             };
             input[0] = new ReminderItem(deadline.AddDays(1), "其他", "other", 18F, false);
             foreach (StickyUiCommand command in commands)
@@ -83,6 +84,7 @@ namespace PennyPet.Tests
             commands[0].Reminders[0] = null;
             Assert.IsNotNull(commands[1].Reminders[0]);
             Assert.IsNotNull(commands[2].Reminders[0]);
+            Assert.IsNotNull(commands[3].Reminders[0]);
         }
 
         [TestMethod]

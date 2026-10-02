@@ -2,9 +2,8 @@ using System;
 
 namespace PennyPet
 {
-    // Keeps animation state and selection policy independent from the WinForms
-    // timer, art decoding and layered-window renderer owned by PetForm.
-    internal sealed class PetAnimationController
+    // Pure animation constants and selection rules; playback belongs to InteractionRuntime.
+    internal static class PetAnimationController
     {
         internal const int IdleRow = 0;
         internal const int RightRow = 1;
@@ -22,90 +21,6 @@ namespace PennyPet
 
         private static readonly int[] ManualAnimationRows =
             { IdleRow, HoverRow, FailedRow, WaitingRow, ThinkingRow, ReviewRow };
-
-        internal PetAnimationController()
-        {
-            TypingRow = ThinkingRow;
-            IdleRowState = IdleRow;
-            InteractionAnimationRow = -1;
-        }
-
-        internal int Row { get; set; }
-        internal int Frame { get; set; }
-        internal bool TypingSession { get; set; }
-        internal int TypingRow { get; set; }
-        internal int IdleRowState { get; set; }
-        internal DateTime TypingUntilUtc { get; set; }
-        internal bool ReminderAttentionActive { get; set; }
-        internal DateTime NextFrameUtc { get; set; }
-        internal PetInteractionAnimationKind InteractionAnimationKind
-            { get; private set; }
-        internal int InteractionAnimationRow { get; private set; }
-        internal bool SmallTalkAnimationProtected { get; private set; }
-
-        internal int ChooseRow(bool exiting, bool draggingAndMoved,
-            bool mouseInside, bool menuVisible, Func<int, bool> isRowLoaded)
-        {
-            if (isRowLoaded == null)
-                throw new ArgumentNullException(nameof(isRowLoaded));
-            if (exiting) return isRowLoaded(WavingRow) ? WavingRow : IdleRow;
-            if (ReminderAttentionActive)
-                return AttentionAnimationRow(isRowLoaded(NotificationRow));
-            if (draggingAndMoved) return isRowLoaded(FailedRow)
-                ? FailedRow : IdleRow;
-            if (InteractionAnimationKind != PetInteractionAnimationKind.None)
-                return isRowLoaded(InteractionAnimationRow)
-                    ? InteractionAnimationRow : IdleRow;
-            if (TypingSession) return isRowLoaded(TypingRow)
-                ? TypingRow : IdleRow;
-            if (mouseInside && !menuVisible)
-                return isRowLoaded(HoverRow) ? HoverRow : IdleRow;
-            return isRowLoaded(IdleRowState) ? IdleRowState : IdleRow;
-        }
-
-        internal bool TryStartOrdinaryPoke(int row,
-            bool smallTalkProtected = false)
-        {
-            if (ReminderAttentionActive || InteractionAnimationKind !=
-                PetInteractionAnimationKind.None) return false;
-            InteractionAnimationKind = PetInteractionAnimationKind.OrdinaryPoke;
-            InteractionAnimationRow = row;
-            SmallTalkAnimationProtected = smallTalkProtected;
-            return true;
-        }
-
-        internal bool TryStartEasterEgg(int row)
-        {
-            if (ReminderAttentionActive) return false;
-            InteractionAnimationKind = PetInteractionAnimationKind.EasterEgg;
-            InteractionAnimationRow = row;
-            return true;
-        }
-
-        internal bool TryStartNotification()
-        {
-            if (ReminderAttentionActive ||
-                InteractionAnimationKind != PetInteractionAnimationKind.None)
-                return false;
-            InteractionAnimationKind = PetInteractionAnimationKind.Notification;
-            InteractionAnimationRow = NotificationRow;
-            return true;
-        }
-
-        internal void CompleteInteractionAnimation()
-        {
-            InteractionAnimationKind = PetInteractionAnimationKind.None;
-            InteractionAnimationRow = -1;
-            SmallTalkAnimationProtected = false;
-        }
-
-        internal void CancelInteractionAnimation()
-        {
-            // SmallTalk special animations may not be cancelled by rapid
-            // mouse interaction; they complete their own cycle first.
-            if (SmallTalkAnimationProtected) return;
-            CompleteInteractionAnimation();
-        }
 
         internal static bool ReminderAnimationCycleComplete(bool active,
             int row, int frame, int frameCount)

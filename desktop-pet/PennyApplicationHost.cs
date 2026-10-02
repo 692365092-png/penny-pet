@@ -10,10 +10,8 @@ namespace PennyPet
 
         internal static void Run()
         {
+            DateTime launchedUtc = DateTime.UtcNow;
             bool createdNew;
-            // Local\ scopes the mutex to the current interactive session.
-            // Global\ would also block other terminal-service users from
-            // running a desktop pet in their own session, which is not wanted.
             _singleInstance = new Mutex(true, "Local\\PennyPet.SingleInstance",
                 out createdNew);
             if (!createdNew)
@@ -27,35 +25,11 @@ namespace PennyPet
             ApplicationDiagnostics.Initialize();
             try
             {
-                PetSettings preloadedSettings = PetSettings.Load();
-                DisplayTopologySnapshot startupTopology =
-                    new WindowsDisplayTopologyProvider().Capture();
-                StartupPetPlacementSnapshot startupPlacement =
-                    ResolveStartupPetPlacement(preloadedSettings,
-                        startupTopology);
-                using (StartupLoadingThreadHost loading =
-                    new StartupLoadingThreadHost())
-                {
-                    loading.Start(startupPlacement);
-                    PetForm pet = new PetForm(preloadedSettings);
-                    pet.StartupReady += delegate
-                    {
-                        loading.Close();
-                    };
-                    pet.FormClosed += delegate
-                    {
-                        loading.Close();
-                    };
-                    pet.Show();
-                    loading.BringToFront();
-                    Application.Run(pet);
-                }
-            }
-            catch (UnsupportedStickySchemaException error)
-            {
-                MessageBox.Show(BuildFutureSchemaBlockedMessage(error),
-                    "Penny pet - 便利贴数据版本不兼容",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                PetSettings settings = PetSettings.Load();
+                PetForm pet = new PetForm(settings, launchedUtc);
+                pet.EnableRuntimeComposition();
+                pet.Show();
+                Application.Run(pet);
             }
             catch (Exception error)
             {
@@ -67,32 +41,6 @@ namespace PennyPet
             }
             WpfApplicationHost.Shutdown();
             GC.KeepAlive(_singleInstance);
-        }
-
-        // One-time immutable prediction of the formal Pet's first-settled
-        // placement. The loading thread only projects this rect; it never
-        // writes settings, mutates preference or creates runtime authority.
-        private static StartupPetPlacementSnapshot ResolveStartupPetPlacement(
-            PetSettings settings, DisplayTopologySnapshot topology)
-        {
-            System.Drawing.Size logical = PetForm.ScaledPetSize(
-                settings == null ? 100 : settings.ScalePercent);
-            return PetPlacementPolicy.ResolveStartupPetPlacement(
-                settings == null ? String.Empty :
-                    settings.PetPreferredTargetKey,
-                new LogicalPoint
-                {
-                    X = settings == null ? 0 :
-                        settings.PetPreferredLocalLogicalX,
-                    Y = settings == null ? 0 :
-                        settings.PetPreferredLocalLogicalY
-                },
-                settings != null && settings.HasLocation,
-                settings == null ? 0 : settings.X,
-                settings == null ? 0 : settings.Y,
-                Math.Max(1, logical.Width),
-                Math.Max(1, logical.Height),
-                topology);
         }
 
         internal static string BuildFutureSchemaBlockedMessage(

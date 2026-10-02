@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
@@ -70,11 +71,14 @@ namespace PennyPet
                 "&count=5&language=zh&format=json");
         }
 
+        // JavaScriptSerializer binds these property names to the wire JSON.
+        [Obfuscation(Exclude = false, Feature = "-rename", ApplyToMembers = true)]
         private sealed class GeocodingResponse
         {
             public GeocodingResult[] results { get; set; }
         }
 
+        [Obfuscation(Exclude = false, Feature = "-rename", ApplyToMembers = true)]
         private sealed class GeocodingResult
         {
             public string name { get; set; }

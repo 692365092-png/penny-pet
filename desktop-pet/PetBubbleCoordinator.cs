@@ -94,7 +94,7 @@ namespace PennyPet
         {
             return new PetBubbleRequest(PetMessageKind.ReminderDue, text,
                 fontFamilyName, fontSizePoints,
-                PetReminderCoordinator.DueReminderBubbleDurationMilliseconds,
+                ReminderRules.DueReminderBubbleDurationMilliseconds,
                 false, true, 0);
         }
 
@@ -291,125 +291,6 @@ namespace PennyPet
             _suppressRestore = true;
             _bubble.Close();
             _suppressRestore = false;
-        }
-    }
-
-    // PetForm remains the thin product integration edge around the runtime owner.
-    internal sealed partial class PetForm
-    {
-        internal void ShowBubble(string text)
-        {
-            _bubbleCoordinator.Show(PetBubbleRequest.Feedback(text,
-                KeyboardOverlayForm.TextFontFamilyName,
-                KeyboardOverlayForm.TextFontSizePoints(
-                    _settings.KeyOverlayScalePercent)));
-        }
-
-        private void ShowDueReminderBubble(string text, float fontSizePoints)
-        {
-            _bubbleCoordinator.Show(PetBubbleRequest.ReminderDue(text,
-                KeyboardOverlayForm.TextFontFamilyName, fontSizePoints));
-        }
-
-        private void ShowNextPendingBubble()
-        {
-            _bubbleCoordinator.ShowNextPending();
-        }
-
-        private void ShowOrUpdatePreAlert(ReminderItem item)
-        {
-            if (item == null || _dragging || _exiting || _menu.Visible ||
-                IsDisposed) return;
-            int seconds = Math.Max(0, (int)Math.Ceiling(
-                (item.DeadlineUtc - DateTime.UtcNow).TotalSeconds));
-            string text = "提醒倒计时 " + seconds + " 秒\n" + item.Text;
-            if (_bubbleCoordinator.HasCurrent)
-            {
-                if (_bubbleCoordinator.IsCurrent(
-                    PetMessageKind.ReminderPreAlert) &&
-                    ReferenceEquals(_preAlertItem, item))
-                {
-                    _bubbleCoordinator.UpdateCurrentText(text);
-                    return;
-                }
-                if (!_bubbleCoordinator.IsCurrent(PetMessageKind.Hover)) return;
-            }
-            PetBubbleRequest request = PetBubbleRequest.ReminderPreAlert(text,
-                KeyboardOverlayForm.TextFontFamilyName,
-                KeyboardOverlayForm.TextFontSizePoints(
-                    _settings.KeyOverlayScalePercent));
-            if (_bubbleCoordinator.Show(request)) _preAlertItem = item;
-        }
-
-        private void ShowOrUpdateHoverBubble()
-        {
-            if (IsDisposed || _exiting ||
-                PetHoverStabilityRules.ShouldSuppressHover(
-                    _stableMouseInside, _menu.Visible, _dragging,
-                    _settings.SilentMode,
-                    _hoverSuppressedUntilStableLeave)) return;
-            ReminderItem next = _reminders.Next;
-            string text = next != null
-                ? "距离最近提醒还有" + FormatRemaining(next.Remaining) +
-                    "。\n当前共有 " + _reminders.Count + " 条提醒。"
-                : "今天想要做些什么呢？";
-            if (_bubbleCoordinator.HasCurrent)
-            {
-                if (_bubbleCoordinator.IsCurrent(PetMessageKind.Hover))
-                    _bubbleCoordinator.UpdateCurrentText(text);
-                return;
-            }
-            _bubbleCoordinator.Show(PetBubbleRequest.Hover(text,
-                KeyboardOverlayForm.TextFontFamilyName,
-                KeyboardOverlayForm.TextFontSizePoints(
-                    _settings.KeyOverlayScalePercent)));
-        }
-
-        internal static bool ShouldShowHoverBubble(bool mouseInside,
-            bool menuVisible, bool dragging)
-        {
-            return ShouldShowHoverBubble(mouseInside, menuVisible, dragging,
-                false);
-        }
-
-        internal static bool ShouldShowHoverBubble(bool mouseInside,
-            bool menuVisible, bool dragging, bool silentMode)
-        {
-            return mouseInside && !menuVisible && !dragging && !silentMode;
-        }
-
-        private void HideHoverBubble()
-        {
-            _bubbleCoordinator.CloseIfCurrent(PetMessageKind.Hover);
-        }
-
-        private void CloseCurrentBubbleWithoutRestoringHover(
-            bool forceProtectedMessage = false)
-        {
-            _bubbleCoordinator.CloseCurrent(forceProtectedMessage);
-        }
-
-        private void BubbleMessageClosed(PetMessageKind kind)
-        {
-            if (kind == PetMessageKind.ReminderPreAlert) _preAlertItem = null;
-        }
-
-        private void RestoreAmbientBubble()
-        {
-            if (_dragging || _exiting || IsDisposed) return;
-            ReminderItem next = _reminders.NextPreAlert;
-            if (PetReminderCoordinator.ShouldShowPreAlert(next, next == null
-                ? TimeSpan.Zero : next.Remaining))
-                ShowOrUpdatePreAlert(next);
-            else if (!PetHoverStabilityRules.ShouldSuppressHover(
-                _stableMouseInside, _menu.Visible, _dragging,
-                _settings.SilentMode, _hoverSuppressedUntilStableLeave))
-                ShowOrUpdateHoverBubble();
-        }
-
-        private void RepositionCurrentBubble()
-        {
-            _bubbleCoordinator.Reposition();
         }
     }
 }

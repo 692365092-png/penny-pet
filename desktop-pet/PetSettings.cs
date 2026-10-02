@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using System.IO;
 using System.Text;
 using System.Collections.Generic;
@@ -8,7 +9,7 @@ namespace PennyPet
 {
     // Windows storage adapter for the platform-neutral PetSettingsData and
     // PetSettingsCodec types in PennyPet.Core.
-    internal sealed class PetSettings : PetSettingsData
+    internal sealed class PetSettings : PetSettingsData, IPersistenceRetryTarget
     {
         private const long MaximumSettingsFileBytes = 1024L * 1024L;
         private string _unreadablePrimaryPath;
@@ -31,6 +32,17 @@ namespace PennyPet
         }
 
         internal event EventHandler<PersistenceFailedEventArgs> SaveFailed;
+
+        event EventHandler<PersistenceFailedEventArgs> IPersistenceRetryTarget.SaveFailed
+        {
+            add { SaveFailed += value; }
+            remove { SaveFailed -= value; }
+        }
+        bool IPersistenceRetryTarget.HasUnsavedChanges
+        { get { return HasUnsavedChanges; } }
+        bool IPersistenceRetryTarget.HasPendingSaves
+        { get { return HasPendingSaves; } }
+        void IPersistenceRetryTarget.RequestAutosave() { SaveAsync(); }
 
         internal bool HasUnsavedChanges { get { return _writer.IsDirty; } }
         internal bool HasPendingSaves { get { return _writer.HasPending; } }
@@ -85,14 +97,17 @@ namespace PennyPet
 
         internal static PetSettings LoadFromFile(string filePath)
         {
-            if (String.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+            if (String.IsNullOrWhiteSpace(filePath))
                 return new PetSettings();
             PetSettings settings;
             Exception primaryError;
-            if (TryLoadSingleFile(filePath, out settings, out primaryError))
-                return settings;
-            ApplicationDiagnostics.ReportNonFatal("settings-load-primary",
-                primaryError);
+            bool primaryExists = File.Exists(filePath);
+            if (primaryExists)
+            {
+                if (TryLoadSingleFile(filePath, out settings, out primaryError))
+                    return settings;
+                ApplicationDiagnostics.ReportNonFatal("settings-load-primary", primaryError);
+            }
 
             string backupPath = filePath + ".bak";
             Exception backupError = null;
@@ -101,7 +116,7 @@ namespace PennyPet
             {
                 // The recovered values are safe to use. Preserve the unreadable
                 // primary before the next atomic save replaces it.
-                settings._unreadablePrimaryPath = Path.GetFullPath(filePath);
+                if (primaryExists) settings._unreadablePrimaryPath = Path.GetFullPath(filePath);
                 return settings;
             }
             if (File.Exists(backupPath))
@@ -109,7 +124,7 @@ namespace PennyPet
                     backupError);
 
             settings = new PetSettings();
-            settings._unreadablePrimaryPath = Path.GetFullPath(filePath);
+            if (primaryExists) settings._unreadablePrimaryPath = Path.GetFullPath(filePath);
             if (File.Exists(backupPath))
                 settings._unreadableBackupPath = Path.GetFullPath(backupPath);
             return settings;
@@ -146,6 +161,11 @@ namespace PennyPet
         internal PersistenceResult SaveToFile(string filePath)
         {
             return _writer.Enqueue(CaptureWrite(filePath)).GetAwaiter().GetResult();
+        }
+
+        internal Task<PersistenceResult> SaveBarrierAsync()
+        {
+            return _writer.Enqueue(CaptureWrite(FilePath));
         }
 
         internal void SaveAsync()

@@ -1,0 +1,456 @@
+{
+  "ok": true,
+  "observational": true,
+  "environment": "Windows, fresh process per sample; OS file cache is not flushed",
+  "scope": "192x208 embedded idle-ready boundary, not complete application first paint",
+  "samples": [
+    {
+      "idleReadyMs": 60.019400000000005,
+      "idleCpuMs": 62.5,
+      "idlePrivateBytesDelta": 11870208,
+      "idlePeakWorkingSetBytes": 35094528,
+      "idleSource": "embedded-startup-cache",
+      "idleFrames": 48,
+      "initialLoadedStates": [
+        "idle"
+      ],
+      "releasePackBytes": 48086359,
+      "startupCacheBytes": 947242,
+      "executableBytes": 49072640,
+      "is64Bit": true,
+      "runtime": "4.0.30319.42000",
+      "ok": true,
+      "variant": "dual",
+      "iteration": 0
+    },
+    {
+      "idleReadyMs": 337.5398,
+      "idleCpuMs": 328.125,
+      "idlePrivateBytesDelta": 14536704,
+      "idlePeakWorkingSetBytes": 40456192,
+      "idleSource": "embedded-pack:æ™®é€šå¾…æœº.gif",
+      "idleFrames": 48,
+      "initialLoadedStates": [
+        "idle"
+      ],
+      "releasePackBytes": 48086359,
+      "startupCacheBytes": 0,
+      "executableBytes": 48125440,
+      "is64Bit": true,
+      "runtime": "4.0.30319.42000",
+      "ok": true,
+      "variant": "single",
+      "iteration": 0
+    },
+    {
+      "idleReadyMs": 334.1428,
+      "idleCpuMs": 359.375,
+      "idlePrivateBytesDelta": 14512128,
+      "idlePeakWorkingSetBytes": 40349696,
+      "idleSource": "embedded-pack:æ™®é€šå¾…æœº.gif",
+      "idleFrames": 48,
+      "initialLoadedStates": [
+        "idle"
+      ],
+      "releasePackBytes": 48086359,
+      "startupCacheBytes": 0,
+      "executableBytes": 48125440,
+      "is64Bit": true,
+      "runtime": "4.0.30319.42000",
+      "ok": true,
+      "variant": "single",
+      "iteration": 1
+    },
+    {
+      "idleReadyMs": 58.4684,
+      "idleCpuMs": 62.5,
+      "idlePrivateBytesDelta": 11804672,
+      "idlePeakWorkingSetBytes": 34852864,
+      "idleSource": "embedded-startup-cache",
+      "idleFrames": 48,
+      "initialLoadedStates": [
+        "idle"
+      ],
+      "releasePackBytes": 48086359,
+      "startupCacheBytes": 947242,
+      "executableBytes": 49072640,
+      "is64Bit": true,
+      "runtime": "4.0.30319.42000",
+      "ok": true,
+      "variant": "dual",
+      "iteration": 1
+    },
+    {
+      "idleReadyMs": 58.1086,
+      "idleCpuMs": 46.875,
+      "idlePrivateBytesDelta": 11796480,
+      "idlePeakWorkingSetBytes": 34861056,
+      "idleSource": "embedded-startup-cache",
+      "idleFrames": 48,
+      "initialLoadedStates": [
+        "idle"
+      ],
+      "releasePackBytes": 48086359,
+      "startupCacheBytes": 947242,
+      "executableBytes": 49072640,
+      "is64Bit": true,
+      "runtime": "4.0.30319.42000",
+      "ok": true,
+      "variant": "dual",
+      "iteration": 2
+    },
+    {
+      "idleReadyMs": 334.9778,
+      "idleCpuMs": 328.125,
+      "idlePrivateBytesDelta": 14524416,
+      "idlePeakWorkingSetBytes": 40300544,
+      "idleSource": "embedded-pack:æ™®é€šå¾…æœº.gif",
+      "idleFrames": 48,
+      "initialLoadedStates": [
+        "idle"
+      ],
+      "releasePackBytes": 48086359,
+      "startupCacheBytes": 0,
+      "executableBytes": 48125440,
+      "is64Bit": true,
+      "runtime": "4.0.30319.42000",
+      "ok": true,
+      "variant": "single",
+      "iteration": 2
+    },
+    {
+      "idleReadyMs": 342.9669,
+      "idleCpuMs": 328.125,
+      "idlePrivateBytesDelta": 14577664,
+      "idlePeakWorkingSetBytes": 40361984,
+      "idleSource": "embedded-pack:æ™®é€šå¾…æœº.gif",
+      "idleFrames": 48,
+      "initialLoadedStates": [
+        "idle"
+      ],
+      "releasePackBytes": 48086359,
+      "startupCacheBytes": 0,
+      "executableBytes": 48125440,
+      "is64Bit": true,
+      "runtime": "4.0.30319.42000",
+      "ok": true,
+      "variant": "single",
+      "iteration": 3
+    },
+    {
+      "idleReadyMs": 58.6835,
+      "idleCpuMs": 62.5,
+      "idlePrivateBytesDelta": 11780096,
+      "idlePeakWorkingSetBytes": 34914304,
+      "idleSource": "embedded-startup-cache",
+      "idleFrames": 48,
+      "initialLoadedStates": [
+        "idle"
+      ],
+      "releasePackBytes": 48086359,
+      "startupCacheBytes": 947242,
+      "executableBytes": 49072640,
+      "is64Bit": true,
+      "runtime": "4.0.30319.42000",
+      "ok": true,
+      "variant": "dual",
+      "iteration": 3
+    },
+    {
+      "idleReadyMs": 58.448100000000004,
+      "idleCpuMs": 46.875,
+      "idlePrivateBytesDelta": 11800576,
+      "idlePeakWorkingSetBytes": 34852864,
+      "idleSource": "embedded-startup-cache",
+      "idleFrames": 48,
+      "initialLoadedStates": [
+        "idle"
+      ],
+      "releasePackBytes": 48086359,
+      "startupCacheBytes": 947242,
+      "executableBytes": 49072640,
+      "is64Bit": true,
+      "runtime": "4.0.30319.42000",
+      "ok": true,
+      "variant": "dual",
+      "iteration": 4
+    },
+    {
+      "idleReadyMs": 333.1549,
+      "idleCpuMs": 328.125,
+      "idlePrivateBytesDelta": 14548992,
+      "idlePeakWorkingSetBytes": 40325120,
+      "idleSource": "embedded-pack:æ™®é€šå¾…æœº.gif",
+      "idleFrames": 48,
+      "initialLoadedStates": [
+        "idle"
+      ],
+      "releasePackBytes": 48086359,
+      "startupCacheBytes": 0,
+      "executableBytes": 48125440,
+      "is64Bit": true,
+      "runtime": "4.0.30319.42000",
+      "ok": true,
+      "variant": "single",
+      "iteration": 4
+    },
+    {
+      "idleReadyMs": 333.00960000000003,
+      "idleCpuMs": 328.125,
+      "idlePrivateBytesDelta": 14495744,
+      "idlePeakWorkingSetBytes": 40366080,
+      "idleSource": "embedded-pack:æ™®é€šå¾…æœº.gif",
+      "idleFrames": 48,
+      "initialLoadedStates": [
+        "idle"
+      ],
+      "releasePackBytes": 48086359,
+      "startupCacheBytes": 0,
+      "executableBytes": 48125440,
+      "is64Bit": true,
+      "runtime": "4.0.30319.42000",
+      "ok": true,
+      "variant": "single",
+      "iteration": 5
+    },
+    {
+      "idleReadyMs": 58.2558,
+      "idleCpuMs": 62.5,
+      "idlePrivateBytesDelta": 11784192,
+      "idlePeakWorkingSetBytes": 34869248,
+      "idleSource": "embedded-startup-cache",
+      "idleFrames": 48,
+      "initialLoadedStates": [
+        "idle"
+      ],
+      "releasePackBytes": 48086359,
+      "startupCacheBytes": 947242,
+      "executableBytes": 49072640,
+      "is64Bit": true,
+      "runtime": "4.0.30319.42000",
+      "ok": true,
+      "variant": "dual",
+      "iteration": 5
+    },
+    {
+      "idleReadyMs": 59.522600000000004,
+      "idleCpuMs": 46.875,
+      "idlePrivateBytesDelta": 11800576,
+      "idlePeakWorkingSetBytes": 34877440,
+      "idleSource": "embedded-startup-cache",
+      "idleFrames": 48,
+      "initialLoadedStates": [
+        "idle"
+      ],
+      "releasePackBytes": 48086359,
+      "startupCacheBytes": 947242,
+      "executableBytes": 49072640,
+      "is64Bit": true,
+      "runtime": "4.0.30319.42000",
+      "ok": true,
+      "variant": "dual",
+      "iteration": 6
+    },
+    {
+      "idleReadyMs": 332.4868,
+      "idleCpuMs": 343.75,
+      "idlePrivateBytesDelta": 14487552,
+      "idlePeakWorkingSetBytes": 40357888,
+      "idleSource": "embedded-pack:æ™®é€šå¾…æœº.gif",
+      "idleFrames": 48,
+      "initialLoadedStates": [
+        "idle"
+      ],
+      "releasePackBytes": 48086359,
+      "startupCacheBytes": 0,
+      "executableBytes": 48125440,
+      "is64Bit": true,
+      "runtime": "4.0.30319.42000",
+      "ok": true,
+      "variant": "single",
+      "iteration": 6
+    }
+  ],
+  "verification": {
+    "dual": {
+      "idleReadyMs": 59.0859,
+      "idleCpuMs": 62.5,
+      "idlePrivateBytesDelta": 11792384,
+      "idlePeakWorkingSetBytes": 34910208,
+      "idleSource": "embedded-startup-cache",
+      "idleFrames": 48,
+      "initialLoadedStates": [
+        "idle"
+      ],
+      "allStatesPeakWorkingSetBytes": 189546496,
+      "states": [
+        {
+          "state": "idle",
+          "frames": 48,
+          "digest": "0F44419C3518AC18EC632A1B199617DBD0C3483FE133A5DABC6B0495DA82BC3E"
+        },
+        {
+          "state": "running-right",
+          "frames": 48,
+          "digest": "7E948666097813D0154BB80A69FB35E56AF4234B3111969FBC97BFDEDBD46D79"
+        },
+        {
+          "state": "running-left",
+          "frames": 48,
+          "digest": "7E948666097813D0154BB80A69FB35E56AF4234B3111969FBC97BFDEDBD46D79"
+        },
+        {
+          "state": "waving",
+          "frames": 70,
+          "digest": "2309484E5C73D5685CDF6FD524915A85CDB0A975AE8DC8C18668AB3CBA5ED515"
+        },
+        {
+          "state": "hover",
+          "frames": 48,
+          "digest": "7E948666097813D0154BB80A69FB35E56AF4234B3111969FBC97BFDEDBD46D79"
+        },
+        {
+          "state": "failed",
+          "frames": 62,
+          "digest": "C86922FF55564164D6959927A504EC37C7B13A2CD19FE36DB0E2CB1DF27065BF"
+        },
+        {
+          "state": "waiting",
+          "frames": 100,
+          "digest": "F04BFA4B3B100E83B0F7D00A2381DDF275DB9CF13CDB1198743AF87081616FEC"
+        },
+        {
+          "state": "thinking",
+          "frames": 151,
+          "digest": "B45CCEA74F5DA95F18AF02A252E63A42D3040D4C311EE00508BF9FFB96059BF5"
+        },
+        {
+          "state": "review",
+          "frames": 51,
+          "digest": "76ABBB10A0AC64970DB1B96349D3EFB40296D69F99AE8A799EB3CE55282563DC"
+        },
+        {
+          "state": "notification",
+          "frames": 70,
+          "digest": "6D63DBC66A59AC65A6C0D5AD20123C9554B944954397F8BCB833B565A77C09A0"
+        }
+      ],
+      "releasePackBytes": 48086359,
+      "startupCacheBytes": 947242,
+      "executableBytes": 49072640,
+      "is64Bit": true,
+      "runtime": "4.0.30319.42000",
+      "ok": true,
+      "variant": "dual"
+    },
+    "single": {
+      "idleReadyMs": 336.3818,
+      "idleCpuMs": 343.75,
+      "idlePrivateBytesDelta": 14512128,
+      "idlePeakWorkingSetBytes": 40333312,
+      "idleSource": "embedded-pack:æ™®é€šå¾…æœº.gif",
+      "idleFrames": 48,
+      "initialLoadedStates": [
+        "idle"
+      ],
+      "allStatesPeakWorkingSetBytes": 193589248,
+      "states": [
+        {
+          "state": "idle",
+          "frames": 48,
+          "digest": "0F44419C3518AC18EC632A1B199617DBD0C3483FE133A5DABC6B0495DA82BC3E"
+        },
+        {
+          "state": "running-right",
+          "frames": 48,
+          "digest": "7E948666097813D0154BB80A69FB35E56AF4234B3111969FBC97BFDEDBD46D79"
+        },
+        {
+          "state": "running-left",
+          "frames": 48,
+          "digest": "7E948666097813D0154BB80A69FB35E56AF4234B3111969FBC97BFDEDBD46D79"
+        },
+        {
+          "state": "waving",
+          "frames": 70,
+          "digest": "2309484E5C73D5685CDF6FD524915A85CDB0A975AE8DC8C18668AB3CBA5ED515"
+        },
+        {
+          "state": "hover",
+          "frames": 48,
+          "digest": "7E948666097813D0154BB80A69FB35E56AF4234B3111969FBC97BFDEDBD46D79"
+        },
+        {
+          "state": "failed",
+          "frames": 62,
+          "digest": "C86922FF55564164D6959927A504EC37C7B13A2CD19FE36DB0E2CB1DF27065BF"
+        },
+        {
+          "state": "waiting",
+          "frames": 100,
+          "digest": "F04BFA4B3B100E83B0F7D00A2381DDF275DB9CF13CDB1198743AF87081616FEC"
+        },
+        {
+          "state": "thinking",
+          "frames": 151,
+          "digest": "B45CCEA74F5DA95F18AF02A252E63A42D3040D4C311EE00508BF9FFB96059BF5"
+        },
+        {
+          "state": "review",
+          "frames": 51,
+          "digest": "76ABBB10A0AC64970DB1B96349D3EFB40296D69F99AE8A799EB3CE55282563DC"
+        },
+        {
+          "state": "notification",
+          "frames": 70,
+          "digest": "6D63DBC66A59AC65A6C0D5AD20123C9554B944954397F8BCB833B565A77C09A0"
+        }
+      ],
+      "releasePackBytes": 48086359,
+      "startupCacheBytes": 0,
+      "executableBytes": 48125440,
+      "is64Bit": true,
+      "runtime": "4.0.30319.42000",
+      "ok": true,
+      "variant": "single"
+    },
+    "exactPixelsAndDurations": true
+  },
+  "summary": [
+    {
+      "variant": "dual",
+      "medianIdleReadyMs": 58.4684,
+      "medianIdleCpuMs": 62.5,
+      "medianIdlePrivateBytesDelta": 11800576,
+      "medianIdlePeakWorkingSetBytes": 34869248,
+      "executableBytes": 49072640,
+      "resourceBytes": 49033601
+    },
+    {
+      "variant": "single",
+      "medianIdleReadyMs": 334.1428,
+      "medianIdleCpuMs": 328.125,
+      "medianIdlePrivateBytesDelta": 14524416,
+      "medianIdlePeakWorkingSetBytes": 40357888,
+      "executableBytes": 48125440,
+      "resourceBytes": 48086359
+    }
+  ],
+  "reproducibility": [
+    {
+      "sha256": "EC94BAB14B874CD7435258ED6508E2241DF66FCACFC55143C2A813C71D296029",
+      "file": "release-art.ppap"
+    },
+    {
+      "sha256": "07FCB59E2E3A52EA6CF0DFF633E19E44A090138D9D9A416ED3341EDEACE17CF1",
+      "file": "startup-art.cache"
+    }
+  ],
+  "provenance": {
+    "commit": "9b92756716924b4b80cf8e4b72f1ea74bf595dad",
+    "workflowRun": 36516287675,
+    "runNumber": 171,
+    "job": 109239185994,
+    "source": "GitHub Actions job JSON output, timestamps removed"
+  }
+}

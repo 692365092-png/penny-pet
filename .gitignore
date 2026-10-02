@@ -3,8 +3,8 @@
 *.rar
 *.zip
 desktop-pet/dist/
-desktop-pet/bin/
-desktop-pet/obj/
+**/bin/
+**/obj/
 
 # Local distribution copies, manuals, and archived artwork
 PENNY PET/

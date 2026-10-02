@@ -9,7 +9,7 @@ namespace PennyPet.Tests
     {
         private sealed class Scene
         {
-            internal readonly StickyNoteRepository Notes = new StickyNoteRepository("unused", _ => PersistenceResult.Success());
+            internal readonly StickyFeature Notes = new StickyFeature("unused", _ => PersistenceResult.Success());
             internal readonly StickyHostedRuntime Hosted = new StickyHostedRuntime();
             internal readonly StickyPlacementRuntime Placement = new StickyPlacementRuntime();
             internal readonly StickyFactsReceiver Receiver;
@@ -21,7 +21,7 @@ namespace PennyPet.Tests
                 Note.PreferredPlacement = new WindowPlacementPreference("mdp:missing",
                     new LogicalRect { X = 700, Y = 0, Width = 320, Height = 240 });
                 Hosted.AddNote(Note.Id);
-                Receiver = new StickyFactsReceiver(Notes, Hosted, Placement);
+                Receiver = new StickyFactsReceiver(Notes.Model, Hosted, Placement);
             }
             internal DockBatchMemberResult Member(string snapshotId = "note", long sequence = 10, bool created = false)
             {
@@ -156,6 +156,38 @@ namespace PennyPet.Tests
             Assert.AreEqual(333, saved.LegacyPlacement.Logical.Width);
             Assert.IsNull(saved.PreferredPlacement);
             Assert.AreEqual(-1840, saved.X);
+        }
+
+        [TestMethod]
+        [DataRow(false, false)]
+        [DataRow(false, true)]
+        [DataRow(true, false)]
+        [DataRow(true, true)]
+        public void LateEditorContentCannotRestoreCancelledOrOverwriteEditedReminder(bool batch, bool cancelled)
+        {
+            var s = new Scene();
+            var topology = StickyGeometryAuthorityTests.Topology();
+            s.Note.ReminderUtcTicks = new DateTime(2030, 1, 1).Ticks;
+            var editor = StickyNoteUiSnapshot.Capture(s.Note).CreateWorkingCopy();
+            editor.Text = "last editor input";
+            var snapshot = StickyNoteUiSnapshot.Capture(editor);
+            long currentTicks = cancelled ? 0 : new DateTime(2030, 2, 1).Ticks;
+            s.Note.ReminderUtcTicks = currentTicks;
+            var facts = StickyGeometryAuthorityTests.Facts(sequence: 10);
+            if (batch)
+            {
+                Assert.IsTrue(s.Receiver.TryPrepare(new DockBatchMemberResult(
+                    s.Note.Id, 10, facts, snapshot), topology, out var update));
+                update.Commit();
+            }
+            else
+                Assert.IsTrue(s.Receiver.TryApplySnapshot(snapshot, 10, facts,
+                    topology, topology, out _));
+            Assert.AreEqual("last editor input", s.Note.Text);
+            Assert.AreEqual(currentTicks, s.Note.ReminderUtcTicks);
+            Assert.AreEqual(currentTicks, StickyNoteCodec.ParseLine(
+                StickyNoteCodec.SerializeLine(s.Note)).ReminderUtcTicks,
+                "The next persistence snapshot must retain the schedule owner's projection.");
         }
 
         [TestMethod]

@@ -86,6 +86,7 @@ namespace PennyPet
         private const int HtBottomLeft = 16;
         private const int HtBottomRight = 17;
 
+        private readonly StickyContentView _contentView;
         private readonly WC.Border _shell;
         private readonly WC.Grid _layout;
         private readonly WC.Border _header;
@@ -96,38 +97,11 @@ namespace PennyPet
         private readonly WC.Button _pinButton;
         private readonly WC.Button _colorButton;
         private readonly WC.Button _closeButton;
-        private readonly WC.Grid _formatToolbar;
-        private readonly WC.ComboBox _fontFamilyBox;
-        private readonly WC.ComboBox _fontSizeBox;
-        private readonly WC.Button _boldButton;
-        private readonly WC.Button _italicButton;
-        private readonly WC.Button _underlineButton;
-        private readonly WC.RichTextBox _editor;
-        private readonly WC.Border _reminderPanel;
-        private readonly WC.ListBox _reminderList;
-        private readonly WC.Grid _todoPanel;
-        private readonly WC.StackPanel _todoRows;
-        private readonly WC.TextBox _todoInput;
-        private readonly WC.Button _todoAddButton;
-        private readonly WC.Button _todoDeleteButton;
-        private readonly WC.Button _todoPinToggleButton;
-        private readonly WC.Button _todoUpButton;
-        private readonly WC.Button _todoDownButton;
-        private readonly WC.TextBlock _todoProgress;
-        private readonly WC.Grid _schedulePanel;
-        private readonly WC.StackPanel _scheduleRows;
-        private readonly WC.Button _scheduleAddButton;
-        private readonly WC.Button _scheduleDeleteButton;
-        private readonly WC.Button _schedulePinToggleButton;
-        private readonly WC.Button _scheduleUpButton;
-        private readonly WC.Button _scheduleDownButton;
-        private readonly WC.TextBlock _scheduleCount;
+        private WC.Border _reminderPanel;
+        private WC.ListBox _reminderList;
         private readonly DispatcherTimer _saveTimer;
-        private readonly DispatcherTimer _scheduleRefreshTimer;
         private StickyAppearanceDialog _appearanceDialog;
         private ReminderItem _selectedReminder;
-        private StickyTodoItem _selectedTodo;
-        private StickyScheduleItem _selectedSchedule;
         private bool _initializing;
         private bool _closingForExit;
         private bool _disposed;
@@ -139,9 +113,6 @@ namespace PennyPet
         private double _lastValidWidth;
         private double _lastValidHeight;
         private bool _inputFocusReportQueued;
-        private bool _updatingFormatToolbar;
-        private bool _rebuildingTodos;
-        private bool _rebuildingSchedules;
         private bool _winFormsKeyboardInteropEnabled;
         private bool _dockPreviewActive;
         private bool _dockPreviewTarget;
@@ -158,22 +129,8 @@ namespace PennyPet
         private System.Drawing.Point _headerDragPointerOffset;
         private bool _headerDragInProgress;
         private bool _recoveringSystemGeometry;
-        private int _appliedEditorTextColorArgb = Int32.MinValue;
         private readonly bool _opaqueQaHost;
         private DateTime _lastInputUtc = DateTime.MinValue;
-        // Preserve the RichTextBox selection while a toolbar selector owns
-        // focus.  Formatting itself stays in WPF's native TextSelection/
-        // HIGH RISK: IME compatibility code. Do not simplify or move this
-        // focus/composition path without real Chinese IME regression testing.
-        // FlowDocument pipeline; inserting or rewriting composition text here
-        // duplicates third-party IME commits and breaks Enter inheritance.
-        private TextPointer _savedSelectionStart;
-        private TextPointer _savedSelectionEnd;
-        private string _typingFontFamilyName;
-        private float _typingFontSizePoints;
-        private bool _restoreEditorFocusQueued;
-        private bool _applyingTypingFormat;
-        private bool _editorTextCompositionActive;
         private int _userInteractionGeneration;
         private int _reminderBannerRebuildCount;
         private static readonly Lazy<string[]> InstalledFontNameCache =
@@ -208,14 +165,10 @@ namespace PennyPet
         {
             if (data == null) throw new ArgumentNullException("data");
             Data = data;
+            if (Data.IsSchedule) Data.IsTodoList = false;
             _opaqueQaHost = opaqueQaHost;
             _hostedNativePlacement = hostedNativePlacement;
             _initializing = true;
-            _typingFontFamilyName = StickyNoteRepository.NormalizeFontFamily(
-                data.FontFamilyName);
-            _typingFontSizePoints = Math.Max(6F, Math.Min(72F,
-                data.FontSizeTwips / 20F));
-
             Title = "Penny pet 便利贴";
             WindowStyle = W.WindowStyle.None;
             WindowStartupLocation = W.WindowStartupLocation.Manual;
@@ -299,150 +252,14 @@ namespace PennyPet
             WC.Grid.SetRow(_header, 0);
             _layout.Children.Add(_header);
 
-            // List-mode creation commands live beside the size selector.
-            // Only the pair matching the current note type is visible.
-            _todoAddButton = ActionButton("新增", 52);
-            _todoDeleteButton = ActionButton("删除", 52);
-            _scheduleAddButton = ActionButton("新增", 52);
-            _scheduleDeleteButton = ActionButton("删除", 52);
-            _formatToolbar = BuildFormatToolbar(out _fontFamilyBox,
-                out _fontSizeBox, out _boldButton, out _italicButton,
-                out _underlineButton);
-            AddToGrid(_formatToolbar, _todoAddButton, 5);
-            AddToGrid(_formatToolbar, _scheduleAddButton, 5);
-            AddToGrid(_formatToolbar, _todoDeleteButton, 6);
-            AddToGrid(_formatToolbar, _scheduleDeleteButton, 6);
-            WC.Grid.SetRow(_formatToolbar, 1);
-            _layout.Children.Add(_formatToolbar);
-
-            _reminderList = new WC.ListBox();
-            _reminderList.BorderThickness = new W.Thickness(0);
-            _reminderList.Background = System.Windows.Media.Brushes.Transparent;
-            _reminderList.Padding = new W.Thickness(6, 3, 6, 3);
-            _reminderList.FontFamily = new System.Windows.Media.FontFamily(
-                "Microsoft YaHei UI");
-            _reminderList.FontSize = PointSizeToDip(8.5F);
-            _reminderList.SelectionChanged += ReminderSelectionChanged;
-            _reminderList.PreviewMouseRightButtonDown +=
-                ReminderListPreviewMouseRightButtonDown;
-            _reminderList.MouseDoubleClick += delegate
-            {
-                ExecuteSelectedReminderModify();
-            };
-            _reminderPanel = new WC.Border();
-            _reminderPanel.Child = _reminderList;
-            _reminderPanel.Visibility = W.Visibility.Collapsed;
-            WC.Grid.SetRow(_reminderPanel, 2);
-            _layout.Children.Add(_reminderPanel);
-
-            _editor = new WC.RichTextBox();
-            _editor.BorderThickness = new W.Thickness(0);
-            _editor.Padding = new W.Thickness(8, 5, 8, 8);
-            _editor.Background = System.Windows.Media.Brushes.Transparent;
-            _editor.AcceptsTab = true;
-            _editor.AcceptsReturn = true;
-            _editor.VerticalScrollBarVisibility = WC.ScrollBarVisibility.Auto;
-            _editor.HorizontalScrollBarVisibility = WC.ScrollBarVisibility.Disabled;
-            _editor.FontFamily = SafeWpfFontFamily(data.FontFamilyName);
-            _editor.FontSize = PointSizeToDip(data.FontSizeTwips / 20F);
-            _editor.SpellCheck.IsEnabled = false;
-            ConfigureMultilingualTextInput(_editor);
-            LoadEditorContent();
-            SaveEditorSelection();
-            _editor.TextChanged += EditorTextChanged;
-            _editor.SelectionChanged += EditorSelectionChanged;
-            _editor.PreviewMouseLeftButtonUp += EditorPreviewMouseLeftButtonUp;
-            _editor.PreviewMouseMove += EditorPreviewMouseMove;
-            TextCompositionManager.AddPreviewTextInputStartHandler(_editor,
-                EditorTextCompositionStarted);
-            TextCompositionManager.AddPreviewTextInputUpdateHandler(_editor,
-                EditorTextCompositionUpdated);
-            _editor.PreviewTextInput += EditorTextCompositionCompleted;
-            _editor.ContextMenu = BuildEditorMenu();
-            WC.Grid.SetRow(_editor, 3);
-            _layout.Children.Add(_editor);
-
-            _todoRows = new WC.StackPanel();
-            WC.ScrollViewer todoScroller = new WC.ScrollViewer();
-            todoScroller.VerticalScrollBarVisibility = WC.ScrollBarVisibility.Auto;
-            todoScroller.Content = _todoRows;
-            _todoInput = PlainTextBox();
-            _todoInput.MaxLength = StickyNoteLimits.MaximumTodoItemCharacters;
-            ConfigureMultilingualTextInput(_todoInput);
-            _todoInput.KeyDown += TodoInputKeyDown;
-            _todoInput.Visibility = W.Visibility.Collapsed;
-            _todoPinToggleButton = ActionButton("置顶待办", 76);
-            _todoUpButton = ActionButton("↑", 46);
-            _todoDownButton = ActionButton("↓", 46);
-            _todoProgress = new WC.TextBlock();
-            _todoProgress.VerticalAlignment = W.VerticalAlignment.Center;
-            _todoProgress.Margin = new W.Thickness(7, 0, 4, 0);
-            _todoProgress.FontFamily = new System.Windows.Media.FontFamily(
-                "Microsoft YaHei UI");
-            _todoProgress.FontSize = PointSizeToDip(8.5F);
-            WC.Grid todoCommands = new WC.Grid();
-            todoCommands.Margin = new W.Thickness(6, 4, 6, 7);
-            // Preserve the former cancel-button position while exposing only
-            // one pin toggle.  The spacer also keeps the move buttons stable.
-            todoCommands.ColumnDefinitions.Add(Column(new W.GridLength(80)));
-            todoCommands.ColumnDefinitions.Add(Column(W.GridLength.Auto));
-            todoCommands.ColumnDefinitions.Add(Column(new W.GridLength(1,
-                W.GridUnitType.Star)));
-            todoCommands.ColumnDefinitions.Add(Column(W.GridLength.Auto));
-            todoCommands.ColumnDefinitions.Add(Column(W.GridLength.Auto));
-            todoCommands.ColumnDefinitions.Add(Column(W.GridLength.Auto));
-            AddToGrid(todoCommands, _todoPinToggleButton, 1);
-            AddToGrid(todoCommands, _todoUpButton, 3);
-            AddToGrid(todoCommands, _todoDownButton, 4);
-            AddToGrid(todoCommands, _todoProgress, 5);
-            _todoPanel = new WC.Grid();
-            _todoPanel.RowDefinitions.Add(Row(new W.GridLength(1,
-                W.GridUnitType.Star)));
-            _todoPanel.RowDefinitions.Add(Row(W.GridLength.Auto));
-            WC.Grid.SetRow(todoScroller, 0);
-            WC.Grid.SetRow(todoCommands, 1);
-            _todoPanel.Children.Add(todoScroller);
-            _todoPanel.Children.Add(todoCommands);
-            WC.Grid.SetRow(_todoPanel, 3);
-            _layout.Children.Add(_todoPanel);
-
-            _scheduleRows = new WC.StackPanel();
-            WC.ScrollViewer scheduleScroller = new WC.ScrollViewer();
-            scheduleScroller.VerticalScrollBarVisibility =
-                WC.ScrollBarVisibility.Auto;
-            scheduleScroller.Content = _scheduleRows;
-            _schedulePinToggleButton = ActionButton("置顶日程", 76);
-            _scheduleUpButton = ActionButton("↑", 46);
-            _scheduleDownButton = ActionButton("↓", 46);
-            _scheduleCount = new WC.TextBlock();
-            _scheduleCount.VerticalAlignment = W.VerticalAlignment.Center;
-            _scheduleCount.Margin = new W.Thickness(7, 0, 4, 0);
-            _scheduleCount.FontFamily = new System.Windows.Media.FontFamily(
-                "Microsoft YaHei UI");
-            _scheduleCount.FontSize = PointSizeToDip(8.5F);
-            WC.Grid scheduleCommands = new WC.Grid();
-            scheduleCommands.Margin = new W.Thickness(6, 4, 6, 7);
-            scheduleCommands.ColumnDefinitions.Add(Column(new W.GridLength(80)));
-            scheduleCommands.ColumnDefinitions.Add(Column(W.GridLength.Auto));
-            scheduleCommands.ColumnDefinitions.Add(Column(new W.GridLength(1,
-                W.GridUnitType.Star)));
-            scheduleCommands.ColumnDefinitions.Add(Column(W.GridLength.Auto));
-            scheduleCommands.ColumnDefinitions.Add(Column(W.GridLength.Auto));
-            scheduleCommands.ColumnDefinitions.Add(Column(W.GridLength.Auto));
-            AddToGrid(scheduleCommands, _schedulePinToggleButton, 1);
-            AddToGrid(scheduleCommands, _scheduleUpButton, 3);
-            AddToGrid(scheduleCommands, _scheduleDownButton, 4);
-            AddToGrid(scheduleCommands, _scheduleCount, 5);
-            _schedulePanel = new WC.Grid();
-            _schedulePanel.RowDefinitions.Add(Row(new W.GridLength(1,
-                W.GridUnitType.Star)));
-            _schedulePanel.RowDefinitions.Add(Row(W.GridLength.Auto));
-            WC.Grid.SetRow(scheduleScroller, 0);
-            WC.Grid.SetRow(scheduleCommands, 1);
-            _schedulePanel.Children.Add(scheduleScroller);
-            _schedulePanel.Children.Add(scheduleCommands);
-            WC.Grid.SetRow(_schedulePanel, 3);
-            _layout.Children.Add(_schedulePanel);
+            _contentView = Data.IsSchedule
+                ? (StickyContentView)new StickyScheduleContentView(this)
+                : Data.IsTodoList ? (StickyContentView)new StickyTodoContentView(this)
+                : new StickyTextContentView(this);
+            WC.Grid.SetRow(_contentView.Toolbar, 1);
+            WC.Grid.SetRow(_contentView.Body, 3);
+            _layout.Children.Add(_contentView.Toolbar);
+            _layout.Children.Add(_contentView.Body);
 
             _shell = new WC.Border();
             _shell.BorderThickness = new W.Thickness(1);
@@ -454,7 +271,7 @@ namespace PennyPet
             _saveTimer.Tick += delegate
             {
                 _saveTimer.Stop();
-                if (ShouldDeferAutoSave(_editorTextCompositionActive,
+                if (ShouldDeferAutoSave(_contentView.IsComposing,
                     _lastInputUtc, DateTime.UtcNow))
                 {
                     _saveTimer.Start();
@@ -462,48 +279,10 @@ namespace PennyPet
                 }
                 PersistNow();
             };
-            _linkRefreshTimer = new DispatcherTimer(
-                DispatcherPriority.Background);
-            _linkRefreshTimer.Interval = TimeSpan.FromMilliseconds(550);
-            _linkRefreshTimer.Tick += delegate
-            {
-                _linkRefreshTimer.Stop();
-                if (_editorTextCompositionActive)
-                {
-                    _linkRefreshTimer.Start();
-                    return;
-                }
-                RefreshOrdinaryLinks(true);
-            };
-            _scheduleRefreshTimer = new DispatcherTimer(
-                DispatcherPriority.Background);
-            _scheduleRefreshTimer.Interval = TimeSpan.FromMinutes(1);
-            _scheduleRefreshTimer.Tick += delegate
-            {
-                if (Data.IsSchedule && IsVisible) RefreshScheduleList();
-            };
-
             _deleteReminderButton.Click += delegate { ExecuteSelectedReminderDelete(); };
             _pinButton.Click += delegate { ToggleTopMost(); };
             _colorButton.Click += delegate { ShowAppearanceDialog(); };
             _closeButton.Click += delegate { RequestHideNote(); };
-            _todoAddButton.Click += delegate { AddBlankTodoAndEdit(); };
-            _todoDeleteButton.Click += delegate { DeleteSelectedTodo(); };
-            _todoPinToggleButton.Click += delegate {
-                if (_selectedTodo != null)
-                    SetTodoPinned(_selectedTodo, !_selectedTodo.IsPinned);
-            };
-            _todoUpButton.Click += delegate { MoveSelectedTodo(-1); };
-            _todoDownButton.Click += delegate { MoveSelectedTodo(1); };
-            _scheduleAddButton.Click += delegate { PromptAddScheduleItem(); };
-            _scheduleDeleteButton.Click += delegate { DeleteSelectedSchedule(); };
-            _schedulePinToggleButton.Click += delegate {
-                if (_selectedSchedule != null)
-                    SetSchedulePinned(_selectedSchedule,
-                        !_selectedSchedule.IsPinned);
-            };
-            _scheduleUpButton.Click += delegate { MoveSelectedSchedule(-1); };
-            _scheduleDownButton.Click += delegate { MoveSelectedSchedule(1); };
             _header.MouseLeftButtonDown += HeaderMouseLeftButtonDown;
             _layout.PreviewMouseLeftButtonDown +=
                 NoteSurfacePreviewMouseLeftButtonDown;
@@ -546,16 +325,15 @@ namespace PennyPet
             Closed += WindowClosed;
 
             ContextMenu = BuildNoteMenu();
-            RefreshTodoList();
-            RefreshScheduleList();
-            RefreshMode();
             RefreshTitle();
             RefreshReminderState();
             ApplyColors();
-            RefreshOrdinaryLinks(false);
             _initializing = false;
-            RefreshFormatToolbar();
+            _contentView.Ready();
         }
+
+        internal void PromptAddScheduleItem()
+        { (_contentView as StickyScheduleContentView)?.PromptAddScheduleItem(); }
 
         public StickyNoteData Data { get; private set; }
 
@@ -671,18 +449,10 @@ namespace PennyPet
 
         internal bool IsImeCompositionActiveForHost
         {
-            get { return _editorTextCompositionActive; }
+            get { return _contentView.IsComposing; }
         }
-        internal bool ExerciseOrdinaryLinkRefreshForTest()
-        {
-            if (Data.IsTodoList || Data.IsSchedule) return false;
-            RefreshOrdinaryLinks(false);
-            bool detected = _ordinaryLinkRanges.Count == 2;
-            SetEditorPlainText("普通文字");
-            RefreshOrdinaryLinks(false);
-            return detected && _ordinaryLinkRanges.Count == 0;
-        }
-        internal bool AcceptsMultilineReturnForTest { get { return _editor.AcceptsReturn; } }
+
+        internal bool AcceptsMultilineReturnForTest { get { return (_contentView as StickyTextContentView)?._editor.AcceptsReturn == true; } }
         internal bool UsesLegacyInputProxyForTest { get { return false; } }
         internal IntPtr LegacyInputProxyHandleForTest { get { return IntPtr.Zero; } }
         internal byte BackgroundAlphaForTest
@@ -697,49 +467,41 @@ namespace PennyPet
         {
             get
             {
-                SolidColorBrush brush = _editor.Foreground as SolidColorBrush;
+                SolidColorBrush brush = (_contentView as StickyTextContentView)?._editor.Foreground as SolidColorBrush;
                 return brush == null ? (byte)0 : brush.Color.A;
             }
         }
         internal bool HasFocusedTextInput
-        {
-            get
-            {
-                return _editor.IsKeyboardFocusWithin ||
-                    _todoPanel.IsKeyboardFocusWithin ||
-                    _schedulePanel.IsKeyboardFocusWithin ||
-                    _formatToolbar.IsKeyboardFocusWithin;
-            }
-        }
+        { get { return _contentView.Body.IsKeyboardFocusWithin || _contentView.Toolbar.IsKeyboardFocusWithin; } }
         internal int VisibleTodoItemCount { get { return Data.TodoItems.Count; } }
         internal int TodoGroupCount { get { return 3; } }
-        internal int ReminderBannerLineCount { get { return _reminderList.Items.Count; } }
+        internal int ReminderBannerLineCount { get { return _reminderList == null ? 0 : _reminderList.Items.Count; } }
         internal int ReminderBannerRebuildCountForTest
         {
             get { return _reminderBannerRebuildCount; }
         }
         internal bool HasRichTextFormattingToolbar
         {
-            get { return _formatToolbar != null && _fontFamilyBox != null &&
-                _fontSizeBox != null && _boldButton != null &&
-                _italicButton != null && _underlineButton != null; }
+            get { return _contentView.Toolbar != null && (_contentView as StickyTextContentView)?._fontFamilyBox != null &&
+                _contentView.FontSizeSelector != null && (_contentView as StickyTextContentView)?._boldButton != null &&
+                (_contentView as StickyTextContentView)?._italicButton != null && (_contentView as StickyTextContentView)?._underlineButton != null; }
         }
         internal bool UsesStableListFormatSelectors { get { return true; } }
         internal bool FormatControlsPreserveSelectionForTest
         {
-            get { return !_boldButton.Focusable && !_italicButton.Focusable &&
-                !_underlineButton.Focusable; }
+            get { return (_contentView as StickyTextContentView)?._boldButton.Focusable == false &&
+                (_contentView as StickyTextContentView)?._italicButton.Focusable == false &&
+                (_contentView as StickyTextContentView)?._underlineButton.Focusable == false; }
         }
         internal bool FormatSelectorsAlwaysBlackForTest
         {
             get
             {
-                SolidColorBrush family = _fontFamilyBox.Foreground as
+                SolidColorBrush family = (_contentView as StickyTextContentView)?._fontFamilyBox.Foreground as
                     SolidColorBrush;
-                SolidColorBrush size = _fontSizeBox.Foreground as
+                SolidColorBrush size = _contentView.FontSizeSelector.Foreground as
                     SolidColorBrush;
-                return family != null && size != null &&
-                    family.Color == System.Windows.Media.Colors.Black &&
+                return (family == null || family.Color == System.Windows.Media.Colors.Black) && size != null &&
                     size.Color == System.Windows.Media.Colors.Black;
             }
         }
@@ -770,7 +532,7 @@ namespace PennyPet
         {
             get
             {
-                if (_reminderList.Items.Count == 0) return 0F;
+                if (_reminderList == null || _reminderList.Items.Count == 0) return 0F;
                 WC.ListBoxItem row = _reminderList.Items[0] as WC.ListBoxItem;
                 return row == null ? 0F : (float)(row.FontSize * 72.0 / 96.0);
             }
@@ -797,6 +559,7 @@ namespace PennyPet
             get
             {
                 List<string> lines = new List<string>();
+                if (_reminderList == null) return String.Empty;
                 foreach (object value in _reminderList.Items)
                 {
                     WC.ListBoxItem row = value as WC.ListBoxItem;
@@ -822,9 +585,7 @@ namespace PennyPet
                         requestedBeforeInteraction,
                         _userInteractionGeneration,
                         IsKeyboardFocusWithin)) return;
-                    if (Data.IsTodoList) _todoAddButton.Focus();
-                    else if (Data.IsSchedule) _scheduleAddButton.Focus();
-                    else _editor.Focus();
+                    _contentView.FocusPrimaryInput();
                 }));
             PersistNow();
         }
@@ -840,9 +601,7 @@ namespace PennyPet
         internal void FocusPrimaryInputForTest()
         {
             Activate();
-            if (Data.IsTodoList) _todoAddButton.Focus();
-            else if (Data.IsSchedule) _scheduleAddButton.Focus();
-            else _editor.Focus();
+            _contentView.FocusPrimaryInput();
         }
 
         public void ShowRestored()
@@ -1157,11 +916,7 @@ namespace PennyPet
         {
             if (_disposed) return;
             _saveTimer.Stop();
-            if (Data.IsTodoList)
-                Data.Text = BuildPlainTextFromTodos(Data.TodoItems);
-            else if (Data.IsSchedule)
-                Data.Text = BuildPlainTextFromSchedules(Data.ScheduleItems);
-            else CaptureEditorContent();
+            _contentView.Capture();
             Data.X = Left;
             Data.Y = Top;
             Data.Width = Width;
@@ -1176,68 +931,7 @@ namespace PennyPet
                 ? "日程" : Data.DisplayTitle;
         }
 
-        private void RefreshMode()
-        {
-            bool todo = Data.IsTodoList;
-            bool schedule = Data.IsSchedule;
-            bool listMode = todo || schedule;
-            if (schedule) _scheduleRefreshTimer.Start();
-            else _scheduleRefreshTimer.Stop();
-            _updatingFormatToolbar = true;
-            try { AddFontSizeOptions(_fontSizeBox, listMode); }
-            finally { _updatingFormatToolbar = false; }
-            _formatToolbar.Visibility = W.Visibility.Visible;
-            _fontFamilyBox.Visibility = listMode
-                ? W.Visibility.Collapsed : W.Visibility.Visible;
-            _boldButton.Visibility = listMode
-                ? W.Visibility.Collapsed : W.Visibility.Visible;
-            _italicButton.Visibility = listMode
-                ? W.Visibility.Collapsed : W.Visibility.Visible;
-            _underlineButton.Visibility = listMode
-                ? W.Visibility.Collapsed : W.Visibility.Visible;
-            _todoAddButton.Visibility = todo
-                ? W.Visibility.Visible : W.Visibility.Collapsed;
-            _todoDeleteButton.Visibility = todo
-                ? W.Visibility.Visible : W.Visibility.Collapsed;
-            _scheduleAddButton.Visibility = schedule
-                ? W.Visibility.Visible : W.Visibility.Collapsed;
-            _scheduleDeleteButton.Visibility = schedule
-                ? W.Visibility.Visible : W.Visibility.Collapsed;
-            WC.Grid.SetColumn(_fontSizeBox, listMode ? 0 : 1);
-            _formatToolbar.ColumnDefinitions[1].Width = listMode
-                ? new W.GridLength(0) : new W.GridLength(88);
-            for (int column = 2; column <= 4; column++)
-                _formatToolbar.ColumnDefinitions[column].Width = listMode
-                    ? new W.GridLength(0) : new W.GridLength(34);
-            _formatToolbar.ColumnDefinitions[5].Width = listMode
-                ? new W.GridLength(56) : new W.GridLength(0);
-            _formatToolbar.ColumnDefinitions[6].Width = listMode
-                ? new W.GridLength(56) : new W.GridLength(0);
-            _fontSizeBox.Width = listMode ? 120 : Double.NaN;
-            _fontSizeBox.HorizontalAlignment = listMode
-                ? W.HorizontalAlignment.Left : W.HorizontalAlignment.Stretch;
-            _editor.Visibility = listMode
-                ? W.Visibility.Collapsed : W.Visibility.Visible;
-            _todoPanel.Visibility = todo
-                ? W.Visibility.Visible : W.Visibility.Collapsed;
-            _schedulePanel.Visibility = schedule
-                ? W.Visibility.Visible : W.Visibility.Collapsed;
-            if (todo)
-            {
-                Data.FontSizeTwips = (int)Math.Round(
-                    NormalizeScheduleFontSize(Data.FontSizeTwips / 20F) * 20F);
-                _todoInput.FontSize = PointSizeToDip(Data.FontSizeTwips / 20F);
-                RefreshTodoList();
-            }
-            if (schedule)
-            {
-                Data.IsTodoList = false;
-                Data.FontSizeTwips = (int)Math.Round(
-                    NormalizeScheduleFontSize(Data.FontSizeTwips / 20F) * 20F);
-                RefreshScheduleList();
-            }
-            RefreshFormatToolbar();
-        }
+
 
         private void ApplyColors()
         {
@@ -1255,48 +949,16 @@ namespace PennyPet
             _shell.BorderBrush = AlphaBrush(border, Math.Max(35, opacity));
             _header.Background = AlphaBrush(header, opacity);
             RefreshHeaderTypeIcon(header);
-            _formatToolbar.Background = AlphaBrush(toolbar, opacity);
-            _reminderPanel.Background = AlphaBrush(reminder, opacity);
-            _todoPanel.Background = System.Windows.Media.Brushes.Transparent;
-            _schedulePanel.Background = System.Windows.Media.Brushes.Transparent;
-            _editor.Background = System.Windows.Media.Brushes.Transparent;
-            int effectiveTextArgb = EffectiveTextColor().ToArgb();
-            if (_appliedEditorTextColorArgb != effectiveTextArgb)
-            {
-                TextRange document = new TextRange(
-                    _editor.Document.ContentStart,
-                    _editor.Document.ContentEnd);
-                document.ApplyPropertyValue(TextElement.ForegroundProperty,
-                    text);
-                _editor.Document.Foreground = text;
-                _appliedEditorTextColorArgb = effectiveTextArgb;
-            }
-            _editor.Foreground = text;
+            _contentView.ApplyColors();
+            if (_reminderPanel != null) _reminderPanel.Background = AlphaBrush(reminder, opacity);
+            if (_reminderList != null) _reminderList.Foreground = text;
             _title.Foreground = text;
-            _reminderList.Foreground = text;
-            _todoProgress.Foreground = text;
-            _scheduleCount.Foreground = text;
-            _todoInput.Foreground = text;
-            _todoInput.Background = AlphaBrush(input, opacity);
-            foreach (WC.Button button in new WC.Button[] {
-                _deleteReminderButton, _pinButton, _colorButton,
-                _closeButton, _boldButton, _italicButton, _underlineButton,
-                _todoAddButton, _todoDeleteButton, _todoPinToggleButton,
-                _todoUpButton, _todoDownButton,
-                _scheduleAddButton, _scheduleDeleteButton,
-                _schedulePinToggleButton,
-                _scheduleUpButton, _scheduleDownButton })
+            foreach (WC.Button button in new[] { _deleteReminderButton, _pinButton, _colorButton, _closeButton })
             {
                 button.Foreground = text;
                 button.Background = System.Windows.Media.Brushes.Transparent;
                 button.BorderBrush = AlphaBrush(border, Math.Max(35, opacity));
             }
-            // Selector captions are controls, not note content.  Keep them
-            // legible and stable even when the note body is switched to white.
-            _fontFamilyBox.Foreground = System.Windows.Media.Brushes.Black;
-            _fontFamilyBox.Background = AlphaBrush(input, opacity);
-            _fontSizeBox.Foreground = System.Windows.Media.Brushes.Black;
-            _fontSizeBox.Background = AlphaBrush(input, opacity);
             if (_dockPreviewActive)
             {
                 _shell.BorderThickness = new W.Thickness(
@@ -1305,8 +967,6 @@ namespace PennyPet
                     32, 160, 255));
             }
             else _shell.BorderThickness = new W.Thickness(1);
-            RefreshTodoRowColors();
-            RefreshScheduleRowColors();
         }
 
         private void RefreshHeaderTypeIcon(Color headerColor)
@@ -1517,8 +1177,7 @@ namespace PennyPet
             if (_disposed) return;
             _disposed = true;
             _saveTimer.Stop();
-            _linkRefreshTimer.Stop();
-            _scheduleRefreshTimer.Stop();
+            _contentView.Dispose();
             CloseAppearanceDialogAsCancel();
             WF.FormClosedEventHandler handler = FormClosed;
             if (handler != null)
@@ -1671,7 +1330,7 @@ namespace PennyPet
         internal static Font CreateSafeFont(string familyName, float points,
             FontStyle style)
         {
-            string family = StickyNoteRepository.NormalizeFontFamily(familyName);
+            string family = StickyNoteCodec.NormalizeFontFamily(familyName);
             float size = Math.Max(6F, Math.Min(72F, points));
             int sizeTwips = (int)Math.Round(size * 20F);
             string key = family + "|" + sizeTwips + "|" + (int)style;
@@ -1821,528 +1480,5 @@ namespace PennyPet
             return body.ToString();
         }
 
-        internal void OpenAppearanceDialogForTest()
-        {
-            ShowAppearanceDialog();
-        }
-
-        internal bool ExerciseAppearanceCloseStressForTest(int cycles)
-        {
-            int count = Math.Max(1, cycles);
-            for (int index = 0; index < count; index++)
-            {
-                ShowAppearanceDialog();
-                WF.Application.DoEvents();
-                if (_appearanceDialog == null || _appearanceDialog.IsDisposed)
-                    return false;
-                _appearanceDialog.Close();
-                WF.Application.DoEvents();
-                if (_appearanceDialog != null && !_appearanceDialog.IsDisposed)
-                    return false;
-            }
-            return true;
-        }
-
-        internal bool ExerciseRichTextFormattingForTest()
-        {
-            _initializing = true;
-            SetEditorPlainText("格式测试");
-            _initializing = false;
-            _editor.SelectAll();
-            ApplySelectionFontFamily("Microsoft YaHei UI");
-            ApplySelectionFontSize(18F);
-            EditingCommands.ToggleBold.Execute(null, _editor);
-            EditingCommands.ToggleItalic.Execute(null, _editor);
-            EditingCommands.ToggleUnderline.Execute(null, _editor);
-            CaptureEditorContent();
-            return Data.Text == "格式测试" &&
-                !String.IsNullOrEmpty(Data.RichTextRtf) &&
-                Data.FontSizeTwips == 360;
-        }
-
-        internal bool ExerciseSmoothFormatInteractionForTest()
-        {
-            _initializing = true;
-            SetEditorPlainText("从后往前选择文字");
-            _initializing = false;
-            TextPointer start = _editor.Document.ContentStart.GetPositionAtOffset(2);
-            TextPointer end = _editor.Document.ContentStart.GetPositionAtOffset(6);
-            if (start == null || end == null) return false;
-            _editor.Selection.Select(start, end);
-            ApplySelectionFontSize(24F);
-            return !_editor.Selection.IsEmpty && Data.FontSizeTwips == 480;
-        }
-
-        internal bool ExerciseFirstFormatCommitForTest()
-        {
-            _initializing = true;
-            SetEditorPlainText("First format commit");
-            _initializing = false;
-            _editor.SelectAll();
-            ApplySelectionFontFamily("Arial");
-            ApplySelectionFontSize(24F);
-            return Data.FontSizeTwips == 480 &&
-                String.Equals(Data.FontFamilyName, "Arial",
-                    StringComparison.CurrentCultureIgnoreCase);
-        }
-
-        internal bool ExerciseEmptyNoteFormattingForTest()
-        {
-            Data.IsTodoList = false;
-            Data.IsSchedule = false;
-            _initializing = true;
-            SetEditorPlainText(String.Empty);
-            _initializing = false;
-            ApplySelectionFontFamily("Arial");
-            ApplySelectionFontSize(22F);
-            Block first = _editor.Document.Blocks.FirstBlock;
-            if (first == null) return false;
-            ApplyEmptyEditorTypingDefaults();
-            _editor.CaretPosition.InsertTextInRun("A");
-            TextRange typed = new TextRange(first.ContentStart,
-                first.ContentEnd);
-            object typedSize = typed.GetPropertyValue(
-                TextElement.FontSizeProperty);
-            System.Windows.Media.FontFamily typedFamily =
-                typed.GetPropertyValue(TextElement.FontFamilyProperty) as
-                    System.Windows.Media.FontFamily;
-            return EditorPlainText() == "A" &&
-                Data.FontSizeTwips == 440 &&
-                String.Equals(Data.FontFamilyName, "Arial",
-                    StringComparison.CurrentCultureIgnoreCase) &&
-                first != null && Math.Abs(first.FontSize -
-                    PointSizeToDip(22F)) < 0.1 &&
-                first.FontFamily != null && String.Equals(
-                    first.FontFamily.Source, "Arial",
-                    StringComparison.CurrentCultureIgnoreCase) &&
-                typedSize is double && Math.Abs((double)typedSize -
-                    PointSizeToDip(22F)) < 0.1 && typedFamily != null &&
-                String.Equals(typedFamily.Source, "Arial",
-                    StringComparison.CurrentCultureIgnoreCase);
-        }
-
-        internal bool ExerciseCaretTypingFormatSwitchForTest()
-        {
-            Data.IsTodoList = false;
-            Data.IsSchedule = false;
-            _initializing = true;
-            SetEditorPlainText("已有正文");
-            _initializing = false;
-            Paragraph paragraph = _editor.Document.Blocks.FirstBlock as Paragraph;
-            if (paragraph == null) return false;
-            TextPointer caret = paragraph.ContentEnd.GetInsertionPosition(
-                LogicalDirection.Backward);
-            _editor.Selection.Select(caret, caret);
-            SaveEditorSelection();
-            ApplySelectionFontFamily("Arial");
-            ApplySelectionFontSize(22F);
-            _editor.Selection.Text = "Z";
-            TextRange typed = FindLastTextRange("Z");
-            object typedSize = typed == null ? null : typed.GetPropertyValue(
-                TextElement.FontSizeProperty);
-            System.Windows.Media.FontFamily typedFamily = typed == null ? null :
-                typed.GetPropertyValue(TextElement.FontFamilyProperty) as
-                    System.Windows.Media.FontFamily;
-            return EditorPlainText().EndsWith("Z", StringComparison.Ordinal) &&
-                typedSize is double && Math.Abs((double)typedSize -
-                    PointSizeToDip(22F)) < 0.1 && typedFamily != null &&
-                String.Equals(typedFamily.Source, "Arial",
-                    StringComparison.CurrentCultureIgnoreCase);
-        }
-
-        internal bool ExerciseSingleNativeImeCommitAfterFormatForTest()
-        {
-            _initializing = true;
-            SetEditorPlainText("吃饭了没");
-            _initializing = false;
-            Paragraph paragraph = _editor.Document.Blocks.FirstBlock as Paragraph;
-            if (paragraph == null) return false;
-            TextPointer caret = paragraph.ContentEnd.GetInsertionPosition(
-                LogicalDirection.Backward);
-            _editor.Selection.Select(caret, caret);
-            SaveEditorSelection();
-            ApplySelectionFontFamily("Arial");
-            _editor.Selection.Text = "宝贝";
-            string value = EditorPlainText();
-            return value == "吃饭了没宝贝" &&
-                value.IndexOf("宝贝", StringComparison.Ordinal) ==
-                value.LastIndexOf("宝贝", StringComparison.Ordinal);
-        }
-
-        private TextRange FindLastTextRange(string expected)
-        {
-            if (String.IsNullOrEmpty(expected)) return null;
-            TextPointer cursor = _editor.Document.ContentStart;
-            TextRange result = null;
-            while (cursor != null && cursor.CompareTo(
-                _editor.Document.ContentEnd) < 0)
-            {
-                if (cursor.GetPointerContext(LogicalDirection.Forward) ==
-                    TextPointerContext.Text)
-                {
-                    string value = cursor.GetTextInRun(LogicalDirection.Forward);
-                    int index = value.LastIndexOf(expected,
-                        StringComparison.Ordinal);
-                    if (index >= 0)
-                    {
-                        TextPointer start = cursor.GetPositionAtOffset(index,
-                            LogicalDirection.Forward);
-                        TextPointer end = start == null ? null :
-                            start.GetPositionAtOffset(expected.Length,
-                                LogicalDirection.Forward);
-                        if (start != null && end != null)
-                            result = new TextRange(start, end);
-                    }
-                }
-                cursor = cursor.GetNextContextPosition(
-                    LogicalDirection.Forward);
-            }
-            return result;
-        }
-
-        internal bool ExerciseUnifiedNoteContextMenusForTest()
-        {
-            string[] required = { "新建便利贴", "新建待办清单", "新建日程",
-                "重命名", "取消提醒", "颜色与透明度", "置顶 / 取消置顶",
-                "删除此便利贴", "收起到侧边页签" };
-            foreach (string header in required)
-            {
-                if (!ContextMenuContainsHeader(ContextMenu, header) ||
-                    !ContextMenuContainsHeader(_editor.ContextMenu, header))
-                    return false;
-            }
-            return !ContextMenuContainsHeader(ContextMenu, "删除便利贴") &&
-                !ContextMenuContainsHeader(_editor.ContextMenu, "删除便利贴") &&
-                ContextMenuContainsHeader(_editor.ContextMenu, "撤销") &&
-                ContextMenuContainsHeader(_editor.ContextMenu, "全选");
-        }
-
-        private static bool ContextMenuContainsHeader(WC.ContextMenu menu,
-            string expected)
-        {
-            if (menu == null) return false;
-            foreach (object value in menu.Items)
-            {
-                WC.MenuItem item = value as WC.MenuItem;
-                if (item != null && String.Equals(Convert.ToString(item.Header),
-                    expected, StringComparison.Ordinal)) return true;
-            }
-            return false;
-        }
-
-        internal bool ExerciseSchedulePinMarkerForTest()
-        {
-            Data.IsTodoList = false;
-            Data.IsSchedule = true;
-            Data.ScheduleItems.Clear();
-            StickyScheduleItem item = new StickyScheduleItem("圆点只显示一次",
-                DateTime.Today.AddDays(2));
-            Data.ScheduleItems.Add(item);
-            RefreshMode();
-            PinSchedule(item);
-            bool pinned = item.IsPinned && item.Text == "圆点只显示一次" &&
-                ScheduleRowNameForTest() == "• 圆点只显示一次";
-            PinSchedule(item);
-            bool unpinned = !item.IsPinned && item.Text == "圆点只显示一次" &&
-                ScheduleRowNameForTest() == "圆点只显示一次";
-            return pinned && unpinned;
-        }
-
-        private string ScheduleRowNameForTest()
-        {
-            if (_scheduleRows.Children.Count == 0) return String.Empty;
-            WC.Border border = _scheduleRows.Children[0] as WC.Border;
-            WC.Grid grid = border == null ? null : border.Child as WC.Grid;
-            WC.StackPanel details = grid == null || grid.Children.Count == 0
-                ? null : grid.Children[0] as WC.StackPanel;
-            WC.TextBlock name = details == null || details.Children.Count == 0
-                ? null : details.Children[0] as WC.TextBlock;
-            return name == null ? String.Empty : name.Text;
-        }
-
-        internal bool ExerciseFixedNoteTypeActionsForTest()
-        {
-            bool originalMode = Data.IsTodoList;
-            bool originalSchedule = Data.IsSchedule;
-            Data.IsSchedule = false;
-            Data.IsTodoList = false;
-            RefreshMode();
-            bool ordinaryStayedOrdinary = !Data.IsTodoList && !Data.IsSchedule;
-            Data.IsTodoList = true;
-            RefreshMode();
-            bool todoStayedTodo = Data.IsTodoList && !Data.IsSchedule;
-            Data.IsTodoList = false;
-            Data.IsSchedule = true;
-            RefreshMode();
-            bool scheduleStayedSchedule = Data.IsSchedule && !Data.IsTodoList;
-            Data.IsTodoList = originalMode;
-            Data.IsSchedule = originalSchedule;
-            RefreshMode();
-            return ordinaryStayedOrdinary && todoStayedTodo &&
-                scheduleStayedSchedule &&
-                !HasInlineCreationButtonsForTest;
-        }
-
-        internal bool ExerciseMultilingualInputForTest()
-        {
-            const string multilingual =
-                "English 日本語 한국어 Русский العربية Français 🙂";
-            bool editorInputEnabled =
-                InputMethod.GetIsInputMethodEnabled(_editor) &&
-                !InputMethod.GetIsInputMethodSuspended(_editor);
-            _initializing = true;
-            SetEditorPlainText(multilingual);
-            _initializing = false;
-            CaptureEditorContent();
-            bool ordinaryRoundTrip = Data.Text == multilingual;
-            _todoInput.Text = multilingual;
-            bool todoInputEnabled =
-                InputMethod.GetIsInputMethodEnabled(_todoInput) &&
-                !InputMethod.GetIsInputMethodSuspended(_todoInput);
-            return editorInputEnabled && todoInputEnabled && ordinaryRoundTrip &&
-                _todoInput.Text == multilingual && _editor.AcceptsReturn;
-        }
-
-        internal bool ExerciseReminderSwitchContentPreservationForTest()
-        {
-            _initializing = true;
-            SetEditorPlainText("修改字体字号后仍需保留的正文");
-            _initializing = false;
-            CaptureEditorContent();
-            PersistNow();
-            return Data.Text == "修改字体字号后仍需保留的正文" &&
-                !String.IsNullOrEmpty(Data.RichTextRtf);
-        }
-
-        internal bool ExerciseReminderSelectionActionsForTest()
-        {
-            ReminderItem first = new ReminderItem(DateTime.UtcNow.AddMinutes(20),
-                new string('提', 50));
-            ReminderItem second = new ReminderItem(DateTime.UtcNow.AddMinutes(40),
-                "第二条可管理提醒");
-            UpdateReminderBanner(new ReminderItem[] { first, second });
-            _reminderList.SelectedIndex = 1;
-            ReminderItem modified = null;
-            ReminderItem deleted = null;
-            ModifyReminderRequested += delegate(object sender,
-                ReminderActionEventArgs e) { modified = e.Reminder; };
-            DeleteReminderRequested += delegate(object sender,
-                ReminderActionEventArgs e) { deleted = e.Reminder; };
-            ExecuteSelectedReminderModify();
-            ExecuteSelectedReminderDelete();
-            return Object.ReferenceEquals(_selectedReminder, second) &&
-                Object.ReferenceEquals(modified, second) &&
-                Object.ReferenceEquals(deleted, second);
-        }
-
-        internal bool ExerciseInlineCreationActionsRemovedForTest()
-        {
-            return !HasInlineCreationButtonsForTest;
-        }
-
-        internal bool ExerciseReminderFirstClickStabilityForTest(
-            out bool blankAreaClearsSelection, out bool refreshesInPlace)
-        {
-            ReminderItem first = new ReminderItem(DateTime.UtcNow.AddMinutes(15),
-                "首次点击必须稳定保留的提醒");
-            ReminderItem second = new ReminderItem(DateTime.UtcNow.AddMinutes(30),
-                "第二条提醒");
-            ReminderItem[] items = new ReminderItem[] { first, second };
-            UpdateReminderBanner(items);
-            int rebuildCount = _reminderBannerRebuildCount;
-            _reminderList.SelectedIndex = 0;
-            bool selected = Object.ReferenceEquals(_selectedReminder, first);
-            UpdateReminderBanner(items);
-            refreshesInPlace = _reminderBannerRebuildCount == rebuildCount;
-            bool preserved = Object.ReferenceEquals(_selectedReminder, first);
-            _reminderList.SelectedItem = null;
-            blankAreaClearsSelection = _selectedReminder == null;
-            return selected && preserved && refreshesInPlace;
-        }
-
-        internal bool ExerciseTodoWrapAndInlineEditForTest()
-        {
-            Data.IsTodoList = true;
-            Data.TodoItems.Clear();
-            StickyTodoItem item = new StickyTodoItem(new string('待', 50), false);
-            Data.TodoItems.Add(item);
-            RefreshTodoList();
-            WC.Border firstRow = null;
-            foreach (W.UIElement element in _todoRows.Children)
-            {
-                WC.Border border = element as WC.Border;
-                if (border != null) { firstRow = border; break; }
-            }
-            if (firstRow == null) return false;
-            WC.Grid grid = firstRow.Child as WC.Grid;
-            WC.TextBox editor = grid == null ? null : grid.Children[1] as WC.TextBox;
-            if (editor == null) return false;
-            bool readOnlyUntilDoubleClick = editor.IsReadOnly && !editor.Focusable;
-            BeginTodoInlineEdit(editor, 7);
-            bool preservesTextWithoutAutoSelection =
-                editor.Text == item.Text && editor.SelectionStart == 7 &&
-                editor.SelectionLength == 0;
-            editor.Text = "双击修改成功";
-            CommitTodoInlineEdit(item, editor, item.Text);
-            return readOnlyUntilDoubleClick && preservesTextWithoutAutoSelection &&
-                item.Text == "双击修改成功" &&
-                editor.IsReadOnly && !editor.Focusable &&
-                editor.TextWrapping == W.TextWrapping.Wrap;
-        }
-
-        internal bool ExerciseTodoOverallFontSizeForTest()
-        {
-            Data.IsTodoList = true;
-            Data.TodoItems.Clear();
-            Data.TodoItems.Add(new StickyTodoItem("整体字号测试", false));
-            RefreshMode();
-            ApplyTodoFontSize(48F);
-            WC.Border firstRow = null;
-            foreach (W.UIElement element in _todoRows.Children)
-            {
-                WC.Border border = element as WC.Border;
-                if (border != null) { firstRow = border; break; }
-            }
-            WC.Grid grid = firstRow == null ? null : firstRow.Child as WC.Grid;
-            WC.TextBox editor = grid == null ? null : grid.Children[1] as WC.TextBox;
-            double expected = PointSizeToDip(48F);
-            return Data.FontSizeTwips == 960 && editor != null &&
-                Math.Abs(editor.FontSize - expected) < 0.1 &&
-                Math.Abs(_todoInput.FontSize - expected) < 0.1 &&
-                _formatToolbar.Visibility == W.Visibility.Visible &&
-                _fontFamilyBox.Visibility == W.Visibility.Collapsed &&
-                _fontSizeBox.Visibility == W.Visibility.Visible &&
-                _fontSizeBox.Items.Count == 5 &&
-                Convert.ToString(_fontSizeBox.Items[0]) == "特小 9" &&
-                Convert.ToString(_fontSizeBox.Items[1]) == "小 10.5" &&
-                Convert.ToString(_fontSizeBox.Items[2]) == "中 16" &&
-                Convert.ToString(_fontSizeBox.Items[3]) == "大 22" &&
-                Convert.ToString(_fontSizeBox.Items[4]) == "特大 48" &&
-                _boldButton.Visibility == W.Visibility.Collapsed;
-        }
-
-        internal bool ExerciseDedicatedRowContextMenusForTest()
-        {
-            Data.IsTodoList = true;
-            Data.TodoItems.Clear();
-            Data.TodoItems.Add(new StickyTodoItem("右键菜单测试", false));
-            RefreshMode();
-            WC.Border todoRow = null;
-            foreach (W.UIElement child in _todoRows.Children)
-            {
-                todoRow = child as WC.Border;
-                if (todoRow != null) break;
-            }
-            bool todoMenuOk = todoRow != null && todoRow.ContextMenu != null &&
-                todoRow.ContextMenu.Items.Count == 6 &&
-                Convert.ToString(((WC.MenuItem)todoRow.ContextMenu.Items[0]).Header)
-                    == "编辑待办" &&
-                Convert.ToString(((WC.MenuItem)todoRow.ContextMenu.Items[1]).Header)
-                    == "设为未完成" &&
-                Convert.ToString(((WC.MenuItem)todoRow.ContextMenu.Items[2]).Header)
-                    == "设为进行中" &&
-                Convert.ToString(((WC.MenuItem)todoRow.ContextMenu.Items[3]).Header)
-                    == "设为已完成" &&
-                Convert.ToString(((WC.MenuItem)todoRow.ContextMenu.Items[4]).Header)
-                    == "删除待办" &&
-                Convert.ToString(((WC.MenuItem)todoRow.ContextMenu.Items[5]).Header)
-                    == "置顶待办";
-            WC.Grid todoGrid = todoRow == null ? null : todoRow.Child as WC.Grid;
-            WC.CheckBox todoCheck = todoGrid == null ? null :
-                todoGrid.Children[0] as WC.CheckBox;
-            WC.TextBox todoEditor = todoGrid == null ? null :
-                todoGrid.Children[1] as WC.TextBox;
-            todoMenuOk = todoMenuOk && todoCheck != null &&
-                todoEditor != null && Object.ReferenceEquals(
-                    todoCheck.ContextMenu, todoRow.ContextMenu) &&
-                Object.ReferenceEquals(todoEditor.ContextMenu,
-                    todoRow.ContextMenu) &&
-                NextTodoState(StickyTodoState.Pending) ==
-                    StickyTodoState.InProgress &&
-                NextTodoState(StickyTodoState.InProgress) ==
-                    StickyTodoState.Completed &&
-                NextTodoState(StickyTodoState.Completed) ==
-                    StickyTodoState.Pending;
-            UpdateReminderBanner(new ReminderItem[] {
-                new ReminderItem(DateTime.UtcNow.AddMinutes(5), "右键提醒测试") });
-            WC.ListBoxItem reminderRow = _reminderList.Items.Count == 0
-                ? null : _reminderList.Items[0] as WC.ListBoxItem;
-            bool reminderMenuOk = reminderRow != null &&
-                reminderRow.ContextMenu != null &&
-                reminderRow.ContextMenu.Items.Count == 2 &&
-                Convert.ToString(((WC.MenuItem)reminderRow.ContextMenu.Items[0]).Header)
-                    == "编辑提醒" &&
-                Convert.ToString(((WC.MenuItem)reminderRow.ContextMenu.Items[1]).Header)
-                    == "删除提醒";
-            return todoMenuOk && reminderMenuOk;
-        }
-
-        internal bool ExerciseBodyTextColorSwitchForTest()
-        {
-            _editor.Document.Blocks.Clear();
-            Paragraph paragraph = new Paragraph(new Run("正文颜色切换"));
-            paragraph.Foreground = System.Windows.Media.Brushes.Black;
-            _editor.Document.Blocks.Add(paragraph);
-            Data.TextColorArgb = Color.White.ToArgb();
-            ApplyColors();
-            TextRange whiteRange = new TextRange(
-                _editor.Document.ContentStart, _editor.Document.ContentEnd);
-            SolidColorBrush white = whiteRange.GetPropertyValue(
-                TextElement.ForegroundProperty) as SolidColorBrush;
-            Data.TextColorArgb = Color.Black.ToArgb();
-            ApplyColors();
-            TextRange blackRange = new TextRange(
-                _editor.Document.ContentStart, _editor.Document.ContentEnd);
-            SolidColorBrush black = blackRange.GetPropertyValue(
-                TextElement.ForegroundProperty) as SolidColorBrush;
-            return white != null && black != null &&
-                white.Color == System.Windows.Media.Colors.White &&
-                black.Color == System.Windows.Media.Colors.Black;
-        }
-
-        internal bool ExerciseReminderLiveSizePreviewForTest()
-        {
-            ReminderItem reminder = new ReminderItem(
-                DateTime.UtcNow.AddMinutes(5), "实时字号", null, 10.5F, false);
-            UpdateReminderBanner(new ReminderItem[] { reminder });
-            PreviewReminderFontSize(reminder, 22F);
-            bool preview = Math.Abs(ReminderBannerFirstFontSize - 22F) < 0.2F;
-            UpdateReminderBanner(new ReminderItem[] { reminder });
-            bool restored = Math.Abs(ReminderBannerFirstFontSize - 10.5F) < 0.2F;
-            return preview && restored;
-        }
-
-        internal bool ExerciseDockResizeRoleForTest()
-        {
-            SetDockResizeRole(true, true, true, true, 250, 430);
-            bool top = _dockGrouped && _dockResizeTop && _dockResizeBottom &&
-                _dockSplitBottom && _dockDividerMinimumHeight == 250 &&
-                _dockDividerMaximumHeight == 430;
-            SetDockResizeRole(true, false, true, false);
-            bool bottom = _dockGrouped && !_dockResizeTop && _dockResizeBottom &&
-                !_dockSplitBottom;
-            SetDockResizeRole(false, false, false);
-            bool standalone = !_dockGrouped && _dockResizeTop &&
-                _dockResizeBottom && !_dockSplitBottom;
-            bool leftEdgeKeepsRightFixed =
-                StickyDockGeometry.CalculatePhysicalHorizontalResizeTarget(200, 700, true, 280, 900).Left == 200;
-            bool rightEdgeKeepsLeftFixed =
-                StickyDockGeometry.CalculatePhysicalHorizontalResizeTarget(300, 800, false, 280, 900).Left == 300;
-            return top && bottom && standalone &&
-                leftEdgeKeepsRightFixed && rightEdgeKeepsLeftFixed;
-        }
-
-        internal bool ExerciseGroupTopMostForTest()
-        {
-            Data.AlwaysOnTop = false;
-            ApplyTopMostWindowState(false);
-            bool unpinned = !Data.AlwaysOnTop && !Topmost &&
-                CurrentPinActionText == "置顶";
-            Data.AlwaysOnTop = true;
-            ApplyTopMostWindowState(true);
-            bool pinned = Data.AlwaysOnTop && Topmost &&
-                CurrentPinActionText == "取消置顶";
-            return unpinned && pinned;
-        }
     }
 }

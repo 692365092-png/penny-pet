@@ -15,7 +15,7 @@ namespace PennyPet
             for (int i = 0; i < ordered.Count; i++) _members[i] = new Member(ordered[i]);
         }
 
-        internal bool TryResolve(IList<StickyNoteData> current,
+        internal bool TryResolve(IEnumerable<StickyNoteData> current,
             out List<StickyNoteData> ordered)
         {
             ordered = new List<StickyNoteData>();
@@ -48,7 +48,7 @@ namespace PennyPet
             return true;
         }
 
-        internal bool TryCommit(IList<StickyNoteData> current)
+        internal bool TryCommit(IEnumerable<StickyNoteData> current)
         {
             List<StickyNoteData> ordered;
             if (!TryResolve(current, out ordered)) return false;

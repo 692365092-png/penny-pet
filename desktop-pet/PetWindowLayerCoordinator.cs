@@ -22,6 +22,16 @@ namespace PennyPet
             get { return ModalZOrderFloor != null; }
         }
 
+        internal IntPtr ModalZOrderFloorHandle
+        {
+            get
+            {
+                Form floor = ModalZOrderFloor;
+                return floor != null && floor.IsHandleCreated
+                    ? floor.Handle : IntPtr.Zero;
+            }
+        }
+
         internal DialogResult ShowModal(IWin32Window owner, Form dialog)
         {
             if (dialog == null) throw new ArgumentNullException("dialog");

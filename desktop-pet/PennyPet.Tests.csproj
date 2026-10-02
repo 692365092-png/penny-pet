@@ -11,18 +11,29 @@
   <ItemGroup>
     <Compile Include="Tests\**\*.cs" />
     <!-- Exercise the actual platform-neutral protocol/runtime implementations. -->
-    <Compile Include="Features\StickyNotes\DockWindowFacts.cs" />
-    <Compile Include="Features\StickyNotes\DockResizeSession.cs" />
-    <Compile Include="Features\StickyNotes\DockGestureOwner.cs" />
+    <Compile Include="Features\Interaction\InteractionRuntime.cs" />
+    <Compile Include="Features\KeyboardOverlay\KeyboardInputEventArgs.cs" />
+    <Compile Include="Features\KeyboardOverlay\KeyboardFocusSnapshot.cs" />
+    <Compile Include="Features\KeyboardOverlay\KeyboardFocusMonitor.cs" />
+    <Compile Include="Features\KeyboardOverlay\KeyboardPrivacyWorker.cs" />
+    <Compile Include="Features\Display\PetDisplayRuntime.cs" />
+    <Compile Include="Features\Display\IPetDisplayWindow.cs" />
+    <Compile Include="Features\StickyNotes\DockPlacementPlanner.cs" />
+    <Compile Include="Features\StickyNotes\StickyDockLocalGestureRuntime.cs" />
+    <Compile Include="Features\StickyNotes\StickyDockCommitProtocol.cs" />
+    <Compile Include="Features\StickyNotes\StickyDockCommitVersion.cs" />
     <Compile Include="Features\StickyNotes\DockRestoreOperation.cs" />
     <Compile Include="Features\StickyNotes\StickyHostedRuntime.cs" />
     <Compile Include="Features\StickyNotes\StickyPlacementRuntime.cs" />
     <Compile Include="Features\StickyNotes\StickyFactsReceiver.cs" />
     <Compile Include="Features\StickyNotes\StickyUiCommand.cs" />
     <Compile Include="Features\StickyNotes\StickyWriteRequest.cs" />
+    <Compile Include="Features\StickyNotes\StickyStore.cs" />
+    <Compile Include="Features\StickyNotes\StickyStore.Load.cs" />
     <Compile Include="Infrastructure\Persistence\PersistenceWriter.cs" />
+    <Compile Include="Infrastructure\Persistence\PetPersistenceRuntime.cs" />
     <Compile Include="PetSettings.cs" />
-    <Compile Include="Features\StickyNotes\StickyNoteRepository.cs" />
+    <Compile Include="Features\StickyNotes\StickyFeature.cs" />
     <Compile Include="Features\StickyNotes\UnsupportedStickySchemaException.cs" />
     <Compile Include="Infrastructure\Persistence\AtomicTextFile.cs" />
     <Compile Include="Infrastructure\Persistence\WindowsDataPaths.cs" />

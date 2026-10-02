@@ -58,17 +58,17 @@
 
 ## 当前 Sticky hosted 单执行器
 
-- `PetForm` 在 WinForms STA 持有 canonical `StickyNoteData`、`StickyHostedRuntime` 和 Side Tabs。
+- `PetForm` 在 WinForms STA 持有 canonical `StickyNoteData` 和 `StickyHostedRuntime`；SideTabs 窗口归 Sticky STA。
 - `StickyUiThreadHost` 只管理 STA Thread / Dispatcher / async Post / Shutdown，不拥有 WPF Window。
 - `StickyUiHost` 是唯一 production Sticky window executor，管理 session registry、命令路由和 CloseAll；`PetForm` 不再直接持有窗口表或 silent legacy fallback。
 - `StickyWindowSession` 是唯一持有 `StickyNoteWindow` 的运行时会话对象；窗口内数据是 detached working copy，canonical ownership 仍在 Pet thread。
 - Reminder 是所有便利贴共享的 capability/UI，不是独立 Sticky subtype 或第四种 Dock participant；设置或未设置提醒的 ordinary / Todo / Schedule 均可正常参与 mixed Dock。
 - Ordinary、Todo、Schedule 是同一个 Sticky window system 的三种 content mode；Dock grouping type-agnostic，任意 mixed-type group 共用 detached facts、Core rules、`DockLayoutTarget` 和 hosted effect boundary。
 - Preview、merge pulse、split guide，以及 group move、TopMost、horizontal/divider resize、collapse-reopen、middle split 和多成员 insertion 已完成。
-- persisted standalone 与 Dock component 都通过 hosted session 恢复；v1-v9 codec 和旧文件迁移继续保留，persisted data 不记录 executor 类型。
+- persisted standalone 与 Dock component 都通过 hosted session 恢复；v1-v11 codec 和旧文件迁移继续保留，persisted data 不记录 executor 类型。
 - “展开全部并平铺到此屏幕”会展开全部 note、真正清除 Dock relation，并通过唯一 hosted effect path 平铺。
 - Side Tabs 是不激活的 Pet chrome；左右 strip 按几何 overlap 独立决定 TopMost，被可见 Sticky 覆盖的 strip 临时降层，移开后恢复；monitor、work area 或 Pet scale 改变时会重新验证左右 split，仅在分配变化时 rebuild。
-- Side Tabs 继续由 WinForms Pet STA 承载，直接消费 Core 中 detached `SideTabSnapshot`；业务 note identity 使用稳定 `NoteId`，平台 UI source identity 保持本地 opaque object。OLE nested-loop、透明 canvas 和 WinForms z-order workaround 属于 Windows 实现，不要求 macOS 复制。
+- SideTabs 保留 WinForms 控件，但由 Sticky STA 承载，消费 `StickySideTabsProjection` 中的 detached `SideTabSnapshot`；业务 note identity 使用稳定 `NoteId`，平台 UI source identity 保持本地 opaque object。OLE nested-loop、透明 canvas 和 WinForms z-order workaround 属于 Windows 实现，不要求 macOS 复制。
 - Pet-owned WinForms Form modal 统一经过 `PetWindowLayerCoordinator` 的内存栈；Keyboard Overlay、Bubble 和 Side Tabs 保持 no-activate，并位于嵌套 modal chain 之后。键盘提示始终跟随 Pet，不因 modal 改变位置。密码/凭据检测仍由原隐私链独立 fail closed。
 
 ## Sticky 管理与备份
@@ -80,9 +80,71 @@
 - `.pennysticky` v1 只携带 Sticky dataset。完整 reminder records 仍在 `settings.ini`，linked/standalone reminder 都不属于当前 portable contract；未来若扩展必须重映射 conflict copy 的 `SourceNoteId`。
 - macOS 可复用 `StickyNoteData`、codec、validator、merge planner、Dock pure rules 和 `SideTabSnapshot`；WinForms Manager、Open/Save dialogs、Windows 文件路径/原子替换及 Hosted runtime reconcile 必须由平台侧实现。
 
-## Startup loading ownership
+## Startup ownership
 
-- `StartupLoadingForm` 直接读取 embedded `PennyPet.Startup.Loading`，在 Pet-size transparent canvas 内等比、水平居中、底部对齐；它不依赖 `PetArtPackage` 或 Sticky runtime。
-- `StartupLoadingThreadHost` 是临时 WinForms STA，独立运行 loading message loop；`BringToFront` / `Close` marshal 回该线程，关闭后线程退出。
-- `PennyApplicationHost` 确认 loading 已呈现后，仍在主 Pet STA 构造 `PetForm`。Art decode、Sticky 初始化与恢复不属于 loading thread。
-- `_startupUiReady + _startupArtReady`、normal frame suppression 和 `StartupReady` 语义保持不变。`PetStartupRules` 只是这两个 readiness 输入的纯 gate，不是完整 startup framework。
+- `PennyApplicationHost` 创建轻量 `PetForm` 并启用 `PetStartupCoordinator`；该 owner 在 `ShellReady` 后才在 thread pool 调用 `StickyFeature.PrepareLoad`。
+- 准备结果 marshal 回 Pet STA，经 startup owner 的退出/持久化门禁后，由 `PetForm.Startup.cs` 窗口适配发布 Sticky、持久化、Workspace 和 Reminder runtime；这样 live owner context 不会被后台线程污染。
+- `PetStartupCoordinator` 在 runtime 尚未发布时停在 `WaitForStickyRuntime`，之后才向 Sticky STA 喂入恢复请求；R18 的 6 ms 预算包住实际 WPF Create/Show。
+- `StartupBackgroundReady` 只表示后台便笺恢复完成，不再阻塞 Pet 首帧。`ShellReady` 与它是两个独立阶段。
+- 关闭中的 shell 会拒绝晚到 publication；future-schema 数据在 runtime publication 前 fail closed。旧 loading form、独立 loading STA、ready/exit wait chain 与专用 loading artwork已经删除。
+
+## Persistence ownership
+
+- `PetPersistenceCoordinator` 是对象，持有 persistence operation 及暂停前状态；`PetForm.Persistence.cs` 只接窗口副作用和运行时服务。
+- 保存期间 startup owner 暂存 runtime publication。取消后消费一次；退出 dispose 生命周期 owner，晚到结果不再 attach。
+- 所有 `PetForm` partial 文件使用 `PetForm.*.cs` 命名；真实 coordinator/runtime 保留类型名，避免把代码分文件误认为状态拆分。
+
+## Dock R24 续作入口
+
+- 实时拖动、横向缩放、分隔线缩放由 `StickyDockLocalGestureRuntime` 和 Sticky-owned HWND 在同一 STA 执行。旧 Pet live mailbox/resize session/input epoch 通道已删除。
+- 完成提交由 `StickyDockCommitQueue` 保持依赖顺序，Pet 的 `StickyDockController` 验证模型版本、拓扑、facts 和 lease 后提交并返回 ACK；活动手势不因接受旧 ACK 而回跳。
+- 结构变更先通过 `PrepareDockStructure` 取消受影响手势并恢复基准。原生 follower 批处理有界校正后仍失败时，不能提交部分布局，包括鼠标松开的最终帧。
+- 最新执行记录与 Windows CI 证据见 `docs/architecture-review/refactor-progress.md`。R25 的异步导入、保存屏障和失败可取消退出已实现，验证状态见执行记录；现有兼容 codec 不随 Dock 清理删除。
+
+## Persistence R25 续作入口
+
+- `PreparePersistence` 保留 Sticky HWND/内容视图，先拒绝活动 IME 和未确认 Dock 结果，捕获最后编辑，再暂停输入；取消通过 `ResumeAfterPersistence` 恢复原窗口。
+- `SaveBarrierAsync` 与导入替换共用串行 writer。超时不取消底层写入，未完成 receipt 可继续等待；普通编辑不能越过旧写入。
+- 导入读取/校验在后台，Pet owner 发布模型。完整恢复已写入 Notes 后，通过 `RetirePersistenceWindows` 退役旧编辑器，禁止再次采集旧模型。提醒设置的成功/失败单独报告。
+- 合成 IME/native HWND 检查属于自动化证据；真实中日文候选窗和物理多屏交互仍需 Windows 人工验收。R26 兼容矩阵与条件结论见 `docs/architecture-review/R26-persistence-compatibility.md`。
+
+## R26 兼容与后续入口
+
+- `StickyNoteUiSnapshot` 不再携带或回写 `ReminderUtcTicks`；Pet 的 ReminderRuntime 负责 Manager/文件需要的投影，Sticky 提醒条继续使用独立 reminders 命令。
+- 磁盘 v11 及 v1–v10 读取保持兼容。旧坐标有实际恢复消费者，仓库样本为合成数据，删除磁盘字段/历史解析器的条件未满足，不实施格式退役。
+- CI #168 在 `3979a62` 上全通过（597 项测试及完整 Windows 流水线）。R27 已完成条件评估，见下方结论。
+
+## R27 美术包评估结论
+
+- 保留 PPAP 完整包与 PCAF 启动缓存。仅 PPAP 候选节省 0.903 MiB，却使 idle-ready 中位数从 58.47 ms 增到 334.14 ms，启动内存也增加。
+- CI #171 全通过。10 个动画状态的像素、透明度、帧时长完全一致，生成文件可重复；生产美术及格式未变。
+- 详细证据见 `docs/architecture-review/R27-art-package-decision.md`。实验为手动 opt-in；常规 PR 不重复跑。R27 不再推进格式迁移，真实 IME/物理多屏和 R26 旧文件来源条件仍需后续验收。
+
+
+## 2026-09-29 seven-item review follow-up
+
+Based on remote `0763b2f`, fixed optional-art intent starvation, startup Dock group
+restore, unpublished Dock completion rollback, premature conversation Notification,
+and incomplete Dock commit membership. Shell placement and bubble/reminder null
+guards were already present in the baseline and now have regression probes.
+
+Windows CI #181 passed on `9ab0752`: 603 standard tests, native modular self-tests,
+EXE build/smoke and all normal gates. See
+[review fixes and evidence](docs/architecture-review/2026-09-29-review-fixes.md).
+
+
+## 2026-09-30 thirteen-item reliability follow-up
+
+All thirteen findings against `115daad` were confirmed and fixed, with one push
+per item: orphan settings backup; persistence/runtime attachment exclusion;
+pending Dock snapshots; serialized due reminders; true launch timestamp; native
+Dock begin denial; detach follower failure; rollback failure propagation;
+startup prepare recovery; preferred Pet placement retry; bounded topology capture
+retry; complete keyboard/focus hook availability; and actual protected EXE smoke.
+
+Windows CI #203 validated the guard-cleanup code revision `9b8b30b`: 604 core
+tests, native modular tests, ordinary and protected EXE startup/shutdown, and
+normal build gates. The later documentation-only closeout revision updates
+this handoff and the review evidence without changing code. The overly
+implementation-coupled Dock source guards were reduced from the test suite;
+runtime and native behavior coverage remains. See [review evidence](docs/architecture-review/2026-09-30-review-fixes.md).

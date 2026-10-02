@@ -10,12 +10,12 @@
 
 ## 构建和运行
 
-1. 使用根目录 `PennyPet.sln` 构建跨平台 Core、Windows Core、App、Tools、Tests、SelfTests 与兼容项目。
+1. 使用根目录 `PennyPet.sln` 构建 Core、Windows Core、App、Tools、Tests、SelfTests 与兼容项目；项目依赖和资源生成顺序见根目录 `ARCHITECTURE.md` 的 canonical build graph。
 2. 把美术放在仓库的 `art` 目录，并填写其中的 `pet-art.json`。
-3. 在 PowerShell 中运行 `./build.ps1 -OutputFile <输出路径>`，或调用项目的 `BuildOfficialRelease` target。
-4. 正式构建完成后会得到一个内嵌全部运行资源的单文件 EXE；`PennyPet.Windows` 的 Release 输出就是该发布版，`build.ps1` / `BuildOfficialRelease` 仅把它复制到发布目录。
+3. 在 PowerShell 中运行 `./build.ps1 -TargetPlatform anycpu -OutputFile <输出路径>`。
+4. 正式构建完成后会得到一个内嵌全部运行资源的单文件 EXE；`PennyPet.Windows` 是 canonical 发布项目，`build.ps1` 构建它并复制到发布目录。`BuildOfficialRelease` 仍是项目内的等价复制 target，不是另一套产品构建。
 
-GitHub 开源发布版使用 `build.ps1` 生成可审查、可自动测试的未混淆二进制。当前公开流水线不执行代码签名，也不承诺字节级可复现；`build-protected.ps1` 仅保留给本地研究用途。
+GitHub 开源发布版使用 `build.ps1` 生成可审查的未混淆二进制；公开流水线还会执行 `build-protected.ps1`，启动实际保护后的 EXE 做资源、窗口响应和正常退出 smoke。当前不执行代码签名，也不承诺字节级可复现。
 
 任何 .NET 混淆都只能显著提高分析成本，无法从理论上保证绝对不可逆。成品中保留了一组给分析者看的英文彩蛋线索，不参与正常功能，也不会重复填充大型无效数据。
 
@@ -83,12 +83,12 @@ GitHub 开源发布版使用 `build.ps1` 生成可审查、可自动测试的未
 
 ## 代码结构
 
-- `Program.cs`：兼容单 EXE 的演示/正常入口；`Infrastructure` 下的共享路由统一承载测试、预览和美术命令。
-- `PennyApplicationHost.cs`：单实例、loading 与正常应用运行。
-- `PetForm.cs`：桌宠 Windows 窗口壳；启动、动画、键盘、气泡、菜单位于对应 `Pet*.cs` partial 文件；便利贴由独立的 `StickyWorkspace` 实例管理。
+- `Program.cs`：`PennyPet.Windows` 兼容单 EXE 的入口；`PennyPet.AppProgram.cs` 是引用 Windows Core 的另一宿主入口。
+- `PennyApplicationHost.cs`：单实例、Shell-first 运行和后台 runtime composition。
+- `PetForm.cs` / `PetForm.*.cs`：桌宠 Windows 窗口壳和适配；持久化、启动分别由真实 coordinator 持有流程状态，便利贴由独立的 `StickyWorkspace` 实例管理。
 - `PetContextMenu.cs`：桌宠右键菜单。
 - `Core/Animation`：动画状态、优先级、随机选择、资源预加载退避与恢复规则。
-- `Core/Reminders` / `PetReminderWindowsCoordinator.cs`：纯提醒模型和规则与 Windows UI 协调。
+- `Core/Reminders` / `PetForm.Reminders.cs`：纯提醒模型和规则与 Windows UI 协调。
 - `Core/Art`：美术清单模型、状态别名、渲染参数和帧时长规则，不引用位图或文件系统。
 - `PetArt.cs`：外置美术包读取、GIF 时长解析、完整分辨率发布资源包与运行时缓存。
 - `Features/Art`：Windows/GDI 动画帧生命周期、画布适配和可选内描边。
@@ -99,7 +99,7 @@ GitHub 开源发布版使用 `build.ps1` 生成可审查、可自动测试的未
 - `StickyTodoCoordinator.cs` / `StickyScheduleCoordinator.cs`：待办和日程 UI 逻辑。
 - `StickyReminderCoordinator.cs` / `StickyAppearanceCoordinator.cs`：提醒条和外观 UI 逻辑。
 - `StickyWorkspace.cs`：持有便利贴窗口宿主、运行态、内容接收与侧边页签的生命周期。
-- `StickyDockController.cs`：持有 Dock 拖拽、缩放、恢复操作、邮箱与延迟操作；组关系规则由 Core 持有。
+- `StickyDockController.cs`：持有 Dock 拖拽、缩放、恢复操作和低频提交；实时本地手势由 Sticky STA 的 `StickyDockLocalGestureRuntime` 执行，组关系规则由 Core 持有。
 - `StickyFactsReceiver.cs`：统一校验和提交实际 HWND 几何、捕获拓扑及会话序号。
 - `StickyNotes.cs` / `StickyNoteTabs.cs`：管理界面、IME 辅助控件和侧边页签。
 - `ReminderUi.cs` / `Core/Reminders`：提醒界面以及纯提醒模型和规则。
@@ -118,3 +118,5 @@ GitHub 开源发布版使用 `build.ps1` 生成可审查、可自动测试的未
 启动时若旧版 `sticky-notes.dat` 无法解析，程序会先尝试读取自动生成的 `.bak`；仍无法恢复时会把原文件改名保留为 `.unreadable-时间.bak`，再启用新的可写数据文件。因此旧数据不会被覆盖，新建便利贴也不会因为一次读取失败而永久锁死。
 
 需要采集显示拓扑、Dock 或窗口层级的详细诊断时，请在启动前设置 `PENNY_DISPLAY_TRACE=1`。默认关闭这类逐帧追踪，避免拖动时同步写日志；错误诊断仍正常记录。
+
+窗口适配按 `PetForm.*.cs` 命名。持久化操作状态属于 `PetPersistenceCoordinator`；启动阶段、readiness 与后台 runtime publication 生命周期属于 `PetStartupCoordinator`。详见仓库根目录 `ARCHITECTURE.md` 的 ownership 说明。

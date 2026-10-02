@@ -78,6 +78,34 @@ namespace PennyPet
             return result;
         }
 
+        internal static List<DockRect> CalculateHorizontalResizeTargets(
+            IList<DockRect> members, int sourceIndex, int left, int width)
+        {
+            var targets = new List<DockRect>();
+            for (int index = 0; index < members.Count; index++)
+            {
+                if (index == sourceIndex) continue;
+                DockRect member = members[index];
+                targets.Add(new DockRect(left, member.Top, width, member.Height));
+            }
+            return targets;
+        }
+
+        internal static List<PhysicalRect> CorrectResizeFollowers(DockResizeKind kind,
+            PhysicalRect source, IList<PhysicalRect> followers)
+        {
+            var targets = new List<PhysicalRect>(followers.Count);
+            int bottom = source.Bottom;
+            foreach (PhysicalRect rect in followers)
+            {
+                targets.Add(kind == DockResizeKind.Horizontal
+                    ? new PhysicalRect(source.Left, rect.Top, source.Width, rect.Height)
+                    : new PhysicalRect(rect.Left, bottom, rect.Width, rect.Height));
+                bottom += rect.Height;
+            }
+            return targets;
+        }
+
         internal static int CalculateDockDividerHeight(
             int requestedUpperHeight)
         {

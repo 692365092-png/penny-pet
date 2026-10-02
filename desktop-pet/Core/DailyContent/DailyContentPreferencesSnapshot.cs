@@ -21,6 +21,18 @@ namespace PennyPet
             LastBriefingDate = lastBriefingDate;
         }
 
+        internal bool HasSamePreferences(DailyContentPreferencesSnapshot other)
+        {
+            return other != null && SilentMode == other.SilentMode &&
+                DailyContentEnabled == other.DailyContentEnabled &&
+                SolarTermEnabled == other.SolarTermEnabled && AlmanacEnabled == other.AlmanacEnabled &&
+                WeatherEnabled == other.WeatherEnabled &&
+                (WeatherLocation == null ? null : WeatherLocation.StableKey) ==
+                    (other.WeatherLocation == null ? null : other.WeatherLocation.StableKey) &&
+                ZodiacSign == other.ZodiacSign && BirthdayMonth == other.BirthdayMonth &&
+                BirthdayDay == other.BirthdayDay && LastBriefingDate == other.LastBriefingDate;
+        }
+
         internal bool SilentMode { get; private set; }
         internal bool DailyContentEnabled { get; private set; }
         internal bool SolarTermEnabled { get; private set; }

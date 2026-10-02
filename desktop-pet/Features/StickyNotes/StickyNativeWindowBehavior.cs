@@ -11,6 +11,11 @@ namespace PennyPet
 {
     internal sealed partial class StickyNoteWindow
     {
+        private bool _dockGestureRejected;
+        private Rectangle _dockGestureStartBounds;
+
+        internal void RejectDockGesture() { _dockGestureRejected = true; }
+
         private void HeaderMouseLeftButtonDown(object sender,
             MouseButtonEventArgs e)
         {
@@ -24,12 +29,22 @@ namespace PennyPet
                 return;
             }
             base.WindowState = W.WindowState.Normal;
-            _headerDragStartBounds = Bounds;
-            W.Point pointer = e.GetPosition(this);
+            _headerDragStartBounds = PhysicalBounds;
+            W.Point pointer = PointToScreen(e.GetPosition(this));
             _headerDragPointerOffset = new System.Drawing.Point(
-                (int)Math.Round(pointer.X), (int)Math.Round(pointer.Y));
+                (int)Math.Round(pointer.X) - _headerDragStartBounds.Left,
+                (int)Math.Round(pointer.Y) - _headerDragStartBounds.Top);
+            _lastResizeHitTest = 0;
             _headerDragInProgress = true;
+            _dockGestureRejected = false;
             Raise(HeaderDragStarted);
+            if (_dockGestureRejected)
+            {
+                _headerDragInProgress = false;
+                Raise(HeaderDragCompleted);
+                e.Handled = true;
+                return;
+            }
             try
             {
                 DragMove();
@@ -56,11 +71,11 @@ namespace PennyPet
         {
             if (_recoveringSystemGeometry || _headerDragStartBounds.IsEmpty)
                 return;
-            Rectangle current = Bounds;
+            Rectangle current = PhysicalBounds;
+            // A per-monitor DPI change legitimately changes physical size.
+            // Only undo a system maximize, never the normal DPI handoff.
             bool systemChangedGeometry =
-                base.WindowState != W.WindowState.Normal ||
-                current.Width != _headerDragStartBounds.Width ||
-                current.Height != _headerDragStartBounds.Height;
+                base.WindowState != W.WindowState.Normal;
             if (!systemChangedGeometry) return;
             System.Drawing.Point cursor;
             if (!GetCursorPos(out cursor))
@@ -74,10 +89,8 @@ namespace PennyPet
             try
             {
                 base.WindowState = W.WindowState.Normal;
-                base.Left = recovered.Left;
-                base.Top = recovered.Top;
-                base.Width = recovered.Width;
-                base.Height = recovered.Height;
+                SetWindowPos(Handle, IntPtr.Zero, recovered.Left, recovered.Top,
+                    recovered.Width, recovered.Height, SwpNoZOrder | SwpNoActivate);
             }
             finally { _recoveringSystemGeometry = false; }
         }
@@ -223,14 +236,7 @@ namespace PennyPet
         }
 
         private void ClearListSelections()
-        {
-            bool todoChanged = _selectedTodo != null;
-            bool scheduleChanged = _selectedSchedule != null;
-            _selectedTodo = null;
-            _selectedSchedule = null;
-            if (todoChanged) RefreshTodoRowColors();
-            if (scheduleChanged) RefreshScheduleRowColors();
-        }
+        { _contentView.ClearSelection(); }
 
         private IntPtr WindowHook(IntPtr hwnd, int message, IntPtr wParam,
             IntPtr lParam, ref bool handled)
@@ -260,6 +266,8 @@ namespace PennyPet
             }
             if (message == WmEnterSizeMove)
             {
+                if (!_headerDragInProgress) _dockGestureRejected = false;
+                _dockGestureStartBounds = PhysicalBounds;
                 _windowResizeActive = true;
                 _dockDividerResizeActive = _dockSplitBottom &&
                     _lastResizeHitTest == HtBottom;
@@ -299,8 +307,19 @@ namespace PennyPet
                         CurrentPhysicalHeight());
                 }
                 else if (horizontalResize) Raise(DockHorizontalResizeCompleted);
-                else Raise(UserResizeCompleted);
+                else if (!_headerDragInProgress) Raise(UserResizeCompleted);
                 return IntPtr.Zero;
+            }
+            if (message == WmSizing && _dockGestureRejected && lParam != IntPtr.Zero)
+            {
+                NativeRect denied = new NativeRect();
+                denied.Left = _dockGestureStartBounds.Left;
+                denied.Top = _dockGestureStartBounds.Top;
+                denied.Right = _dockGestureStartBounds.Right;
+                denied.Bottom = _dockGestureStartBounds.Bottom;
+                Marshal.StructureToPtr(denied, lParam, false);
+                handled = true;
+                return new IntPtr(1);
             }
             if (message == WmSizing && _dockSplitBottom &&
                 (_dockDividerResizeActive ||

@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -318,9 +319,9 @@ namespace PennyPet
         internal Action CollapseAll;
         internal Action ExpandAll;
         internal Action TileAll;
-        internal Action ExportBackup;
-        internal Func<StickyNotesImportPreview> PrepareImport;
-        internal Func<StickyNotesImportPreview, bool> ConfirmImport;
+        internal Func<Task> ExportBackup;
+        internal Func<Task<StickyNotesImportPreview>> PrepareImport;
+        internal Func<StickyNotesImportPreview, Task<bool>> ConfirmImport;
         internal Action FullRestore;
     }
 
@@ -528,35 +529,56 @@ namespace PennyPet
             };
             _desktopGroup.Controls.Add(fullRestore);
 
-            _exportButton = Button("导出备份…", 400, delegate
+            _exportButton = Button("导出备份…", 400, async delegate
             {
                 if (_mode != ManagerMode.Normal) return;
-                if (_commands.ExportBackup != null)
-                    _commands.ExportBackup();
-                RefreshList();
+                _mode = ManagerMode.Busy;
+                _busyMessage = "正在导出…";
+                UpdateModeControls();
+                try
+                {
+                    if (_commands.ExportBackup != null) await _commands.ExportBackup();
+                }
+                finally
+                {
+                    _mode = ManagerMode.Normal;
+                    UpdateModeControls();
+                    RefreshList();
+                }
             });
             _exportButton.Top = 420;
             _exportButton.Width = 90;
             _exportButton.Anchor = AnchorStyles.Right | AnchorStyles.Bottom;
-            _importButton = Button("导入…", 495, delegate
+            _importButton = Button("导入…", 495, async delegate
             {
                 if (_mode != ManagerMode.Normal) return;
-                StickyNotesImportPreview preview = _commands.PrepareImport == null
-                    ? null : _commands.PrepareImport();
+                _mode = ManagerMode.Busy;
+                _busyMessage = "正在读取备份…";
+                UpdateModeControls();
+                StickyNotesImportPreview preview = null;
+                try
+                {
+                    preview = _commands.PrepareImport == null
+                        ? null : await _commands.PrepareImport();
+                }
+                finally
+                {
+                    _mode = ManagerMode.Normal;
+                    UpdateModeControls();
+                }
                 if (preview != null) BeginImportPreview(preview);
-                return;
             });
             _importButton.Top = 420;
             _importButton.Width = 90;
             _importButton.Anchor = AnchorStyles.Right | AnchorStyles.Bottom;
-            _confirmImportButton = Button("确认导入", 526, delegate
+            _confirmImportButton = Button("确认导入", 526, async delegate
             {
                 if (_mode != ManagerMode.ImportPreview || _importPlan == null ||
                     _commands.ConfirmImport == null) return;
                 _busyMessage = "正在导入…";
                 _mode = ManagerMode.Busy;
                 UpdateModeControls();
-                bool succeeded = _commands.ConfirmImport(
+                bool succeeded = await _commands.ConfirmImport(
                     new StickyNotesImportPreview(_importPlan, _importedNotes));
                 if (succeeded)
                 {

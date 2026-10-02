@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Threading;
 
 namespace PennyPet
 {
@@ -31,8 +32,12 @@ namespace PennyPet
         public void Dispose()
         {
             if (Frames == null) return;
-            foreach (Bitmap frame in Frames)
+            for (int index = 0; index < Frames.Length; index++)
+            {
+                Bitmap frame = Frames[index];
                 if (frame != null) frame.Dispose();
+                Volatile.Write(ref Frames[index], null);
+            }
         }
     }
 }
