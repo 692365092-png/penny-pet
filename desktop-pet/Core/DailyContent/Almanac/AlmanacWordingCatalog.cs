@@ -114,9 +114,9 @@ namespace PennyPet
             Full("OUTING-JI-01", "F01-SOURCE-DIRECT",
                 "黄历今天写着“忌出行”，不过要不要出门还是看天气"),
             Full("OUTING-JI-02", "F02-SOURCE-ITEM",
-                "今天黄历里有“忌出行”这一项，照常安排就好"),
+                "今天黄历里有“忌出行”这一项，出门还是看天气"),
             Full("OUTING-JI-03", "F07-SOURCE-LATE",
-                "黄历今天不建议出门，看看就好，不用为这改计划")
+                "黄历今天不建议出门，正常出门还是看天气")
         };
 
         private static readonly AlmanacWordingVariant[] Clothing =
