@@ -10,7 +10,7 @@ namespace PennyPet
 
         internal bool DeferRuntimeCompositionWhilePersisting(Action complete)
         {
-            if (!_persistenceOperation) return false;
+            if (!_persistenceCoordinator.IsActive) return false;
             _deferredRuntimeComposition = complete;
             return true;
         }
@@ -50,7 +50,7 @@ namespace PennyPet
             _notes = StickyFeature.PublishPreparedLoad(prepared);
             _persistence = new PetPersistenceRuntime(
                 _notes, _settings, ownerContext);
-            _persistence.Notice += PersistenceNoticeReceived;
+            _persistence.Notice += _persistenceCoordinator.PersistenceNoticeReceived;
 
             _stickyWorkspace = AttachStickyWorkspace(ownerContext);
             _reminderRuntime = new ReminderRuntime(

@@ -24,7 +24,7 @@ namespace PennyPet
 
         Rectangle IStickyPetSurface.Bounds { get { return Bounds; } }
         bool IStickyPetSurface.IsDisposed { get { return IsDisposed || Disposing; } }
-        bool IStickyPetSurface.IsExiting { get { return _exiting || _persistenceOperation; } }
+        bool IStickyPetSurface.IsExiting { get { return _exiting || _persistenceCoordinator.IsActive; } }
         bool IStickyPetSurface.HasHandle { get { return IsHandleCreated && Handle != IntPtr.Zero; } }
         DisplayTopologySnapshot IStickyPetSurface.CurrentTopologySnapshot() { return CurrentTopologySnapshot(); }
         WindowFacts IStickyPetSurface.CaptureWindowFacts(DisplayTopologySnapshot topology)
@@ -43,10 +43,10 @@ namespace PennyPet
         void IStickyPresentation.ShowManager(Func<List<StickyNoteData>> notes,
             StickyNotesManagerCommands commands, Action create, Action<StickyNoteData> show)
         {
-            commands.ExportBackup = ExportStickyNotesBackup;
-            commands.PrepareImport = PrepareStickyNotesImport;
-            commands.ConfirmImport = CommitStickyNotesImport;
-            commands.FullRestore = RestoreStickyNotesBackup;
+            commands.ExportBackup = _persistenceCoordinator.ExportStickyNotesBackup;
+            commands.PrepareImport = _persistenceCoordinator.PrepareStickyNotesImport;
+            commands.ConfirmImport = _persistenceCoordinator.CommitStickyNotesImport;
+            commands.FullRestore = _persistenceCoordinator.RestoreStickyNotesBackup;
             bool createRequested, fullRestoreRequested;
             StickyNoteData showRequested;
             using (StickyNotesManagerForm manager = new StickyNotesManagerForm(notes, commands))
@@ -56,7 +56,7 @@ namespace PennyPet
                 showRequested = manager.ShowRequested;
                 fullRestoreRequested = manager.FullRestoreRequested;
             }
-            if (fullRestoreRequested) RestoreStickyNotesBackup();
+            if (fullRestoreRequested) _persistenceCoordinator.RestoreStickyNotesBackup();
             else if (createRequested) create();
             else if (showRequested != null) show(showRequested);
         }

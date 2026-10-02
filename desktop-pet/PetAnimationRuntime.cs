@@ -12,7 +12,7 @@ namespace PennyPet
     {
         private void AnimationTick(object sender, EventArgs e)
         {
-            if (!_exiting && !_persistenceOperation)
+            if (!_exiting && !_persistenceCoordinator.IsActive)
                 _petDisplay?.RetryPendingPlacement(DateTime.UtcNow);
             _interaction.Tick(DateTime.UtcNow, _menu.Visible, HasFocusedOwnNoteTextInput());
             if (_interaction.ExitComplete) Close();

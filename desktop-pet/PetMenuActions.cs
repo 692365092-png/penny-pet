@@ -229,27 +229,6 @@ namespace PennyPet
             ShowBubble(desired ? "开机自动启动已开启。" : "开机自动启动已关闭。");
         }
 
-        internal async void BeginExitSequence()
-        {
-            if (_exiting || _persistenceOperation) return;
-            if (!await PreparePersistenceOperationAsync()) return;
-            try
-            {
-                CaptureLocationForSave();
-                if (!await FlushPersistenceBeforeExit()) return;
-                FinishExitSequence();
-            }
-            catch (Exception error)
-            {
-                ApplicationDiagnostics.ReportNonFatal("persistence-exit", error);
-                ShowBubble("保存未完成，已取消退出，请重试。");
-            }
-            finally
-            {
-                if (!_exiting) await ResumePersistenceOperationAsync();
-            }
-        }
-
         private void FinishExitSequence()
         {
             _exiting = true;

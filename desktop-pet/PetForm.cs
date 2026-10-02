@@ -23,6 +23,7 @@ namespace PennyPet
         private const int NotificationRow = PetAnimationController.NotificationRow;
 
         private readonly System.Windows.Forms.Timer _animationTimer;
+        private readonly PetPersistenceCoordinator _persistenceCoordinator;
         private PetPersistenceRuntime _persistence;
         private ReminderRuntime _reminderRuntime;
         private readonly PetBubbleCoordinator _bubbleCoordinator;
@@ -97,6 +98,7 @@ namespace PennyPet
 
         internal PetForm(PetSettings preloadedSettings, DateTime? launchedUtc = null)
         {
+            _persistenceCoordinator = new PetPersistenceCoordinator(this);
             _launchedUtc = launchedUtc ?? DateTime.UtcNow;
             Text = "Penny pet";
             FormBorderStyle = FormBorderStyle.None;
@@ -522,7 +524,7 @@ namespace PennyPet
             }
             if (_persistence != null)
             {
-                _persistence.Notice -= PersistenceNoticeReceived;
+                _persistence.Notice -= _persistenceCoordinator.PersistenceNoticeReceived;
                 _persistence.Dispose();
             }
             _keyboardPrivacy.Dispose();
