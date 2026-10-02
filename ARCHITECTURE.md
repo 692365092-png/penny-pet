@@ -222,7 +222,9 @@ canonical 验证顺序是：
 5. `desktop-pet/test-release.ps1 -Executable ...`：隔离运行普通 EXE，验证嵌入资源、窗口响应和正常退出。
 6. `desktop-pet/build-protected.ps1 ...`：生成保护版并隔离运行实际保护后的 EXE；保护版 smoke 是 CI 门禁，不是另一个产品入口。
 
-`Tests/StructuralGuards` 现在只保留平台依赖边界、协议数据形状和仍没有更好运行时替代的约束；已经由标准行为测试或 native self-test 覆盖的 Dock 私有方法/源码拼写检查已删除或放宽。
+`Tests/StructuralGuards` 保留 18 个硬边界 case：Core 平台/程序集依赖、产品构建排除 SelfTests/Tools、跨 UI 线程不得同步等待、键盘 Hook 不执行 UI Automation、启动不请求天气，以及 detached 协议不拥有原生窗口。私有方法、语句顺序和协议 factory 拼写不再作为源码契约；运行行为由标准测试和 native self-test 验证。具体范围见该目录的 README。
+
+`SelfTestRunner.cs` 只编排 probe 和生成报告，具体 Windows probe 位于 `SelfTests/` 的领域 partial 文件。`Tests/CoreBehaviorTests.cs` 保留 MSTest 类声明，测试与 fixture helper 按领域放在 `Tests/CoreBehavior/`，保留原测试身份和逻辑，不增加测试框架。
 
 自动测试可以验证纯规则、codec 和程序集依赖，不能替代真实中文 IME、WPF/WinForms 消息循环、透明窗口、Dock 拖拽、多屏、键盘隐私和危险路径确认的人工回归。
 
