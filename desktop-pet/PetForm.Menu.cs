@@ -229,23 +229,6 @@ namespace PennyPet
             ShowBubble(desired ? "开机自动启动已开启。" : "开机自动启动已关闭。");
         }
 
-        private void FinishExitSequence()
-        {
-            _exiting = true;
-            _startup.Dispose();
-            _keyboardPrivacy.SetEnabled(false);
-            if (_reminderRuntime != null) _reminderRuntime.Stop();
-            _conversation.Stop();
-            if (_persistence != null) _persistence.Dispose();
-            _interaction.BeginExit(DateTime.UtcNow);
-            Capture = false;
-            _keyOverlay.HideImmediately();
-            if (_menu.Visible) _menu.Close();
-            CloseCurrentBubbleWithoutRestoringHover();
-            if (!_settings.SilentMode)
-                ShowBubble("再见啦，照顾好自己！");
-        }
-
         private bool HasFocusedOwnNoteTextInput()
         {
             return _stickyWorkspace != null &&

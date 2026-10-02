@@ -30,9 +30,12 @@ dotnet test '.\desktop-pet\PennyPet.Tests.csproj' --configuration Release
 ## 2. 程序入口
 
 - `desktop-pet/Program.cs`：兼容单 EXE 的命令路由与正常启动入口。
-- `desktop-pet/PennyApplicationHost.cs`：单实例、Shell-first 后台 runtime 组装和异常兜底。
+- `desktop-pet/PennyApplicationHost.cs`：单实例、创建 shell、启用启动 owner、消息循环和入口异常兜底。
 - `desktop-pet/PetForm.cs`：Windows 桌宠窗口构造、关闭和位置生命周期。
-- `PetStartupCoordinator.cs`、`PetRuntimeComposition.cs`、`PetAnimationRuntime.cs`、`PetBubbleCoordinator.cs`、`PetMenuActions.cs`：`PetForm` 的职责 partial；其中 runtime composition 只在 Pet STA 发布已准备好的 Sticky/持久化/提醒 runtime。
+- `PetStartupCoordinator.cs`：真实生命周期对象，持有启动阶段、首帧/readiness、后台 load 和延迟 publication；关闭时释放 timer 并丢弃待发布结果。
+- `Features/StickyNotes/PetPersistenceCoordinator.cs`：真实持久化操作对象，持有操作锁及恢复状态，编排导入/导出/完整恢复和退出保存。
+- `PetForm.*.cs`：窗口 partial；其中 `Startup` / `Persistence` 只提供窗口操作及 live service 接线，`Menu` / `KeyboardOverlay` 等名称不再暗示独立 coordinator。
+- `PetBubbleCoordinator.cs`：真实气泡 owner；Form 接线单独位于 `PetForm.Bubble.cs`。
 - `desktop-pet/PetContextMenu.cs`：右键菜单构造与命令绑定。
 
 这些 partial 文件是代码定位边界，仍共享同一个窗口状态。不要把它们包装成大量单实现接口或仅为缩短文件继续切碎。
@@ -103,12 +106,12 @@ Dock 修改必须同时检查：组关系、组内顺序、持久化快照、统
 ### 提醒、设置与启动
 
 - `Core/Reminders`：提醒模型、时间刷新和气泡替换规则。
-- `PetReminderWindowsCoordinator.cs` / `ReminderUi.cs`：Windows 提醒 UI 和协调。
+- `PetForm.Reminders.cs` / `ReminderUi.cs`：Windows 提醒 UI 和协调。
 - `Core/Settings/PetSettingsData.cs` / `PetSettingsCodec.cs`：平台中性设置、`StartAtLogin` 语义和旧 INI 兼容。
 - `PetSettings.cs`：Windows 数据目录、备份、原子保存、dirty 和失败通知。
 - `StartupRegistration.cs`：Windows Registry 开机启动。
 - `PennyApplicationHost.cs`：Pet 首帧可交互后才在 thread pool 准备 Sticky 文件，并把 publication marshal 回 Pet STA。
-- `PetRuntimeComposition.cs`：创建 StickyFeature、持久化 runtime、StickyWorkspace 与 ReminderRuntime；关闭中的 shell 拒绝晚到 publication。
+- `PetForm.Startup.cs`：创建 StickyFeature、持久化 runtime、StickyWorkspace 与 ReminderRuntime；关闭中的 shell 拒绝晚到 publication。
 - `PetStartupCoordinator.cs`：Windows Timer、键盘/Registry 延后阶段、等待 Sticky runtime、启动恢复和 `StartupBackgroundReady`。
 - `StartupRegistration.cs`：Windows Registry 开机启动。
 

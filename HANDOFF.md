@@ -82,11 +82,17 @@
 
 ## Startup ownership
 
-- `PennyApplicationHost` 先显示轻量 `PetForm`；`ShellReady` 后才在 thread pool 调用 `StickyFeature.PrepareLoad`。
-- 准备结果 marshal 回 Pet STA，由 `PetRuntimeComposition` 发布 Sticky、持久化、Workspace 和 Reminder runtime；这样 live owner context 不会被后台线程污染。
+- `PennyApplicationHost` 创建轻量 `PetForm` 并启用 `PetStartupCoordinator`；该 owner 在 `ShellReady` 后才在 thread pool 调用 `StickyFeature.PrepareLoad`。
+- 准备结果 marshal 回 Pet STA，经 startup owner 的退出/持久化门禁后，由 `PetForm.Startup.cs` 窗口适配发布 Sticky、持久化、Workspace 和 Reminder runtime；这样 live owner context 不会被后台线程污染。
 - `PetStartupCoordinator` 在 runtime 尚未发布时停在 `WaitForStickyRuntime`，之后才向 Sticky STA 喂入恢复请求；R18 的 6 ms 预算包住实际 WPF Create/Show。
 - `StartupBackgroundReady` 只表示后台便笺恢复完成，不再阻塞 Pet 首帧。`ShellReady` 与它是两个独立阶段。
 - 关闭中的 shell 会拒绝晚到 publication；future-schema 数据在 runtime publication 前 fail closed。旧 loading form、独立 loading STA、ready/exit wait chain 与专用 loading artwork已经删除。
+
+## Persistence ownership
+
+- `PetPersistenceCoordinator` 是对象，持有 persistence operation 及暂停前状态；`PetForm.Persistence.cs` 只接窗口副作用和运行时服务。
+- 保存期间 startup owner 暂存 runtime publication。取消后消费一次；退出 dispose 生命周期 owner，晚到结果不再 attach。
+- 所有 `PetForm` partial 文件使用 `PetForm.*.cs` 命名；真实 coordinator/runtime 保留类型名，避免把代码分文件误认为状态拆分。
 
 ## Dock R24 续作入口
 

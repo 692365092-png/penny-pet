@@ -109,7 +109,7 @@ namespace PennyPet.Tests
         public void KeyboardHookAndUiDelivery_DoNotRunAutomationInspection()
         {
             foreach (string file in new[] { "GlobalKeyboardActivity.cs",
-                "KeyboardFocusSnapshot.cs", "PetKeyboardOverlayCoordinator.cs" })
+                "KeyboardFocusSnapshot.cs", "PetForm.KeyboardOverlay.cs" })
                 Forbid("Features/KeyboardOverlay/" + file, "AutomationElement.",
                     "SensitiveInputDetector.", ".Wait(", ".Join(");
         }

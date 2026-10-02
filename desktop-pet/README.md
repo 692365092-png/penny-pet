@@ -85,10 +85,10 @@ GitHub 开源发布版使用 `build.ps1` 生成可审查的未混淆二进制；
 
 - `Program.cs`：`PennyPet.Windows` 兼容单 EXE 的入口；`PennyPet.AppProgram.cs` 是引用 Windows Core 的另一宿主入口。
 - `PennyApplicationHost.cs`：单实例、Shell-first 运行和后台 runtime composition。
-- `PetForm.cs`：桌宠 Windows 窗口壳；启动、动画、键盘、气泡、菜单位于对应 `Pet*.cs` partial 文件；便利贴由独立的 `StickyWorkspace` 实例管理。
+- `PetForm.cs` / `PetForm.*.cs`：桌宠 Windows 窗口壳和适配；持久化、启动分别由真实 coordinator 持有流程状态，便利贴由独立的 `StickyWorkspace` 实例管理。
 - `PetContextMenu.cs`：桌宠右键菜单。
 - `Core/Animation`：动画状态、优先级、随机选择、资源预加载退避与恢复规则。
-- `Core/Reminders` / `PetReminderWindowsCoordinator.cs`：纯提醒模型和规则与 Windows UI 协调。
+- `Core/Reminders` / `PetForm.Reminders.cs`：纯提醒模型和规则与 Windows UI 协调。
 - `Core/Art`：美术清单模型、状态别名、渲染参数和帧时长规则，不引用位图或文件系统。
 - `PetArt.cs`：外置美术包读取、GIF 时长解析、完整分辨率发布资源包与运行时缓存。
 - `Features/Art`：Windows/GDI 动画帧生命周期、画布适配和可选内描边。
@@ -118,3 +118,5 @@ GitHub 开源发布版使用 `build.ps1` 生成可审查的未混淆二进制；
 启动时若旧版 `sticky-notes.dat` 无法解析，程序会先尝试读取自动生成的 `.bak`；仍无法恢复时会把原文件改名保留为 `.unreadable-时间.bak`，再启用新的可写数据文件。因此旧数据不会被覆盖，新建便利贴也不会因为一次读取失败而永久锁死。
 
 需要采集显示拓扑、Dock 或窗口层级的详细诊断时，请在启动前设置 `PENNY_DISPLAY_TRACE=1`。默认关闭这类逐帧追踪，避免拖动时同步写日志；错误诊断仍正常记录。
+
+窗口适配按 `PetForm.*.cs` 命名。持久化操作状态属于 `PetPersistenceCoordinator`；启动阶段、readiness 与后台 runtime publication 生命周期属于 `PetStartupCoordinator`。详见仓库根目录 `ARCHITECTURE.md` 的 ownership 说明。

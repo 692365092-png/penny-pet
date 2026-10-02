@@ -1,3 +1,4 @@
+using System;
 using System.Windows.Forms;
 
 namespace PennyPet
@@ -6,6 +7,23 @@ namespace PennyPet
     internal sealed partial class PetForm : IPetPersistenceHost
     {
         internal void BeginExitSequence() { _persistenceCoordinator.BeginExitSequence(); }
+
+        private void FinishExitSequence()
+        {
+            _exiting = true;
+            _startup.Dispose();
+            _keyboardPrivacy.SetEnabled(false);
+            if (_reminderRuntime != null) _reminderRuntime.Stop();
+            _conversation.Stop();
+            if (_persistence != null) _persistence.Dispose();
+            _interaction.BeginExit(DateTime.UtcNow);
+            Capture = false;
+            _keyOverlay.HideImmediately();
+            if (_menu.Visible) _menu.Close();
+            CloseCurrentBubbleWithoutRestoringHover();
+            if (!_settings.SilentMode)
+                ShowBubble("再见啦，照顾好自己！");
+        }
 
         Form IPetPersistenceHost.Window { get { return this; } }
         bool IPetPersistenceHost.IsExiting { get { return _exiting; } }

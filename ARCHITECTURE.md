@@ -10,7 +10,7 @@
 
 - `PennyPet.Core` 目标为 `netstandard2.0`，保存平台无关模型与纯规则。
 - `PennyPet.Windows.Core`、`PennyPet.App`、`PennyPet.Windows` 和 `PennyPet.SelfTests` 仍是 Windows 实现或宿主。
-- `PetForm` 与 `StickyNoteWindow` 各自按职责拆成 partial 文件；partial 只是同一类型内部的代码定位边界，不是假装独立的服务层。
+- `PetForm.*.cs` 是窗口适配 partial，只表示同一类型内部的代码定位。持久化操作由真实的 `PetPersistenceCoordinator` 持有；启动阶段、readiness 与 runtime publication 生命周期由真实的 `PetStartupCoordinator` 持有。
 - 高风险 IME、WPF/WinForms 消息桥、Window Message、Keyboard Hook、UI Automation、GDI、Shell、Registry 和真实窗口副作用继续留在 Windows 实现。
 - Dock 组关系、统一置顶数据、页签拖放会话和纯数值几何已进入 Core；启动 Core 当前只包含 loading readiness 纯判定。
 - HTTP(S) 与 Windows 路径/UNC 链接识别、危险扩展名、确认文案、文件探测和 Shell 打开位于 `Features/StickyNotes`。
@@ -85,7 +85,7 @@ Pet Sticky coordination
 | `PetArt.cs` | 发布资源包、位图解码、运行时缓存和资源校验 | Windows/GDI 资源适配 |
 | `Features/Art` | GDI 帧生命周期、画布适配和内描边 | Windows-only |
 | `LayeredSpriteRenderer.cs` | 透明分层窗口像素提交 | Windows-only |
-| `PetAnimationRuntime.cs` | 计时器、资源预载和实际帧提交 | Windows-only |
+| `PetForm.Animation.cs` | 计时器、资源预载和实际帧提交 | Windows-only |
 
 `Core/Art` 的“跨平台”只表示代码和数据模型可复用，不代表 `art/` 中的美术资源采用 GPL 授权。泥泥NINII原创美术资源的版权与使用限制见根目录 [`ASSET_LICENSE.md`](ASSET_LICENSE.md)。
 
@@ -100,7 +100,7 @@ Pet Sticky coordination
 | `Core/Interaction/PetSmallTalkPolicy.cs` | SmallTalk 概率、cooldown 和相邻文案不重复规则 | 平台无关 |
 | `PetSmallTalkCoordinator.cs` | SmallTalk eligibility、文案选择、cooldown 状态及显示接受结果 | 平台无关产品协调 |
 | `PetBubbleCoordinator.cs` | Bubble 窗口生命周期、pending、minimum readability 和 reposition | Windows-only |
-| `PetAnimationRuntime.cs` | Poke 输入、产品顺序与实际 Windows 动画接线 | Windows-only |
+| `PetForm.Animation.cs` | Poke 输入、产品顺序与实际 Windows 动画接线 | Windows-only |
 
 `PetBubbleCoordinator` 只在 pending request 真正显示成功后将其移出队列；因 minimum readable 或 replacement policy 暂时失败的 request 会保留到现有 MouseUp/当前 Bubble 关闭重试点。没有额外轮询 Timer 或第二套消息管道。
 
@@ -176,17 +176,18 @@ Sticky Backup v1 的 portable dataset 是 `sticky-notes.dat` 中的 Sticky 模�
 | 文件/目录 | 当前职责 | 边界 |
 |---|---|---|
 | `Core/Reminders` | 提醒模型、时间刷新和气泡替换规则 | 平台无关 |
-| `PetReminderWindowsCoordinator.cs` / `ReminderUi.cs` | 提醒窗口、动画和气泡协调 | Windows-only |
+| `PetForm.Reminders.cs` / `ReminderUi.cs` | 提醒窗口、动画和气泡协调 | Windows-only |
 | `Core/Settings` | 设置数据、`StartAtLogin` 语义和旧 INI codec | 平台无关 |
 | `PetSettings.cs` / `WindowsDataPaths.cs` | Windows 路径、备份、原子保存和诊断 | Windows-only |
 | `Core/Keyboard` | 首次确认、偏好和 fail-closed 隐私判定 | 平台无关标准化输入 |
 | `Features/KeyboardOverlay` | Hook、虚拟键、UIA/Win32 敏感输入证据和覆盖窗口 | Windows-only |
 | `PetWindowLayerCoordinator.cs` | Pet-owned Form modal stack 和 no-activate transient z-order | Windows-only 必要运行状态；不持久化 |
-| `PennyApplicationHost.cs` | 单实例、Shell-first 组装、后台 Sticky 数据准备和 fatal startup 边界 | Windows-only application composition |
-| `PetRuntimeComposition.cs` | 在 Pet STA 发布准备好的 Sticky/持久化/提醒/UI runtime | Windows-only runtime publication |
-| `PetStartupCoordinator.cs` | 键盘/Registry 延后阶段、等待 runtime、向 Sticky STA 喂入启动恢复、后台完成事件 | Windows-only 启动协调 |
+| `PennyApplicationHost.cs` | 单实例、创建 shell、启用生命周期 owner、应用消息循环和入口异常兜底 | Windows-only application entry |
+| `PetForm.Startup.cs` | 在 Pet STA 发布准备好的 Sticky/持久化/提醒/UI runtime | Windows-only runtime publication |
+| `PetStartupCoordinator.cs` | 持有启动阶段、计时器、art/shell readiness、首帧集合、后台 load 与延迟 publication；退出时丢弃待发布结果 | Windows-only 生命周期 owner |
+| `PetForm.Persistence.cs` | 提供窗口启停、退出动画和 live service 访问；不持有 persistence operation 状态 | Windows-only 窗口适配 |
 
-`PennyApplicationHost` 先构造并显示只含必要 idle 资源的 `PetForm`。Pet 首帧可交互并触发 `ShellReady` 后，Sticky 文件读取才在 thread pool 准备；准备结果回到 Pet STA，由 `PetRuntimeComposition` 一次发布 Sticky、持久化和提醒 runtime。便利贴窗口恢复继续使用 Sticky STA 的 R18 执行侧预算，`StartupBackgroundReady` 与 Shell readiness 分离。旧的第三个 loading STA、loading form、ready/exit wait chain 和专用 loading artwork 已退役。
+`PennyApplicationHost` 先构造并显示只含必要 idle 资源的 `PetForm`。由 `PetStartupCoordinator` 确认 Pet 首帧可交互并触发 `ShellReady` 后，Sticky 文件读取才在 thread pool 准备；准备结果回到 Pet STA，经该 owner 的关闭/持久化门禁后，调用 `PetForm.Startup.cs` 适配层一次发布 Sticky、持久化和提醒 runtime。便利贴窗口恢复继续使用 Sticky STA 的 R18 执行侧预算，`StartupBackgroundReady` 与 Shell readiness 分离。旧的第三个 loading STA、loading form、ready/exit wait chain 和专用 loading artwork 已退役。
 
 ## 4. Windows / macOS 迁移地图
 
@@ -269,11 +270,17 @@ Pet 只发送模型/拓扑/SideTab 投影与低频命令；Sticky 在手势完�
 - Side Tabs 保持 no-activate chrome，并只在真实被可见 Sticky 覆盖时按 strip 降层；monitor/work-area/scale 改变时按需重新验证左右布局。
 - SideTabs 由 Sticky STA 承载，消费 `StickySideTabsProjection` 中 detached 的 `SideTabSnapshot`；便利贴业务身份使用稳定 `NoteId`，拖拽来源 UI identity 保持平台本地 opaque object。OLE nested-loop、TransparencyKey canvas、BringToFront timing 等 workaround 是 Windows-only，不是未来 macOS UI 的复用契约。
 
+持久化 ownership：
+
+- `PetPersistenceCoordinator` 持有独占操作状态、原窗口 Enabled 状态和提醒恢复标记，编排 prepare、保存回执、重试/导出/取消、导入与完整恢复。
+- `PetForm.Persistence.cs` 通过 `IPetPersistenceHost` 提供窗口副作用和当前服务；磁盘写入仍由 `PetPersistenceRuntime` / writer 完成。
+- 操作期间 startup 暂停推进，准备好的 runtime 由 startup owner 暂存。取消操作后只消费一次；确认退出则 dispose startup owner，晚到结果不能重新发布。
+
 启动 ownership：
 
 - `PetForm` 构造只同步准备窗口基础、设置和 mandatory idle clip；不会扫描 Sticky 文件、等待天气或恢复便笺窗口。
 - `ShellReady` 只表示 Pet 首帧已可交互，不依赖 Sticky 首帧确认。
-- `PennyApplicationHost` 在 `ShellReady` 后后台执行 `StickyFeature.PrepareLoad`；`PetRuntimeComposition` 回到 Pet STA 后才发布 live runtime，以保留正确的 owner `SynchronizationContext`。
+- `PetStartupCoordinator` 在 `ShellReady` 后启动一次 `StickyFeature.PrepareLoad`；准备结果回到 Pet STA 后，调用 `PetForm.Startup.cs` 发布 live runtime，以保留正确的 owner `SynchronizationContext`。
 - `PetStartupCoordinator` 等待 runtime 后才恢复提醒/便笺；实际窗口创建预算属于 Sticky STA。全部预期便笺首帧完成后才发 `StartupBackgroundReady`。
 - 关闭或 fatal startup 期间，晚到的准备结果在发布前检查 disposed/exiting 状态，不能重新创建窗口。future-schema 数据在 publication 前 fail closed，不会用默认模型覆盖。
 

@@ -5,15 +5,13 @@ Penny pet 是一款 Windows 桌面宠物，包含透明角色动画、普通便�
 
 ## 下载 Penny pet
 
-### [点击直接下载 Windows 版](https://github.com/692365092-png/penny-pet/releases/download/codex-simplify-dock-pipeline-20260930/Penny-pet-Windows.exe)
-
-当前下载为 `codex/simplify-dock-pipeline` 分支的 1.0.2 预发布版（2026-09-30），包含便利贴拖动及天气城市搜索修复。
+### [点击直接下载 Windows 版](https://github.com/692365092-png/penny-pet/releases/latest/download/Penny-pet-Windows.exe)
 
 适用于 Windows 10 和 Windows 11。下载完成后双击运行即可，无需安装。
 
 请只从本仓库的 Release 页面下载，以免拿到被他人修改的版本。
 
-本次版本说明与校验文件见 [当前分支发布页面](https://github.com/692365092-png/penny-pet/releases/tag/codex-simplify-dock-pipeline-20260930)；历史版本见 [Releases](https://github.com/692365092-png/penny-pet/releases)。
+如需查看版本历史或下载校验文件，可前往 [Releases](https://github.com/692365092-png/penny-pet/releases)。
 
 ### 如果 Windows 阻止运行
 
@@ -131,7 +129,8 @@ dotnet test ".\desktop-pet\PennyPet.Tests.csproj" --configuration Release
 - `desktop-pet/`：Windows 桌宠、便利贴、待办、日程、提醒和自动测试。
 - `PennyPet.sln`：Core、Windows Core、App、Tools、Tests、SelfTests 和兼容单 EXE 项目；依赖和发布顺序见上面的 canonical build graph。
 - `art/`：构建单文件 EXE 所需的角色动画与界面美术；其许可边界见 `ASSET_LICENSE.md`。
-- `ARCHITECTURE.md`：当前跨平台技术边界与 macOS 迁移地图。
+- `PetForm.*.cs`：窗口适配 partial；持久化操作状态由 `PetPersistenceCoordinator` 持有，启动与 runtime publication 生命周期由 `PetStartupCoordinator` 持有。
+- `ARCHITECTURE.md`：当前状态归属、跨平台技术边界与 macOS 迁移地图。
 - `DEVELOPER_GUIDE.md`：维护说明、数据位置、高风险兼容逻辑和平台边界。
 - `.github/workflows/build.yml`：GitHub 自动构建与测试。
 
