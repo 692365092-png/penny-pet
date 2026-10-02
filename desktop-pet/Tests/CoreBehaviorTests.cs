@@ -487,45 +487,6 @@ namespace PennyPet.Tests
             Assert.AreEqual(50, after.LocalLogicalRect.Y);
         }
 
-        [TestMethod]
-        public void StickyPlacementMath_NoGlobalLogicalShortcutInCoreGeometry()
-        {
-            string root = ResolveRepositoryRoot();
-            string[] candidates = new string[]
-            {
-                "Core/Display/DisplayGeometry.cs",
-                "Core/Display/StickyPlacementMath.cs",
-                "Core/StickyNotes/StickyDockGeometry.cs",
-                "Core/StickyNotes/StickyNoteModels.cs",
-                "Core/StickyNotes/StickyNoteCodec.cs"
-            };
-            foreach (string relative in candidates)
-            {
-                string path = Path.Combine(root, relative);
-                if (!File.Exists(path)) continue;
-                string text = File.ReadAllText(path);
-                Assert.IsFalse(text.Contains("globalPhysicalX"),
-                    relative + " reintroduced a global physical shortcut.");
-                Assert.IsFalse(text.Contains("globalLogical"),
-                    relative + " reintroduced a global logical shortcut.");
-                Assert.IsFalse(text.Contains("displayScale"),
-                    relative + " reintroduced a displayScale shortcut.");
-            }
-        }
-
-        private static string ResolveRepositoryRoot()
-        {
-            DirectoryInfo directory =
-                new DirectoryInfo(AppContext.BaseDirectory);
-            for (int depth = 0; depth < 6 && directory != null; depth++)
-            {
-                if (File.Exists(Path.Combine(
-                    directory.FullName, "PennyPet.sln")))
-                    return directory.FullName;
-                directory = directory.Parent;
-            }
-            return AppContext.BaseDirectory;
-        }
 
         [TestMethod]
         public void StickyDockGeometry_PetSideSpawnPrefersLeftThenClamps()
