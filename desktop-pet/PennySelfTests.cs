@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 26458)
-Total output lines: 2082
-
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -742,7 +739,521 @@ namespace PennyPet
                     noteOne.Show();
                     noteTwo.Show();
                     noteTwo.BringToFront();
-                    PumpUi(7…6458 tokens truncated… PointF(724, 18));
+                    PumpUi(700);
+
+                    using (Graphics capture = Graphics.FromImage(screenshot))
+                        capture.CopyFromScreen(stage.Left, stage.Top, 0, 0,
+                            stage.Size, CopyPixelOperation.SourceCopy);
+                    screenshot.Save(screenshotPath, ImageFormat.Png);
+
+                    noteOneActual = screenshot.GetPixel(120, 300);
+                    noteTwoActual = screenshot.GetPixel(600, 350);
+                    overlapActual = screenshot.GetPixel(360, 300);
+
+                    noteOneExpected = BlendForExpected(noteOneColor, stageColor,
+                        requestedOpacity);
+                    noteTwoExpected = BlendForExpected(noteTwoColor, stageColor,
+                        requestedOpacity);
+                    overlapExpected = BlendForExpected(noteTwoColor,
+                        noteOneExpected, requestedOpacity);
+                    noteOneDistance = ColorDistance(noteOneActual, noteOneExpected);
+                    noteTwoDistance = ColorDistance(noteTwoActual, noteTwoExpected);
+                    overlapDistance = ColorDistance(overlapActual, overlapExpected);
+                    overlapCompositionOk = noteOneDistance <= 12 &&
+                        noteTwoDistance <= 12 && overlapDistance <= 16;
+
+                    noteTwo.CloseForApplicationExit();
+                    noteOne.CloseForApplicationExit();
+                    stage.Close();
+                    PumpUi(50);
+                }
+            }
+            catch (Exception error)
+            {
+                failure = error.GetType().Name + ": " + error.Message;
+            }
+
+            timer.Stop();
+            bool ok = failure == null && transparentWindowMode && perPixelAlphaOk &&
+                opaqueTextOk && overlapCompositionOk;
+            string escapedFailure = failure == null ? String.Empty :
+                failure.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            string escapedScreenshot = screenshotPath.Replace("\\", "\\\\")
+                .Replace("\"", "\\\"");
+            string json = "{\n" +
+                "  \"ok\": " + Bool(ok) + ",\n" +
+                "  \"true_transparent_wpf_window\": " +
+                    Bool(transparentWindowMode) + ",\n" +
+                "  \"requested_background_opacity_percent\": " +
+                    requestedOpacity + ",\n" +
+                "  \"raw_body_alpha\": " + rawBodyAlpha + ",\n" +
+                "  \"per_pixel_alpha_ok\": " + Bool(perPixelAlphaOk) + ",\n" +
+                "  \"maximum_rendered_alpha\": " + maximumRenderedAlpha + ",\n" +
+                "  \"opaque_text_ok\": " + Bool(opaqueTextOk) + ",\n" +
+                "  \"two_window_overlap_composition_ok\": " +
+                    Bool(overlapCompositionOk) + ",\n" +
+                "  \"note_one_only_actual\": \"" + ColorText(noteOneActual) + "\",\n" +
+                "  \"note_one_only_expected\": \"" + ColorText(noteOneExpected) + "\",\n" +
+                "  \"note_one_color_distance\": " + noteOneDistance + ",\n" +
+                "  \"note_two_only_actual\": \"" + ColorText(noteTwoActual) + "\",\n" +
+                "  \"note_two_only_expected\": \"" + ColorText(noteTwoExpected) + "\",\n" +
+                "  \"note_two_color_distance\": " + noteTwoDistance + ",\n" +
+                "  \"overlap_actual\": \"" + ColorText(overlapActual) + "\",\n" +
+                "  \"overlap_expected\": \"" + ColorText(overlapExpected) + "\",\n" +
+                "  \"overlap_color_distance\": " + overlapDistance + ",\n" +
+                "  \"overlap_screenshot\": \"" + escapedScreenshot + "\",\n" +
+                "  \"elapsed_ms\": " + timer.ElapsedMilliseconds + ",\n" +
+                "  \"failure\": \"" + escapedFailure + "\"\n" +
+                "}\n";
+            File.WriteAllText(fullOutputPath, json, new UTF8Encoding(false));
+        }
+
+        private static StickyNoteData CreateTransparencyProbeNote(string title,
+            string text, Color color, int opacity, int width, int height)
+        {
+            StickyNoteData data = new StickyNoteData();
+            data.Title = title;
+            data.Text = text;
+            data.ColorArgb = color.ToArgb();
+            data.TextColorArgb = Color.Black.ToArgb();
+            data.BackgroundOpacityPercent = opacity;
+            data.Width = width;
+            data.Height = height;
+            data.AlwaysOnTop = true;
+            return data;
+        }
+
+        private static Color BlendForExpected(Color foreground, Color background,
+            int opacityPercent)
+        {
+            int alpha = (int)Math.Round(Math.Max(0, Math.Min(100,
+                opacityPercent)) * 2.55);
+            int inverse = 255 - alpha;
+            return Color.FromArgb(255,
+                (foreground.R * alpha + background.R * inverse + 127) / 255,
+                (foreground.G * alpha + background.G * inverse + 127) / 255,
+                (foreground.B * alpha + background.B * inverse + 127) / 255);
+        }
+
+        private static int ColorDistance(Color actual, Color expected)
+        {
+            return Math.Abs(actual.R - expected.R) +
+                Math.Abs(actual.G - expected.G) +
+                Math.Abs(actual.B - expected.B);
+        }
+
+        private static string ColorText(Color value)
+        {
+            return value.IsEmpty ? "unavailable" : String.Format("#{0:X2}{1:X2}{2:X2}",
+                value.R, value.G, value.B);
+        }
+
+        private static void PumpUi(int milliseconds)
+        {
+            Stopwatch timer = Stopwatch.StartNew();
+            do
+            {
+                Application.DoEvents();
+                System.Threading.Thread.Sleep(1);
+            }
+            while (timer.ElapsedMilliseconds < milliseconds);
+            Application.DoEvents();
+        }
+
+        public static void RenderStickyPreview(string outputPath)
+        {
+            StickyNoteData data = new StickyNoteData();
+            data.Title = "明天下午改卷子！";
+            data.Text = "明天下午改卷子！\r\n\r\n这行文字用于检查字体、字号和样式。";
+            data.Width = 480;
+            data.Height = 400;
+            using (RichTextBox source = new RichTextBox())
+            using (Font body = new Font("Microsoft YaHei UI", 14F))
+            {
+                source.Text = data.Text;
+                source.SelectAll();
+                source.SelectionFont = body;
+                source.Select(0, 8);
+                using (Font heading = new Font("Microsoft YaHei UI", 18F,
+                    FontStyle.Bold | FontStyle.Underline))
+                    source.SelectionFont = heading;
+                data.RichTextRtf = source.Rtf;
+            }
+            using (StickyNoteWindow note = new StickyNoteWindow(data))
+            {
+                note.StartPosition = FormStartPosition.Manual;
+                Rectangle work = Screen.PrimaryScreen.WorkingArea;
+                note.Location = new Point(work.Left + 24, work.Top + 24);
+                note.TopMost = true;
+                note.Show();
+                Application.DoEvents();
+                System.Threading.Thread.Sleep(350);
+                Application.DoEvents();
+                using (Bitmap canvas = new Bitmap(note.Width + 40,
+                    note.Height + 40, PixelFormat.Format32bppArgb))
+                using (Graphics graphics = Graphics.FromImage(canvas))
+                using (Bitmap noteBitmap = new Bitmap(note.Width, note.Height,
+                    PixelFormat.Format32bppArgb))
+                {
+                    try
+                    {
+                        using (Graphics screenCapture = Graphics.FromImage(noteBitmap))
+                            screenCapture.CopyFromScreen(note.Left, note.Top, 0, 0,
+                                note.Size, CopyPixelOperation.SourceCopy);
+                    }
+                    catch (System.ComponentModel.Win32Exception)
+                    {
+                        note.DrawToBitmap(noteBitmap,
+                            new Rectangle(Point.Empty, note.Size));
+                    }
+                    graphics.Clear(Color.FromArgb(235, 238, 244));
+                    graphics.DrawImageUnscaled(noteBitmap, 20, 20);
+                    string parent = Path.GetDirectoryName(
+                        Path.GetFullPath(outputPath));
+                    if (!String.IsNullOrEmpty(parent))
+                        Directory.CreateDirectory(parent);
+                    canvas.Save(outputPath, ImageFormat.Png);
+                }
+                note.Hide();
+            }
+        }
+
+        public static void RenderSchedulePreview(string outputPath)
+        {
+            StickyNoteData data = new StickyNoteData();
+            data.Title = "日程";
+            data.IsSchedule = true;
+            data.IsTodoList = false;
+            data.FontSizeTwips = 320;
+            data.Width = 390;
+            data.Height = 430;
+            data.ScheduleItems.Add(new StickyScheduleItem("参加画展",
+                DateTime.Today.AddDays(6), true));
+            data.ScheduleItems.Add(new StickyScheduleItem("五一放假",
+                DateTime.Today.AddDays(22)));
+            data.ScheduleItems.Add(new StickyScheduleItem("朋友生日",
+                DateTime.Today.AddDays(58)));
+            data.ScheduleItems.Add(new StickyScheduleItem("国庆节",
+                DateTime.Today.AddDays(175)));
+            using (StickyNoteWindow note = new StickyNoteWindow(data))
+            {
+                note.StartPosition = FormStartPosition.Manual;
+                Rectangle work = Screen.PrimaryScreen.WorkingArea;
+                note.Location = new Point(work.Left + 24, work.Top + 24);
+                note.TopMost = true;
+                note.Show();
+                Application.DoEvents();
+                System.Threading.Thread.Sleep(350);
+                Application.DoEvents();
+                using (Bitmap canvas = new Bitmap(note.Width + 40,
+                    note.Height + 40, PixelFormat.Format32bppArgb))
+                using (Graphics graphics = Graphics.FromImage(canvas))
+                using (Bitmap noteBitmap = new Bitmap(note.Width, note.Height,
+                    PixelFormat.Format32bppArgb))
+                {
+                    try
+                    {
+                        using (Graphics screenCapture = Graphics.FromImage(noteBitmap))
+                            screenCapture.CopyFromScreen(note.Left, note.Top, 0, 0,
+                                note.Size, CopyPixelOperation.SourceCopy);
+                    }
+                    catch (System.ComponentModel.Win32Exception)
+                    {
+                        note.DrawToBitmap(noteBitmap,
+                            new Rectangle(Point.Empty, note.Size));
+                    }
+                    graphics.Clear(Color.FromArgb(235, 238, 244));
+                    graphics.DrawImageUnscaled(noteBitmap, 20, 20);
+                    string parent = Path.GetDirectoryName(
+                        Path.GetFullPath(outputPath));
+                    if (!String.IsNullOrEmpty(parent))
+                        Directory.CreateDirectory(parent);
+                    canvas.Save(outputPath, ImageFormat.Png);
+                }
+                note.Hide();
+            }
+        }
+
+        public static void RenderStickyAppearancePreview(string outputPath)
+        {
+            StickyNoteData data = new StickyNoteData();
+            data.Title = "颜色与透明度预览";
+            data.Text = "这段文字始终保持完全不透明。\r\n可以点击正文继续输入。";
+            data.Width = 420;
+            data.Height = 300;
+            data.ColorArgb = StickyNoteWindow.PaletteColorForTest(24).ToArgb();
+            data.BackgroundOpacityPercent = 60;
+            data.TextColorArgb = Color.Black.ToArgb();
+            data.FontFamilyName = "Noto Sans SC DemiLight";
+            data.FontSizeTwips = 240;
+            Rectangle work = Screen.PrimaryScreen.WorkingArea;
+            Rectangle stageBounds = new Rectangle(work.Left + 40, work.Top + 40,
+                Math.Min(1160, work.Width - 80), Math.Min(520, work.Height - 80));
+            using (Form stage = new Form())
+            using (StickyNoteWindow note = new StickyNoteWindow(data))
+            {
+                stage.Text = "Penny 便签外观开发预览背景";
+                stage.FormBorderStyle = FormBorderStyle.None;
+                stage.StartPosition = FormStartPosition.Manual;
+                stage.ShowInTaskbar = false;
+                stage.TopMost = true;
+                stage.BackColor = Color.FromArgb(245, 245, 240);
+                stage.Bounds = stageBounds;
+                stage.Show();
+
+                note.StartPosition = FormStartPosition.Manual;
+                note.Location = new Point(stage.Left + 28, stage.Top + 95);
+                note.TopMost = true;
+                note.Show();
+                new StickyWindowInteractionDriver(note).OpenAppearanceDialogForTest();
+                Application.DoEvents();
+                System.Threading.Thread.Sleep(650);
+                Application.DoEvents();
+
+                Form appearance = null;
+                foreach (Form open in Application.OpenForms)
+                {
+                    if (open is StickyAppearanceDialog) appearance = open;
+                }
+
+                using (Bitmap canvas = new Bitmap(stage.Width, stage.Height,
+                    PixelFormat.Format32bppArgb))
+                using (Graphics capture = Graphics.FromImage(canvas))
+                {
+                    try
+                    {
+                        capture.CopyFromScreen(stage.Left, stage.Top, 0, 0,
+                            stage.Size, CopyPixelOperation.SourceCopy);
+                    }
+                    catch (System.ComponentModel.Win32Exception)
+                    {
+                        capture.Clear(stage.BackColor);
+                        using (Bitmap noteBitmap = new Bitmap(note.Width,
+                            note.Height, PixelFormat.Format32bppArgb))
+                        {
+                            note.DrawToBitmap(noteBitmap,
+                                new Rectangle(Point.Empty, note.Size));
+                            capture.DrawImageUnscaled(noteBitmap,
+                                note.Left - stage.Left, note.Top - stage.Top);
+                        }
+                        if (appearance != null)
+                        {
+                            using (Bitmap dialogBitmap = new Bitmap(
+                                appearance.Width, appearance.Height,
+                                PixelFormat.Format32bppArgb))
+                            {
+                                appearance.DrawToBitmap(dialogBitmap,
+                                    new Rectangle(Point.Empty,
+                                        appearance.Size));
+                                capture.DrawImageUnscaled(dialogBitmap,
+                                    appearance.Left - stage.Left,
+                                    appearance.Top - stage.Top);
+                            }
+                        }
+                    }
+                    string parent = Path.GetDirectoryName(Path.GetFullPath(outputPath));
+                    if (!String.IsNullOrEmpty(parent))
+                        Directory.CreateDirectory(parent);
+                    canvas.Save(outputPath, ImageFormat.Png);
+                }
+
+                if (appearance != null) appearance.Close();
+                note.Hide();
+                stage.Hide();
+            }
+        }
+
+        public static void RenderHoverBubblePreview(string outputPath)
+        {
+            using (SpeechBubbleForm empty = new SpeechBubbleForm("今天想要做些什么呢？", 0))
+            using (SpeechBubbleForm countdown = new SpeechBubbleForm(
+                "距离最近提醒还有1小时20分钟。\n当前共有 3 条提醒。", 0))
+            using (Bitmap preview = new Bitmap(empty.Width + countdown.Width +
+                30, Math.Max(empty.Height, countdown.Height) + 20,
+                PixelFormat.Format32bppArgb))
+            using (Graphics graphics = Graphics.FromImage(preview))
+            using (Bitmap emptyBitmap = new Bitmap(empty.Width, empty.Height,
+                PixelFormat.Format32bppArgb))
+            using (Bitmap countdownBitmap = new Bitmap(countdown.Width, countdown.Height,
+                PixelFormat.Format32bppArgb))
+            {
+                empty.CreateControl();
+                countdown.CreateControl();
+                empty.DrawToBitmap(emptyBitmap, empty.ClientRectangle);
+                countdown.DrawToBitmap(countdownBitmap, countdown.ClientRectangle);
+                emptyBitmap.MakeTransparent(empty.TransparencyKey);
+                countdownBitmap.MakeTransparent(countdown.TransparencyKey);
+                graphics.Clear(Color.FromArgb(225, 229, 236));
+                graphics.DrawImageUnscaled(emptyBitmap, 5, 10);
+                graphics.DrawImageUnscaled(countdownBitmap,
+                    empty.Width + 20, 10);
+                string parent = Path.GetDirectoryName(Path.GetFullPath(outputPath));
+                if (!String.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
+                preview.Save(outputPath, ImageFormat.Png);
+            }
+        }
+
+        public static void RenderReminderPreview(string outputPath)
+        {
+            using (ReminderDialog dialog = new ReminderDialog(
+                "下午三点提交修改后的方案", 18F, true))
+            using (Bitmap bitmap = new Bitmap(dialog.Width, dialog.Height,
+                PixelFormat.Format32bppArgb))
+            {
+                dialog.StartPosition = FormStartPosition.Manual;
+                dialog.Location = new Point(-2400, -2400);
+                dialog.Show();
+                Application.DoEvents();
+                dialog.DrawToBitmap(bitmap,
+                    new Rectangle(Point.Empty, dialog.Size));
+                dialog.Hide();
+                string parent = Path.GetDirectoryName(Path.GetFullPath(outputPath));
+                if (!String.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
+                bitmap.Save(outputPath, ImageFormat.Png);
+            }
+        }
+
+        public static void RenderContactAuthorPreview(string outputPath)
+        {
+            using (ContactAuthorForm dialog = new ContactAuthorForm())
+            using (Bitmap bitmap = new Bitmap(dialog.Width, dialog.Height,
+                PixelFormat.Format32bppArgb))
+            {
+                dialog.StartPosition = FormStartPosition.Manual;
+                dialog.Location = new Point(-2400, -2400);
+                dialog.Show();
+                Application.DoEvents();
+                dialog.DrawToBitmap(bitmap,
+                    new Rectangle(Point.Empty, dialog.Size));
+                dialog.Hide();
+                string parent = Path.GetDirectoryName(Path.GetFullPath(outputPath));
+                if (!String.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
+                bitmap.Save(outputPath, ImageFormat.Png);
+            }
+        }
+
+        public static void RenderPreview(string outputPath)
+        {
+            using (PetArtPackage art = PetArtPackage.Load(192, 208))
+            using (Bitmap preview = new Bitmap(960, 208, PixelFormat.Format32bppArgb))
+            using (Graphics graphics = Graphics.FromImage(preview))
+            {
+                graphics.Clear(Color.FromArgb(225, 229, 236));
+                graphics.DrawImageUnscaled(art.GetFrame(0, 0), 0, 0);
+                graphics.DrawImageUnscaled(art.GetFrame(8, 0), 192, 0);
+                graphics.DrawImageUnscaled(art.GetFrame(6, 4), 384, 0);
+                graphics.DrawImageUnscaled(art.GetFrame(7, 0), 576, 0);
+                graphics.DrawImageUnscaled(art.GetFrame(4, 0), 768, 0);
+                string parent = Path.GetDirectoryName(Path.GetFullPath(outputPath));
+                if (!String.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
+                preview.Save(outputPath, ImageFormat.Png);
+            }
+        }
+
+        public static void RunStartupProbe(string outputPath)
+        {
+            Stopwatch timer = Stopwatch.StartNew();
+            int loadedStates;
+            int materializedGifFiles;
+            int width;
+            int height;
+            bool startupCacheUsed;
+            using (PetArtPackage art = PetArtPackage.Load(192, 208))
+            {
+                Bitmap firstFrame = art.GetFrame(0, 0);
+                width = firstFrame.Width;
+                height = firstFrame.Height;
+                loadedStates = art.LoadedRuntimeStateCount;
+                startupCacheUsed = art.LoadedStartupCache;
+                materializedGifFiles = Directory.Exists(art.ArtRoot)
+                    ? Directory.GetFiles(art.ArtRoot, "*.gif",
+                        SearchOption.AllDirectories).Length : 0;
+            }
+            timer.Stop();
+            string fullOutputPath = Path.GetFullPath(outputPath);
+            string parent = Path.GetDirectoryName(fullOutputPath);
+            if (!String.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
+            string json = "{\n" +
+                "  \"ok\": " + Bool(width == 192 && height == 208 &&
+                    loadedStates == 1) + ",\n" +
+                "  \"elapsed_milliseconds\": " + timer.ElapsedMilliseconds + ",\n" +
+                "  \"loaded_runtime_states\": " + loadedStates + ",\n" +
+                "  \"startup_cache_used\": " + Bool(startupCacheUsed) + ",\n" +
+                "  \"materialized_gif_files\": " + materializedGifFiles + "\n" +
+                "}\n";
+            File.WriteAllText(fullOutputPath, json, new UTF8Encoding(false));
+        }
+
+        public static void RenderFeaturePreview(string outputPath)
+        {
+            StickyNoteData yellowData = new StickyNoteData();
+            yellowData.Title = "今日计划";
+            yellowData.Text = "支持中文输入：整理方案、记录灵感。";
+            yellowData.X = 0;
+            yellowData.Y = 0;
+            yellowData.Width = 320;
+            yellowData.Height = 300;
+            yellowData.ReminderUtcTicks = DateTime.UtcNow.AddHours(2).Ticks;
+            StickyNoteData blueData = new StickyNoteData();
+            blueData.Title = "本周待办";
+            blueData.IsTodoList = true;
+            blueData.TodoItems.Add(new StickyTodoItem("完成便利贴优化", true));
+            blueData.TodoItems.Add(new StickyTodoItem("检查提醒倒计时", false));
+            blueData.TodoItems.Add(new StickyTodoItem("整理下周计划", false));
+            blueData.ColorArgb = Color.FromArgb(255, 211, 239, 255).ToArgb();
+            blueData.X = 0;
+            blueData.Y = 0;
+            blueData.Width = 320;
+            blueData.Height = 300;
+
+            List<ReminderItem> previewReminders = new List<ReminderItem>();
+            previewReminders.Add(new ReminderItem(DateTime.UtcNow.AddMinutes(18),
+                "提交今日方案"));
+            previewReminders.Add(new ReminderItem(DateTime.UtcNow.AddHours(2),
+                "休息并喝水"));
+
+            using (Bitmap canvas = new Bitmap(1080, 760, PixelFormat.Format32bppArgb))
+            using (Graphics graphics = Graphics.FromImage(canvas))
+            using (StickyNoteWindow yellow = new StickyNoteWindow(yellowData))
+            using (StickyNoteWindow blue = new StickyNoteWindow(blueData))
+            using (ScaleDialog scale = new ScaleDialog(100, 100))
+            using (Bitmap yellowBitmap = new Bitmap(320, 300, PixelFormat.Format32bppArgb))
+            using (Bitmap blueBitmap = new Bitmap(320, 300, PixelFormat.Format32bppArgb))
+            using (Bitmap scaleBitmap = new Bitmap(scale.Width, scale.Height,
+                PixelFormat.Format32bppArgb))
+            using (Bitmap blackKeys = KeyboardOverlayForm.RenderTextPreview(
+                "CTRL+W", Color.Black, 255, 60))
+            using (Bitmap whiteKeys = KeyboardOverlayForm.RenderTextPreview(
+                "W*3", Color.White, 255, 150))
+            using (Font heading = new Font("Microsoft YaHei UI", 13F, FontStyle.Bold))
+            using (SolidBrush headingBrush = new SolidBrush(Color.FromArgb(45, 51, 60)))
+            using (SolidBrush darkBackground = new SolidBrush(Color.FromArgb(35, 39, 48)))
+            {
+                graphics.Clear(Color.FromArgb(235, 238, 244));
+                yellow.UpdateReminderBanner(previewReminders);
+                blue.UpdateReminderBanner(previewReminders);
+                yellow.StartPosition = FormStartPosition.Manual;
+                blue.StartPosition = FormStartPosition.Manual;
+                scale.StartPosition = FormStartPosition.Manual;
+                yellow.Location = new Point(-2400, -2400);
+                blue.Location = new Point(-2400, -2400);
+                scale.Location = new Point(-2400, -2400);
+                yellow.Show();
+                blue.Show();
+                scale.Show();
+                Application.DoEvents();
+                yellow.DrawToBitmap(yellowBitmap, new Rectangle(0, 0, 320, 300));
+                blue.DrawToBitmap(blueBitmap, new Rectangle(0, 0, 320, 300));
+                scale.DrawToBitmap(scaleBitmap, new Rectangle(Point.Empty, scale.Size));
+                yellow.Hide();
+                blue.Hide();
+                scale.Hide();
+                graphics.DrawString("便利贴顶部固定提醒 / 正文与待办清单",
+                    heading, headingBrush, new PointF(24, 18));
+                graphics.DrawImageUnscaled(yellowBitmap, 24, 52);
+                graphics.DrawImageUnscaled(blueBitmap, 366, 52);
+                graphics.DrawString("按键显示：小 60% / 大 150%",
+                    heading, headingBrush, new PointF(724, 18));
                 graphics.FillRectangle(Brushes.White, 724, 52, 330, 110);
                 graphics.DrawImageUnscaled(blackKeys,
                     889 - blackKeys.Width / 2, 84);
