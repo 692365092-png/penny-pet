@@ -91,19 +91,19 @@ namespace PennyPet
             StickyNoteWindow note, ReminderItem reminder)
         {
             if (note == null || reminder == null) return false;
-            note.UpdateReminderBanner(new[] { reminder });
             var reminderList = (ListBox)Pc2Get(note, "_reminderList");
             var reminderRow = reminderList == null || reminderList.Items.Count == 0
                 ? null : reminderList.Items[0] as ListBoxItem;
             if (reminderRow == null || reminderRow.ContentTemplate == null)
                 return false;
 
-            // Exercise the production DataTemplate through the normal WPF
-            // presentation path so the template is sealed and bindings are
-            // applied before we inspect the rendered TextBlock.
+            // Reuse the production row template without mutating the live note.
+            // This keeps focus/preview state intact while still exercising the
+            // actual WPF template with content long enough to require wrapping.
             var presenter = new ContentPresenter
             {
-                Content = reminderRow.Content,
+                Content = "• " + ShortItemText.Normalize(reminder.Text) +
+                    "  ·  5分",
                 ContentTemplate = reminderRow.ContentTemplate
             };
             presenter.Measure(new Size(120, Double.PositiveInfinity));
