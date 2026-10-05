@@ -1210,8 +1210,12 @@ namespace PennyPet
                 new InvalidOperationException(detail));
         }
 
-        internal async Task<StickyUiCommandResult> PreparePersistenceAsync()
+        internal async Task<StickyUiCommandResult> PreparePersistenceAsync(bool allowStoppedWorkspace = false)
         {
+            // Only exit may use the last accepted model after a subsystem fault.
+            // Do not bypass a live editor, IME, or a thread still shutting down.
+            if (allowStoppedWorkspace && Host.IsFaultedAndExited)
+                return StickyUiCommandResult.Handled();
             StickyUiCommandResult result = await PersistenceCommandAsync(
                 StickyUiCommand.PreparePersistence());
             if (result != null && result.Status == StickyUiCommandStatus.Handled &&

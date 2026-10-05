@@ -17,7 +17,7 @@ namespace PennyPet
             public PetSettings Settings { get; } = new PetSettings();
             public GlobalKeyboardActivity Keyboard { get { return null; } }
             public StickyFeature Notes { get { return null; } }
-            public StickyWorkspace Workspace { get { return null; } }
+            public StickyWorkspace Workspace { get; set; }
             public ReminderRuntime Reminders { get { return null; } }
             internal readonly PetStartupCoordinator Startup;
             internal readonly PetPersistenceCoordinator Persistence;
@@ -67,12 +67,12 @@ namespace PennyPet
                 Pc2Assert(host.Startup.LaunchedUtc == launch,
                     "runtime attach retains the original launch timestamp");
 
-                Task<bool> prepared = (Task<bool>)Pc2Call(host.Persistence, "PreparePersistenceOperationAsync");
+                Task<bool> prepared = (Task<bool>)Pc2Call(host.Persistence, "PreparePersistenceOperationAsync", false);
                 Pc2Assert(prepared.IsCompleted && prepared.Result && host.Persistence.IsActive,
                     "persistence owns the operation before a runtime exists");
                 Pc2Assert(!host.Window.Enabled && !host.MenuEnabled && host.Pauses == 1,
                     "operation suspends shell entry points and conversation");
-                Task<bool> duplicate = (Task<bool>)Pc2Call(host.Persistence, "PreparePersistenceOperationAsync");
+                Task<bool> duplicate = (Task<bool>)Pc2Call(host.Persistence, "PreparePersistenceOperationAsync", false);
                 Pc2Assert(duplicate.IsCompleted && !duplicate.Result && host.Pauses == 1,
                     "overlapping operation is rejected without overwriting resume state");
 
@@ -88,7 +88,7 @@ namespace PennyPet
                 Pc2Assert(host.Publications == 1, "publication completion is consumed once");
 
                 host.Window.Enabled = false;
-                prepared = (Task<bool>)Pc2Call(host.Persistence, "PreparePersistenceOperationAsync");
+                prepared = (Task<bool>)Pc2Call(host.Persistence, "PreparePersistenceOperationAsync", false);
                 Pc2Assert(prepared.IsCompleted && prepared.Result, "second operation starts");
                 resumed = (Task)Pc2Call(host.Persistence, "ResumePersistenceOperationAsync");
                 Pc2Assert(resumed.IsCompleted && !resumed.IsFaulted && !host.Window.Enabled,
@@ -97,7 +97,7 @@ namespace PennyPet
 
             using (var host = new LifecycleHost(launch))
             {
-                Task<bool> prepared = (Task<bool>)Pc2Call(host.Persistence, "PreparePersistenceOperationAsync");
+                Task<bool> prepared = (Task<bool>)Pc2Call(host.Persistence, "PreparePersistenceOperationAsync", false);
                 Pc2Assert(prepared.IsCompleted && prepared.Result, "exit preparation starts");
                 Pc2Call(host.Startup, "CompleteRuntimeComposition", null, null);
                 host.FinishExitSequence();

@@ -21,6 +21,15 @@ namespace PennyPet
 
         internal event Action<Exception> Faulted;
 
+        internal bool IsFaultedAndExited
+        {
+            get
+            {
+                lock (_gate)
+                    return _faulted && _thread != null && !_thread.IsAlive;
+            }
+        }
+
         internal void Start()
         {
             lock (_gate)

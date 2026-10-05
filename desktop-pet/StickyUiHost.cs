@@ -60,6 +60,8 @@ namespace PennyPet
             _dockCommitQueue = new StickyDockCommitQueue();
         }
 
+        internal bool IsFaultedAndExited { get { return _threadHost.IsFaultedAndExited; } }
+
         internal void Start()
         {
             _threadHost.Start();

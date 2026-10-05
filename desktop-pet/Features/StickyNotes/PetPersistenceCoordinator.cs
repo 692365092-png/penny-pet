@@ -41,7 +41,7 @@ namespace PennyPet
         private bool _persistenceOwnerEnabled;
         private bool _resumeRemindersAfterPersistence;
 
-        private async Task<bool> PreparePersistenceOperationAsync()
+        private async Task<bool> PreparePersistenceOperationAsync(bool allowStoppedWorkspace = false)
         {
             if (_persistenceOperation || _host.IsExiting || _host.Window.IsDisposed) return false;
             _persistenceOperation = true;
@@ -55,7 +55,7 @@ namespace PennyPet
                 _host.StopConversation();
                 if (_host.Reminders != null) _host.Reminders.Stop();
                 if (_host.Workspace == null) return true;
-                StickyUiCommandResult prepared = await _host.Workspace.PreparePersistenceAsync();
+                StickyUiCommandResult prepared = await _host.Workspace.PreparePersistenceAsync(allowStoppedWorkspace);
                 if (prepared != null && prepared.Status == StickyUiCommandStatus.Handled)
                     return true;
             }
@@ -122,7 +122,7 @@ namespace PennyPet
         internal async void BeginExitSequence()
         {
             if (_host.IsExiting || _persistenceOperation) return;
-            if (!await PreparePersistenceOperationAsync()) return;
+            if (!await PreparePersistenceOperationAsync(true)) return;
             try
             {
                 _host.CaptureLocationForSave();
