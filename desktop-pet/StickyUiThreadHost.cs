@@ -15,6 +15,7 @@ namespace PennyPet
         private Exception _startupError;
         private bool _acceptingCommands = true;
         private bool _faulted;
+        private readonly HashSet<PendingCommand> _pendingCommands = new HashSet<PendingCommand>();
         private readonly Queue<Action> _startupRestoreQueue = new Queue<Action>();
         private bool _startupRestorePumpPosted;
         private const long StartupRestoreBudgetMilliseconds = 6;
@@ -45,6 +46,7 @@ namespace PennyPet
                             _dispatcher = Dispatcher.CurrentDispatcher;
                             _dispatcher.UnhandledException +=
                                 DispatcherUnhandledException;
+                            _dispatcher.ShutdownStarted += delegate { StopAcceptingCommands(); };
                             ready.Set();
                             Dispatcher.Run();
                         }
@@ -94,18 +96,47 @@ namespace PennyPet
         internal void PostStartupRestore(Action invoke)
         {
             if (invoke == null) throw new ArgumentNullException(nameof(invoke));
+            PostStartupRestore(() => { invoke(); return StickyUiCommandResult.Handled(); }, null, null);
+        }
+
+        internal void PostStartupRestore(Func<StickyUiCommandResult> invoke,
+            Action<StickyUiCommandResult> completed, SynchronizationContext completionContext)
+        {
+            if (invoke == null) throw new ArgumentNullException(nameof(invoke));
+            var pending = new PendingCommand(completed, completionContext);
             Dispatcher dispatcher;
+            bool postPump = false;
             lock (_gate)
             {
-                if (!_acceptingCommands || _dispatcher == null ||
-                    _dispatcher.HasShutdownStarted || _dispatcher.HasShutdownFinished) return;
-                _startupRestoreQueue.Enqueue(invoke);
-                if (_startupRestorePumpPosted) return;
-                _startupRestorePumpPosted = true;
                 dispatcher = _dispatcher;
+                if (_acceptingCommands && dispatcher != null &&
+                    !dispatcher.HasShutdownStarted && !dispatcher.HasShutdownFinished)
+                {
+                    _pendingCommands.Add(pending);
+                    _startupRestoreQueue.Enqueue(() => ExecutePending(pending, invoke));
+                    if (!_startupRestorePumpPosted)
+                    {
+                        _startupRestorePumpPosted = true;
+                        postPump = true;
+                    }
+                }
+                else dispatcher = null;
             }
-            dispatcher.BeginInvoke(DispatcherPriority.Background,
-                new Action(PumpStartupRestore));
+            if (dispatcher == null)
+            {
+                pending.Complete(StickyUiCommandResult.NotAccepted());
+                return;
+            }
+            if (!postPump) return;
+            try
+            {
+                dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(PumpStartupRestore));
+            }
+            catch (Exception error)
+            {
+                CompletePending(pending, StickyUiCommandResult.Failed(error));
+                StopAcceptingCommands();
+            }
         }
 
         private void PumpStartupRestore()
@@ -152,55 +183,90 @@ namespace PennyPet
             Action<StickyUiCommandResult> completed,
             SynchronizationContext completionContext)
         {
+            var pending = new PendingCommand(completed, completionContext);
             Dispatcher dispatcher;
-            bool acceptingCommands;
+            StickyUiCommandResult rejected = null;
             lock (_gate)
             {
-                acceptingCommands = _acceptingCommands;
                 dispatcher = _dispatcher;
+                if (!_acceptingCommands)
+                    rejected = StickyUiCommandResult.NotAccepted();
+                else if (invoke == null || dispatcher == null ||
+                    dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished)
+                    rejected = StickyUiCommandResult.NotHandled();
+                else _pendingCommands.Add(pending);
             }
-            if (!acceptingCommands)
+            if (rejected != null)
             {
-                PostCompletion(completionContext, completed,
-                    StickyUiCommandResult.NotAccepted());
-                return;
-            }
-            if (invoke == null || dispatcher == null ||
-                dispatcher.HasShutdownStarted ||
-                dispatcher.HasShutdownFinished)
-            {
-                PostCompletion(completionContext, completed,
-                    StickyUiCommandResult.NotHandled());
+                pending.Complete(rejected);
                 return;
             }
             try
             {
-                dispatcher.BeginInvoke(DispatcherPriority.Normal,
-                    new Action(delegate
-                    {
-                        StickyUiCommandResult result;
-                        try
-                        {
-                            result = invoke() ??
-                                StickyUiCommandResult.NotHandled();
-                        }
-                        catch (Exception error)
-                        {
-                            result = StickyUiCommandResult.Failed(error);
-                        }
-                        PostCompletion(completionContext, completed, result);
-                    }));
+                DispatcherOperation operation = dispatcher.BeginInvoke(DispatcherPriority.Normal,
+                    new Action(() => ExecutePending(pending, invoke)));
+                operation.Aborted += delegate
+                {
+                    CompletePending(pending, StickyUiCommandResult.NotAccepted());
+                };
+                if (operation.Status == DispatcherOperationStatus.Aborted)
+                    CompletePending(pending, StickyUiCommandResult.NotAccepted());
             }
             catch (Exception error)
             {
-                PostCompletion(completionContext, completed,
-                    StickyUiCommandResult.Failed(error));
+                CompletePending(pending, StickyUiCommandResult.Failed(error));
             }
+        }
+
+        private void ExecutePending(PendingCommand pending, Func<StickyUiCommandResult> invoke)
+        {
+            if (pending.IsCompleted) return;
+            StickyUiCommandResult result;
+            try { result = invoke() ?? StickyUiCommandResult.NotHandled(); }
+            catch (Exception error) { result = StickyUiCommandResult.Failed(error); }
+            CompletePending(pending, result);
+        }
+
+        private void CompletePending(PendingCommand pending, StickyUiCommandResult result)
+        {
+            lock (_gate) _pendingCommands.Remove(pending);
+            pending.Complete(result);
         }
 
         internal void StopAcceptingCommands()
         {
-            lock (_gate) _acceptingCommands = false;
+            PendingCommand[] pending;
+            lock (_gate)
+            {
+                _acceptingCommands = false;
+                pending = new List<PendingCommand>(_pendingCommands).ToArray();
+                _pendingCommands.Clear();
+                _startupRestoreQueue.Clear();
+                _startupRestorePumpPosted = false;
+            }
+            foreach (PendingCommand command in pending)
+                command.Complete(StickyUiCommandResult.NotAccepted());
+        }
+
+        private sealed class PendingCommand
+        {
+            private readonly Action<StickyUiCommandResult> _completed;
+            private readonly SynchronizationContext _context;
+            private int _resolved;
+
+            internal PendingCommand(Action<StickyUiCommandResult> completed, SynchronizationContext context)
+            {
+                _completed = completed;
+                _context = context;
+            }
+
+            internal bool IsCompleted { get { return Volatile.Read(ref _resolved) != 0; } }
+
+            internal void Complete(StickyUiCommandResult result)
+            {
+                if (Interlocked.Exchange(ref _resolved, 1) == 0)
+                    PostCompletion(_context, _completed, result);
+            }
         }
 
         private void DispatcherUnhandledException(object sender,
@@ -231,6 +297,7 @@ namespace PennyPet
                 "sticky-ui-dispatcher-fault",
                 error ?? new InvalidOperationException(
                     "Sticky UI dispatcher fault without an exception."));
+            StopAcceptingCommands();
             if (firstFault && handler != null)
             {
                 try { handler(error); }

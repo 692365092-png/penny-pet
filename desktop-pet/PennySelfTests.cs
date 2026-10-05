@@ -278,6 +278,7 @@ namespace PennyPet
             RunPetLifecycleChecks(evidence);
             RunStartupRestoreChecks(root, evidence);
             RunStickyFaultExitChecks(root, evidence);
+            RunStickyCommandShutdownChecks(evidence);
             RunPc2PersistencePause(root, evidence);
             RunDockCommitMembershipChecks(root, evidence);
             RunPc2FinalDockFailure(root, evidence);

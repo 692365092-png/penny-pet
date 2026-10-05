@@ -648,9 +648,8 @@ namespace PennyPet
                 {
                     result = StickyUiCommandResult.Failed(error);
                 }
-                StickyUiThreadHost.PostCompletionForHost(
-                    completionContext, completed, result);
-            });
+                return result;
+            }, completed, completionContext);
         }
 
         internal void PostCommand(StickyUiCommand command,
