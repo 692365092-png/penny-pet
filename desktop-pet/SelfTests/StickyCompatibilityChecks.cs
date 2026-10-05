@@ -316,10 +316,10 @@ namespace PennyPet
                 };
                 StickyImportMergeResult merge = StickyImportMergePlanner
                     .Calculate(blocked.GetAll(), new[] { incoming });
-                PersistenceResult mergeResult = blocked.CommitImportedMerge(
-                    merge, futurePath + ".before-import");
-                PersistenceResult restoreResult = blocked.CommitFullRestore(
-                    new[] { incoming }, futurePath + ".before-restore");
+                PersistenceResult mergeResult = WaitForPersistenceReceipt(blocked.CommitImportedMergeAsync(
+                    merge, futurePath + ".before-import"));
+                PersistenceResult restoreResult = WaitForPersistenceReceipt(blocked.CommitFullRestoreAsync(
+                    new[] { incoming }, futurePath + ".before-restore"));
                 PersistenceResult exportResult = blocked.ExportSnapshot(
                     exportPath);
                 result.FutureMutationsRejectedOk =

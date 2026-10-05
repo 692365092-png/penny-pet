@@ -104,7 +104,7 @@ namespace PennyPet
                     schedule.Restore(new[] {
                         new ReminderItem(deadline, "restored-away", note.Id),
                         new ReminderItem(deadline, "standalone") });
-                    Pc2Assert(notes.CommitFullRestore(new StickyNoteData[0]).Succeeded,
+                    Pc2Assert(WaitForPersistenceReceipt(notes.CommitFullRestoreAsync(new StickyNoteData[0])).Succeeded,
                         "replace note model through the actual full-restore entry");
                     runtime.ReconcileNoteLinks();
                     Pc2Assert(schedule.Count == 1 && schedule.Next.Text == "standalone" &&

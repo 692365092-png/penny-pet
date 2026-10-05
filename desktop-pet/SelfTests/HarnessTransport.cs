@@ -12,11 +12,25 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Threading.Tasks;
 
 namespace PennyPet
 {
     internal static partial class SelfTest
     {
+
+        private static PersistenceResult WaitForPersistenceReceipt(Task<PersistenceResult> receipt)
+        {
+            Stopwatch deadline = Stopwatch.StartNew();
+            while (!receipt.IsCompleted)
+            {
+                Application.DoEvents();
+                if (deadline.Elapsed > TimeSpan.FromSeconds(10))
+                    throw new TimeoutException("Self-test persistence receipt did not complete.");
+                Thread.Sleep(1);
+            }
+            return receipt.GetAwaiter().GetResult();
+        }
 
         private static StickyUiCommandResult PostStickyCommandAndWait(
             StickyUiHost host, StickyUiCommand command,

@@ -183,7 +183,7 @@ namespace PennyPet
                             importedVersion, importedNew
                         });
                 PersistenceResult mergeCommit =
-                    mergeRepository.CommitImportedMerge(mergePlan);
+                    WaitForPersistenceReceipt(mergeRepository.CommitImportedMergeAsync(mergePlan));
                 StickyFeature reopenedMerge =
                     StickyFeature.LoadFromFile(mergePath);
                 StickyFeature preMergeBackup =
@@ -223,8 +223,7 @@ namespace PennyPet
                             {
                                 blockedIncoming
                             });
-                    PersistenceResult failedMerge = blockedRepository
-                        .CommitImportedMerge(blockedPlan);
+                    PersistenceResult failedMerge = WaitForPersistenceReceipt(blockedRepository.CommitImportedMergeAsync(blockedPlan));
                     StickyNoteData blockedAfter = blockedRepository.Find(
                         blockedCurrent.Id);
                     result.ImportMergeCommitOk = result.ImportMergeCommitOk &&
@@ -266,8 +265,8 @@ namespace PennyPet
                     Text = "restored-content"
                 };
                 PersistenceResult restoreCommit =
-                    restoreRepository.CommitFullRestore(
-                        new[] { replacement }, restoreBackupPath);
+                    WaitForPersistenceReceipt(restoreRepository.CommitFullRestoreAsync(
+                        new[] { replacement }, restoreBackupPath));
                 StickyFeature reopenedRestore =
                     StickyFeature.LoadFromFile(restorePath);
                 StickyFeature preRestore =

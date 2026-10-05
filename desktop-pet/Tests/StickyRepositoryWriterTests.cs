@@ -120,7 +120,7 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void FailedImportBackupPublishesNeitherDiskNorMemoryReplacement()
+        public async Task FailedImportBackupPublishesNeitherDiskNorMemoryReplacement()
         {
             string directory = DirectoryForTest();
             string primary = Path.Combine(directory, "notes.dat");
@@ -133,7 +133,7 @@ namespace PennyPet.Tests
                 Assert.IsTrue(repository.Save().Succeeded);
                 string before = File.ReadAllText(primary);
                 var replacement = new[] { new StickyNoteData { Id = "replacement", Text = "new" } };
-                Assert.IsFalse(repository.CommitFullRestore(replacement, backup).Succeeded);
+                Assert.IsFalse((await repository.CommitFullRestoreAsync(replacement, backup)).Succeeded);
                 Assert.AreSame(original, repository.Find(original.Id));
                 Assert.IsNull(repository.Find("replacement"));
                 Assert.AreEqual(before, File.ReadAllText(primary));
@@ -144,7 +144,7 @@ namespace PennyPet.Tests
         }
 
         [TestMethod]
-        public void FullRestoreWritesPreChangeBackupAndPublishesAfterSuccess()
+        public async Task FullRestoreWritesPreChangeBackupAndPublishesAfterSuccess()
         {
             string directory = DirectoryForTest();
             string primary = Path.Combine(directory, "notes.dat");
@@ -155,7 +155,7 @@ namespace PennyPet.Tests
                 StickyNoteData original = repository.CreateDraft("original", Point.Empty);
                 repository.SaveAsync();
                 var replacement = new[] { new StickyNoteData { Id = "replacement", Text = "new" } };
-                Assert.IsTrue(repository.CommitFullRestore(replacement, backup).Succeeded);
+                Assert.IsTrue((await repository.CommitFullRestoreAsync(replacement, backup)).Succeeded);
                 Assert.IsNull(repository.Find(original.Id));
                 Assert.AreEqual("new", repository.Find("replacement").Text);
                 Assert.AreEqual("original", StickyFeature.LoadFromFile(backup).Find(original.Id).Text);

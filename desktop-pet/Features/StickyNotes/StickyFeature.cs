@@ -202,13 +202,22 @@ namespace PennyPet
 
         internal Task<PersistenceResult> CommitImportedMergeAsync(StickyImportMergeResult merge)
         {
-            return CommitReplacementAsync(merge == null ? null : merge.MergedSnapshot,
-                _filePath + ".before-import.pennysticky");
+            return CommitImportedMergeAsync(merge, _filePath + ".before-import.pennysticky");
+        }
+
+        internal Task<PersistenceResult> CommitImportedMergeAsync(StickyImportMergeResult merge, string backupPath)
+        {
+            return CommitReplacementAsync(merge == null ? null : merge.MergedSnapshot, backupPath);
         }
 
         internal Task<PersistenceResult> CommitFullRestoreAsync(IEnumerable<StickyNoteData> snapshot)
         {
-            return CommitReplacementAsync(snapshot, _filePath + ".before-restore.pennysticky");
+            return CommitFullRestoreAsync(snapshot, _filePath + ".before-restore.pennysticky");
+        }
+
+        internal Task<PersistenceResult> CommitFullRestoreAsync(IEnumerable<StickyNoteData> snapshot, string backupPath)
+        {
+            return CommitReplacementAsync(snapshot, backupPath);
         }
 
         private async Task<PersistenceResult> CommitReplacementAsync(
@@ -218,7 +227,15 @@ namespace PennyPet
                 return PersistenceResult.Failure(new InvalidOperationException(
                     "Dataset replacement is unavailable."));
             List<StickyNoteData> committed;
-            try { committed = CloneAndValidateMergeSnapshot(snapshot); }
+            try
+            {
+                if (String.IsNullOrWhiteSpace(backupPath))
+                    throw new ArgumentException("An automatic backup path is required.", nameof(backupPath));
+                backupPath = Path.GetFullPath(backupPath);
+                if (String.Equals(Path.GetFullPath(_filePath), backupPath, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Automatic backup path must differ from the data file.");
+                committed = CloneAndValidateMergeSnapshot(snapshot);
+            }
             catch (Exception error) { return PersistenceResult.Failure(error); }
             _replacementPending = true;
             try
@@ -264,94 +281,6 @@ namespace PennyPet
             if (!LoadSucceeded)
                 return PersistenceResult.Failure(CreateMutationBlockedError("export"));
             return _store.ExportSnapshot(filePath, Model.CaptureSnapshot());
-        }
-
-        internal PersistenceResult CommitImportedMerge(
-            StickyImportMergeResult merge, string backupPath)
-        {
-            if (merge == null || String.IsNullOrWhiteSpace(backupPath))
-                return PersistenceResult.Failure(new ArgumentException(
-                    "A merge plan and automatic backup path are required."));
-            if (!LoadSucceeded)
-                return PersistenceResult.Failure(
-                    CreateMutationBlockedError("merge"));
-
-            List<StickyNoteData> committed;
-            try
-            {
-                committed = CloneAndValidateMergeSnapshot(
-                    merge.MergedSnapshot);
-            }
-            catch (Exception error)
-            {
-                return PersistenceResult.Failure(error);
-            }
-            return CommitPreparedSnapshot(committed, backupPath);
-        }
-
-        internal PersistenceResult CommitFullRestore(
-            IEnumerable<StickyNoteData> restoredSnapshot, string backupPath)
-        {
-            if (restoredSnapshot == null || String.IsNullOrWhiteSpace(backupPath))
-                return PersistenceResult.Failure(new ArgumentException(
-                    "A restore snapshot and automatic backup path are required."));
-            if (!LoadSucceeded)
-                return PersistenceResult.Failure(
-                    CreateMutationBlockedError("restore"));
-
-            List<StickyNoteData> committed;
-            try
-            {
-                committed = CloneAndValidateMergeSnapshot(restoredSnapshot);
-            }
-            catch (Exception error)
-            {
-                return PersistenceResult.Failure(error);
-            }
-            return CommitPreparedSnapshot(committed, backupPath);
-        }
-
-        internal PersistenceResult CommitFullRestore(
-            IEnumerable<StickyNoteData> restoredSnapshot)
-        {
-            // Keep one rolling rollback snapshot so repeated restores do not
-            // create an unbounded trail of automatic backup files.
-            return CommitFullRestore(restoredSnapshot,
-                _filePath + ".before-restore.pennysticky");
-        }
-
-        private PersistenceResult CommitPreparedSnapshot(
-            List<StickyNoteData> committed, string backupPath)
-        {
-            string primaryPath = Path.GetFullPath(_filePath);
-            string automaticBackupPath = Path.GetFullPath(backupPath);
-            if (String.Equals(primaryPath, automaticBackupPath,
-                StringComparison.OrdinalIgnoreCase))
-                return PersistenceResult.Failure(new InvalidOperationException(
-                    "Automatic backup path must differ from the data file."));
-
-            // Do not queue a dataset replacement behind stalled I/O: the
-            // caller must remain free to cancel while the old model is active.
-            PersistenceResult pending = WaitForPendingSaves();
-            if (pending.Error is TimeoutException) return pending;
-            PersistenceResult result = _store.Save(new StickyWriteRequest(
-                committed, backupPath: automaticBackupPath,
-                backupSnapshot: Model.CaptureSnapshot())).GetAwaiter().GetResult();
-            if (!result.Succeeded) return result;
-
-            // The model thread publishes the prepared dataset only after the
-            // same writer has durably committed both the backup and primary.
-            Model.ReplaceWith(committed);
-            return result;
-        }
-
-        internal PersistenceResult CommitImportedMerge(
-            StickyImportMergeResult merge)
-        {
-            // Keep one rolling rollback snapshot so repeated imports never
-            // create an unbounded trail of automatic backup files.
-            return CommitImportedMerge(merge,
-                _filePath + ".before-import.pennysticky");
         }
 
         private void NotifySaveFailed(PersistenceResult result,

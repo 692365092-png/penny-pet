@@ -12,6 +12,23 @@ namespace PennyPet.Tests
     public sealed class AsyncPersistenceBarrierTests
     {
         [TestMethod]
+        public async Task ReplacementCannotUseThePrimaryAsItsBackup()
+        {
+            int writes = 0;
+            var feature = new StickyFeature("primary.dat", request =>
+            {
+                writes++;
+                return PersistenceResult.Success();
+            });
+            StickyNoteData original = feature.CreateDraft("original", Point.Empty);
+            PersistenceResult result = await feature.CommitFullRestoreAsync(
+                new[] { new StickyNoteData { Text = "replacement" } }, "primary.dat");
+            Assert.IsFalse(result.Succeeded);
+            Assert.AreSame(original, feature.Find(original.Id));
+            Assert.AreEqual(0, writes);
+        }
+
+        [TestMethod]
         public async Task CancelledWaitThenEdit_KeepsOldBarrierBeforeNewSnapshot()
         {
             using var entered = new ManualResetEventSlim();

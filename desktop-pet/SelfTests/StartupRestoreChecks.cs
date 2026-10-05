@@ -47,7 +47,7 @@ namespace PennyPet
                 var restored = old.CloneForPersistence();
                 restored.Text = "replacement content";
                 restored.Visible = false;
-                Pc2Assert(scene.Repository.CommitFullRestore(new[] { restored }).Succeeded,
+                Pc2Assert(WaitForPersistenceReceipt(scene.Repository.CommitFullRestoreAsync(new[] { restored })).Succeeded,
                     "isolated replacement committed");
                 scene.Workspace.InvalidateStartupStickyRestores();
                 scene.Workspace.QueueStartupStickyRestore(old);
