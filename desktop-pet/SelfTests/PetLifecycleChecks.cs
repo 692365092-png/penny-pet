@@ -36,6 +36,7 @@ namespace PennyPet
             public void ResumeRuntimeComposition() { Startup.ResumeDeferredRuntimeComposition(); }
             public void ShowBubble(string text) { }
             public void CaptureLocationForSave() { }
+            public void StickyDatasetReplaced() { Startup.StickyDatasetReplaced(); }
             public void FinishExitSequence() { IsExiting = true; Startup.Dispose(); }
             public void RefreshKeyboardMenu() { }
             public void RefreshMenu() { }

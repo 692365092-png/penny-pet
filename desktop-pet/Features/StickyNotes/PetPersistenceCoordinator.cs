@@ -23,6 +23,7 @@ namespace PennyPet
         void ShowBubble(string text);
         void CaptureLocationForSave();
         void FinishExitSequence();
+        void StickyDatasetReplaced();
     }
 
     internal sealed class PetPersistenceCoordinator
@@ -430,6 +431,8 @@ namespace PennyPet
                     ShowStickyImportFailure("恢复未完成。\n当前便利贴没有被修改。");
                     return;
                 }
+                _host.Workspace.InvalidateStartupStickyRestores();
+                _host.StickyDatasetReplaced();
                 // Notes have committed. Settings are a separate durable file;
                 // report that boundary instead of claiming a multi-file transaction.
                 _host.Reminders.ReconcileNoteLinks();

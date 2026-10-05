@@ -71,6 +71,7 @@ namespace PennyPet
         {
             if (_disposed) return;
             _disposed = true;
+            InvalidateStartupStickyRestores();
             Dock.Dispose();
             Host.BeginShutdown();
         }
@@ -169,6 +170,7 @@ namespace PennyPet
                 return;
             }
             string noteId = note.Id;
+            CancelStartupStickyRestore(noteId);
             if (!Hosted.TryBeginDelete(noteId))
             {
                 if (completed != null) completed(false);
@@ -740,7 +742,11 @@ namespace PennyPet
 
         internal bool PostHostedStickyHide(StickyNoteData note)
         {
-            if (note != null) Dock.CancelHostedDockRestores(note.Id);
+            if (note != null)
+            {
+                CancelStartupStickyRestore(note.Id);
+                Dock.CancelHostedDockRestores(note.Id);
+            }
             if (!IsHostedSticky(note)) return false;
             string noteId = note.Id;
             PostHostedStickyCommand(StickyUiCommand.Hide(noteId),
@@ -761,9 +767,42 @@ namespace PennyPet
             return true;
         }
 
+        private readonly Dictionary<string, CancellationTokenSource> _startupRestores =
+            new Dictionary<string, CancellationTokenSource>(StringComparer.OrdinalIgnoreCase);
+
+        private void CancelStartupStickyRestore(string noteId)
+        {
+            CancellationTokenSource pending;
+            if (!_startupRestores.TryGetValue(noteId, out pending)) return;
+            _startupRestores.Remove(noteId);
+            pending.Cancel();
+            pending.Dispose();
+            Hosted.RemoveNote(noteId);
+            Placement.InvalidateEffective(noteId);
+            WindowRemoved?.Invoke(noteId, true);
+            if (!IsDisposed)
+                PostHostedStickyCommand(StickyUiCommand.Close(noteId), ignored => { });
+        }
+
+        internal void ForgetStartupRestore(string noteId) { WindowRemoved?.Invoke(noteId, true); }
+
+        internal void InvalidateStartupStickyRestores()
+        {
+            foreach (string id in new List<string>(_startupRestores.Keys))
+                CancelStartupStickyRestore(id);
+            Dock.CancelHostedDockRestores();
+        }
+
         internal void QueueStartupStickyRestore(StickyNoteData note)
         {
             if (note == null || IsDisposed) return;
+            if (!ReferenceEquals(note, Notes.Find(note.Id)) || !note.Visible)
+            {
+                foreach (StickyNoteData member in Dock.BuildDockChainOrderIncludingHidden(note))
+                    WindowRemoved?.Invoke(member.Id, true);
+                WindowRemoved?.Invoke(note.Id, true);
+                return;
+            }
             List<StickyNoteData> group = Dock.BuildDockChainOrderIncludingHidden(note);
             if (group.Count > 1)
             {
@@ -779,9 +818,22 @@ namespace PennyPet
                 StickyNoteUiSnapshot.Capture(note), false,
                 ReminderItems, topology, null,
                 StickyPlacementRecovery.SelectForShow(note, topology));
+            var pending = new CancellationTokenSource();
+            CancellationToken cancellation = pending.Token;
+            _startupRestores.Add(noteId, pending);
             Host.PostStartupRestore(command,
                 delegate(StickyUiCommandResult result)
                 {
+                    if (cancellation.IsCancellationRequested) return;
+                    _startupRestores.Remove(noteId);
+                    pending.Dispose();
+                    if (!ReferenceEquals(note, Notes.Find(noteId)) || !note.Visible)
+                    {
+                        Hosted.RemoveNote(noteId);
+                        WindowRemoved?.Invoke(noteId, true);
+                        PostHostedStickyCommand(StickyUiCommand.Close(noteId), ignored => { });
+                        return;
+                    }
                     if (result != null &&
                         result.Status == StickyUiCommandStatus.Handled)
                     {
@@ -792,7 +844,7 @@ namespace PennyPet
                     }
                     HandleHostedStickyFailure(new string[] { noteId },
                         "deferred-sticky-restore", result);
-                }, Context);
+                }, Context, cancellation);
         }
 
         internal void RecoverFailedStartupDockRestore(IEnumerable<string> noteIds,

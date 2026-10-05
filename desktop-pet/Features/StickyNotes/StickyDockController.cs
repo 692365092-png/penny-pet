@@ -1136,6 +1136,12 @@ namespace PennyPet
                     StickyNoteData root =
                         _workspace.Notes.Find(rootId);
                     if (root == null) return;
+                    if (startupRestore && !root.Visible)
+                    {
+                        foreach (string id in affected)
+                            _workspace.ForgetStartupRestore(id);
+                        return;
+                    }
                     try
                     {
                         bool queued = TryRestoreHostedDockComponentPrepared(

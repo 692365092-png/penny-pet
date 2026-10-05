@@ -625,7 +625,8 @@ namespace PennyPet
 
         internal void PostStartupRestore(StickyUiCommand command,
             Action<StickyUiCommandResult> completed,
-            SynchronizationContext completionContext)
+            SynchronizationContext completionContext,
+            CancellationToken cancellation = default(CancellationToken))
         {
             if (command == null) throw new ArgumentNullException(nameof(command));
             Func<StickyUiCommand, StickyUiCommandResult> handler;
@@ -635,7 +636,9 @@ namespace PennyPet
                 StickyUiCommandResult result;
                 try
                 {
-                    result = handler == null
+                    result = cancellation.IsCancellationRequested
+                        ? StickyUiCommandResult.NotAccepted()
+                        : handler == null
                         ? StickyUiCommandResult.NotHandled()
                         : handler(command) ?? StickyUiCommandResult.NotHandled();
                 }

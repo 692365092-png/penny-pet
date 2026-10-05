@@ -79,6 +79,7 @@ namespace PennyPet
             _startup.ResumeDeferredRuntimeComposition();
         }
         void IPetPersistenceHost.ShowBubble(string text) { ShowBubble(text); }
+        void IPetPersistenceHost.StickyDatasetReplaced() { _startup.StickyDatasetReplaced(); }
         void IPetPersistenceHost.CaptureLocationForSave() { CaptureExitLocationForSave(); }
         void IPetPersistenceHost.FinishExitSequence()
         {
