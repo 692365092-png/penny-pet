@@ -366,9 +366,9 @@ namespace PennyPet
 
         internal void StickyDatasetReplaced()
         {
-            if (IsStopping || _startupWorkTimer == null) return;
+            if (IsStopping || _startupWorkTimer == null ||
+                _startupWorkPhase != StartupWorkPhase.RestoreNotes) return;
             _startupVisibleNotes = BuildStartupRestoreQueue();
-            _startupWorkPhase = StartupWorkPhase.RestoreNotes;
         }
 
         internal void MarkFirstRendered(string noteId)

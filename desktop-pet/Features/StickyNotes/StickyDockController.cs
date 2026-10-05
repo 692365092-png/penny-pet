@@ -1274,8 +1274,13 @@ namespace PennyPet
             // These hides are queued before any replacement restore. They also
             // cover a batch that finished on the STA just before cancellation.
             foreach (StickyNoteUiSnapshot snapshot in operation.Snapshots)
-                if (!snapshot.Visible)
+            {
+                StickyNoteData current = _workspace.Notes.Find(snapshot.NoteId);
+                if (!snapshot.Visible || current == null || !current.Visible)
                     _workspace.PostHostedStickyCommand(StickyUiCommand.Hide(snapshot.NoteId), ignored => { });
+                if (operation.StartupRestore && (current == null || !current.Visible))
+                    _workspace.ForgetStartupRestore(snapshot.NoteId);
+            }
         }
 
         private void CancelHostedDockRestore(DockRestoreOperation operation)
