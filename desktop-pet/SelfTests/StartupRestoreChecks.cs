@@ -73,6 +73,7 @@ namespace PennyPet
             using (var scene = new Pc2Scene(root, "startup-dock-hide-before-ack", true))
             using (var nativeDone = new ManualResetEventSlim())
             {
+                Pc2Set(scene.Workspace, "_surface", new StartupPetSurface { Topology = scene.Topology });
                 scene.Hosted.CompleteCloseAll();
                 scene.Start();
                 scene.Host.Configure(scene.Workspace.HostedStickyEventReceived, scene.Context);
