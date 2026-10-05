@@ -30,8 +30,9 @@ namespace PennyPet.Tests
                 "The same already-queued snapshot must not be written twice.");
 
             failWrites = true;
-            settings.KeyOverlayScalePercent = 120;
-            Assert.IsTrue(settings.SaveIfChangedAsync());
+            settings.KeyOverlayScalePercent = 150;
+            Assert.IsTrue(settings.SaveIfChangedAsync(),
+                "Use a persisted keyboard-scale tier so the snapshot really changes.");
             Assert.IsFalse(settings.WaitForPendingSaves().Succeeded);
             Assert.IsTrue(settings.HasUnsavedChanges);
             Assert.AreEqual(2, writes);
