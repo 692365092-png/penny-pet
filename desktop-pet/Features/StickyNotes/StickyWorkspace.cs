@@ -23,7 +23,6 @@ namespace PennyPet
         internal event Action<string> FirstRendered;
         internal event Action<string, bool> WindowRemoved;
         internal event Action TypingActivity;
-        internal event Action ExitReady;
 
         internal StickyWorkspace(StickyFeature notes, IStickyPetSurface surface,
             IStickyPresentation presentation, IStickyReminderActions reminders,
@@ -914,12 +913,6 @@ namespace PennyPet
             if (value.Kind == StickyUiEventKind.ImeCompositionChanged)
             {
                 Hosted.SetImeComposition(value.NoteId, value.Flag);
-                if (!value.Flag)
-                {
-                    if (Hosted.ExitRequested &&
-                        !Hosted.HasImeComposition)
-                        TryCloseAllHostedStickies();
-                }
                 return;
             }
             if (value.Kind == StickyUiEventKind.FirstRendered)
@@ -1250,52 +1243,6 @@ namespace PennyPet
             return completion.Task;
         }
 
-        internal bool BeginHostedStickyExitIfNeeded()
-        {
-            if (Hosted.NoteCount == 0 ||
-                Hosted.ExitPrepared)
-                return false;
-            List<string> affected = new List<string>();
-            foreach (StickyNoteData note in Notes.GetAll())
-                if (note != null && note.Visible)
-                    affected.Add(note.Id);
-            PrepareDockStructure(affected,
-                "sticky-exit-structure",
-                delegate
-                {
-                    if (IsDisposed || Hosted.ExitPrepared)
-                        return;
-                    Dock.CancelHostedDockRestores();
-                    Hosted.RequestExit();
-                    TryCloseAllHostedStickies();
-                });
-            return true;
-        }
-
-        private void TryCloseAllHostedStickies()
-        {
-            if (!Hosted.TryBeginCloseAll()) return;
-            PostHostedStickyCommand(StickyUiCommand.CloseAll(),
-                delegate(StickyUiCommandResult result)
-                {
-                    if (result == null ||
-                        result.Status != StickyUiCommandStatus.Handled)
-                    {
-                        Hosted.EndCloseAll();
-                        if (result != null && result.Status == StickyUiCommandStatus.NotAccepted)
-                            return;
-                        Hosted.CancelExit();
-                        ReportHostedStickyCommandFailure(
-                            "sticky-hosted-exit", result);
-                        ShowBubble("便利贴仍在收尾，退出已取消，请稍后重试。");
-                        return;
-                    }
-                    ApplyClosedHostedStickySnapshots(result);
-                    Hosted.PrepareExit();
-                    ExitReady?.Invoke();
-                });
-        }
-
         private void ApplyClosedHostedStickySnapshots(StickyUiCommandResult result)
         {
             if (result.FinalSnapshots != null)
@@ -1311,13 +1258,6 @@ namespace PennyPet
             foreach (StickyNoteData note in Notes.InStorageOrder)
                 Placement.InvalidateEffective(note.Id);
             Hosted.CompleteCloseAll();
-        }
-
-        internal void CancelPreparedStickyExit()
-        {
-            bool reopen = Hosted.ExitPrepared;
-            Hosted.CancelExit();
-            if (reopen) ReloadAllHostedStickyRuntime();
         }
 
         internal void CloseHostedStickyRuntimeForReload(

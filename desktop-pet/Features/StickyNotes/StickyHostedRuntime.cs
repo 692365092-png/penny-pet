@@ -20,9 +20,6 @@ namespace PennyPet
         internal int NoteCount { get { return _noteIds.Count; } }
         internal bool HasImeComposition { get { return _imeComposing.Count > 0; } }
         internal bool HasInputFocus { get { return _inputFocused.Count > 0; } }
-        internal bool ExitRequested { get; private set; }
-        internal bool CloseAllInFlight { get; private set; }
-        internal bool ExitPrepared { get; private set; }
 
         internal bool AddNote(string noteId)
         {
@@ -105,35 +102,6 @@ namespace PennyPet
             _deletePending.Remove(id);
         }
 
-        internal void RequestExit()
-        {
-            ExitRequested = true;
-        }
-
-        internal bool TryBeginCloseAll()
-        {
-            if (!ExitRequested || CloseAllInFlight || HasImeComposition)
-                return false;
-            CloseAllInFlight = true;
-            return true;
-        }
-
-        internal void EndCloseAll()
-        {
-            CloseAllInFlight = false;
-        }
-
-        internal void CancelExit()
-        {
-            ExitRequested = false;
-            ExitPrepared = false;
-        }
-
-        internal void PrepareExit()
-        {
-            ExitPrepared = true;
-        }
-
         // CloseAll has destroyed every native session. Retire their leases
         // before another show can create a session with a fresh sequence.
         internal void CompleteCloseAll()
@@ -143,7 +111,6 @@ namespace PennyPet
             _imeComposing.Clear();
             _inputFocused.Clear();
             _deletePending.Clear();
-            CloseAllInFlight = false;
         }
 
         private static void SetMembership(HashSet<string> values,

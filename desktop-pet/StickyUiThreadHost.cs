@@ -347,14 +347,6 @@ namespace PennyPet
             return thread == null || thread == Thread.CurrentThread;
         }
 
-        internal static void PostCompletionForHost(
-            SynchronizationContext context,
-            Action<StickyUiCommandResult> completed,
-            StickyUiCommandResult result)
-        {
-            PostCompletion(context, completed, result);
-        }
-
         private static void PostCompletion(SynchronizationContext context,
             Action<StickyUiCommandResult> completed,
             StickyUiCommandResult result)

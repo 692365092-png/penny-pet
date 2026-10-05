@@ -14,7 +14,6 @@ namespace PennyPet
             workspace.FirstRendered += _startup.MarkFirstRendered;
             workspace.WindowRemoved += _startup.ForgetFirstRendered;
             workspace.TypingActivity += TriggerTypingAnimation;
-            workspace.ExitReady += BeginExitSequence;
             return workspace;
         }
 
