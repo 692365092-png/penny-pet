@@ -46,32 +46,76 @@ namespace PennyPet
             _persistenceOperation = true;
             _persistenceOwnerEnabled = _host.Window.Enabled;
             _resumeRemindersAfterPersistence = _host.Reminders != null && _host.Reminders.IsRunning;
-            _host.Window.Enabled = false;
-            _host.SetMenuEnabled(false);
-            _host.StopConversation();
-            if (_host.Reminders != null) _host.Reminders.Stop();
-            if (_host.Workspace == null) return true;
-            StickyUiCommandResult prepared = await _host.Workspace.PreparePersistenceAsync();
-            if (prepared != null && prepared.Status == StickyUiCommandStatus.Handled)
-                return true;
+            Exception prepareError = null;
+            try
+            {
+                _host.Window.Enabled = false;
+                _host.SetMenuEnabled(false);
+                _host.StopConversation();
+                if (_host.Reminders != null) _host.Reminders.Stop();
+                if (_host.Workspace == null) return true;
+                StickyUiCommandResult prepared = await _host.Workspace.PreparePersistenceAsync();
+                if (prepared != null && prepared.Status == StickyUiCommandStatus.Handled)
+                    return true;
+            }
+            catch (Exception error)
+            {
+                prepareError = error;
+                ApplicationDiagnostics.ReportNonFatal("persistence-prepare", error);
+            }
+
             await ResumePersistenceOperationAsync();
-            _host.ShowBubble("请先结束便利贴输入或拖动，再重试。");
+            TryRelease("prepare-notice", delegate
+            {
+                _host.ShowBubble(prepareError == null
+                    ? "请先结束便利贴输入或拖动，再重试。"
+                    : "保存准备未完成，Penny 已恢复运行状态，请重试。");
+            });
             return false;
+        }
+
+        private static void TryRelease(string stage, Action action)
+        {
+            if (action == null) return;
+            try { action(); }
+            catch (Exception error)
+            {
+                ApplicationDiagnostics.ReportNonFatal(
+                    "persistence-release-" + (stage ?? "unknown"), error);
+            }
         }
 
         private async Task ResumePersistenceOperationAsync()
         {
-            if (_host.Workspace != null)
-                await _host.Workspace.PersistenceCommandAsync(
-                    StickyUiCommand.ResumeAfterPersistence());
-            _persistenceOperation = false;
+            try
+            {
+                if (_host.Workspace != null)
+                    await _host.Workspace.PersistenceCommandAsync(
+                        StickyUiCommand.ResumeAfterPersistence());
+            }
+            catch (Exception error)
+            {
+                ApplicationDiagnostics.ReportNonFatal(
+                    "persistence-release-workspace", error);
+            }
+            finally
+            {
+                // Operation ownership must never survive a failed release callback.
+                _persistenceOperation = false;
+            }
+
             if (_host.Window.IsDisposed || _host.Window.Disposing) return;
-            _host.Window.Enabled = _persistenceOwnerEnabled;
-            _host.SetMenuEnabled(true);
-            if (!_host.IsExiting) _host.ResumeConversation();
-            if (_host.Reminders != null && _resumeRemindersAfterPersistence && !_host.IsExiting)
-                _host.Reminders.Start();
-            _host.ResumeRuntimeComposition();
+            TryRelease("window", delegate
+            {
+                _host.Window.Enabled = _persistenceOwnerEnabled;
+            });
+            TryRelease("menu", delegate { _host.SetMenuEnabled(true); });
+            if (!_host.IsExiting)
+                TryRelease("conversation", _host.ResumeConversation);
+            if (_host.Reminders != null && _resumeRemindersAfterPersistence &&
+                !_host.IsExiting)
+                TryRelease("reminders", _host.Reminders.Start);
+            TryRelease("runtime-composition", _host.ResumeRuntimeComposition);
         }
 
         internal async void BeginExitSequence()
@@ -136,10 +180,15 @@ namespace PennyPet
                     settingsResolved ? Task.FromResult(PersistenceResult.Success()) : WaitForSaveReceiptAsync(settingsReceipt));
                 PersistenceResult noteResult = results[0];
                 PersistenceResult settingsResult = results[1];
-                if (noteResult.Succeeded && settingsResult.Succeeded)
+
+                if (!notesResolved && noteResult.Succeeded)
+                    notesResolved = true;
+                if (!settingsResolved && settingsResult.Succeeded)
+                    settingsResolved = true;
+                if (notesResolved && settingsResolved)
                     return true;
 
-                if (!noteResult.Succeeded)
+                if (!notesResolved && !noteResult.Succeeded)
                 {
                     DialogResult noteChoice = MessageBox.Show(_host.Window,
                         "便利贴尚未写入磁盘。\n\n" + noteResult.ErrorMessage +
@@ -153,7 +202,7 @@ namespace PennyPet
                     notesResolved = true;
                 }
 
-                if (!settingsResult.Succeeded)
+                if (!settingsResolved && !settingsResult.Succeeded)
                 {
                     DialogResult settingsChoice = MessageBox.Show(_host.Window,
                         "程序设置尚未写入磁盘。\n\n" +
@@ -167,6 +216,9 @@ namespace PennyPet
                     if (settingsChoice == DialogResult.Cancel) return false;
                     settingsResolved = true;
                 }
+
+                if (notesResolved && settingsResolved)
+                    return true;
             }
         }
 
