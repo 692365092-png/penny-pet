@@ -16,6 +16,8 @@ namespace PennyPet
         private string _unreadableBackupPath;
         private readonly PersistenceWriter<SettingsWriteRequest> _writer;
         private readonly SynchronizationContext _uiContext;
+        private IReadOnlyList<string> _lastQueuedMainLines;
+        private bool _forceMainSave;
 
         internal PetSettings(Func<SettingsWriteRequest, PersistenceResult> write = null)
         {
@@ -29,6 +31,7 @@ namespace PennyPet
                     handler(this, e);
                 else _uiContext.Post(delegate { handler(this, e); }, null);
             };
+            AcceptCurrentAsMainBaseline();
         }
 
         internal event EventHandler<PersistenceFailedEventArgs> SaveFailed;
@@ -115,8 +118,11 @@ namespace PennyPet
                 out settings, out backupError))
             {
                 // The recovered values are safe to use. Preserve the unreadable
-                // primary before the next atomic save replaces it.
+                // primary before the next atomic save replaces it. Recovery is
+                // itself a dirty startup state: repair the primary even when the
+                // recovered values require no other normalization.
                 if (primaryExists) settings._unreadablePrimaryPath = Path.GetFullPath(filePath);
+                settings._forceMainSave = true;
                 return settings;
             }
             if (File.Exists(backupPath))
@@ -127,6 +133,8 @@ namespace PennyPet
             if (primaryExists) settings._unreadablePrimaryPath = Path.GetFullPath(filePath);
             if (File.Exists(backupPath))
                 settings._unreadableBackupPath = Path.GetFullPath(backupPath);
+            if (primaryExists || File.Exists(backupPath))
+                settings._forceMainSave = true;
             return settings;
         }
 
@@ -143,6 +151,7 @@ namespace PennyPet
                     File.ReadAllLines(filePath, Encoding.UTF8));
                 settings = new PetSettings();
                 settings.CopyFrom(parsed);
+                settings.AcceptCurrentAsMainBaseline();
             }
             catch (Exception caught)
             {
@@ -160,17 +169,36 @@ namespace PennyPet
 
         internal PersistenceResult SaveToFile(string filePath)
         {
-            return _writer.Enqueue(CaptureWrite(filePath)).GetAwaiter().GetResult();
+            SettingsWriteRequest request = CaptureWrite(filePath);
+            Task<PersistenceResult> receipt = _writer.Enqueue(request);
+            RememberMainRequest(request);
+            return receipt.GetAwaiter().GetResult();
         }
 
         internal Task<PersistenceResult> SaveBarrierAsync()
         {
-            return _writer.Enqueue(CaptureWrite(FilePath));
+            SettingsWriteRequest request = CaptureWrite(FilePath);
+            Task<PersistenceResult> receipt = _writer.Enqueue(request);
+            RememberMainRequest(request);
+            return receipt;
         }
 
         internal void SaveAsync()
         {
-            _writer.Enqueue(CaptureWrite(FilePath), coalesce: true);
+            SettingsWriteRequest request = CaptureWrite(FilePath);
+            _writer.Enqueue(request, coalesce: true);
+            RememberMainRequest(request);
+        }
+
+        internal bool SaveIfChangedAsync()
+        {
+            SettingsWriteRequest request = CaptureWrite(FilePath);
+            if (!_forceMainSave && !_writer.IsDirty &&
+                LinesEqual(_lastQueuedMainLines, request.Lines))
+                return false;
+            _writer.Enqueue(request, coalesce: true);
+            RememberMainRequest(request);
+            return true;
         }
 
         internal PersistenceResult WaitForPendingSaves()
@@ -188,6 +216,46 @@ namespace PennyPet
             // Capture on the model thread. The worker never enumerates mutable
             // settings or reminder items, including during a retry.
             return new SettingsWriteRequest(filePath, PetSettingsCodec.Serialize(this));
+        }
+
+        private void AcceptCurrentAsMainBaseline()
+        {
+            _lastQueuedMainLines = PetSettingsCodec.Serialize(this).AsReadOnly();
+            _forceMainSave = false;
+        }
+
+        private void RememberMainRequest(SettingsWriteRequest request)
+        {
+            if (request == null || !IsMainFilePath(request.FilePath)) return;
+            _lastQueuedMainLines = new List<string>(request.Lines).AsReadOnly();
+            _forceMainSave = false;
+        }
+
+        private static bool IsMainFilePath(string filePath)
+        {
+            if (String.IsNullOrWhiteSpace(filePath)) return false;
+            try
+            {
+                return String.Equals(Path.GetFullPath(filePath),
+                    Path.GetFullPath(FilePath),
+                    StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool LinesEqual(IReadOnlyList<string> left,
+            IReadOnlyList<string> right)
+        {
+            if (Object.ReferenceEquals(left, right)) return true;
+            if (left == null || right == null || left.Count != right.Count)
+                return false;
+            for (int index = 0; index < left.Count; index++)
+                if (!String.Equals(left[index], right[index],
+                    StringComparison.Ordinal)) return false;
+            return true;
         }
 
         private PersistenceResult WriteSnapshot(SettingsWriteRequest request)
