@@ -256,7 +256,7 @@ namespace PennyPet
                             "deferred-startup-registration",
                             new InvalidOperationException(startupError));
                     }
-                    _host.Settings.SaveAsync();
+                    _host.Settings.SaveIfChangedAsync();
                 }
                 catch (Exception error)
                 {
