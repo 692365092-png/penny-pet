@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Windows.Input;
 using W = System.Windows;
 using WC = System.Windows.Controls;
+using WD = System.Windows.Data;
 
 namespace PennyPet
 {
@@ -36,6 +37,20 @@ namespace PennyPet
             _reminderPanel.Background = AlphaBrush(System.Windows.Forms.ControlPaint.Light(
                 System.Drawing.Color.FromArgb(Data.ColorArgb), 0.08F), Data.BackgroundOpacityPercent);
             _reminderList.Foreground = OpaqueBrush(EffectiveTextColor());
+        }
+
+        private static W.DataTemplate CreateReminderRowContentTemplate()
+        {
+            W.DataTemplate template = new W.DataTemplate();
+            W.FrameworkElementFactory text =
+                new W.FrameworkElementFactory(typeof(WC.TextBlock));
+            text.SetBinding(WC.TextBlock.TextProperty, new WD.Binding());
+            text.SetValue(WC.TextBlock.TextWrappingProperty,
+                W.TextWrapping.Wrap);
+            text.SetValue(WC.TextBlock.TextTrimmingProperty,
+                W.TextTrimming.None);
+            template.VisualTree = text;
+            return template;
         }
 
         internal bool HasReminderBanner
@@ -128,6 +143,7 @@ namespace PennyPet
                     row.Background = System.Windows.Media.Brushes.Transparent;
                     row.HorizontalContentAlignment =
                         W.HorizontalAlignment.Stretch;
+                    row.ContentTemplate = CreateReminderRowContentTemplate();
                     row.ContextMenu = BuildReminderItemMenu(reminder);
                     UpdateReminderRow(row, reminder);
                     _reminderList.Items.Add(row);
