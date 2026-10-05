@@ -20,6 +20,12 @@ namespace PennyPet
 
         private static PersistenceResult WaitForPersistenceReceipt(Task<PersistenceResult> receipt)
         {
+            Pc2Context context = SynchronizationContext.Current as Pc2Context;
+            if (context != null)
+            {
+                context.PumpUntil(() => receipt.IsCompleted);
+                return receipt.GetAwaiter().GetResult();
+            }
             Stopwatch deadline = Stopwatch.StartNew();
             while (!receipt.IsCompleted)
             {
