@@ -1088,7 +1088,8 @@ namespace PennyPet
                     StickyNoteData root =
                         _workspace.Notes.Find(rootId);
                     if (root == null) return;
-                    if (startupRestore && !root.Visible)
+                    List<StickyNoteData> currentGroup = BuildDockChainOrderIncludingHidden(root);
+                    if (startupRestore && !currentGroup.Exists(member => member.Visible))
                     {
                         foreach (string id in affected)
                             _workspace.ForgetStartupRestore(id);
@@ -1097,7 +1098,7 @@ namespace PennyPet
                     try
                     {
                         bool queued = TryRestoreHostedDockComponentPrepared(
-                            BuildDockChainOrderIncludingHidden(root),
+                            currentGroup,
                             _workspace.Notes.Find(focusId),
                             focusEditor, persistVisibility, startupRestore);
                         if (!queued && startupRestore)
