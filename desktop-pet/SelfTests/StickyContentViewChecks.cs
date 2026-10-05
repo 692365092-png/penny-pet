@@ -104,8 +104,7 @@ namespace PennyPet
             var presenter = new ContentPresenter
             {
                 Content = reminderRow.Content,
-                ContentTemplate = reminderRow.ContentTemplate,
-                FontSize = reminderRow.FontSize
+                ContentTemplate = reminderRow.ContentTemplate
             };
             presenter.Measure(new Size(120, Double.PositiveInfinity));
             presenter.Arrange(new Rect(0, 0, 120,
