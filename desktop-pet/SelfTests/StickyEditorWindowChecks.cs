@@ -118,6 +118,7 @@ namespace PennyPet
         {
             internal bool BannerCountdownOk;
             internal bool CompactBannerOk;
+            internal bool ContentWrapOk;
             internal bool SelectionActionsOk;
             internal bool InlineCreationActionsRemovedOk;
             internal bool FirstClickStableOk;
@@ -144,6 +145,9 @@ namespace PennyPet
                 StickyNoteWindow.FormatCountdown(TimeSpan.Zero) == "现在";
             result.CompactBannerOk = Math.Abs(
                 note.ReminderBannerFirstFontSize - 24F) < 0.2F;
+            result.ContentWrapOk = ReminderContentWrapsWithoutEllipsis(note,
+                new ReminderItem(DateTime.UtcNow.AddMinutes(20),
+                    new string('提', 80)));
             result.SelectionActionsOk =
                 new StickyWindowInteractionDriver(note).ExerciseReminderSelectionActionsForTest();
             result.InlineCreationActionsRemovedOk =
