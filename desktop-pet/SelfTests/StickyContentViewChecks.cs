@@ -95,16 +95,44 @@ namespace PennyPet
             var reminderList = (ListBox)Pc2Get(note, "_reminderList");
             var reminderRow = reminderList == null || reminderList.Items.Count == 0
                 ? null : reminderList.Items[0] as ListBoxItem;
-            var reminderText = reminderRow == null ||
-                reminderRow.ContentTemplate == null ? null :
-                reminderRow.ContentTemplate.LoadContent() as TextBlock;
-            if (reminderText == null) return false;
-            reminderText.Text = Convert.ToString(reminderRow.Content);
-            reminderText.FontSize = reminderRow.FontSize;
-            reminderText.Measure(new Size(120, Double.PositiveInfinity));
-            return reminderText.TextWrapping == TextWrapping.Wrap &&
+            if (reminderRow == null || reminderRow.ContentTemplate == null)
+                return false;
+
+            // Exercise the production DataTemplate through the normal WPF
+            // presentation path so the template is sealed and bindings are
+            // applied before we inspect the rendered TextBlock.
+            var presenter = new ContentPresenter
+            {
+                Content = reminderRow.Content,
+                ContentTemplate = reminderRow.ContentTemplate,
+                FontSize = reminderRow.FontSize
+            };
+            presenter.Measure(new Size(120, Double.PositiveInfinity));
+            presenter.Arrange(new Rect(0, 0, 120,
+                Math.Max(1, presenter.DesiredSize.Height)));
+            presenter.UpdateLayout();
+            TextBlock reminderText = FindVisualChild<TextBlock>(presenter);
+            return reminderText != null &&
+                reminderText.TextWrapping == TextWrapping.Wrap &&
                 reminderText.TextTrimming == TextTrimming.None &&
                 reminderText.DesiredSize.Height > reminderText.FontSize * 1.5;
+        }
+
+        private static T FindVisualChild<T>(DependencyObject root)
+            where T : DependencyObject
+        {
+            if (root == null) return null;
+            int count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(root);
+            for (int index = 0; index < count; index++)
+            {
+                DependencyObject child =
+                    System.Windows.Media.VisualTreeHelper.GetChild(root, index);
+                T match = child as T;
+                if (match != null) return match;
+                match = FindVisualChild<T>(child);
+                if (match != null) return match;
+            }
+            return null;
         }
 
         private static int CountContentControls<T>(DependencyObject root) where T : DependencyObject
