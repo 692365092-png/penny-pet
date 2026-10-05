@@ -47,24 +47,7 @@ namespace PennyPet
                     note.UpdateReminderBanner(new[] { reminder });
                     note.PreviewReminderFontSize(reminder, 22F);
                     note.RefreshReminderCountdown(DateTime.UtcNow.AddSeconds(2));
-                    var reminderList = (ListBox)Pc2Get(note, "_reminderList");
-                    var reminderRow = reminderList.Items.Count == 0 ? null :
-                        reminderList.Items[0] as ListBoxItem;
-                    var reminderText = reminderRow == null ||
-                        reminderRow.ContentTemplate == null ? null :
-                        reminderRow.ContentTemplate.LoadContent() as TextBlock;
-                    if (reminderText != null)
-                    {
-                        reminderText.Text = Convert.ToString(reminderRow.Content);
-                        reminderText.FontSize = reminderRow.FontSize;
-                        reminderText.Measure(new Size(120,
-                            Double.PositiveInfinity));
-                    }
-                    Pc2Assert(reminderText != null &&
-                        reminderText.TextWrapping == TextWrapping.Wrap &&
-                        reminderText.TextTrimming == TextTrimming.None &&
-                        reminderText.DesiredSize.Height >
-                            reminderText.FontSize * 1.5,
+                    Pc2Assert(ReminderContentWrapsWithoutEllipsis(note, reminder),
                         "long reminder content wraps onto multiple lines without ellipsis");
                     Pc2Assert(Object.ReferenceEquals(view.Body, body) &&
                         Object.ReferenceEquals(focused, Keyboard.FocusedElement) &&
@@ -102,6 +85,26 @@ namespace PennyPet
                     "closing stops the current view timer including queued refresh work");
             }
             return true;
+        }
+
+        private static bool ReminderContentWrapsWithoutEllipsis(
+            StickyNoteWindow note, ReminderItem reminder)
+        {
+            if (note == null || reminder == null) return false;
+            note.UpdateReminderBanner(new[] { reminder });
+            var reminderList = (ListBox)Pc2Get(note, "_reminderList");
+            var reminderRow = reminderList == null || reminderList.Items.Count == 0
+                ? null : reminderList.Items[0] as ListBoxItem;
+            var reminderText = reminderRow == null ||
+                reminderRow.ContentTemplate == null ? null :
+                reminderRow.ContentTemplate.LoadContent() as TextBlock;
+            if (reminderText == null) return false;
+            reminderText.Text = Convert.ToString(reminderRow.Content);
+            reminderText.FontSize = reminderRow.FontSize;
+            reminderText.Measure(new Size(120, Double.PositiveInfinity));
+            return reminderText.TextWrapping == TextWrapping.Wrap &&
+                reminderText.TextTrimming == TextTrimming.None &&
+                reminderText.DesiredSize.Height > reminderText.FontSize * 1.5;
         }
 
         private static int CountContentControls<T>(DependencyObject root) where T : DependencyObject
