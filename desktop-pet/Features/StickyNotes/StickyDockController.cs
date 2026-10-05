@@ -177,56 +177,8 @@ namespace PennyPet
         }
 
 
-
-
-
-        // A Dock interaction is allowed to advance only after every expected
-        // HWND has yielded exact current-generation facts.  Validate the
-        // whole barrier before updating Pet-side mirrors.
-        // Preview / split-restore baseline only. Live planning and final commit
-        // continue to require actual, current-generation source WindowFacts.
-        private Dictionary<string, DockWindowFacts> CaptureDockInteractionBaseline(
-            IEnumerable<string> noteIds, DisplayTopologySnapshot topology)
-        {
-            Dictionary<string, DockWindowFacts> result =
-                new Dictionary<string, DockWindowFacts>(StringComparer.OrdinalIgnoreCase);
-            if (noteIds == null) return result;
-            foreach (string noteId in noteIds)
-            {
-                if (String.IsNullOrWhiteSpace(noteId)) continue;
-                StickyNoteData note = _workspace.Notes.Find(noteId);
-                if (note == null) continue;
-                DockWindowFacts runtimeFacts = null;
-                WindowFacts effective = _workspace.Placement.GetEffective(noteId);
-                if (effective != null && topology != null &&
-                    effective.TopologyGeneration == topology.Generation)
-                    runtimeFacts = DockWindowFacts.FromWindowFacts(effective,
-                        note.Visible, note.AlwaysOnTop);
-                if (runtimeFacts != null) result[noteId] = runtimeFacts;
-            }
-            return result;
-        }
-
-        // Semantic Dock-chain order of the visible active members, filtered to
-        // the exact active set. A partial group is never sent silently: the
-        // Z-order command must cover the whole moving band or nothing.
-        // DRT-10: the live drag is driven by the pure planner and the source
-        // window's actual facts. The plan is built exactly once with one
-        // capture-time topology generation and one mailbox sequence; nothing
-        // downstream may re-stamp it against a later Current generation.
-        // Runtime-only conversion for preview and drag-state tracking. It
-        // never writes repository geometry; canonical updates come from the
-        // native batch's actual facts.
-        // Mouse-up is an interaction signal, never geometry authority.  A
-        // distinct finalizing epoch first captures current HWND facts, then
-        // replaces every pending live plan with the one final native frame.
-        // P1-D: a narrow latest-wins frame for a live dock drag. A desired
-        // plan only enters the mailbox; repository geometry is never written
-        // before the native batch succeeds, and canonical/effective updates
-        // come from the batch's actual facts in the completion callback.
-        // Only same-generation, newest-sequence batch results are accepted.
-        // Actual WindowFacts are the effective geometry truth; content and
-        // non-geometry state come from the member snapshot.
+        // Live geometry comes from accepted HWND facts. Saved placement is
+        // consulted separately by the restore path.
         private DockWindowFacts GetHostedDockFacts(StickyNoteData note)
         {
             return note == null ? null : DockWindowFacts.FromWindowFacts(

@@ -87,8 +87,8 @@ namespace PennyPet
             }
         }
 
-        // Low-frequency model projection. R22 prepares the local visual
-        // runtime here; R23 will switch gesture completion to commit/ack.
+        // Model projections wait until the active gesture and its pending
+        // commits finish, so they cannot overwrite a provisional local scene.
         internal void SetDockScene(StickyDockSceneProjection scene)
         {
             if (scene == null) return;
@@ -118,7 +118,7 @@ namespace PennyPet
             _localDockGestures.SetTopology(topology);
         }
 
-        // Same-STA executor for the R22 candidate path. The source HWND stays
+        // Same-STA executor for live Dock gestures. The source HWND stays
         // owned by the native moving/sizing loop; only followers are batched.
         // No content snapshot or Pet callback is involved.
         private bool ApplyLocalDockFollowers(
@@ -667,14 +667,8 @@ namespace PennyPet
             _threadHost.Post(command, handler, completed, completionContext);
         }
 
-        // Dedicated latest-wins entry for a live Dock drag. This is not a
-        // generic scheduler: the Pet thread replaces the immutable plan in
-        // the mailbox and only one deferred native batch runs at a time.
-        // Horizontal and divider gestures share one latest-frame/final transport.
-        // Move all followers without showing or activating them, then capture
-        // each member once. WindowFacts remain the actual geometry authority.
-        // Host-owned current topology truth for the Dock stale gate and for
-        // actual-facts capture. Pet publishes every settled snapshot here.
+        // Pet owns topology truth. Publish it to the Sticky STA before native
+        // facts are captured or an active local gesture is rebased.
         internal void SetCurrentTopology(DisplayTopologySnapshot snapshot)
         {
             lock (_configurationGate) _currentTopology = snapshot;
