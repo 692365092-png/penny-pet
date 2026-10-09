@@ -5,13 +5,13 @@ Penny pet 是一款 Windows 桌面宠物，包含透明角色动画、普通便�
 
 ## 下载 Penny pet
 
-### [点击直接下载 Windows 版](https://github.com/692365092-png/penny-pet/releases/latest/download/Penny-pet-Windows.exe)
+### [点击直接下载 Windows 版 1.1.0](https://github.com/692365092-png/penny-pet/releases/download/v1.1.0/Penny-pet-Windows.exe)
 
 适用于 Windows 10 和 Windows 11。下载完成后双击运行即可，无需安装。
 
 请只从本仓库的 Release 页面下载，以免拿到被他人修改的版本。
 
-如需查看版本历史或下载校验文件，可前往 [Releases](https://github.com/692365092-png/penny-pet/releases)。
+本次版本说明与校验文件见 [1.1.0 发布页面](https://github.com/692365092-png/penny-pet/releases/tag/v1.1.0)；历史版本见 [Releases](https://github.com/692365092-png/penny-pet/releases)。
 
 ### 如果 Windows 阻止运行
 

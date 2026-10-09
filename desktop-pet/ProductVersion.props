@@ -1,7 +1,7 @@
 <Project>
   <!-- Change only PennyVersionPrefix. All other version shapes are derived. -->
   <PropertyGroup>
-    <PennyVersionPrefix>1.0.2</PennyVersionPrefix>
+    <PennyVersionPrefix>1.1.0</PennyVersionPrefix>
     <PennyProductVersion>$(PennyVersionPrefix)</PennyProductVersion>
     <PennyPackageVersion>$(PennyVersionPrefix)</PennyPackageVersion>
     <PennyAssemblyVersion>$(PennyVersionPrefix).0</PennyAssemblyVersion>
